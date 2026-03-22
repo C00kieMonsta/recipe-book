@@ -115,7 +115,9 @@ if ! aws_cmd iam get-role --role-name "$ROLE_NAME" &>/dev/null; then
         ],
         \"Resource\": [
           \"arn:aws:dynamodb:${REGION}:*:table/ta-ingredients-prod\",
-          \"arn:aws:dynamodb:${REGION}:*:table/ta-recipes-prod\"
+          \"arn:aws:dynamodb:${REGION}:*:table/ta-recipes-prod\",
+          \"arn:aws:dynamodb:${REGION}:*:table/ta-settings-prod\",
+          \"arn:aws:dynamodb:${REGION}:*:table/ta-events-prod\"
         ]
       }]
     }"
