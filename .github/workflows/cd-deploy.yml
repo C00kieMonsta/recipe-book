@@ -108,13 +108,17 @@ jobs:
       - name: Build backend
         run: pnpm --filter @apps/backend build
 
+      - name: Install production deps (on CI runner)
+        run: |
+          pnpm install --prod --no-frozen-lockfile --ignore-scripts --filter @apps/backend...
+
       - name: Upload dist to EC2
         uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "apps/backend/dist/,apps/backend/package.json,packages/types/dist/,packages/types/package.json,package.json,pnpm-lock.yaml,pnpm-workspace.yaml"
+          source: "apps/backend/dist/,apps/backend/package.json,apps/backend/node_modules/,packages/types/dist/,packages/types/package.json,node_modules/.pnpm/,node_modules/.modules.yaml,package.json,pnpm-lock.yaml,pnpm-workspace.yaml"
           target: "/home/ec2-user/la-table-amelie/"
           tar_dereference: true
           overwrite: true
@@ -155,16 +159,6 @@ jobs:
             JWT_SECRET=$(ssm_get JWT_SECRET)
             ENVEOF
             chmod 600 "${APP_DIR}/apps/backend/.env"
-
-            echo "Installing backend runtime dependencies..."
-            if ! command -v pnpm >/dev/null 2>&1; then
-              sudo corepack enable
-              corepack prepare pnpm@10.8.0 --activate
-            fi
-            cd "${APP_DIR}"
-            export HUSKY=0
-            export CI=true
-            pnpm install --prod --no-frozen-lockfile --ignore-scripts --filter @apps/backend...
 
             echo "Restarting backend with PM2..."
             pm2 restart la-table-amelie-api || pm2 start ${APP_DIR}/apps/backend/dist/main.js \
