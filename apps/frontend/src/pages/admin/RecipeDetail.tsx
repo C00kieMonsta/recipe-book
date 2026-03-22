@@ -336,8 +336,8 @@ function PricingSimulation({ recipe, totalCost }: { recipe: Recipe; totalCost: n
 
           <EditRow
             label="COEF"
-            sp={<EditableNum value={pricing.surPlace.coef} onChange={(v) => set("surPlace.coef", v)} step={0.1} />}
-            ta={<EditableNum value={pricing.takeAway.coef} onChange={(v) => set("takeAway.coef", v)} step={0.1} />}
+            sp={<EditableNum value={pricing.surPlace.coef} onChange={(v) => set("surPlace.coef", v)} />}
+            ta={<EditableNum value={pricing.takeAway.coef} onChange={(v) => set("takeAway.coef", v)} />}
           />
           <CalcRow label="Prix vente portion HTVA" sp={fmt(spHTVA)} ta={fmt(taHTVA)} />
           <EditRow
@@ -352,8 +352,8 @@ function PricingSimulation({ recipe, totalCost }: { recipe: Recipe; totalCost: n
 
           <EditRow
             label="Prix de vente choisi TVAC"
-            sp={<EditableNum value={spChosen} onChange={(v) => set("chosenPrice.surPlace", v)} step={0.5} placeholder="—" />}
-            ta={<EditableNum value={taChosen} onChange={(v) => set("chosenPrice.takeAway", v)} step={0.5} placeholder="—" />}
+            sp={<EditableNum value={spChosen} onChange={(v) => set("chosenPrice.surPlace", v)} placeholder="—" />}
+            ta={<EditableNum value={taChosen} onChange={(v) => set("chosenPrice.takeAway", v)} placeholder="—" />}
             bold
           />
           <CalcRow
@@ -393,18 +393,17 @@ function EditRow({ label, sp, ta, bold }: { label: string; sp: React.ReactNode; 
   );
 }
 
-function EditableNum({ value, onChange, step = 1, suffix, placeholder }: {
+function EditableNum({ value, onChange, suffix, placeholder }: {
   value: number;
   onChange: (v: number) => void;
-  step?: number;
   suffix?: string;
   placeholder?: string;
 }) {
   return (
     <div className="flex items-center justify-end gap-1">
       <input
-        type="number"
-        step={step}
+        type="text"
+        inputMode="decimal"
         value={value || ""}
         placeholder={placeholder}
         onChange={(e) => onChange(+e.target.value)}

@@ -152,11 +152,11 @@ export default function EventEditor() {
             </div>
             <div>
               <FieldLabel>Nombre de convives</FieldLabel>
-              <input className="input-field" type="number" min={1} value={guestCount} onChange={(e) => setGuestCount(+e.target.value)} />
+              <input className="input-field" type="text" inputMode="numeric" value={guestCount} onChange={(e) => setGuestCount(+e.target.value)} />
             </div>
             <div>
               <FieldLabel>Prix de vente par convive HTVA (€)</FieldLabel>
-              <input className="input-field" type="number" step="0.5" min={0} value={sellingPricePerGuest} onChange={(e) => setSellingPricePerGuest(+e.target.value)} />
+              <input className="input-field" type="text" inputMode="decimal" value={sellingPricePerGuest} onChange={(e) => setSellingPricePerGuest(+e.target.value)} />
             </div>
             <div>
               <FieldLabel>Statut</FieldLabel>
@@ -207,7 +207,7 @@ export default function EventEditor() {
                   return (
                     <tr key={rl.recipeId} className="border-b border-border/30">
                       <td className="px-2 py-2 font-semibold">{rec?.name || "—"}</td>
-                      <td className="px-2 py-2"><input className="input-field !py-1 !text-xs text-right w-full" type="number" min={1} value={rl.portions} onChange={(e) => updateRecipeLine(i, +e.target.value)} /></td>
+                      <td className="px-2 py-2"><input className="input-field !py-1 !text-xs text-right w-full" type="text" inputMode="numeric" value={rl.portions} onChange={(e) => updateRecipeLine(i, +e.target.value)} /></td>
                       <td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{fmt(costPerPortion)}</td>
                       <td className="px-2 py-2 text-right tabular-nums font-medium">{fmt(lineCost)}</td>
                       <td className="px-2 py-2"><button onClick={() => removeRecipeLine(i)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button></td>
@@ -232,7 +232,7 @@ export default function EventEditor() {
           {extraCosts.map((ec, i) => (
             <div key={i} className="flex gap-3 mb-2 items-center">
               <input className="input-field flex-1 !py-1.5" placeholder="Description…" value={ec.label} onChange={(e) => updateExtraCost(i, "label", e.target.value)} />
-              <input className="input-field w-28 !py-1.5 text-right" type="number" step="0.01" value={ec.amount} onChange={(e) => updateExtraCost(i, "amount", +e.target.value)} />
+              <input className="input-field w-28 !py-1.5 text-right" type="text" inputMode="decimal" value={ec.amount} onChange={(e) => updateExtraCost(i, "amount", +e.target.value)} />
               <button onClick={() => removeExtraCost(i)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
             </div>
           ))}

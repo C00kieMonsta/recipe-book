@@ -217,7 +217,7 @@ function IngredientForm({ ingredient, onSave, onCancel, onDelete }: { ingredient
       <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Nom</label>
       <input className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" value={form.name || ""} onChange={(e) => u("name", e.target.value)} />
       <div className="grid grid-cols-2 gap-3">
-        <div><label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Prix HTVA</label><input className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" type="number" step="0.01" value={form.price ?? 0} onChange={(e) => u("price", +e.target.value)} /></div>
+        <div><label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Prix HTVA</label><input className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" type="text" inputMode="decimal" value={form.price ?? 0} onChange={(e) => u("price", +e.target.value)} /></div>
         <div><label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Unité</label><select className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" value={form.unit || "€/kg"} onChange={(e) => u("unit", e.target.value)}>{UNITS_PRICE.map((u) => <option key={u}>{u}</option>)}</select></div>
       </div>
       <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Fournisseur</label>
