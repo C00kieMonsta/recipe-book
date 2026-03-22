@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Plus, Upload, Check, Download, AlertTriangle, FileSpreadsheet } from "lucide-react";
-import type { Recipe, Ingredient, AppSettings } from "@packages/types";
+import type { Recipe, Ingredient } from "@packages/types";
+import { DEFAULT_RECIPE_CATEGORIES } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { calcRecipeCost, fmt } from "@/lib/recipe-helpers";
@@ -72,8 +73,8 @@ export default function Recipes() {
   const { toast } = useToast();
 
   const load = () =>
-    Promise.all([api.recipes.list(), api.ingredients.list(), api.settings.get()])
-      .then(([r, i, s]) => { setRecipes(r); setIngredients(i); setCategories(s.recipeCategories || []); })
+    Promise.all([api.recipes.list(), api.ingredients.list(), api.settings.get().catch(() => null)])
+      .then(([r, i, s]) => { setRecipes(r); setIngredients(i); setCategories(s?.recipeCategories?.length ? s.recipeCategories : DEFAULT_RECIPE_CATEGORIES); })
       .catch(() => toast({ title: "Erreur de chargement", variant: "destructive" }))
       .finally(() => setLoading(false));
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Save, Plus, X, ImagePlus } from "lucide-react";
 import type { Recipe, RecipeIngredient, RecipePricing, RecipePhoto, Ingredient } from "@packages/types";
-import { UNITS_QTY } from "@packages/types";
+import { UNITS_QTY, DEFAULT_RECIPE_CATEGORIES } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
@@ -42,9 +42,12 @@ export default function RecipeEditor() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [ings, settings] = await Promise.all([api.ingredients.list(), api.settings.get()]);
+        const [ings, settings] = await Promise.all([
+          api.ingredients.list(),
+          api.settings.get().catch(() => null),
+        ]);
         setAllIngredients(ings);
-        setCategories(settings.recipeCategories || []);
+        setCategories(settings?.recipeCategories?.length ? settings.recipeCategories : DEFAULT_RECIPE_CATEGORIES);
         if (!isNew && id) {
           const recipe = await api.recipes.get(id);
           setForm({

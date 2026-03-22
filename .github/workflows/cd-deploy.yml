@@ -164,7 +164,7 @@ jobs:
             cd "${APP_DIR}"
             export HUSKY=0
             export CI=true
-            pnpm install --prod --frozen-lockfile --ignore-scripts --filter @apps/backend...
+            pnpm install --prod --no-frozen-lockfile --ignore-scripts --filter @apps/backend...
 
             echo "Restarting backend with PM2..."
             pm2 restart la-table-amelie-api || pm2 start ${APP_DIR}/apps/backend/dist/main.js \
