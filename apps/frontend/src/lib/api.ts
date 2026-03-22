@@ -1,4 +1,4 @@
-import type { Campaign, CampaignAttachment, Contact, ContactGroup } from "@packages/types";
+import type { Ingredient, Recipe } from "@packages/types";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 const TOKEN_KEY = "admin_token";
@@ -27,12 +27,7 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${API_BASE}${path}`, { ...opts, headers });
-
-  if (res.status === 401) {
-    handleUnauthorized();
-    throw new Error("Unauthorized");
-  }
-
+  if (res.status === 401) { handleUnauthorized(); throw new Error("Unauthorized"); }
   return parseResponse<T>(res);
 }
 
@@ -40,136 +35,30 @@ async function uploadRequest<T>(path: string, file: File): Promise<T> {
   const token = getToken();
   const form = new FormData();
   form.append("file", file);
-
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
-
   const res = await fetch(`${API_BASE}${path}`, { method: "POST", headers, body: form });
-
-  if (res.status === 401) {
-    handleUnauthorized();
-    throw new Error("Unauthorized");
-  }
-
-  return parseResponse<T>(res);
-}
-
-async function publicRequest<T>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...opts,
-  });
+  if (res.status === 401) { handleUnauthorized(); throw new Error("Unauthorized"); }
   return parseResponse<T>(res);
 }
 
 export const api = {
-  campaigns: {
-    list() {
-      return request<{ items: Campaign[]; cursor: string | null; count: number }>("/admin/campaigns");
-    },
-    get(id: string) {
-      return request<{ ok: true; campaign: Campaign }>(`/admin/campaigns/${id}`);
-    },
-    create(data: { name: string; subject: string; html: string; targetGroups?: string[]; attachments?: CampaignAttachment[] }) {
-      return request<{ ok: true; campaign: Campaign }>("/admin/campaigns", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
-    },
-    update(id: string, data: Partial<{ name: string; subject: string; html: string; targetGroups: string[]; attachments: CampaignAttachment[] }>) {
-      return request<{ ok: true; campaign: Campaign }>(`/admin/campaigns/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      });
-    },
-    upload(file: File) {
-      return uploadRequest<{ ok: true; key: string; url: string; filename: string; contentType: string; size: number }>(
-        "/admin/campaigns/upload",
-        file,
-      );
-    },
-    delete(id: string) {
-      return request<{ ok: true }>(`/admin/campaigns/${id}`, { method: "DELETE" });
-    },
-    send(id: string) {
-      return request<{ ok: true; queued: true; recipientCount: number }>(`/admin/campaigns/${id}/send`, {
-        method: "POST",
-      });
-    },
-    testSendById(id: string, email: string) {
-      return request<{ ok: true; message: string }>(`/admin/campaigns/${id}/test`, {
-        method: "POST",
-        body: JSON.stringify({ email }),
-      });
-    },
-    testSend(email: string, subject: string, html: string) {
-      return request<{ ok: true; message: string }>("/admin/campaigns/test-send", {
-        method: "POST",
-        body: JSON.stringify({ email, subject, html }),
-      });
-    },
+  ingredients: {
+    list: () => request<Ingredient[]>("/admin/ingredients"),
+    get: (id: string) => request<Ingredient>(`/admin/ingredients/${id}`),
+    create: (data: Partial<Ingredient>) => request<Ingredient>("/admin/ingredients", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<Ingredient>) => request<Ingredient>(`/admin/ingredients/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    delete: (id: string) => request<{ ok: boolean }>(`/admin/ingredients/${id}`, { method: "DELETE" }),
+    import: (rows: unknown[]) => request<{ created: number; updated: number }>("/admin/ingredients/import", { method: "POST", body: JSON.stringify(rows) }),
+    deduplicate: () => request<{ removed: number }>("/admin/ingredients/deduplicate", { method: "POST" }),
   },
-  contacts: {
-    stats() {
-      return request<{ total: number; subscribed: number; unsubscribed: number }>("/admin/contacts/stats");
-    },
-    list(params?: { status?: string; q?: string; limit?: number; cursor?: string }) {
-      const qs = new URLSearchParams();
-      if (params?.status) qs.set("status", params.status);
-      if (params?.q) qs.set("q", params.q);
-      if (params?.limit) qs.set("limit", String(params.limit));
-      if (params?.cursor) qs.set("cursor", params.cursor);
-      const query = qs.toString();
-      return request<{ items: Contact[]; cursor: string | null; count: number }>(`/admin/contacts${query ? `?${query}` : ""}`);
-    },
-    create(data: Partial<Contact> & { email: string }) {
-      return request<{ ok: true; contact: Contact }>("/admin/contacts", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
-    },
-    update(emailLower: string, data: Partial<Contact>) {
-      return request<{ ok: true; contact: Contact }>(`/admin/contacts/${encodeURIComponent(emailLower)}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      });
-    },
-    delete(emailLower: string) {
-      return request<{ ok: true }>(`/admin/contacts/${encodeURIComponent(emailLower)}`, { method: "DELETE" });
-    },
-    importContacts(contacts: Partial<Contact>[]) {
-      return request<{ ok: true; imported: number; skipped: number; errors: unknown[] }>("/admin/contacts/import", {
-        method: "POST",
-        body: JSON.stringify({ contacts }),
-      });
-    },
-  },
-  groups: {
-    list() {
-      return request<ContactGroup[]>("/admin/groups");
-    },
-    create(data: { name: string; color: string }) {
-      return request<ContactGroup>("/admin/groups", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
-    },
-    update(id: string, data: { name?: string; color?: string }) {
-      return request<void>(`/admin/groups/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      });
-    },
-    delete(id: string) {
-      return request<void>(`/admin/groups/${id}`, { method: "DELETE" });
-    },
-  },
-  public: {
-    subscribe(email: string, firstName?: string, lastName?: string) {
-      return publicRequest<{ ok: true; message: string }>("/public/subscribe", {
-        method: "POST",
-        body: JSON.stringify({ email, firstName, lastName }),
-      });
-    },
+  recipes: {
+    list: () => request<Recipe[]>("/admin/recipes"),
+    get: (id: string) => request<Recipe>(`/admin/recipes/${id}`),
+    create: (data: Partial<Recipe>) => request<Recipe>("/admin/recipes", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<Recipe>) => request<Recipe>(`/admin/recipes/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    delete: (id: string) => request<{ ok: boolean }>(`/admin/recipes/${id}`, { method: "DELETE" }),
+    import: (rows: unknown[]) => request<{ created: number; skipped: number; unmatchedIngredients: string[] }>("/admin/recipes/import", { method: "POST", body: JSON.stringify(rows) }),
+    uploadPhoto: (file: File) => uploadRequest<{ key: string; url: string }>("/admin/recipes/upload-photo", file),
   },
 };

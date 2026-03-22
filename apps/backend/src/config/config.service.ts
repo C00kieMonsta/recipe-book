@@ -4,15 +4,10 @@ import { z } from "zod";
 const schema = z.object({
   PORT: z.coerce.number().default(3001),
   AWS_REGION: z.string().default("eu-west-1"),
-  CONTACTS_TABLE: z.string().min(1),
-  CAMPAIGNS_TABLE: z.string().min(1),
-  GROUPS_TABLE: z.string().min(1),
+  INGREDIENTS_TABLE: z.string().min(1),
+  RECIPES_TABLE: z.string().min(1),
   DDB_ENDPOINT: z.string().url().optional(),
-  SES_FROM_EMAIL: z.string().email(),
-  SES_REGION: z.string().default("eu-west-1"),
   S3_BUCKET: z.string().min(1),
-  UNSUBSCRIBE_SECRET: z.string().min(32),
-  PUBLIC_BASE_URL: z.string().url(),
   ADMIN_CREDENTIALS: z.string().min(1),
   JWT_SECRET: z.string().min(32),
 });
@@ -32,6 +27,9 @@ export class ConfigService {
   }
 
   get tables() {
-    return { contacts: this.env.CONTACTS_TABLE, campaigns: this.env.CAMPAIGNS_TABLE, groups: this.env.GROUPS_TABLE };
+    return {
+      ingredients: this.env.INGREDIENTS_TABLE,
+      recipes: this.env.RECIPES_TABLE,
+    };
   }
 }

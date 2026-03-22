@@ -7,28 +7,22 @@ interface DataStackProps extends cdk.StackProps {
 }
 
 export class DataStack extends cdk.Stack {
-  readonly contactsTable: dynamodb.Table;
-  readonly campaignsTable: dynamodb.Table;
+  readonly ingredientsTable: dynamodb.Table;
+  readonly recipesTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
 
-    this.contactsTable = new dynamodb.Table(this, "ContactsTable", {
-      tableName: `cf-contacts-${props.stage}`,
-      partitionKey: { name: "emailLower", type: dynamodb.AttributeType.STRING },
+    this.ingredientsTable = new dynamodb.Table(this, "IngredientsTable", {
+      tableName: `ta-ingredients-${props.stage}`,
+      partitionKey: { name: "ingredientId", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: props.stage === "prod" ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
     });
 
-    this.contactsTable.addGlobalSecondaryIndex({
-      indexName: "byStatus",
-      partitionKey: { name: "gsi1pk", type: dynamodb.AttributeType.STRING },
-      sortKey: { name: "gsi1sk", type: dynamodb.AttributeType.STRING },
-    });
-
-    this.campaignsTable = new dynamodb.Table(this, "CampaignsTable", {
-      tableName: `cf-campaigns-${props.stage}`,
-      partitionKey: { name: "campaignId", type: dynamodb.AttributeType.STRING },
+    this.recipesTable = new dynamodb.Table(this, "RecipesTable", {
+      tableName: `ta-recipes-${props.stage}`,
+      partitionKey: { name: "recipeId", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: props.stage === "prod" ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
     });

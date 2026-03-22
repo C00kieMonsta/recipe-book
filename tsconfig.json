@@ -27,9 +27,6 @@
       "path": "./apps/frontend"
     },
     {
-      "path": "./apps/landing"
-    },
-    {
       "path": "./packages/types"
     }
   ]

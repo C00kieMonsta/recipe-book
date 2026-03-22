@@ -1,0 +1,177 @@
+name: Pull Request Checks
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  changes:
+    name: Determine Changes
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      landing: ${{ steps.filter.outputs.landing }}
+      packages: ${{ steps.filter.outputs.packages }}
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v42
+        with:
+          files: |
+            apps/frontend/**
+            apps/landing/**
+            packages/**
+            infrastructure/**
+
+      - name: Set outputs
+        id: filter
+        run: |
+          if [[ "${{ steps.changed-files.outputs.any_changed }}" == "true" ]]; then
+            if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -qE "apps/frontend|packages/"; then
+              echo "frontend=true" >> $GITHUB_OUTPUT
+            else
+              echo "frontend=false" >> $GITHUB_OUTPUT
+            fi
+            
+            if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -qE "apps/landing"; then
+              echo "landing=true" >> $GITHUB_OUTPUT
+            else
+              echo "landing=false" >> $GITHUB_OUTPUT
+            fi
+            
+            if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -q "packages/"; then
+              echo "packages=true" >> $GITHUB_OUTPUT
+            else
+              echo "packages=false" >> $GITHUB_OUTPUT
+            fi
+            
+            if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -qE "infrastructure/"; then
+              echo "infra=true" >> $GITHUB_OUTPUT
+            else
+              echo "infra=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "frontend=false" >> $GITHUB_OUTPUT
+            echo "landing=false" >> $GITHUB_OUTPUT
+            echo "packages=false" >> $GITHUB_OUTPUT
+            echo "infra=false" >> $GITHUB_OUTPUT
+          fi
+
+  test-packages:
+    name: Test Packages (if changed)
+    needs: changes
+    if: needs.changes.outputs.packages == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-env
+
+      - name: Build workspace packages
+        uses: ./.github/actions/build-packages
+
+      - name: Run type check
+        run: pnpm run type-check
+
+      - name: Run tests
+        run: pnpm test
+
+  test-frontend:
+    name: Test Frontend (if changed)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.packages == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-env
+
+      - name: Build workspace packages
+        uses: ./.github/actions/build-packages
+
+      - name: Run type check
+        run: pnpm --filter @apps/frontend run type-check
+
+      - name: Build frontend
+        run: pnpm --filter @apps/frontend build
+        env:
+          VITE_API_BASE_URL: http://localhost:3000
+          VITE_COGNITO_DOMAIN: test.auth.eu-west-1.amazoncognito.com
+          VITE_COGNITO_CLIENT_ID: test-client-id
+          VITE_COGNITO_REDIRECT_URI: http://localhost:5173/auth/callback
+          VITE_COGNITO_LOGOUT_URI: http://localhost:5173
+
+  test-landing:
+    name: Test Landing (if changed)
+    needs: changes
+    if: needs.changes.outputs.landing == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-env
+
+      - name: Build landing
+        run: pnpm --filter @apps/landing build
+        env:
+          VITE_API_BASE_URL: http://localhost:3000
+
+  validate-infra:
+    name: Validate Infrastructure (if changed)
+    needs: changes
+    if: needs.changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install CDK dependencies
+        working-directory: ./infrastructure
+        run: npm ci
+
+      - name: Build and synth CDK
+        working-directory: ./infrastructure
+        run: |
+          npm run build
+          npx cdk synth --all
+
+  # Summary job
+  pr-checks-complete:
+    name: PR Checks Complete
+    needs: [changes, test-packages, test-frontend, test-landing, validate-infra]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          echo "📊 PR Check Results:"
+          echo "Frontend changed: ${{ needs.changes.outputs.frontend }}"
+          echo "Landing changed: ${{ needs.changes.outputs.landing }}"
+          echo "Packages changed: ${{ needs.changes.outputs.packages }}"
+          echo "Infrastructure changed: ${{ needs.changes.outputs.infra }}"
+          echo ""
+          if [[ "${{ needs.test-packages.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-frontend.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-landing.result }}" == "failure" ]] || \
+             [[ "${{ needs.validate-infra.result }}" == "failure" ]]; then
+            echo "❌ Some checks failed"
+            exit 1
+          else
+            echo "✅ All applicable checks passed"
+          fi

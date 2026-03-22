@@ -1,2 +1,2 @@
-export * from "./contact";
-export * from "./campaign";
+export * from "./ingredient";
+export * from "./recipe";

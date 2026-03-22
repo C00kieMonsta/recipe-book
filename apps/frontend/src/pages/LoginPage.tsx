@@ -2,15 +2,12 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Lock } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useLanguage } from "@/contexts/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
-import { Button, Input, Label } from "@packages/ui";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const { login } = useAuth();
-  const { t } = useLanguage();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -18,63 +15,36 @@ export default function LoginPage() {
     e.preventDefault();
     const success = await login(email, password);
     if (success) {
-      navigate("/dashboard");
+      navigate("/recipes");
     } else {
-      toast({ title: t.login.error, variant: "destructive" });
+      toast({ title: "Identifiants invalides", variant: "destructive" });
     }
   };
 
   return (
-    <div className="gradient-hero min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-background">
       <div className="card-elevated w-full max-w-md p-8 animate-fade-up">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-14 h-14 rounded-xl gradient-terracotta flex items-center justify-center mb-4">
-            <Lock className="h-7 w-7 text-white" />
+          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center mb-4">
+            <span className="font-serif text-2xl font-bold text-white">A</span>
           </div>
-          <h1 className="text-2xl font-serif font-bold text-foreground">
-            {t.login.title}
-          </h1>
+          <h1 className="text-2xl font-serif font-bold">La Table d'Amélie</h1>
+          <p className="text-sm text-muted-foreground mt-1">Connexion</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="space-y-2">
-            <Label htmlFor="email">{t.login.email}</Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="email" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Email</label>
+            <input id="email" type="email" className="input-field" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="password">{t.login.password}</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+          <div>
+            <label htmlFor="password" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Mot de passe</label>
+            <input id="password" type="password" className="input-field" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </div>
-
-          <Button
-            type="submit"
-            className="w-full gradient-terracotta text-white hover:opacity-90"
-          >
-            {t.login.submit}
-          </Button>
+          <button type="submit" className="w-full py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold shadow-sm hover:opacity-90 transition-opacity">
+            Se connecter
+          </button>
         </form>
-
-        <div className="mt-6 text-center">
-          <a
-            href="/"
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {t.nav.home}
-          </a>
-        </div>
       </div>
     </div>
   );

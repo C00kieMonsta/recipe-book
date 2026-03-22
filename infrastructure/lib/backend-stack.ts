@@ -6,10 +6,9 @@ import { Construct } from "constructs";
 
 interface BackendStackProps extends cdk.StackProps {
   stage: string;
-  contactsTable: dynamodb.Table;
-  campaignsTable: dynamodb.Table;
+  ingredientsTable: dynamodb.Table;
+  recipesTable: dynamodb.Table;
   domainName?: string;
-  sesFromEmail?: string;
 }
 
 export class BackendStack extends cdk.Stack {
@@ -29,7 +28,7 @@ export class BackendStack extends cdk.Stack {
     const sg = new ec2.SecurityGroup(this, "BackendSG", {
       vpc,
       allowAllOutbound: true,
-      description: "Campaign Forge backend",
+      description: "La Table d'Amélie backend",
     });
     sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(22), "SSH");
     sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), "HTTP");
@@ -43,15 +42,15 @@ export class BackendStack extends cdk.Stack {
       ],
     });
 
-    props.contactsTable.grantReadWriteData(role);
-    props.campaignsTable.grantReadWriteData(role);
+    props.ingredientsTable.grantReadWriteData(role);
+    props.recipesTable.grantReadWriteData(role);
 
     role.addToPrincipalPolicy(new iam.PolicyStatement({
-      actions: ["ses:SendEmail", "ses:SendRawEmail"],
+      actions: ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
       resources: ["*"],
     }));
 
-    const keyPairName = process.env.EC2_KEY_PAIR || `cf-${props.stage}`;
+    const keyPairName = process.env.EC2_KEY_PAIR || `ta-${props.stage}`;
 
     const userData = ec2.UserData.forLinux();
     userData.addCommands(
@@ -59,16 +58,12 @@ export class BackendStack extends cdk.Stack {
       "curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -",
       "yum install -y nodejs git",
       "npm install -g pnpm@10",
-      "mkdir -p /opt/campaign-forge",
-      `cat > /opt/campaign-forge/.env << 'ENVEOF'`,
+      "mkdir -p /opt/la-table-amelie",
+      `cat > /opt/la-table-amelie/.env << 'ENVEOF'`,
       `PORT=3001`,
       `AWS_REGION=${this.region}`,
-      `CONTACTS_TABLE=${props.contactsTable.tableName}`,
-      `CAMPAIGNS_TABLE=${props.campaignsTable.tableName}`,
-      `SES_FROM_EMAIL=${props.sesFromEmail || "noreply@example.com"}`,
-      `SES_REGION=${this.region}`,
-      `UNSUBSCRIBE_SECRET=${props.stage}-change-me-to-a-real-secret-32chars`,
-      `PUBLIC_BASE_URL=http://localhost:3001/api`,
+      `INGREDIENTS_TABLE=${props.ingredientsTable.tableName}`,
+      `RECIPES_TABLE=${props.recipesTable.tableName}`,
       `ENVEOF`,
     );
 

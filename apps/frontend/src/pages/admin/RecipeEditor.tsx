@@ -1,0 +1,269 @@
+import { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { ArrowLeft, Save, Plus, X, ImagePlus } from "lucide-react";
+import type { Recipe, RecipeIngredient, RecipePricing, RecipePhoto, Ingredient } from "@packages/types";
+import { RECIPE_TYPES, UNITS_QTY } from "@packages/types";
+import { api } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+
+const DEFAULT_PRICING: RecipePricing = {
+  surPlace: { coef: 4, tva: 12 },
+  takeAway: { coef: 3, tva: 6 },
+  chosenPrice: { surPlace: 0, takeAway: 0 },
+};
+
+interface FormState {
+  name: string;
+  type: string;
+  portions: number;
+  portionWeight: number;
+  description: string;
+  techniques: string[];
+  ingredients: RecipeIngredient[];
+  photos: RecipePhoto[];
+  pricing: RecipePricing;
+}
+
+export default function RecipeEditor() {
+  const { id } = useParams<{ id: string }>();
+  const isNew = !id || id === "new";
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [allIngredients, setAllIngredients] = useState<Ingredient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const [form, setForm] = useState<FormState>({
+    name: "", type: "Buffet", portions: 1, portionWeight: 150, description: "",
+    techniques: [""], ingredients: [], photos: [], pricing: DEFAULT_PRICING,
+  });
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const ings = await api.ingredients.list();
+        setAllIngredients(ings);
+        if (!isNew && id) {
+          const recipe = await api.recipes.get(id);
+          setForm({
+            name: recipe.name, type: recipe.type, portions: recipe.portions,
+            portionWeight: recipe.portionWeight, description: recipe.description || "",
+            techniques: recipe.techniques.length ? recipe.techniques : [""],
+            ingredients: recipe.ingredients, photos: recipe.photos || [],
+            pricing: recipe.pricing || DEFAULT_PRICING,
+          });
+        }
+      } catch {
+        toast({ title: "Erreur de chargement", variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, [id]);
+
+  const update = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((p) => ({ ...p, [k]: v }));
+
+  const addTechnique = () => update("techniques", [...form.techniques, ""]);
+  const updateTechnique = (i: number, v: string) => { const t = [...form.techniques]; t[i] = v; update("techniques", t); };
+  const removeTechnique = (i: number) => update("techniques", form.techniques.filter((_, idx) => idx !== i));
+
+  const addIngLine = () => update("ingredients", [...form.ingredients, { ingredientId: allIngredients[0]?.ingredientId || "", qty: 0, unit: "g" as const, lossPct: 0 }]);
+  const updateIngLine = (i: number, k: keyof RecipeIngredient, v: unknown) => { const a = [...form.ingredients]; a[i] = { ...a[i], [k]: v }; update("ingredients", a); };
+  const removeIngLine = (i: number) => update("ingredients", form.ingredients.filter((_, idx) => idx !== i));
+
+  const updatePricing = (path: string, v: number) => {
+    setForm((p) => {
+      const pricing = structuredClone(p.pricing);
+      const parts = path.split(".");
+      let obj: Record<string, unknown> = pricing as unknown as Record<string, unknown>;
+      for (let i = 0; i < parts.length - 1; i++) obj = obj[parts[i]] as Record<string, unknown>;
+      obj[parts[parts.length - 1]] = v;
+      return { ...p, pricing };
+    });
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { toast({ title: "Le nom est requis", variant: "destructive" }); return; }
+    setSaving(true);
+    try {
+      const data = {
+        name: form.name, type: form.type, portions: form.portions,
+        portionWeight: form.portionWeight, description: form.description,
+        techniques: form.techniques.filter(Boolean),
+        ingredients: form.ingredients, photos: form.photos, pricing: form.pricing,
+      };
+      if (isNew) {
+        const created = await api.recipes.create(data);
+        toast({ title: "Recette créée" });
+        navigate(`/recipes/${created.recipeId}`);
+      } else {
+        await api.recipes.update(id!, data);
+        toast({ title: "Recette modifiée" });
+        navigate(`/recipes/${id}`);
+      }
+    } catch {
+      toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePhotoUpload = async (file: File) => {
+    try {
+      const result = await api.recipes.uploadPhoto(file);
+      update("photos", [...form.photos, { key: result.key, label: "", url: result.url }]);
+    } catch {
+      toast({ title: "Erreur lors de l'upload", variant: "destructive" });
+    }
+  };
+
+  if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
+
+  return (
+    <div className="max-w-[1100px] mx-auto">
+      <div className="flex justify-between items-center mb-5">
+        <button onClick={() => navigate(isNew ? "/recipes" : `/recipes/${id}`)} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft className="h-4 w-4" /> Annuler
+        </button>
+        <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50">
+          <Save className="h-4 w-4" /> {saving ? "Sauvegarde…" : "Enregistrer"}
+        </button>
+      </div>
+
+      <h1 className="text-3xl font-bold tracking-tight mb-6">{isNew ? "Nouvelle recette" : "Modifier la recette"}</h1>
+
+      <div className="grid gap-5">
+        <section className="card-elevated p-5">
+          <h2 className="font-serif text-lg font-bold mb-4">Informations</h2>
+          <FieldLabel>Nom</FieldLabel>
+          <input className="input-field" value={form.name} onChange={(e) => update("name", e.target.value)} />
+          <FieldLabel>Description</FieldLabel>
+          <textarea className="input-field min-h-[80px]" value={form.description} onChange={(e) => update("description", e.target.value)} />
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <FieldLabel>Type</FieldLabel>
+              <select className="input-field" value={form.type} onChange={(e) => update("type", e.target.value)}>
+                {RECIPE_TYPES.map((t) => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <FieldLabel>Portions</FieldLabel>
+              <input className="input-field" type="number" value={form.portions} onChange={(e) => update("portions", +e.target.value)} />
+            </div>
+            <div>
+              <FieldLabel>Poids/pers (g)</FieldLabel>
+              <input className="input-field" type="number" value={form.portionWeight} onChange={(e) => update("portionWeight", +e.target.value)} />
+            </div>
+          </div>
+        </section>
+
+        <section className="card-elevated p-5">
+          <h2 className="font-serif text-lg font-bold mb-3">Photos</h2>
+          <p className="text-xs text-muted-foreground mb-3">Ajoutez jusqu'à 3 photos (ex: sur place et take away).</p>
+          <div className="flex gap-3 flex-wrap">
+            {form.photos.map((photo, idx) => (
+              <div key={idx} className="relative w-40 rounded-lg overflow-hidden border">
+                <img src={photo.url} alt={photo.label} className="w-full h-28 object-cover" />
+                <button onClick={() => update("photos", form.photos.filter((_, i) => i !== idx))} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-foreground/70 text-background flex items-center justify-center">
+                  <X className="h-3 w-3" />
+                </button>
+                <input className="w-full border-t px-2 py-1 text-xs text-center bg-transparent outline-none" value={photo.label} onChange={(e) => { const u = [...form.photos]; u[idx] = { ...u[idx], label: e.target.value }; update("photos", u); }} placeholder="Label…" />
+              </div>
+            ))}
+            {form.photos.length < 3 && (
+              <label className="w-40 h-36 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer text-muted-foreground hover:border-primary/40 transition-colors">
+                <ImagePlus className="h-7 w-7" />
+                <span className="text-xs font-medium">Ajouter photo</span>
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handlePhotoUpload(e.target.files[0]); e.target.value = ""; }} />
+              </label>
+            )}
+          </div>
+        </section>
+
+        <section className="card-elevated p-5">
+          <div className="flex justify-between items-center mb-3">
+            <h2 className="font-serif text-lg font-bold">Techniques</h2>
+            <button onClick={addTechnique} className="flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium hover:bg-muted">
+              <Plus className="h-3.5 w-3.5" /> Ajouter
+            </button>
+          </div>
+          {form.techniques.map((t, i) => (
+            <div key={i} className="flex gap-2 mb-2">
+              <span className="w-6 h-6 rounded-full bg-foreground text-background flex items-center justify-center text-xs font-bold shrink-0 mt-2">{i + 1}</span>
+              <textarea className="input-field flex-1 min-h-[50px]" value={t} onChange={(e) => updateTechnique(i, e.target.value)} />
+              <button onClick={() => removeTechnique(i)} className="p-1 mt-2 text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </section>
+
+        <section className="card-elevated p-5">
+          <div className="flex justify-between items-center mb-3">
+            <h2 className="font-serif text-lg font-bold">Ingrédients</h2>
+            <button onClick={addIngLine} className="flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium hover:bg-muted">
+              <Plus className="h-3.5 w-3.5" /> Ajouter
+            </button>
+          </div>
+          <table className="w-full text-sm">
+            <thead><tr className="border-b">
+              <th className="px-2 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Produit</th>
+              <th className="px-2 py-2 text-xs font-bold uppercase text-muted-foreground w-20">Qté</th>
+              <th className="px-2 py-2 text-xs font-bold uppercase text-muted-foreground w-16">Unité</th>
+              <th className="px-2 py-2 text-xs font-bold uppercase text-muted-foreground w-16">Perte %</th>
+              <th className="px-2 py-2 w-10" />
+            </tr></thead>
+            <tbody>
+              {form.ingredients.map((ri, i) => (
+                <tr key={i} className="border-b border-border/30">
+                  <td className="px-2 py-1">
+                    <select className="input-field !py-1 !text-xs" value={ri.ingredientId} onChange={(e) => updateIngLine(i, "ingredientId", e.target.value)}>
+                      {allIngredients.map((ing) => <option key={ing.ingredientId} value={ing.ingredientId}>{ing.name}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-2 py-1"><input className="input-field !py-1 !text-xs text-right" type="number" value={ri.qty} onChange={(e) => updateIngLine(i, "qty", +e.target.value)} /></td>
+                  <td className="px-2 py-1">
+                    <select className="input-field !py-1 !text-xs" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)}>
+                      {UNITS_QTY.map((u) => <option key={u}>{u}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-2 py-1"><input className="input-field !py-1 !text-xs text-right" type="number" value={ri.lossPct} onChange={(e) => updateIngLine(i, "lossPct", +e.target.value)} /></td>
+                  <td className="px-2 py-1"><button onClick={() => removeIngLine(i)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+
+        <section className="card-elevated p-5">
+          <h2 className="font-serif text-lg font-bold mb-4">Tarification</h2>
+          <div className="grid grid-cols-2 gap-6">
+            <div>
+              <h4 className="font-serif text-sm font-bold mb-3">Sur place</h4>
+              <FieldLabel>Coefficient</FieldLabel>
+              <input className="input-field" type="number" step="0.1" value={form.pricing.surPlace.coef} onChange={(e) => updatePricing("surPlace.coef", +e.target.value)} />
+              <FieldLabel>TVA %</FieldLabel>
+              <input className="input-field" type="number" value={form.pricing.surPlace.tva} onChange={(e) => updatePricing("surPlace.tva", +e.target.value)} />
+              <FieldLabel>Prix choisi TVAC</FieldLabel>
+              <input className="input-field" type="number" step="0.5" value={form.pricing.chosenPrice.surPlace} onChange={(e) => updatePricing("chosenPrice.surPlace", +e.target.value)} />
+            </div>
+            <div>
+              <h4 className="font-serif text-sm font-bold mb-3">Take away</h4>
+              <FieldLabel>Coefficient</FieldLabel>
+              <input className="input-field" type="number" step="0.1" value={form.pricing.takeAway.coef} onChange={(e) => updatePricing("takeAway.coef", +e.target.value)} />
+              <FieldLabel>TVA %</FieldLabel>
+              <input className="input-field" type="number" value={form.pricing.takeAway.tva} onChange={(e) => updatePricing("takeAway.tva", +e.target.value)} />
+              <FieldLabel>Prix choisi TVAC</FieldLabel>
+              <input className="input-field" type="number" step="0.5" value={form.pricing.chosenPrice.takeAway} onChange={(e) => updatePricing("chosenPrice.takeAway", +e.target.value)} />
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">{children}</label>;
+}

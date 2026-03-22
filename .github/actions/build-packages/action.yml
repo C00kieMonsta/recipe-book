@@ -1,0 +1,19 @@
+name: Build Workspace Packages
+description: Builds shared packages (types, ui) in dependency order
+
+runs:
+  using: composite
+  steps:
+    - name: Build types package
+      run: |
+        echo "📦 Building @packages/types..."
+        pnpm --filter @packages/types build
+        echo "✅ Types package built"
+      shell: bash
+
+    - name: Build ui package
+      run: |
+        echo "📦 Building @packages/ui..."
+        pnpm --filter @packages/ui build
+        echo "✅ UI package built"
+      shell: bash

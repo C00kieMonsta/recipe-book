@@ -1,8 +1,8 @@
 {
-  "name": "@infra/campaign-forge",
+  "name": "@infra/la-table-amelie",
   "version": "1.0.0",
   "private": true,
-  "description": "AWS CDK infrastructure for Campaign Forge",
+  "description": "AWS CDK infrastructure for La Table d'Amélie",
   "scripts": {
     "build": "tsc",
     "cdk": "cdk",

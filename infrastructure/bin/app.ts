@@ -13,22 +13,20 @@ const env = {
   region: process.env.CDK_DEFAULT_REGION || process.env.AWS_REGION || "eu-west-1",
 };
 const domainName = process.env.ROOT_DOMAIN || app.node.tryGetContext("domainName");
-const sesFromEmail = process.env.SES_FROM_EMAIL || app.node.tryGetContext("sesFromEmail");
 
-console.log(`Campaign Forge — stage: ${stage}, region: ${env.region}`);
+console.log(`La Table d'Amélie — stage: ${stage}, region: ${env.region}`);
 
-const data = new DataStack(app, `CF-Data-${stage}`, { env, stage });
+const data = new DataStack(app, `TA-Data-${stage}`, { env, stage });
 
-new BackendStack(app, `CF-Backend-${stage}`, {
+new BackendStack(app, `TA-Backend-${stage}`, {
   env,
   stage,
-  contactsTable: data.contactsTable,
-  campaignsTable: data.campaignsTable,
+  ingredientsTable: data.ingredientsTable,
+  recipesTable: data.recipesTable,
   domainName,
-  sesFromEmail,
 });
 
-new FrontendStack(app, `CF-Frontend-${stage}`, {
+new FrontendStack(app, `TA-Frontend-${stage}`, {
   env,
   stage,
   domainName,
