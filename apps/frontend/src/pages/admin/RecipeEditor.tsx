@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Save, Plus, X, ImagePlus } from "lucide-react";
 import type { Recipe, RecipeIngredient, RecipePricing, RecipePhoto, Ingredient } from "@packages/types";
-import { RECIPE_TYPES, UNITS_QTY } from "@packages/types";
+import { UNITS_QTY } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
@@ -30,6 +30,7 @@ export default function RecipeEditor() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [allIngredients, setAllIngredients] = useState<Ingredient[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -41,8 +42,9 @@ export default function RecipeEditor() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const ings = await api.ingredients.list();
+        const [ings, settings] = await Promise.all([api.ingredients.list(), api.settings.get()]);
         setAllIngredients(ings);
+        setCategories(settings.recipeCategories || []);
         if (!isNew && id) {
           const recipe = await api.recipes.get(id);
           setForm({
@@ -144,7 +146,7 @@ export default function RecipeEditor() {
             <div>
               <FieldLabel>Type</FieldLabel>
               <select className="input-field" value={form.type} onChange={(e) => update("type", e.target.value)}>
-                {RECIPE_TYPES.map((t) => <option key={t}>{t}</option>)}
+                {categories.map((t) => <option key={t}>{t}</option>)}
               </select>
             </div>
             <div>
@@ -160,21 +162,17 @@ export default function RecipeEditor() {
 
         <section className="card-elevated p-5">
           <h2 className="font-serif text-lg font-bold mb-3">Photos</h2>
-          <p className="text-xs text-muted-foreground mb-3">Ajoutez jusqu'à 3 photos (ex: sur place et take away).</p>
           <div className="flex gap-3 flex-wrap">
             {form.photos.map((photo, idx) => (
               <div key={idx} className="relative w-40 rounded-lg overflow-hidden border">
                 <img src={photo.url} alt={photo.label} className="w-full h-28 object-cover" />
-                <button onClick={() => update("photos", form.photos.filter((_, i) => i !== idx))} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-foreground/70 text-background flex items-center justify-center">
-                  <X className="h-3 w-3" />
-                </button>
+                <button onClick={() => update("photos", form.photos.filter((_, i) => i !== idx))} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-foreground/70 text-background flex items-center justify-center"><X className="h-3 w-3" /></button>
                 <input className="w-full border-t px-2 py-1 text-xs text-center bg-transparent outline-none" value={photo.label} onChange={(e) => { const u = [...form.photos]; u[idx] = { ...u[idx], label: e.target.value }; update("photos", u); }} placeholder="Label…" />
               </div>
             ))}
             {form.photos.length < 3 && (
               <label className="w-40 h-36 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer text-muted-foreground hover:border-primary/40 transition-colors">
-                <ImagePlus className="h-7 w-7" />
-                <span className="text-xs font-medium">Ajouter photo</span>
+                <ImagePlus className="h-7 w-7" /><span className="text-xs font-medium">Ajouter photo</span>
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handlePhotoUpload(e.target.files[0]); e.target.value = ""; }} />
               </label>
             )}
@@ -184,17 +182,13 @@ export default function RecipeEditor() {
         <section className="card-elevated p-5">
           <div className="flex justify-between items-center mb-3">
             <h2 className="font-serif text-lg font-bold">Techniques</h2>
-            <button onClick={addTechnique} className="flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium hover:bg-muted">
-              <Plus className="h-3.5 w-3.5" /> Ajouter
-            </button>
+            <button onClick={addTechnique} className="flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium hover:bg-muted"><Plus className="h-3.5 w-3.5" /> Ajouter</button>
           </div>
           {form.techniques.map((t, i) => (
             <div key={i} className="flex gap-2 mb-2">
               <span className="w-6 h-6 rounded-full bg-foreground text-background flex items-center justify-center text-xs font-bold shrink-0 mt-2">{i + 1}</span>
               <textarea className="input-field flex-1 min-h-[50px]" value={t} onChange={(e) => updateTechnique(i, e.target.value)} />
-              <button onClick={() => removeTechnique(i)} className="p-1 mt-2 text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
-              </button>
+              <button onClick={() => removeTechnique(i)} className="p-1 mt-2 text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
             </div>
           ))}
         </section>
@@ -202,9 +196,7 @@ export default function RecipeEditor() {
         <section className="card-elevated p-5">
           <div className="flex justify-between items-center mb-3">
             <h2 className="font-serif text-lg font-bold">Ingrédients</h2>
-            <button onClick={addIngLine} className="flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium hover:bg-muted">
-              <Plus className="h-3.5 w-3.5" /> Ajouter
-            </button>
+            <button onClick={addIngLine} className="flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium hover:bg-muted"><Plus className="h-3.5 w-3.5" /> Ajouter</button>
           </div>
           <table className="w-full text-sm">
             <thead><tr className="border-b">
@@ -217,17 +209,9 @@ export default function RecipeEditor() {
             <tbody>
               {form.ingredients.map((ri, i) => (
                 <tr key={i} className="border-b border-border/30">
-                  <td className="px-2 py-1">
-                    <select className="input-field !py-1 !text-xs" value={ri.ingredientId} onChange={(e) => updateIngLine(i, "ingredientId", e.target.value)}>
-                      {allIngredients.map((ing) => <option key={ing.ingredientId} value={ing.ingredientId}>{ing.name}</option>)}
-                    </select>
-                  </td>
+                  <td className="px-2 py-1"><select className="input-field !py-1 !text-xs" value={ri.ingredientId} onChange={(e) => updateIngLine(i, "ingredientId", e.target.value)}>{allIngredients.map((ing) => <option key={ing.ingredientId} value={ing.ingredientId}>{ing.name}</option>)}</select></td>
                   <td className="px-2 py-1"><input className="input-field !py-1 !text-xs text-right" type="number" value={ri.qty} onChange={(e) => updateIngLine(i, "qty", +e.target.value)} /></td>
-                  <td className="px-2 py-1">
-                    <select className="input-field !py-1 !text-xs" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)}>
-                      {UNITS_QTY.map((u) => <option key={u}>{u}</option>)}
-                    </select>
-                  </td>
+                  <td className="px-2 py-1"><select className="input-field !py-1 !text-xs" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)}>{UNITS_QTY.map((u) => <option key={u}>{u}</option>)}</select></td>
                   <td className="px-2 py-1"><input className="input-field !py-1 !text-xs text-right" type="number" value={ri.lossPct} onChange={(e) => updateIngLine(i, "lossPct", +e.target.value)} /></td>
                   <td className="px-2 py-1"><button onClick={() => removeIngLine(i)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button></td>
                 </tr>

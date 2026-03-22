@@ -1,12 +1,3 @@
-export const RECIPE_TYPES = [
-  "Buffet",
-  "Walking dinner",
-  "Lunch",
-  "Menu semaine",
-] as const;
-
-export type RecipeType = (typeof RECIPE_TYPES)[number];
-
 export const UNITS_QTY = ["g", "pièce", "ml", "botte"] as const;
 export type UnitQty = (typeof UNITS_QTY)[number];
 

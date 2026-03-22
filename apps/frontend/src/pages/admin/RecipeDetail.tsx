@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Pencil, Trash2, Save } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, Save, FileDown, ChefHat } from "lucide-react";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import type { Recipe, Ingredient, RecipePricing } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -11,6 +13,103 @@ const DEFAULT_PRICING: RecipePricing = {
   takeAway: { coef: 3, tva: 6 },
   chosenPrice: { surPlace: 0, takeAway: 0 },
 };
+
+function exportPdf(recipe: Recipe, ingredients: Ingredient[], totalCost: number) {
+  const doc = new jsPDF();
+  const m = 15;
+  let y = m;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.text(recipe.name, m, y + 7);
+  y += 12;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text(`${recipe.type} | ${recipe.portions} portions | ${recipe.portionWeight}g/pers`, m, y + 4);
+  y += 8;
+
+  if (recipe.description) {
+    doc.setFontSize(9);
+    const lines = doc.splitTextToSize(recipe.description, 180);
+    doc.text(lines, m, y + 4);
+    y += lines.length * 4 + 4;
+  }
+
+  y += 4;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text("Ingrédients", m, y + 4);
+  y += 8;
+
+  const ingRows = recipe.ingredients.map((ri) => {
+    const ing = ingredients.find((i) => i.ingredientId === ri.ingredientId);
+    if (!ing) return ["-", "-", "-", "-"];
+    const cost = calcIngredientLineCost(ri, ing);
+    return [ing.name, `${ri.qty} ${ri.unit}`, fmt(ing.price), fmt(cost)];
+  });
+  ingRows.push(["Total matières HTVA", "", "", fmt(totalCost)]);
+
+  autoTable(doc, {
+    startY: y,
+    head: [["Produit", "Quantité", "Prix/unité", "Coût"]],
+    body: ingRows,
+    margin: { left: m },
+    styles: { fontSize: 8 },
+    headStyles: { fillColor: [60, 60, 60] },
+  });
+
+  y = ((doc as unknown as Record<string, unknown>).lastAutoTable as { finalY: number })?.finalY ?? y + 40;
+  y += 8;
+
+  if (recipe.techniques.length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("Techniques", m, y + 4);
+    y += 8;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    recipe.techniques.forEach((t, i) => {
+      if (y > 270) { doc.addPage(); y = m; }
+      const text = `${i + 1}. ${t}`;
+      const lines = doc.splitTextToSize(text, 180);
+      doc.text(lines, m, y + 4);
+      y += lines.length * 4 + 3;
+    });
+  }
+
+  y += 6;
+  if (y > 250) { doc.addPage(); y = m; }
+
+  const portions = recipe.portions || 1;
+  const cpP = totalCost / portions;
+  const p = recipe.pricing || DEFAULT_PRICING;
+  const spHTVA = cpP * p.surPlace.coef;
+  const taHTVA = cpP * p.takeAway.coef;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text("Simulation de prix", m, y + 4);
+  y += 8;
+
+  autoTable(doc, {
+    startY: y,
+    head: [["", "Sur place", "Take away"]],
+    body: [
+      ["Coût/portion HTVA", fmt(cpP), fmt(cpP)],
+      ["COEF", String(p.surPlace.coef), String(p.takeAway.coef)],
+      ["Prix HTVA", fmt(spHTVA), fmt(taHTVA)],
+      ["TVA", `${p.surPlace.tva}%`, `${p.takeAway.tva}%`],
+      ["Prix TVAC", fmt(spHTVA * (1 + p.surPlace.tva / 100)), fmt(taHTVA * (1 + p.takeAway.tva / 100))],
+      ["Marge/portion", fmt(spHTVA - cpP), fmt(taHTVA - cpP)],
+    ],
+    margin: { left: m },
+    styles: { fontSize: 8 },
+    headStyles: { fillColor: [60, 60, 60] },
+  });
+
+  doc.save(`${recipe.name.replace(/[^a-zA-Z0-9àâéèêëïîôùûüç\s-]/g, "")}.pdf`);
+}
 
 export default function RecipeDetail() {
   const { id } = useParams<{ id: string }>();
@@ -52,6 +151,12 @@ export default function RecipeDetail() {
           <ArrowLeft className="h-4 w-4" /> Retour
         </button>
         <div className="flex gap-2">
+          <button onClick={() => navigate(`/recipes/${id}/cook`)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
+            <ChefHat className="h-4 w-4" /> Mode recette
+          </button>
+          <button onClick={() => exportPdf(recipe, ingredients, totalCost)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
+            <FileDown className="h-4 w-4" /> PDF
+          </button>
           <button onClick={() => navigate(`/recipes/${id}/edit`)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
             <Pencil className="h-4 w-4" /> Modifier
           </button>

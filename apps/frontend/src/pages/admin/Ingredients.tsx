@@ -1,11 +1,14 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Search, Plus, Upload, Pencil, Trash2, ArrowUpDown, X, Download, AlertTriangle, Check } from "lucide-react";
+import { Search, Plus, Upload, Trash2, ArrowUpDown, X, Check, FileSpreadsheet } from "lucide-react";
 import type { Ingredient } from "@packages/types";
 import { SUPPLIERS, UNITS_PRICE } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { fmt, supplierColor } from "@/lib/recipe-helpers";
+import { usePagination } from "@/hooks/use-pagination";
+import Pagination from "@/components/ui/Pagination";
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 
 type SortKey = "name" | "price" | "supplier";
 
@@ -24,14 +27,9 @@ export default function Ingredients() {
   const { toast } = useToast();
 
   const load = async () => {
-    try {
-      const data = await api.ingredients.list();
-      setIngredients(data);
-    } catch (e) {
-      toast({ title: "Erreur de chargement", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
+    try { setIngredients(await api.ingredients.list()); }
+    catch { toast({ title: "Erreur de chargement", variant: "destructive" }); }
+    finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
@@ -51,6 +49,8 @@ export default function Ingredients() {
     return arr;
   }, [ingredients, search, sortBy, sortDir, filterSupplier]);
 
+  const { page, totalPages, paginatedItems, setPage, next, prev, total } = usePagination(sorted, 25);
+
   const toggleSort = (col: SortKey) => {
     if (sortBy === col) setSortDir((d) => (d === 1 ? -1 : 1));
     else { setSortBy(col); setSortDir(1); }
@@ -58,29 +58,26 @@ export default function Ingredients() {
 
   const saveIngredient = async (data: Partial<Ingredient>) => {
     try {
-      if (data.ingredientId) {
-        await api.ingredients.update(data.ingredientId, data);
-      } else {
-        await api.ingredients.create(data);
-      }
-      setEditing(null);
-      load();
+      if (data.ingredientId) await api.ingredients.update(data.ingredientId, data);
+      else await api.ingredients.create(data);
+      setEditing(null); load();
       toast({ title: data.ingredientId ? "Ingrédient modifié" : "Ingrédient créé" });
-    } catch (e) {
-      toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" });
-    }
+    } catch { toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" }); }
   };
 
   const deleteIngredient = async (id: string) => {
-    try {
-      await api.ingredients.delete(id);
-      setDeleteConfirm(null);
-      setEditing(null);
-      load();
-      toast({ title: "Ingrédient supprimé" });
-    } catch (e) {
-      toast({ title: "Erreur lors de la suppression", variant: "destructive" });
-    }
+    try { await api.ingredients.delete(id); setDeleteConfirm(null); setEditing(null); load(); toast({ title: "Ingrédient supprimé" }); }
+    catch { toast({ title: "Erreur lors de la suppression", variant: "destructive" }); }
+  };
+
+  const exportExcel = () => {
+    const rows = ingredients.map((i) => ({
+      Nom: i.name, "Prix HTVA": i.price, Unité: i.unit, Fournisseur: i.supplier, Commentaire: i.comment || "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Ingrédients");
+    XLSX.writeFile(wb, "ingredients.xlsx");
   };
 
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
@@ -93,27 +90,22 @@ export default function Ingredients() {
           <p className="text-sm text-muted-foreground mt-1">{ingredients.length} ingrédients référencés</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowDedup(true)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors text-destructive border-destructive/30">
-            Dédoublonner
-          </button>
-          <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
-            <Upload className="h-4 w-4" /> Importer CSV
-          </button>
-          <button onClick={() => setEditing({ name: "", price: 0, unit: "€/kg", supplier: "Barn", comment: "" })} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm hover:opacity-90 transition-opacity">
-            <Plus className="h-4 w-4" /> Nouvel ingrédient
-          </button>
+          <button onClick={() => setShowDedup(true)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors text-destructive border-destructive/30">Dédoublonner</button>
+          <button onClick={exportExcel} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors"><FileSpreadsheet className="h-4 w-4" /> Excel</button>
+          <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors"><Upload className="h-4 w-4" /> Importer CSV</button>
+          <button onClick={() => setEditing({ name: "", price: 0, unit: "€/kg", supplier: "Barn", comment: "" })} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm hover:opacity-90 transition-opacity"><Plus className="h-4 w-4" /> Nouvel ingrédient</button>
         </div>
       </div>
 
       <div className="flex gap-4 mb-6 flex-wrap items-center">
         <div className="flex items-center gap-2 px-3 py-2 bg-card border rounded-lg flex-1 max-w-sm">
           <Search className="h-4 w-4 text-muted-foreground" />
-          <input className="flex-1 bg-transparent outline-none text-sm" placeholder="Rechercher un ingrédient…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="flex-1 bg-transparent outline-none text-sm" placeholder="Rechercher un ingrédient…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
         </div>
         <div className="flex gap-1.5 flex-wrap">
-          <button onClick={() => setFilterSupplier("all")} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${filterSupplier === "all" ? "bg-foreground text-background border-foreground" : "bg-card hover:bg-muted"}`}>Tous</button>
+          <button onClick={() => { setFilterSupplier("all"); setPage(1); }} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${filterSupplier === "all" ? "bg-foreground text-background border-foreground" : "bg-card hover:bg-muted"}`}>Tous</button>
           {suppliers.map((s) => (
-            <button key={s} onClick={() => setFilterSupplier(s)} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${filterSupplier === s ? "bg-foreground text-background border-foreground" : "bg-card hover:bg-muted"}`} style={filterSupplier !== s ? { borderLeftColor: supplierColor(s), borderLeftWidth: 3 } : {}}>
+            <button key={s} onClick={() => { setFilterSupplier(s); setPage(1); }} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${filterSupplier === s ? "bg-foreground text-background border-foreground" : "bg-card hover:bg-muted"}`} style={filterSupplier !== s ? { borderLeftColor: supplierColor(s), borderLeftWidth: 3 } : {}}>
               {s}
             </button>
           ))}
@@ -134,22 +126,18 @@ export default function Ingredients() {
             </tr>
           </thead>
           <tbody>
-            {sorted.map((ing) => (
+            {paginatedItems.map((ing) => (
               <tr key={ing.ingredientId} onClick={() => setEditing(ing)} className="border-b border-border/50 hover:bg-muted/30 cursor-pointer transition-colors">
                 <td className="px-3 py-2.5 font-semibold">{ing.name}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{fmt(ing.price)}</td>
                 <td className="px-3 py-2.5">{ing.unit}</td>
                 <td className="px-3 py-2.5">
-                  <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold border" style={{ color: supplierColor(ing.supplier), borderColor: supplierColor(ing.supplier) + "55", background: supplierColor(ing.supplier) + "12" }}>
-                    {ing.supplier}
-                  </span>
+                  <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold border" style={{ color: supplierColor(ing.supplier), borderColor: supplierColor(ing.supplier) + "55", background: supplierColor(ing.supplier) + "12" }}>{ing.supplier}</span>
                 </td>
                 <td className="px-3 py-2.5 text-muted-foreground text-xs">{ing.comment}</td>
                 <td className="px-3 py-2.5 text-muted-foreground text-xs">{ing.updatedAt ? new Date(ing.updatedAt).toLocaleDateString("fr-BE") : ""}</td>
                 <td className="px-3 py-2.5">
-                  <button onClick={(e) => { e.stopPropagation(); setDeleteConfirm(ing.ingredientId); }} className="p-1 rounded hover:bg-destructive/10 text-destructive/70 hover:text-destructive transition-colors">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); setDeleteConfirm(ing.ingredientId); }} className="p-1 rounded hover:bg-destructive/10 text-destructive/70 hover:text-destructive transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
                 </td>
               </tr>
             ))}
@@ -157,11 +145,9 @@ export default function Ingredients() {
         </table>
       </div>
 
-      {editing && (
-        <Modal onClose={() => setEditing(null)}>
-          <IngredientForm ingredient={editing} onSave={saveIngredient} onCancel={() => setEditing(null)} onDelete={editing.ingredientId ? () => setDeleteConfirm(editing.ingredientId!) : undefined} />
-        </Modal>
-      )}
+      <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} onPrev={prev} onNext={next} />
+
+      {editing && <Modal onClose={() => setEditing(null)}><IngredientForm ingredient={editing} onSave={saveIngredient} onCancel={() => setEditing(null)} onDelete={editing.ingredientId ? () => setDeleteConfirm(editing.ingredientId!) : undefined} /></Modal>}
 
       {deleteConfirm && (
         <Modal onClose={() => setDeleteConfirm(null)}>
@@ -180,31 +166,15 @@ export default function Ingredients() {
         <Modal onClose={() => !deduping && setShowDedup(false)}>
           <div className="text-center py-2">
             <h3 className="font-serif text-lg font-bold mb-2">Supprimer les doublons</h3>
-            <p className="text-muted-foreground text-sm mb-6">
-              Les ingrédients portant le même nom seront fusionnés.<br />
-              Seule la version la plus récente est conservée.
-            </p>
+            <p className="text-muted-foreground text-sm mb-6">Les ingrédients portant le même nom seront fusionnés.<br />Seule la version la plus récente est conservée.</p>
             <div className="flex gap-3 justify-center">
               <button onClick={() => setShowDedup(false)} disabled={deduping} className="px-4 py-2 border rounded-lg text-sm font-medium disabled:opacity-50">Annuler</button>
-              <button
-                disabled={deduping}
-                onClick={async () => {
-                  setDeduping(true);
-                  try {
-                    const { removed } = await api.ingredients.deduplicate();
-                    setShowDedup(false);
-                    load();
-                    toast({ title: removed > 0 ? `${removed} doublon${removed > 1 ? "s" : ""} supprimé${removed > 1 ? "s" : ""}` : "Aucun doublon trouvé" });
-                  } catch (e) {
-                    toast({ title: (e as Error).message || "Erreur", variant: "destructive" });
-                  } finally {
-                    setDeduping(false);
-                  }
-                }}
-                className="px-4 py-2 bg-destructive text-destructive-foreground rounded-lg text-sm font-medium disabled:opacity-60"
-              >
-                {deduping ? "Suppression…" : "Dédoublonner"}
-              </button>
+              <button disabled={deduping} onClick={async () => {
+                setDeduping(true);
+                try { const { removed } = await api.ingredients.deduplicate(); setShowDedup(false); load(); toast({ title: removed > 0 ? `${removed} doublon${removed > 1 ? "s" : ""} supprimé${removed > 1 ? "s" : ""}` : "Aucun doublon trouvé" }); }
+                catch (e) { toast({ title: (e as Error).message || "Erreur", variant: "destructive" }); }
+                finally { setDeduping(false); }
+              }} className="px-4 py-2 bg-destructive text-destructive-foreground rounded-lg text-sm font-medium disabled:opacity-60">{deduping ? "Suppression…" : "Dédoublonner"}</button>
             </div>
           </div>
         </Modal>
@@ -212,20 +182,10 @@ export default function Ingredients() {
 
       {showImport && (
         <Modal onClose={() => setShowImport(false)}>
-          <CsvImport
-            existingIngredients={ingredients}
-            onImport={async (rows) => {
-              try {
-                const result = await api.ingredients.import(rows);
-                setShowImport(false);
-                load();
-                toast({ title: `Import terminé — ${result.created} créés, ${result.updated} mis à jour` });
-              } catch (e) {
-                toast({ title: (e as Error).message || "Erreur lors de l'import", variant: "destructive" });
-              }
-            }}
-            onCancel={() => setShowImport(false)}
-          />
+          <CsvImport existingIngredients={ingredients} onImport={async (rows) => {
+            try { const result = await api.ingredients.import(rows); setShowImport(false); load(); toast({ title: `Import terminé — ${result.created} créés, ${result.updated} mis à jour` }); }
+            catch (e) { toast({ title: (e as Error).message || "Erreur lors de l'import", variant: "destructive" }); }
+          }} onCancel={() => setShowImport(false)} />
         </Modal>
       )}
     </div>
@@ -235,10 +195,7 @@ export default function Ingredients() {
 function Th({ children, onClick, active, dir, className = "" }: { children: React.ReactNode; onClick: () => void; active: boolean; dir: number; className?: string }) {
   return (
     <th onClick={onClick} className={`px-3 py-2.5 text-xs font-bold uppercase tracking-wider text-muted-foreground cursor-pointer select-none hover:text-foreground ${className}`}>
-      <span className="inline-flex items-center gap-1">
-        {children}
-        {active && <ArrowUpDown className="h-3 w-3" />}
-      </span>
+      <span className="inline-flex items-center gap-1">{children}{active && <ArrowUpDown className="h-3 w-3" />}</span>
     </th>
   );
 }
@@ -246,9 +203,7 @@ function Th({ children, onClick, active, dir, className = "" }: { children: Reac
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-card rounded-2xl p-7 max-w-lg w-[92%] max-h-[90vh] overflow-auto shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
-        {children}
-      </div>
+      <div className="bg-card rounded-2xl p-7 max-w-lg w-[92%] max-h-[90vh] overflow-auto shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>{children}</div>
     </div>
   );
 }
@@ -256,28 +211,17 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
 function IngredientForm({ ingredient, onSave, onCancel, onDelete }: { ingredient: Partial<Ingredient>; onSave: (d: Partial<Ingredient>) => void; onCancel: () => void; onDelete?: () => void }) {
   const [form, setForm] = useState({ ...ingredient });
   const u = (k: string, v: unknown) => setForm((p) => ({ ...p, [k]: v }));
-
   return (
     <div>
       <h2 className="font-serif text-xl font-bold mb-4">{ingredient.ingredientId ? "Modifier l'ingrédient" : "Nouvel ingrédient"}</h2>
       <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Nom</label>
       <input className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" value={form.name || ""} onChange={(e) => u("name", e.target.value)} />
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Prix HTVA</label>
-          <input className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" type="number" step="0.01" value={form.price ?? 0} onChange={(e) => u("price", +e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Unité</label>
-          <select className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" value={form.unit || "€/kg"} onChange={(e) => u("unit", e.target.value)}>
-            {UNITS_PRICE.map((u) => <option key={u}>{u}</option>)}
-          </select>
-        </div>
+        <div><label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Prix HTVA</label><input className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" type="number" step="0.01" value={form.price ?? 0} onChange={(e) => u("price", +e.target.value)} /></div>
+        <div><label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Unité</label><select className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" value={form.unit || "€/kg"} onChange={(e) => u("unit", e.target.value)}>{UNITS_PRICE.map((u) => <option key={u}>{u}</option>)}</select></div>
       </div>
       <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Fournisseur</label>
-      <select className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" value={form.supplier || "Barn"} onChange={(e) => u("supplier", e.target.value)}>
-        {SUPPLIERS.map((s) => <option key={s}>{s}</option>)}
-      </select>
+      <select className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" value={form.supplier || "Barn"} onChange={(e) => u("supplier", e.target.value)}>{SUPPLIERS.map((s) => <option key={s}>{s}</option>)}</select>
       <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Commentaire</label>
       <textarea className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none min-h-[60px]" value={form.comment || ""} onChange={(e) => u("comment", e.target.value)} />
       <div className="flex justify-between mt-6">
@@ -308,9 +252,7 @@ function CsvImport({ existingIngredients, onImport, onCancel }: { existingIngred
       complete: (results) => {
         if (results.data.length > 0 && Object.keys(results.data[0] as object).length <= 1) {
           Papa.parse(file, { header: true, skipEmptyLines: true, complete: (r2) => processResults(r2.data as Record<string, string>[]) });
-        } else {
-          processResults(results.data as Record<string, string>[]);
-        }
+        } else { processResults(results.data as Record<string, string>[]); }
       },
     });
   };
@@ -325,8 +267,7 @@ function CsvImport({ existingIngredients, onImport, onCancel }: { existingIngred
       const existing = existingIngredients.find((e) => e.name.toLowerCase() === name.toLowerCase());
       return { nom: name, prix_htva: price, unite: unit, fournisseur: supplier, commentaire: comment, _status: existing ? "update" : "new" };
     }).filter((r) => r.nom);
-    setParsed(rows);
-    setStep("preview");
+    setParsed(rows); setStep("preview");
   };
 
   const newCount = parsed.filter((r) => r._status === "new").length;
@@ -336,19 +277,15 @@ function CsvImport({ existingIngredients, onImport, onCancel }: { existingIngred
     <div className="min-w-[480px]">
       <h2 className="font-serif text-xl font-bold mb-1">Importer des ingrédients</h2>
       <p className="text-xs text-muted-foreground mb-5">Format CSV : <code className="bg-muted px-1.5 py-0.5 rounded text-[11px]">nom ; prix_htva ; unite ; fournisseur ; commentaire</code></p>
-
       {step === "upload" && (
         <>
           <div className="flex flex-col items-center justify-center gap-2 p-10 border-2 border-dashed rounded-xl cursor-pointer text-muted-foreground hover:border-primary/40 transition-colors" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }} onClick={() => fileRef.current?.click()}>
-            <Upload className="h-8 w-8" />
-            <span className="text-sm font-medium">Glisser-déposer votre fichier CSV</span>
-            <span className="text-xs">ou cliquer pour parcourir</span>
+            <Upload className="h-8 w-8" /><span className="text-sm font-medium">Glisser-déposer votre fichier CSV</span><span className="text-xs">ou cliquer pour parcourir</span>
           </div>
           <input ref={fileRef} type="file" accept=".csv,.tsv,.txt" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
           <div className="flex justify-end mt-5"><button onClick={onCancel} className="px-4 py-2 border rounded-lg text-sm font-medium">Annuler</button></div>
         </>
       )}
-
       {step === "preview" && (
         <>
           <div className="flex justify-between items-center px-4 py-2.5 bg-muted rounded-lg mb-4">
@@ -360,12 +297,7 @@ function CsvImport({ existingIngredients, onImport, onCancel }: { existingIngred
           </div>
           <div className="max-h-[300px] overflow-y-auto border rounded-lg">
             <table className="w-full text-sm">
-              <thead><tr className="border-b">
-                <th className="px-3 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Statut</th>
-                <th className="px-3 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Nom</th>
-                <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Prix</th>
-                <th className="px-3 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Fournisseur</th>
-              </tr></thead>
+              <thead><tr className="border-b"><th className="px-3 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Statut</th><th className="px-3 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Nom</th><th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Prix</th><th className="px-3 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Fournisseur</th></tr></thead>
               <tbody>
                 {parsed.slice(0, 50).map((row, i) => (
                   <tr key={i} className="border-b border-border/30">
@@ -382,13 +314,8 @@ function CsvImport({ existingIngredients, onImport, onCancel }: { existingIngred
             <button onClick={() => setStep("upload")} className="px-4 py-2 border rounded-lg text-sm font-medium">Changer de fichier</button>
             <div className="flex gap-2">
               <button onClick={onCancel} disabled={importing} className="px-4 py-2 border rounded-lg text-sm font-medium disabled:opacity-50">Annuler</button>
-              <button
-                onClick={async () => { setImporting(true); await onImport(parsed); setImporting(false); }}
-                disabled={importing}
-                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm disabled:opacity-60"
-              >
-                <Check className="h-4 w-4" />
-                {importing ? `Import en cours…` : `Importer ${parsed.length} ingrédients`}
+              <button onClick={async () => { setImporting(true); await onImport(parsed); setImporting(false); }} disabled={importing} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm disabled:opacity-60">
+                <Check className="h-4 w-4" />{importing ? "Import en cours…" : `Importer ${parsed.length} ingrédients`}
               </button>
             </div>
           </div>

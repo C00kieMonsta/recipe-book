@@ -15,7 +15,7 @@ import { ConfigService } from "../config/config.service";
 @Injectable()
 export class DdbService {
   readonly client: DynamoDBDocumentClient;
-  readonly tables: { ingredients: string; recipes: string };
+  readonly tables: { ingredients: string; recipes: string; settings: string; events: string };
 
   constructor(private config: ConfigService) {
     const endpoint = config.get("DDB_ENDPOINT");

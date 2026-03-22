@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RECIPE_TYPES, UNITS_QTY } from "../entities/recipe";
+import { UNITS_QTY } from "../entities/recipe";
 
 const recipeIngredientSchema = z.object({
   ingredientId: z.string().min(1),

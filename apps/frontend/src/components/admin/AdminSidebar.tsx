@@ -1,10 +1,13 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { BookOpen, ClipboardList, LogOut } from "lucide-react";
+import { BarChart3, BookOpen, ClipboardList, Calendar, Settings, LogOut } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const menuItems = [
+  { path: "/", icon: BarChart3, label: "Tableau de bord", exact: true },
   { path: "/recipes", icon: BookOpen, label: "Recettes" },
   { path: "/ingredients", icon: ClipboardList, label: "Ingrédients" },
+  { path: "/events", icon: Calendar, label: "Événements" },
+  { path: "/settings", icon: Settings, label: "Paramètres" },
 ];
 
 export default function AdminSidebar() {
@@ -29,7 +32,9 @@ export default function AdminSidebar() {
 
       <nav className="flex-1 px-3 space-y-1">
         {menuItems.map((item) => {
-          const isActive = location.pathname.startsWith(item.path);
+          const isActive = item.exact
+            ? location.pathname === item.path
+            : location.pathname.startsWith(item.path);
           return (
             <Link
               key={item.path}

@@ -1,11 +1,14 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Plus, Upload, Check, Download, AlertTriangle } from "lucide-react";
-import type { Recipe, Ingredient } from "@packages/types";
+import { Search, Plus, Upload, Check, Download, AlertTriangle, FileSpreadsheet } from "lucide-react";
+import type { Recipe, Ingredient, AppSettings } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { calcRecipeCost, fmt } from "@/lib/recipe-helpers";
+import { usePagination } from "@/hooks/use-pagination";
+import Pagination from "@/components/ui/Pagination";
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 
 const CSV_HEADERS = [
   "recette", "type", "portions", "poids_portion_g",
@@ -60,6 +63,7 @@ interface PreviewRow {
 export default function Recipes() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
@@ -68,14 +72,18 @@ export default function Recipes() {
   const { toast } = useToast();
 
   const load = () =>
-    Promise.all([api.recipes.list(), api.ingredients.list()])
-      .then(([r, i]) => { setRecipes(r); setIngredients(i); })
+    Promise.all([api.recipes.list(), api.ingredients.list(), api.settings.get()])
+      .then(([r, i, s]) => { setRecipes(r); setIngredients(i); setCategories(s.recipeCategories || []); })
       .catch(() => toast({ title: "Erreur de chargement", variant: "destructive" }))
       .finally(() => setLoading(false));
 
   useEffect(() => { load(); }, []);
 
-  const types = useMemo(() => [...new Set(recipes.map((r) => r.type))], [recipes]);
+  const types = useMemo(() => {
+    const fromRecipes = [...new Set(recipes.map((r) => r.type))];
+    const all = [...new Set([...categories, ...fromRecipes])];
+    return all;
+  }, [recipes, categories]);
 
   const shown = useMemo(() => {
     let arr = recipes;
@@ -83,6 +91,28 @@ export default function Recipes() {
     if (filterType !== "all") arr = arr.filter((r) => r.type === filterType);
     return arr;
   }, [recipes, search, filterType]);
+
+  const { page, totalPages, paginatedItems, setPage, next, prev, total } = usePagination(shown, 24);
+
+  const exportExcel = () => {
+    const rows = recipes.map((r) => {
+      const cost = calcRecipeCost(r, ingredients);
+      return {
+        Nom: r.name,
+        Type: r.type,
+        Portions: r.portions,
+        "Poids (g)": r.portionWeight,
+        "Coût total": +cost.toFixed(2),
+        "Prix SP TVAC": r.pricing?.chosenPrice?.surPlace || 0,
+        "Prix TA TVAC": r.pricing?.chosenPrice?.takeAway || 0,
+        "Nb ingrédients": r.ingredients.length,
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Recettes");
+    XLSX.writeFile(wb, "recettes.xlsx");
+  };
 
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
 
@@ -94,6 +124,9 @@ export default function Recipes() {
           <p className="text-sm text-muted-foreground mt-1">{recipes.length} recettes au total</p>
         </div>
         <div className="flex gap-2">
+          <button onClick={exportExcel} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
+            <FileSpreadsheet className="h-4 w-4" /> Excel
+          </button>
           <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
             <Upload className="h-4 w-4" /> Importer
           </button>
@@ -106,16 +139,16 @@ export default function Recipes() {
       <div className="flex gap-4 mb-6 flex-wrap items-center">
         <div className="flex items-center gap-2 px-3 py-2 bg-card border rounded-lg flex-1 max-w-sm">
           <Search className="h-4 w-4 text-muted-foreground" />
-          <input className="flex-1 bg-transparent outline-none text-sm" placeholder="Rechercher une recette…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="flex-1 bg-transparent outline-none text-sm" placeholder="Rechercher une recette…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
         </div>
         <div className="flex gap-1.5 flex-wrap">
-          <PillBtn active={filterType === "all"} onClick={() => setFilterType("all")}>Tous</PillBtn>
-          {types.map((t) => <PillBtn key={t} active={filterType === t} onClick={() => setFilterType(t)}>{t}</PillBtn>)}
+          <PillBtn active={filterType === "all"} onClick={() => { setFilterType("all"); setPage(1); }}>Tous</PillBtn>
+          {types.map((t) => <PillBtn key={t} active={filterType === t} onClick={() => { setFilterType(t); setPage(1); }}>{t}</PillBtn>)}
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-        {shown.map((r) => {
+        {paginatedItems.map((r) => {
           const cost = calcRecipeCost(r, ingredients);
           return (
             <button key={r.recipeId} onClick={() => navigate(`/recipes/${r.recipeId}`)} className="text-left border rounded-xl bg-card overflow-hidden hover:shadow-md transition-shadow group">
@@ -138,6 +171,8 @@ export default function Recipes() {
           );
         })}
       </div>
+
+      <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} onPrev={prev} onNext={next} />
 
       {showImport && (
         <Modal onClose={() => setShowImport(false)}>
@@ -229,70 +264,32 @@ function RecipeImport({ existingNames, onImport, onCancel }: {
   const processJson = (data: Array<Record<string, unknown>>) => {
     const rows: PreviewRow[] = [];
     const payload: unknown[] = [];
-
     for (const item of data) {
       const name = String(item.name || "").trim();
       if (!name) continue;
       const ingredients = Array.isArray(item.ingredients) ? item.ingredients : [];
-      rows.push({
-        name,
-        type: String(item.type || "Buffet"),
-        portions: Number(item.portions) || 1,
-        portionWeight: Number(item.portionWeight) || 150,
-        ingredientCount: ingredients.length,
-        isDup: existingSet.has(name.toLowerCase()),
-        raw: item,
-      });
+      rows.push({ name, type: String(item.type || "Buffet"), portions: Number(item.portions) || 1, portionWeight: Number(item.portionWeight) || 150, ingredientCount: ingredients.length, isDup: existingSet.has(name.toLowerCase()), raw: item });
       payload.push(item);
     }
-
-    setPreview(rows);
-    setApiPayload(payload);
-    setUnmapped([]);
-    setStep("preview");
+    setPreview(rows); setApiPayload(payload); setUnmapped([]); setStep("preview");
   };
 
   const processCsv = (data: Record<string, string>[]) => {
     if (!data.length) return;
-
     const rawKeys = Object.keys(data[0]);
-    const unknown = rawKeys.filter((k) => {
-      const norm = k.trim().toLowerCase().replace(/[\s/]+/g, "_");
-      return !COL_ALIASES[norm];
-    });
+    const unknown = rawKeys.filter((k) => { const norm = k.trim().toLowerCase().replace(/[\s/]+/g, "_"); return !COL_ALIASES[norm]; });
     setUnmapped(unknown);
-
     const rows: PreviewRow[] = [];
     const payload: unknown[] = [];
-
     for (const raw of data) {
       const norm: Record<string, string> = {};
       for (const [k, v] of Object.entries(raw)) norm[normaliseKey(k)] = v;
       const name = (norm.recette || "").trim();
       if (!name) continue;
-
-      rows.push({
-        name,
-        type: (norm.type || "Buffet").trim(),
-        portions: Number(norm.portions) || 1,
-        portionWeight: Number(norm.poids_portion) || 150,
-        ingredientCount: 0,
-        isDup: existingSet.has(name.toLowerCase()),
-        raw,
-      });
-      payload.push({
-        recette: name, type: norm.type || "Buffet",
-        portions: norm.portions, poids_portion: norm.poids_portion,
-        coeff_sur_place: norm.coeff_sp, coeff_take_away: norm.coeff_ta,
-        tva_sp: norm.tva_sp, tva_ta: norm.tva_ta,
-        prix_tvac_sp: norm.prix_tvac_sp, prix_tvac_ta: norm.prix_tvac_ta,
-        description: norm.description,
-      });
+      rows.push({ name, type: (norm.type || "Buffet").trim(), portions: Number(norm.portions) || 1, portionWeight: Number(norm.poids_portion) || 150, ingredientCount: 0, isDup: existingSet.has(name.toLowerCase()), raw });
+      payload.push({ recette: name, type: norm.type || "Buffet", portions: norm.portions, poids_portion: norm.poids_portion, coeff_sur_place: norm.coeff_sp, coeff_take_away: norm.coeff_ta, tva_sp: norm.tva_sp, tva_ta: norm.tva_ta, prix_tvac_sp: norm.prix_tvac_sp, prix_tvac_ta: norm.prix_tvac_ta, description: norm.description });
     }
-
-    setPreview(rows);
-    setApiPayload(payload);
-    setStep("preview");
+    setPreview(rows); setApiPayload(payload); setStep("preview");
   };
 
   const newCount = preview.filter((r) => !r.isDup).length;
@@ -302,37 +299,18 @@ function RecipeImport({ existingNames, onImport, onCancel }: {
   return (
     <div>
       <h2 className="font-serif text-xl font-bold mb-1">Importer des recettes</h2>
-      <p className="text-xs text-muted-foreground mb-5">
-        Formats supportés : <strong>CSV</strong> (1 ligne = 1 recette) ou <strong>JSON</strong> (avec ingrédients). Les recettes existantes sont ignorées.
-      </p>
+      <p className="text-xs text-muted-foreground mb-5">Formats supportés : <strong>CSV</strong> ou <strong>JSON</strong>. Les recettes existantes sont ignorées.</p>
 
       {step === "upload" && (
         <>
-          <div
-            className="flex flex-col items-center justify-center gap-2 p-10 border-2 border-dashed rounded-xl cursor-pointer text-muted-foreground hover:border-primary/40 transition-colors"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}
-            onClick={() => fileRef.current?.click()}
-          >
+          <div className="flex flex-col items-center justify-center gap-2 p-10 border-2 border-dashed rounded-xl cursor-pointer text-muted-foreground hover:border-primary/40 transition-colors" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }} onClick={() => fileRef.current?.click()}>
             <Upload className="h-8 w-8" />
             <span className="text-sm font-medium">Glisser-déposer votre fichier CSV ou JSON</span>
             <span className="text-xs">ou cliquer pour parcourir</span>
           </div>
           <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,.json" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
-
-          <div className="mt-5 p-4 bg-muted/50 rounded-xl text-xs space-y-2">
-            <p className="font-semibold text-sm">Colonnes CSV <span className="font-normal text-muted-foreground">(séparateur : point-virgule)</span></p>
-            <div className="flex flex-wrap gap-1.5">
-              {CSV_HEADERS.map((h) => (
-                <code key={h} className="bg-card px-2 py-0.5 rounded border text-[11px]">{h}</code>
-              ))}
-            </div>
-          </div>
-
           <div className="flex justify-between mt-5">
-            <button onClick={downloadTemplate} className="flex items-center gap-2 px-3 py-2 border rounded-lg text-sm font-medium hover:bg-muted">
-              <Download className="h-4 w-4" /> Modèle CSV
-            </button>
+            <button onClick={downloadTemplate} className="flex items-center gap-2 px-3 py-2 border rounded-lg text-sm font-medium hover:bg-muted"><Download className="h-4 w-4" /> Modèle CSV</button>
             <button onClick={onCancel} className="px-4 py-2 border rounded-lg text-sm font-medium">Annuler</button>
           </div>
         </>
@@ -347,14 +325,12 @@ function RecipeImport({ existingNames, onImport, onCancel }: {
               {dupCount > 0 && <span className="px-2.5 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">{dupCount} existantes</span>}
             </div>
           </div>
-
           {unmapped.length > 0 && (
             <div className="flex gap-2 items-start p-3 bg-amber-50 border border-amber-200 rounded-lg mb-4 text-xs text-amber-800">
               <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
               <span>Colonnes non reconnues : {unmapped.map((c) => <code key={c} className="bg-amber-100 px-1 rounded mx-0.5">{c}</code>)}</span>
             </div>
           )}
-
           <div className="max-h-[340px] overflow-y-auto border rounded-xl">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-card z-10">
@@ -375,24 +351,17 @@ function RecipeImport({ existingNames, onImport, onCancel }: {
                     <td className="px-3 py-2 text-right tabular-nums">{r.portions}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{r.portionWeight}g</td>
                     {hasIngredients && <td className="px-3 py-2 text-right tabular-nums">{r.ingredientCount}</td>}
-                    <td className="px-3 py-2 text-center">
-                      {r.isDup && <span title="Déjà existante" className="text-amber-500 text-xs">⚠</span>}
-                    </td>
+                    <td className="px-3 py-2 text-center">{r.isDup && <span title="Déjà existante" className="text-amber-500 text-xs">⚠</span>}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-
           <div className="flex justify-between mt-5">
             <button onClick={() => setStep("upload")} disabled={importing} className="px-4 py-2 border rounded-lg text-sm font-medium disabled:opacity-50">Changer de fichier</button>
             <div className="flex gap-2">
               <button onClick={onCancel} disabled={importing} className="px-4 py-2 border rounded-lg text-sm font-medium disabled:opacity-50">Annuler</button>
-              <button
-                onClick={async () => { setImporting(true); await onImport(apiPayload); setImporting(false); }}
-                disabled={newCount === 0 || importing}
-                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm disabled:opacity-50"
-              >
+              <button onClick={async () => { setImporting(true); await onImport(apiPayload); setImporting(false); }} disabled={newCount === 0 || importing} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm disabled:opacity-50">
                 <Check className="h-4 w-4" />
                 {importing ? "Import en cours…" : `Importer ${newCount} recette${newCount > 1 ? "s" : ""}`}
               </button>

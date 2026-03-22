@@ -1,4 +1,4 @@
-import type { Ingredient, Recipe } from "@packages/types";
+import type { Ingredient, Recipe, AppSettings, AppEvent } from "@packages/types";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 const TOKEN_KEY = "admin_token";
@@ -60,5 +60,16 @@ export const api = {
     delete: (id: string) => request<{ ok: boolean }>(`/admin/recipes/${id}`, { method: "DELETE" }),
     import: (rows: unknown[]) => request<{ created: number; skipped: number; unmatchedIngredients: string[] }>("/admin/recipes/import", { method: "POST", body: JSON.stringify(rows) }),
     uploadPhoto: (file: File) => uploadRequest<{ key: string; url: string }>("/admin/recipes/upload-photo", file),
+  },
+  settings: {
+    get: () => request<AppSettings>("/admin/settings"),
+    update: (data: Partial<AppSettings>) => request<AppSettings>("/admin/settings", { method: "PATCH", body: JSON.stringify(data) }),
+  },
+  events: {
+    list: () => request<AppEvent[]>("/admin/events"),
+    get: (id: string) => request<AppEvent>(`/admin/events/${id}`),
+    create: (data: Partial<AppEvent>) => request<AppEvent>("/admin/events", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<AppEvent>) => request<AppEvent>(`/admin/events/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    delete: (id: string) => request<{ ok: boolean }>(`/admin/events/${id}`, { method: "DELETE" }),
   },
 };
