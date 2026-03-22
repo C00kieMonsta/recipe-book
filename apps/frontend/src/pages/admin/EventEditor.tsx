@@ -155,7 +155,7 @@ export default function EventEditor() {
               <input className="input-field" type="number" min={1} value={guestCount} onChange={(e) => setGuestCount(+e.target.value)} />
             </div>
             <div>
-              <FieldLabel>Prix de vente par convive (€)</FieldLabel>
+              <FieldLabel>Prix de vente par convive HTVA (€)</FieldLabel>
               <input className="input-field" type="number" step="0.5" min={0} value={sellingPricePerGuest} onChange={(e) => setSellingPricePerGuest(+e.target.value)} />
             </div>
             <div>
@@ -193,8 +193,8 @@ export default function EventEditor() {
               <thead><tr className="border-b">
                 <th className="px-2 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Recette</th>
                 <th className="px-2 py-2 text-right text-xs font-bold uppercase text-muted-foreground w-24">Portions</th>
-                <th className="px-2 py-2 text-right text-xs font-bold uppercase text-muted-foreground w-24">Coût unitaire</th>
-                <th className="px-2 py-2 text-right text-xs font-bold uppercase text-muted-foreground w-24">Coût total</th>
+                <th className="px-2 py-2 text-right text-xs font-bold uppercase text-muted-foreground w-24">Coût unit. HT</th>
+                <th className="px-2 py-2 text-right text-xs font-bold uppercase text-muted-foreground w-24">Coût total HT</th>
                 <th className="w-10" />
               </tr></thead>
               <tbody>
@@ -247,14 +247,14 @@ export default function EventEditor() {
         <section className="card-elevated p-5">
           <h2 className="font-serif text-lg font-bold mb-4">Résumé financier</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <SummaryCard label="Coût total" value={fmt(totalCost)} />
-            <SummaryCard label="Revenu total" value={fmt(totalRevenue)} />
-            <SummaryCard label="Marge" value={fmt(margin)} className={margin >= 0 ? "text-green-600" : "text-destructive"} />
+            <SummaryCard label="Coût total HTVA" value={fmt(totalCost)} />
+            <SummaryCard label="Revenu total HTVA" value={fmt(totalRevenue)} />
+            <SummaryCard label="Marge HTVA" value={fmt(margin)} className={margin >= 0 ? "text-green-600" : "text-destructive"} />
             <SummaryCard label="Marge %" value={`${marginPct.toFixed(1)}%`} className={marginPct >= 0 ? "text-green-600" : "text-destructive"} />
           </div>
           <div className="grid grid-cols-2 gap-4 mt-3">
-            <SummaryCard label="Coût/convive" value={fmt(guestCount > 0 ? totalCost / guestCount : 0)} />
-            <SummaryCard label="Marge/convive" value={fmt(guestCount > 0 ? margin / guestCount : 0)} className={margin >= 0 ? "text-green-600" : "text-destructive"} />
+            <SummaryCard label="Coût/convive HTVA" value={fmt(guestCount > 0 ? totalCost / guestCount : 0)} />
+            <SummaryCard label="Marge/convive HTVA" value={fmt(guestCount > 0 ? margin / guestCount : 0)} className={margin >= 0 ? "text-green-600" : "text-destructive"} />
           </div>
         </section>
       </div>

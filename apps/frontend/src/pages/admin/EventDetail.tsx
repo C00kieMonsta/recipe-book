@@ -85,9 +85,9 @@ export default function EventDetail() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Coût total" value={fmt(totalCost)} />
-        <StatCard label="Revenu total" value={fmt(totalRevenue)} />
-        <StatCard label="Marge" value={fmt(margin)} className={margin >= 0 ? "text-green-600" : "text-destructive"} />
+        <StatCard label="Coût total HTVA" value={fmt(totalCost)} />
+        <StatCard label="Revenu total HTVA" value={fmt(totalRevenue)} />
+        <StatCard label="Marge HTVA" value={fmt(margin)} className={margin >= 0 ? "text-green-600" : "text-destructive"} />
         <StatCard label="Marge %" value={`${marginPct.toFixed(1)}%`} className={marginPct >= 0 ? "text-green-600" : "text-destructive"} />
       </div>
 
@@ -97,8 +97,8 @@ export default function EventDetail() {
           <thead><tr className="border-b-2">
             <th className="px-3 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Recette</th>
             <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Portions</th>
-            <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Coût unit.</th>
-            <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Coût total</th>
+            <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Coût unit. HT</th>
+            <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Coût total HT</th>
           </tr></thead>
           <tbody>
             {event.recipes.map((rl) => {

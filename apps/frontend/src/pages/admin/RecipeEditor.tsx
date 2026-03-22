@@ -180,14 +180,37 @@ export default function RecipeEditor() {
         </section>
 
         <section className="card-elevated p-5">
-          <div className="flex justify-between items-center mb-3">
-            <h2 className="font-serif text-lg font-bold">Techniques</h2>
-            <button onClick={addTechnique} className="flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium hover:bg-muted"><Plus className="h-3.5 w-3.5" /> Ajouter</button>
+          <div className="flex justify-between items-center mb-1">
+            <h2 className="font-serif text-lg font-bold">Étapes de préparation</h2>
+            <button onClick={addTechnique} className="flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium hover:bg-muted"><Plus className="h-3.5 w-3.5" /> Ajouter une étape</button>
           </div>
+          <p className="text-xs text-muted-foreground mb-3">Décrivez chaque étape de la recette. Appuyez sur Entrée pour passer à l'étape suivante.</p>
+          {form.techniques.length === 0 && (
+            <button onClick={addTechnique} className="w-full py-6 border-2 border-dashed rounded-xl text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors text-sm font-medium">
+              + Ajouter la première étape
+            </button>
+          )}
           {form.techniques.map((t, i) => (
             <div key={i} className="flex gap-2 mb-2">
               <span className="w-6 h-6 rounded-full bg-foreground text-background flex items-center justify-center text-xs font-bold shrink-0 mt-2">{i + 1}</span>
-              <textarea className="input-field flex-1 min-h-[50px]" value={t} onChange={(e) => updateTechnique(i, e.target.value)} />
+              <textarea
+                className="input-field flex-1 min-h-[50px]"
+                value={t}
+                onChange={(e) => updateTechnique(i, e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (i === form.techniques.length - 1) addTechnique();
+                    const next = e.currentTarget.closest("section")?.querySelectorAll("textarea")[i + 1];
+                    if (next) (next as HTMLTextAreaElement).focus();
+                  }
+                }}
+                placeholder={
+                  i === 0 ? "Ex: Préchauffer le four à 180°C…"
+                  : i === 1 ? "Ex: Mélanger les ingrédients secs…"
+                  : "Étape suivante…"
+                }
+              />
               <button onClick={() => removeTechnique(i)} className="p-1 mt-2 text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
             </div>
           ))}

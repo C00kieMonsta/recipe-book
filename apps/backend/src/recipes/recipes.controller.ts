@@ -116,7 +116,7 @@ export class RecipesController {
 
     const key = `recipe-photos/${randomUUID()}-${file.originalname}`;
     await this.s3.upload(key, file.buffer, file.mimetype);
-    const url = this.s3.publicUrl(key);
+    const url = await this.s3.presignedUrl(key);
 
     return { key, url };
   }

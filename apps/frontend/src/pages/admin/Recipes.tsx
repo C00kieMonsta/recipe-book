@@ -163,8 +163,8 @@ export default function Recipes() {
                 <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{r.description}</p>
                 <div className="flex gap-4 pt-3 border-t border-border/50 text-xs text-muted-foreground font-medium">
                   <span>{r.ingredients.length} ing.</span>
-                  <span>Coût: {fmt(cost)}</span>
-                  {r.pricing?.chosenPrice?.surPlace > 0 && <span>PV: {fmt(r.pricing.chosenPrice.surPlace)}</span>}
+                  <span>Coût HT: {fmt(cost)}</span>
+                  {r.pricing?.chosenPrice?.surPlace > 0 && <span>PV TVAC: {fmt(r.pricing.chosenPrice.surPlace)}</span>}
                 </div>
               </div>
             </button>

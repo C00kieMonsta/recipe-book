@@ -65,7 +65,7 @@ function exportPdf(recipe: Recipe, ingredients: Ingredient[], totalCost: number)
   if (recipe.techniques.length > 0) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
-    doc.text("Techniques", m, y + 4);
+    doc.text("Étapes de préparation", m, y + 4);
     y += 8;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
@@ -190,9 +190,9 @@ export default function RecipeDetail() {
       </div>
 
       <div className="grid gap-5">
-        {recipe.techniques.length > 0 && (
-          <section className="card-elevated p-5">
-            <h2 className="font-serif text-lg font-bold mb-4">Techniques</h2>
+        <section className="card-elevated p-5">
+          <h2 className="font-serif text-lg font-bold mb-4">Étapes de préparation</h2>
+          {recipe.techniques.length > 0 ? (
             <ol className="space-y-2">
               {recipe.techniques.map((t, i) => (
                 <li key={i} className="flex gap-3 items-start text-sm leading-relaxed">
@@ -201,8 +201,10 @@ export default function RecipeDetail() {
                 </li>
               ))}
             </ol>
-          </section>
-        )}
+          ) : (
+            <p className="text-sm text-muted-foreground italic">Aucune étape ajoutée. Modifiez la recette pour ajouter les étapes de préparation.</p>
+          )}
+        </section>
 
         <section className="card-elevated p-5">
           <h2 className="font-serif text-lg font-bold mb-4">Ingrédients</h2>

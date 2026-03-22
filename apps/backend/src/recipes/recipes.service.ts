@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import type { Recipe, RecipeIngredient, Ingredient } from "@packages/types";
 import { DdbService } from "../shared/ddb.service";
+import { S3Service } from "../shared/s3.service";
 import { IngredientsService } from "../ingredients/ingredients.service";
 
 @Injectable()
@@ -10,17 +11,28 @@ export class RecipesService {
 
   constructor(
     private ddb: DdbService,
+    private s3: S3Service,
     private ingredientsService: IngredientsService,
   ) {}
 
+  private async signPhotos(recipe: Recipe): Promise<Recipe> {
+    if (!recipe.photos?.length) return recipe;
+    const signed = await Promise.all(
+      recipe.photos.map(async (p) => ({ ...p, url: await this.s3.presignedUrl(p.key) })),
+    );
+    return { ...recipe, photos: signed };
+  }
+
   async getAll(): Promise<Recipe[]> {
     const items = await this.ddb.scanAll(this.table);
-    return items as unknown as Recipe[];
+    const recipes = items as unknown as Recipe[];
+    return Promise.all(recipes.map((r) => this.signPhotos(r)));
   }
 
   async get(recipeId: string): Promise<Recipe | null> {
     const item = await this.ddb.get(this.table, { recipeId });
-    return item as Recipe | null;
+    if (!item) return null;
+    return this.signPhotos(item as unknown as Recipe);
   }
 
   async getOrFail(recipeId: string): Promise<Recipe> {

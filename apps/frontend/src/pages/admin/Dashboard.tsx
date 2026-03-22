@@ -65,8 +65,8 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <KpiCard icon={Calendar} label="Événements" value={String(totalEvents)} sub={`${completedEvents.length} terminés`} />
-        <KpiCard icon={Euro} label="Revenu total" value={fmt(totalRevenue)} sub="Événements terminés" />
-        <KpiCard icon={TrendingUp} label="Marge totale" value={fmt(totalMargin)} sub="Événements terminés" className={totalMargin >= 0 ? "text-green-600" : "text-destructive"} />
+        <KpiCard icon={Euro} label="Revenu total HTVA" value={fmt(totalRevenue)} sub="Événements terminés" />
+        <KpiCard icon={TrendingUp} label="Marge totale HTVA" value={fmt(totalMargin)} sub="Événements terminés" className={totalMargin >= 0 ? "text-green-600" : "text-destructive"} />
         <KpiCard icon={BarChart3} label="Marge moyenne" value={`${isNaN(avgMarginPct) ? 0 : avgMarginPct.toFixed(1)}%`} sub="Événements terminés" className={avgMarginPct >= 0 ? "text-green-600" : "text-destructive"} />
       </div>
 
@@ -83,9 +83,9 @@ export default function Dashboard() {
               <th className="px-5 py-2 text-left text-xs font-bold uppercase tracking-wider text-muted-foreground">Nom</th>
               <th className="px-3 py-2 text-left text-xs font-bold uppercase tracking-wider text-muted-foreground">Date</th>
               <th className="px-3 py-2 text-right text-xs font-bold uppercase tracking-wider text-muted-foreground">Convives</th>
-              <th className="px-3 py-2 text-right text-xs font-bold uppercase tracking-wider text-muted-foreground">Revenu</th>
-              <th className="px-3 py-2 text-right text-xs font-bold uppercase tracking-wider text-muted-foreground">Coût</th>
-              <th className="px-3 py-2 text-right text-xs font-bold uppercase tracking-wider text-muted-foreground">Marge</th>
+              <th className="px-3 py-2 text-right text-xs font-bold uppercase tracking-wider text-muted-foreground">Revenu HT</th>
+              <th className="px-3 py-2 text-right text-xs font-bold uppercase tracking-wider text-muted-foreground">Coût HT</th>
+              <th className="px-3 py-2 text-right text-xs font-bold uppercase tracking-wider text-muted-foreground">Marge HT</th>
               <th className="px-3 py-2 text-right text-xs font-bold uppercase tracking-wider text-muted-foreground">%</th>
               <th className="px-3 py-2 text-left text-xs font-bold uppercase tracking-wider text-muted-foreground">Statut</th>
             </tr>
