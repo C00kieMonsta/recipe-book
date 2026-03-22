@@ -1,0 +1,27 @@
+{
+  "name": "@infra/campaign-forge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AWS CDK infrastructure for Campaign Forge",
+  "scripts": {
+    "build": "tsc",
+    "cdk": "cdk",
+    "deploy": "cdk deploy --all --require-approval never",
+    "diff": "cdk diff",
+    "synth": "cdk synth"
+  },
+  "devDependencies": {
+    "@types/node": "20.11.5",
+    "@types/jest": "^29.5.12",
+    "typescript": "~5.5.4",
+    "aws-cdk": "2.179.0",
+    "ts-node": "^10.9.2",
+    "constructs": "^10.3.0",
+    "source-map-support": "^0.5.21"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.179.0",
+    "constructs": "^10.3.0",
+    "source-map-support": "^0.5.21"
+  }
+}
