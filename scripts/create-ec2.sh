@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run once (locally) with AWS admin credentials to provision:
-#   - IAM role + instance profile (SSM read access)
+#   - IAM role + instance profile (SSM read + DynamoDB + S3 access)
 #   - Security group (SSH + HTTP + HTTPS)
 #   - Key pair (saved to ~/.ssh/)
 #   - EC2 t3.micro instance (free tier)
@@ -12,20 +12,18 @@
 set -euo pipefail
 
 REGION="${AWS_REGION:-eu-north-1}"
-INSTANCE_NAME="campaign-forge-backend"
-KEY_NAME="campaign-forge-key"
+INSTANCE_NAME="la-table-amelie-backend"
+KEY_NAME="la-table-amelie-key"
 KEY_FILE="${HOME}/.ssh/${KEY_NAME}.pem"
-INSTANCE_TYPE="t3.micro"  # Free tier eligible in eu-north-1 (~$0.01/hour)
-SSM_PREFIX="/campaign-forge/production"
+INSTANCE_TYPE="t3.micro"
+SSM_PREFIX="/la-table-amelie/production"
 
 RECREATE=false
 [[ "${1:-}" == "--recreate" ]] && RECREATE=true
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 aws_cmd() { aws --region "$REGION" --no-cli-pager "$@"; }
 
 get_latest_ami() {
-  # Amazon Linux 2023 (has glibc 2.34, supports Node.js 20+)
   aws_cmd ec2 describe-images \
     --owners amazon \
     --filters "Name=name,Values=al2023-ami-2023*-x86_64" \
@@ -33,7 +31,7 @@ get_latest_ami() {
     --output text
 }
 
-# ── Elastic IP: allocate once, reuse forever ──────────────────────────────────
+# ── Elastic IP: allocate once, reuse forever ──────────────────────────────
 ALLOCATION_ID=$(aws_cmd ec2 describe-addresses \
   --filters "Name=tag:Name,Values=${INSTANCE_NAME}" \
   --query "Addresses[0].AllocationId" --output text 2>/dev/null || echo "None")
@@ -58,7 +56,7 @@ ELASTIC_IP=$(aws_cmd ec2 describe-addresses \
   --query "Addresses[0].PublicIp" --output text)
 echo "  ✓ Elastic IP address: $ELASTIC_IP"
 
-# ── Terminate existing instance if recreating ─────────────────────────────────
+# ── Terminate existing instance if recreating ─────────────────────────────
 if $RECREATE; then
   OLD_INSTANCE=$(aws_cmd ec2 describe-instances \
     --filters \
@@ -74,7 +72,7 @@ if $RECREATE; then
   fi
 fi
 
-# ── IAM role for SSM access ───────────────────────────────────────────────────
+# ── IAM role ──────────────────────────────────────────────────────────────
 ROLE_NAME="${INSTANCE_NAME}-role"
 PROFILE_NAME="${INSTANCE_NAME}-profile"
 
@@ -93,7 +91,7 @@ if ! aws_cmd iam get-role --role-name "$ROLE_NAME" &>/dev/null; then
 
   aws_cmd iam put-role-policy \
     --role-name "$ROLE_NAME" \
-    --policy-name "ssm-read-campaign-forge" \
+    --policy-name "ssm-read-la-table-amelie" \
     --policy-document "{
       \"Version\": \"2012-10-17\",
       \"Statement\": [{
@@ -105,7 +103,38 @@ if ! aws_cmd iam get-role --role-name "$ROLE_NAME" &>/dev/null; then
 
   aws_cmd iam put-role-policy \
     --role-name "$ROLE_NAME" \
-    --policy-name "cloudwatch-logs-campaign-forge" \
+    --policy-name "dynamodb-la-table-amelie" \
+    --policy-document "{
+      \"Version\": \"2012-10-17\",
+      \"Statement\": [{
+        \"Effect\": \"Allow\",
+        \"Action\": [
+          \"dynamodb:GetItem\", \"dynamodb:PutItem\", \"dynamodb:UpdateItem\",
+          \"dynamodb:DeleteItem\", \"dynamodb:Scan\", \"dynamodb:Query\",
+          \"dynamodb:BatchWriteItem\", \"dynamodb:BatchGetItem\"
+        ],
+        \"Resource\": [
+          \"arn:aws:dynamodb:${REGION}:*:table/ta-ingredients-prod\",
+          \"arn:aws:dynamodb:${REGION}:*:table/ta-recipes-prod\"
+        ]
+      }]
+    }"
+
+  aws_cmd iam put-role-policy \
+    --role-name "$ROLE_NAME" \
+    --policy-name "s3-la-table-amelie" \
+    --policy-document "{
+      \"Version\": \"2012-10-17\",
+      \"Statement\": [{
+        \"Effect\": \"Allow\",
+        \"Action\": [\"s3:PutObject\", \"s3:GetObject\", \"s3:DeleteObject\"],
+        \"Resource\": \"arn:aws:s3:::la-table-amelie-uploads-prod/*\"
+      }]
+    }"
+
+  aws_cmd iam put-role-policy \
+    --role-name "$ROLE_NAME" \
+    --policy-name "cloudwatch-logs-la-table-amelie" \
     --policy-document "{
       \"Version\": \"2012-10-17\",
       \"Statement\": [{
@@ -116,7 +145,7 @@ if ! aws_cmd iam get-role --role-name "$ROLE_NAME" &>/dev/null; then
           \"logs:PutLogEvents\",
           \"logs:DescribeLogStreams\"
         ],
-        \"Resource\": \"arn:aws:logs:${REGION}:*:log-group:/campaign-forge/*\"
+        \"Resource\": \"arn:aws:logs:${REGION}:*:log-group:/la-table-amelie/*\"
       }]
     }"
 
@@ -132,10 +161,9 @@ else
   echo "  ✓ IAM role already exists"
 fi
 
-# ── Key pair ──────────────────────────────────────────────────────────────────
+# ── Key pair ──────────────────────────────────────────────────────────────
 if [[ ! -f "$KEY_FILE" ]]; then
   echo "Creating key pair ${KEY_NAME}..."
-  # Delete from AWS if it exists (stale)
   aws_cmd ec2 delete-key-pair --key-name "$KEY_NAME" &>/dev/null || true
   aws_cmd ec2 create-key-pair \
     --key-name "$KEY_NAME" \
@@ -146,7 +174,7 @@ else
   echo "  ✓ Key already exists at $KEY_FILE"
 fi
 
-# ── Security group ────────────────────────────────────────────────────────────
+# ── Security group ────────────────────────────────────────────────────────
 SG_ID=$(aws_cmd ec2 describe-security-groups \
   --filters "Name=group-name,Values=${INSTANCE_NAME}-sg" \
   --query "SecurityGroups[0].GroupId" --output text 2>/dev/null || echo "None")
@@ -155,7 +183,7 @@ if [[ "$SG_ID" == "None" || -z "$SG_ID" ]]; then
   echo "Creating security group..."
   SG_ID=$(aws_cmd ec2 create-security-group \
     --group-name "${INSTANCE_NAME}-sg" \
-    --description "Campaign Forge backend" \
+    --description "La Table Amelie backend" \
     --query GroupId --output text)
 
   for port in 22 80 443; do
@@ -168,7 +196,7 @@ else
   echo "  ✓ Security group already exists: $SG_ID"
 fi
 
-# ── User data (bootstrap script) ─────────────────────────────────────────────
+# ── User data (bootstrap script) ─────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 USER_DATA_FILE="${SCRIPT_DIR}/ec2-bootstrap.sh"
 
@@ -177,7 +205,7 @@ if [[ ! -f "$USER_DATA_FILE" ]]; then
   exit 1
 fi
 
-# ── Launch EC2 ────────────────────────────────────────────────────────────────
+# ── Launch EC2 ────────────────────────────────────────────────────────────
 AMI_ID=$(get_latest_ami)
 echo "Launching EC2 instance (AMI: $AMI_ID, Type: $INSTANCE_TYPE)..."
 
@@ -197,14 +225,14 @@ echo "  Waiting for instance to start..."
 aws_cmd ec2 wait instance-running --instance-ids "$INSTANCE_ID"
 echo "  ✓ Instance running"
 
-# ── Associate Elastic IP ──────────────────────────────────────────────────────
+# ── Associate Elastic IP ──────────────────────────────────────────────────
 echo "Associating Elastic IP..."
 aws_cmd ec2 associate-address \
   --instance-id "$INSTANCE_ID" \
   --allocation-id "$ALLOCATION_ID"
 echo "  ✓ Associated"
 
-# ── Summary ───────────────────────────────────────────────────────────────────
+# ── Summary ───────────────────────────────────────────────────────────────
 echo ""
 echo "======================================================"
 echo "✅ EC2 instance ready"
@@ -218,9 +246,7 @@ echo "It takes ~5 minutes to complete. You can watch it with:"
 echo "  ssh -i $KEY_FILE ec2-user@$ELASTIC_IP"
 echo "  sudo tail -f /var/log/cloud-init-output.log"
 echo ""
-echo "Next steps:"
-echo "  1. Add EC2_HOST=$ELASTIC_IP as a GitHub Secret"
-echo "  2. Copy the private key contents as EC2_SSH_KEY GitHub Secret:"
-echo "     cat $KEY_FILE"
-echo "  3. api.moniquepirson.be → $ELASTIC_IP already set in Route 53"
+echo "─── GitHub Secrets ──────────────────────────────────────"
+echo "EC2_HOST    = $ELASTIC_IP"
+echo "EC2_SSH_KEY = (contents of $KEY_FILE)"
 echo "======================================================"

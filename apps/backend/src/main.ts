@@ -8,7 +8,7 @@ async function bootstrap() {
 
   app.setGlobalPrefix("api", { exclude: ["health"] });
   app.enableCors({
-    origin: [/localhost:\d+$/, /127\.0\.0\.1:\d+$/],
+    origin: [/localhost:\d+$/, /127\.0\.0\.1:\d+$/, /\.cloudfront\.net$/],
     credentials: true,
   });
 

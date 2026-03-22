@@ -1,29 +1,16 @@
 #!/usr/bin/env bash
 # Run once locally with AWS admin credentials.
 # Creates:
-#   - 2 S3 buckets (landing + admin)
-#   - 2 Origin Access Controls
-#   - 2 CloudFront distributions (with SPA error routing)
-#   - Bucket policies allowing CloudFront OAC access
-#   - ACM certificate request (us-east-1, required for CloudFront)
-#
-# Final URLs:
-#   https://moniquepirson.be       → landing
-#   https://admin.moniquepirson.be → admin frontend
-#   https://api.moniquepirson.be   → backend API
+#   - 1 S3 bucket (admin frontend)
+#   - 1 Origin Access Control
+#   - 1 CloudFront distribution (with SPA error routing)
+#   - Bucket policy allowing CloudFront OAC access
 
 set -euo pipefail
 
 REGION="${AWS_REGION:-eu-north-1}"
-LANDING_BUCKET="cf-landing-production"
-ADMIN_BUCKET="cf-admin-production"
-DOMAIN="moniquepirson.be"
-WWW_DOMAIN="www.${DOMAIN}"
-ADMIN_DOMAIN="admin.${DOMAIN}"
-API_DOMAIN="api.${DOMAIN}"
-ELASTIC_IP="13.53.241.122"
+ADMIN_BUCKET="ta-admin-production"
 
-# CloudFront Managed Cache Policy: CachingOptimized
 CF_CACHE_POLICY="658327ea-f89d-4fab-a63d-7e88639e58f6"
 
 aws_r() { aws --region "$REGION" --no-cli-pager "$@"; }
@@ -31,12 +18,12 @@ aws_us() { aws --region us-east-1 --no-cli-pager "$@"; }
 
 ACCOUNT_ID=$(aws_r sts get-caller-identity --query Account --output text)
 
-echo "=== Campaign Forge — S3 + CloudFront Setup ==="
+echo "=== La Table d'Amélie — S3 + CloudFront Setup ==="
 echo "Account : $ACCOUNT_ID"
 echo "Region  : $REGION"
 echo ""
 
-# ── S3 Buckets ────────────────────────────────────────────────────────────────
+# ── S3 Bucket ──────────────────────────────────────────────────────────────
 create_bucket() {
   local bucket="$1"
   if aws_r s3api head-bucket --bucket "$bucket" 2>/dev/null; then
@@ -53,11 +40,10 @@ create_bucket() {
   fi
 }
 
-echo "Creating S3 buckets..."
-create_bucket "$LANDING_BUCKET"
+echo "Creating S3 bucket..."
 create_bucket "$ADMIN_BUCKET"
 
-# ── Origin Access Controls ────────────────────────────────────────────────────
+# ── Origin Access Control ──────────────────────────────────────────────────
 create_oac() {
   local name="$1"
   local existing
@@ -92,11 +78,10 @@ JSON
   echo "$id"
 }
 
-echo "Creating Origin Access Controls..."
-LANDING_OAC_ID=$(create_oac "cf-landing-oac")
-ADMIN_OAC_ID=$(create_oac "cf-admin-oac")
+echo "Creating Origin Access Control..."
+ADMIN_OAC_ID=$(create_oac "ta-admin-oac")
 
-# ── CloudFront Distributions ──────────────────────────────────────────────────
+# ── CloudFront Distribution ───────────────────────────────────────────────
 create_distribution() {
   local bucket="$1"
   local oac_id="$2"
@@ -173,11 +158,10 @@ JSON
   echo "$id"
 }
 
-echo "Creating CloudFront distributions..."
-LANDING_DIST_ID=$(create_distribution "$LANDING_BUCKET" "$LANDING_OAC_ID" "campaign-forge-landing")
-ADMIN_DIST_ID=$(create_distribution "$ADMIN_BUCKET" "$ADMIN_OAC_ID" "campaign-forge-admin")
+echo "Creating CloudFront distribution..."
+ADMIN_DIST_ID=$(create_distribution "$ADMIN_BUCKET" "$ADMIN_OAC_ID" "la-table-amelie-admin")
 
-# ── Bucket Policies ───────────────────────────────────────────────────────────
+# ── Bucket Policy ──────────────────────────────────────────────────────────
 apply_bucket_policy() {
   local bucket="$1"
   local dist_id="$2"
@@ -206,74 +190,25 @@ JSON
   echo "  ✓ Bucket policy applied: $bucket"
 }
 
-echo "Applying bucket policies..."
-apply_bucket_policy "$LANDING_BUCKET" "$LANDING_DIST_ID"
+echo "Applying bucket policy..."
 apply_bucket_policy "$ADMIN_BUCKET" "$ADMIN_DIST_ID"
 
-# ── Get CloudFront domains ────────────────────────────────────────────────────
-LANDING_CF_DOMAIN=$(aws_us cloudfront get-distribution \
-  --id "$LANDING_DIST_ID" --query "Distribution.DomainName" --output text)
+# ── Get CloudFront domain ─────────────────────────────────────────────────
 ADMIN_CF_DOMAIN=$(aws_us cloudfront get-distribution \
   --id "$ADMIN_DIST_ID" --query "Distribution.DomainName" --output text)
 
-# ── ACM Certificate ───────────────────────────────────────────────────────────
-echo "Requesting ACM certificate..."
-CERT_ARN=$(aws_us acm list-certificates \
-  --query "CertificateSummaryList[?DomainName=='${DOMAIN}'].CertificateArn | [0]" --output text)
-
-if [[ -z "$CERT_ARN" || "$CERT_ARN" == "None" ]]; then
-  CERT_ARN=$(aws_us acm request-certificate \
-    --domain-name "$DOMAIN" \
-    --subject-alternative-names "*.${DOMAIN}" \
-    --validation-method DNS \
-    --query CertificateArn --output text)
-  echo "  ✓ Certificate requested"
-else
-  echo "  ✓ Certificate already exists"
-fi
-
-# Get validation CNAMEs to add to OVH
-VALIDATION_RECORDS=$(aws_us acm describe-certificate \
-  --certificate-arn "$CERT_ARN" \
-  --query "Certificate.DomainValidationOptions[].ResourceRecord" \
-  --output text 2>/dev/null || echo "  (pending — re-run in a moment to see CNAMEs)")
-
-# ── Summary ───────────────────────────────────────────────────────────────────
+# ── Summary ────────────────────────────────────────────────────────────────
 echo ""
 echo "======================================================"
 echo "✅ S3 + CloudFront setup complete"
 echo "======================================================"
 echo ""
 echo "─── GitHub Variables (Settings → Secrets → Variables) ───"
-echo "LANDING_S3_BUCKET       = $LANDING_BUCKET"
-echo "LANDING_CF_DISTRIBUTION = $LANDING_DIST_ID"
 echo "ADMIN_S3_BUCKET         = $ADMIN_BUCKET"
 echo "ADMIN_CF_DISTRIBUTION   = $ADMIN_DIST_ID"
-echo "API_BASE_URL            = https://${API_DOMAIN}/api"
 echo ""
-echo "─── OVH DNS Records ──────────────────────────────────────"
-echo "  1. DELETE existing A record: ${DOMAIN} → 213.186.33.5"
+echo "─── CloudFront URL ─────────────────────────────────────"
+echo "Admin : https://$ADMIN_CF_DOMAIN"
 echo ""
-echo "  2. ADD CNAME records:"
-echo "     ${WWW_DOMAIN}   CNAME → $LANDING_CF_DOMAIN"
-echo "     ${ADMIN_DOMAIN} CNAME → $ADMIN_CF_DOMAIN"
-echo ""
-echo "  3. ADD A record:"
-echo "     ${API_DOMAIN}   A → $ELASTIC_IP"
-echo ""
-echo "  4. ADD redirect (OVH Redirection tab, 301 permanent):"
-echo "     ${DOMAIN} → https://${WWW_DOMAIN}"
-echo ""
-echo "─── ACM Validation CNAMEs (also add to OVH) ─────────────"
-echo "$VALIDATION_RECORDS"
-echo "  ARN: $CERT_ARN"
-echo ""
-echo "─── Final URLs ───────────────────────────────────────────"
-echo "Landing : https://${WWW_DOMAIN}  (${DOMAIN} redirects here via OVH)"
-echo "Admin   : https://${ADMIN_DOMAIN}"
-echo "API     : https://${API_DOMAIN}"
-echo ""
-echo "⚠️  Next: Once the ACM cert shows ISSUED (check AWS ACM console),"
-echo "   attach it to both CloudFront distributions + add alternate domains."
 echo "⚠️  CloudFront distributions take 5-15 min to deploy globally."
 echo "======================================================"
