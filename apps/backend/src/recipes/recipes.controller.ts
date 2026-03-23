@@ -72,6 +72,15 @@ export class RecipesController {
     return this.recipes.getAll();
   }
 
+  @Get("photo")
+  async getPhoto(@Query("key") key: string, @Res() res: Response) {
+    if (!key?.startsWith("recipe-photos/")) throw new BadRequestException("Invalid key");
+    const { body, contentType } = await this.s3.get(key);
+    res.set("Content-Type", contentType);
+    res.set("Cache-Control", "public, max-age=86400");
+    res.send(body);
+  }
+
   @Get(":id")
   async get(@Param("id") id: string) {
     return this.recipes.getOrFail(id);
@@ -107,15 +116,6 @@ export class RecipesController {
     const result = await this.recipes.importRecipes(rows);
     console.log(JSON.stringify({ action: "importRecipes", ...result }));
     return result;
-  }
-
-  @Get("photo")
-  async getPhoto(@Query("key") key: string, @Res() res: Response) {
-    if (!key?.startsWith("recipe-photos/")) throw new BadRequestException("Invalid key");
-    const { body, contentType } = await this.s3.get(key);
-    res.set("Content-Type", contentType);
-    res.set("Cache-Control", "public, max-age=86400");
-    res.send(body);
   }
 
   @Post("upload-photo")
