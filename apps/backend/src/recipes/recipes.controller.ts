@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, BadRequestException, UseGuards, UseInterceptors, UploadedFile } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, Res, BadRequestException, UseGuards, UseInterceptors, UploadedFile } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import type { Response } from "express";
 import { AdminGuard } from "../auth/admin.guard";
 import { createRecipeRequestSchema, updateRecipeRequestSchema } from "@packages/types";
 import { RecipesService, type ImportRecipeRow, type ImportRecipeIngredient } from "./recipes.service";
@@ -106,6 +107,15 @@ export class RecipesController {
     const result = await this.recipes.importRecipes(rows);
     console.log(JSON.stringify({ action: "importRecipes", ...result }));
     return result;
+  }
+
+  @Get("photo")
+  async getPhoto(@Query("key") key: string, @Res() res: Response) {
+    if (!key?.startsWith("recipe-photos/")) throw new BadRequestException("Invalid key");
+    const { body, contentType } = await this.s3.get(key);
+    res.set("Content-Type", contentType);
+    res.set("Cache-Control", "public, max-age=86400");
+    res.send(body);
   }
 
   @Post("upload-photo")

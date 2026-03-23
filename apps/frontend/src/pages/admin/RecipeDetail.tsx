@@ -19,16 +19,14 @@ async function exportPdf(recipe: Recipe, ingredients: Ingredient[]) {
   const m = 15;
   let y = m;
 
-  if (recipe.photos?.length > 0 && recipe.photos[0].url) {
+  if (recipe.photos?.length > 0 && recipe.photos[0].key) {
     try {
-      const img = await loadImage(recipe.photos[0].url);
+      const { dataUrl, width, height } = await loadPhotoForPdf(recipe.photos[0].key);
       const maxW = 180;
       const maxH = 60;
-      const ratio = Math.min(maxW / img.width, maxH / img.height);
-      const w = img.width * ratio;
-      const h = img.height * ratio;
-      doc.addImage(img, "JPEG", m, y, w, h);
-      y += h + 6;
+      const ratio = Math.min(maxW / width, maxH / height);
+      doc.addImage(dataUrl, "JPEG", m, y, width * ratio, height * ratio);
+      y += height * ratio + 6;
     } catch { /* skip photo on error */ }
   }
 
@@ -92,14 +90,27 @@ async function exportPdf(recipe: Recipe, ingredients: Ingredient[]) {
   doc.save(`${recipe.name.replace(/[^a-zA-Z0-9àâéèêëïîôùûüç\s-]/g, "")}.pdf`);
 }
 
-function loadImage(url: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = url;
+async function loadPhotoForPdf(key: string): Promise<{ dataUrl: string; width: number; height: number }> {
+  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
+  const token = sessionStorage.getItem("admin_token");
+  const res = await fetch(`${API_BASE}/admin/recipes/photo?key=${encodeURIComponent(key)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
+  if (!res.ok) throw new Error("Failed to load photo");
+  const blob = await res.blob();
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+  const { width, height } = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.width, height: img.height });
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+  return { dataUrl, width, height };
 }
 
 export default function RecipeDetail() {
