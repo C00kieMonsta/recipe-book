@@ -50,19 +50,19 @@ export default function RecipeCook() {
 
   return (
     <div className="fixed inset-0 bg-background flex flex-col select-none">
-      <header className="flex items-center justify-between px-6 py-4 border-b bg-card/80 backdrop-blur-sm">
-        <button onClick={() => navigate(`/recipes/${id}`)} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
-          <ArrowLeft className="h-5 w-5" /> Quitter
+      <header className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b bg-card/80 backdrop-blur-sm gap-2">
+        <button onClick={() => navigate(`/recipes/${id}`)} className="flex items-center gap-1 sm:gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0">
+          <ArrowLeft className="h-5 w-5" /> <span className="hidden sm:inline">Quitter</span>
         </button>
-        <div className="text-center">
-          <h1 className="font-serif text-xl font-bold">{recipe.name}</h1>
-          <div className="flex items-center justify-center gap-3 mt-1">
-            <span className="text-xs text-muted-foreground">{recipe.type}</span>
-            <div className="flex items-center gap-2">
+        <div className="text-center min-w-0 flex-1">
+          <h1 className="font-serif text-base sm:text-xl font-bold truncate">{recipe.name}</h1>
+          <div className="flex items-center justify-center gap-2 sm:gap-3 mt-1">
+            <span className="text-xs text-muted-foreground hidden sm:inline">{recipe.type}</span>
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <button onClick={() => setCookPortions((p) => Math.max(1, p - 1))} className="w-7 h-7 rounded-full border flex items-center justify-center hover:bg-muted transition-colors">
                 <Minus className="h-3.5 w-3.5" />
               </button>
-              <span className="text-sm font-bold tabular-nums min-w-[4ch] text-center">{cookPortions}</span>
+              <span className="text-sm font-bold tabular-nums min-w-[3ch] text-center">{cookPortions}</span>
               <button onClick={() => setCookPortions((p) => p + 1)} className="w-7 h-7 rounded-full border flex items-center justify-center hover:bg-muted transition-colors">
                 <Plus className="h-3.5 w-3.5" />
               </button>
@@ -70,15 +70,15 @@ export default function RecipeCook() {
             </div>
           </div>
         </div>
-        <div className="text-sm text-muted-foreground font-mono">
-          {step + 1} / {totalSteps}
+        <div className="text-xs sm:text-sm text-muted-foreground font-mono shrink-0">
+          {step + 1}/{totalSteps}
         </div>
       </header>
 
       <div className="flex-1 overflow-auto">
         {isIngredients ? (
-          <div className="max-w-2xl mx-auto px-6 py-8">
-            <h2 className="font-serif text-3xl font-bold mb-6 text-center">Ingrédients</h2>
+          <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+            <h2 className="font-serif text-2xl sm:text-3xl font-bold mb-4 sm:mb-6 text-center">Ingrédients</h2>
             {cookPortions !== recipe.portions && (
               <p className="text-center text-sm text-muted-foreground mb-4">
                 Quantités adaptées pour <strong>{cookPortions}</strong> portions (recette de base : {recipe.portions})
@@ -88,9 +88,9 @@ export default function RecipeCook() {
               {recipe.ingredients.map((ri, i) => {
                 const ing = ingredients.find((ig) => ig.ingredientId === ri.ingredientId);
                 return (
-                  <div key={i} className="flex items-center justify-between px-5 py-4 bg-card border rounded-xl text-lg">
-                    <span className="font-semibold">{ing?.name || "—"}</span>
-                    <span className="font-mono text-primary font-bold">{scaleQty(ri.qty)} {ri.unit}</span>
+                  <div key={i} className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 bg-card border rounded-xl text-base sm:text-lg gap-3">
+                    <span className="font-semibold min-w-0 truncate">{ing?.name || "—"}</span>
+                    <span className="font-mono text-primary font-bold whitespace-nowrap shrink-0">{scaleQty(ri.qty)} {ri.unit}</span>
                   </div>
                 );
               })}
@@ -121,24 +121,24 @@ export default function RecipeCook() {
         )}
       </div>
 
-      <footer className="flex items-center justify-between px-6 py-4 border-t bg-card/80 backdrop-blur-sm">
-        <button onClick={goPrev} disabled={step === 0} className="flex items-center gap-2 px-6 py-3 rounded-xl text-lg font-medium border disabled:opacity-20 hover:bg-muted transition-colors">
-          <ChevronLeft className="h-6 w-6" /> Précédent
+      <footer className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-t bg-card/80 backdrop-blur-sm">
+        <button onClick={goPrev} disabled={step === 0} className="flex items-center gap-1 sm:gap-2 px-3 sm:px-6 py-2.5 sm:py-3 rounded-xl text-sm sm:text-lg font-medium border disabled:opacity-20 hover:bg-muted transition-colors">
+          <ChevronLeft className="h-5 w-5 sm:h-6 sm:w-6" /> <span className="hidden sm:inline">Précédent</span>
         </button>
 
-        <div className="flex gap-1.5">
+        <div className="flex gap-1 sm:gap-1.5 flex-wrap justify-center max-w-[40%]">
           {Array.from({ length: totalSteps }, (_, i) => (
-            <button key={i} onClick={() => setStep(i)} className={`w-3 h-3 rounded-full transition-colors ${i === step ? "bg-primary scale-125" : i < step ? "bg-primary/40" : "bg-muted-foreground/20"}`} />
+            <button key={i} onClick={() => setStep(i)} className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full transition-colors ${i === step ? "bg-primary scale-125" : i < step ? "bg-primary/40" : "bg-muted-foreground/20"}`} />
           ))}
         </div>
 
         {isLast ? (
-          <button onClick={() => navigate(`/recipes/${id}`)} className="flex items-center gap-2 px-6 py-3 rounded-xl text-lg font-medium bg-primary text-primary-foreground shadow-sm hover:opacity-90 transition-opacity">
-            Terminer <X className="h-5 w-5" />
+          <button onClick={() => navigate(`/recipes/${id}`)} className="flex items-center gap-1 sm:gap-2 px-3 sm:px-6 py-2.5 sm:py-3 rounded-xl text-sm sm:text-lg font-medium bg-primary text-primary-foreground shadow-sm hover:opacity-90 transition-opacity">
+            <span className="hidden sm:inline">Terminer</span><span className="sm:hidden">Fin</span> <X className="h-4 w-4 sm:h-5 sm:w-5" />
           </button>
         ) : (
-          <button onClick={goNext} className="flex items-center gap-2 px-6 py-3 rounded-xl text-lg font-medium bg-primary text-primary-foreground shadow-sm hover:opacity-90 transition-opacity">
-            Suivant <ChevronRight className="h-6 w-6" />
+          <button onClick={goNext} className="flex items-center gap-1 sm:gap-2 px-3 sm:px-6 py-2.5 sm:py-3 rounded-xl text-sm sm:text-lg font-medium bg-primary text-primary-foreground shadow-sm hover:opacity-90 transition-opacity">
+            <span className="hidden sm:inline">Suivant</span><span className="sm:hidden">Suite</span> <ChevronRight className="h-5 w-5 sm:h-6 sm:w-6" />
           </button>
         )}
       </footer>

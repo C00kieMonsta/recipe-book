@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Pencil, Trash2, Save, FileDown, ChefHat } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, Save, FileDown, ChefHat, Plus, X, Check } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { Recipe, Ingredient, RecipePricing } from "@packages/types";
+import type { Recipe, Ingredient, RecipePricing, RecipeIngredient } from "@packages/types";
+import { UNITS_QTY } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { calcRecipeCost, calcIngredientLineCost, fmt, supplierColor } from "@/lib/recipe-helpers";
@@ -121,6 +122,13 @@ export default function RecipeDetail() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [editingStep, setEditingStep] = useState<number | null>(null);
+  const [editStepValue, setEditStepValue] = useState("");
+  const [newStep, setNewStep] = useState("");
+  const [addingStep, setAddingStep] = useState(false);
+  const [addingIngredient, setAddingIngredient] = useState(false);
+  const [newIng, setNewIng] = useState<RecipeIngredient>({ ingredientId: "", qty: 0, unit: "g", lossPct: 0 });
+  const newStepRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -129,6 +137,52 @@ export default function RecipeDetail() {
       .catch(() => toast({ title: "Recette introuvable", variant: "destructive" }))
       .finally(() => setLoading(false));
   }, [id]);
+
+  const saveRecipeField = async (patch: Partial<Recipe>) => {
+    if (!id || !recipe) return;
+    try {
+      const updated = await api.recipes.update(id, patch);
+      setRecipe(updated);
+    } catch {
+      toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" });
+    }
+  };
+
+  const handleSaveStep = async (index: number) => {
+    if (!recipe || !editStepValue.trim()) return;
+    const techniques = [...recipe.techniques];
+    techniques[index] = editStepValue.trim();
+    await saveRecipeField({ techniques });
+    setEditingStep(null);
+  };
+
+  const handleAddStep = async () => {
+    if (!recipe || !newStep.trim()) return;
+    const techniques = [...recipe.techniques, newStep.trim()];
+    await saveRecipeField({ techniques });
+    setNewStep("");
+    setAddingStep(false);
+  };
+
+  const handleDeleteStep = async (index: number) => {
+    if (!recipe) return;
+    const techniques = recipe.techniques.filter((_, i) => i !== index);
+    await saveRecipeField({ techniques });
+  };
+
+  const handleAddIngredient = async () => {
+    if (!recipe || !newIng.ingredientId || newIng.qty <= 0) return;
+    const ingList = [...recipe.ingredients, newIng];
+    await saveRecipeField({ ingredients: ingList });
+    setNewIng({ ingredientId: "", qty: 0, unit: "g", lossPct: 0 });
+    setAddingIngredient(false);
+  };
+
+  const handleRemoveIngredient = async (index: number) => {
+    if (!recipe) return;
+    const ingList = recipe.ingredients.filter((_, i) => i !== index);
+    await saveRecipeField({ ingredients: ingList });
+  };
 
   const handleDelete = async () => {
     if (!id) return;
@@ -141,6 +195,9 @@ export default function RecipeDetail() {
     }
   };
 
+  const usedIngredientIds = new Set(recipe?.ingredients.map((ri) => ri.ingredientId) ?? []);
+  const availableIngredients = ingredients.filter((i) => !usedIngredientIds.has(i.ingredientId));
+
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
   if (!recipe) return <div className="p-8 text-muted-foreground">Recette introuvable</div>;
 
@@ -148,19 +205,19 @@ export default function RecipeDetail() {
 
   return (
     <div className="max-w-[1100px] mx-auto">
-      <div className="flex justify-between items-center mb-5">
-        <button onClick={() => navigate("/recipes")} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-          <ArrowLeft className="h-4 w-4" /> Retour
+      <div className="flex justify-between items-center mb-5 gap-2">
+        <button onClick={() => navigate("/recipes")} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors shrink-0">
+          <ArrowLeft className="h-4 w-4" /> <span className="hidden sm:inline">Retour</span>
         </button>
-        <div className="flex gap-2">
-          <button onClick={() => navigate(`/recipes/${id}/cook`)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
-            <ChefHat className="h-4 w-4" /> Mode recette
+        <div className="flex gap-1.5 sm:gap-2 flex-wrap justify-end">
+          <button onClick={() => navigate(`/recipes/${id}/cook`)} className="flex items-center gap-1.5 px-3 py-2 sm:px-4 border rounded-lg text-xs sm:text-sm font-medium hover:bg-muted transition-colors">
+            <ChefHat className="h-4 w-4" /> <span className="hidden sm:inline">Mode recette</span><span className="sm:hidden">Cuisiner</span>
           </button>
-          <button onClick={() => exportPdf(recipe, ingredients)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
+          <button onClick={() => exportPdf(recipe, ingredients)} className="flex items-center gap-1.5 px-3 py-2 sm:px-4 border rounded-lg text-xs sm:text-sm font-medium hover:bg-muted transition-colors">
             <FileDown className="h-4 w-4" /> PDF
           </button>
-          <button onClick={() => navigate(`/recipes/${id}/edit`)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
-            <Pencil className="h-4 w-4" /> Modifier
+          <button onClick={() => navigate(`/recipes/${id}/edit`)} className="flex items-center gap-1.5 px-3 py-2 sm:px-4 border rounded-lg text-xs sm:text-sm font-medium hover:bg-muted transition-colors">
+            <Pencil className="h-4 w-4" /> <span className="hidden sm:inline">Modifier</span>
           </button>
           <button onClick={() => setDeleteConfirm(true)} className="p-2 border border-destructive/30 text-destructive rounded-lg hover:bg-destructive/5 transition-colors">
             <Trash2 className="h-4 w-4" />
@@ -169,21 +226,21 @@ export default function RecipeDetail() {
       </div>
 
       <div className="flex gap-6 mb-7 flex-wrap">
-        <div className="flex-1 min-w-[300px]">
+        <div className="flex-1 min-w-0">
           <div className="inline-block px-3 py-1 rounded-full bg-foreground text-background text-xs font-semibold uppercase tracking-wider mb-3">{recipe.type}</div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">{recipe.name}</h1>
-          <p className="text-muted-foreground leading-relaxed mb-4">{recipe.description}</p>
-          <div className="flex gap-6 text-sm text-muted-foreground">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2">{recipe.name}</h1>
+          <p className="text-muted-foreground leading-relaxed mb-4 text-sm sm:text-base">{recipe.description}</p>
+          <div className="flex gap-4 sm:gap-6 text-xs sm:text-sm text-muted-foreground flex-wrap">
             <span>Portions: <strong className="text-foreground">{recipe.portions}</strong></span>
             <span>Poids/pers: <strong className="text-foreground">{recipe.portionWeight}g</strong></span>
-            <span>Créé le: <strong className="text-foreground">{new Date(recipe.createdAt).toLocaleDateString("fr-BE")}</strong></span>
+            <span className="hidden sm:inline">Créé le: <strong className="text-foreground">{new Date(recipe.createdAt).toLocaleDateString("fr-BE")}</strong></span>
           </div>
         </div>
         {recipe.photos?.length > 0 && (
           <div className="flex gap-3 shrink-0">
             {recipe.photos.map((photo, idx) => (
               <div key={idx} className="relative">
-                <img src={photo.url} alt={photo.label} className="w-36 h-28 object-cover rounded-lg border" />
+                <img src={photo.url} alt={photo.label} className="w-28 h-22 sm:w-36 sm:h-28 object-cover rounded-lg border" />
                 {photo.label && <div className="text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mt-1">{photo.label}</div>}
               </div>
             ))}
@@ -192,60 +249,180 @@ export default function RecipeDetail() {
       </div>
 
       <div className="grid gap-5">
-        <section className="card-elevated p-5">
-          <h2 className="font-serif text-lg font-bold mb-4">Étapes de préparation</h2>
+        <section className="card-elevated p-4 sm:p-5">
+          <div className="flex justify-between items-center mb-4 gap-2">
+            <h2 className="font-serif text-lg font-bold">Étapes de préparation</h2>
+            <button
+              onClick={() => { setAddingStep(true); setTimeout(() => newStepRef.current?.focus(), 50); }}
+              className="flex items-center gap-1 px-2.5 py-1 border rounded-lg text-xs font-medium hover:bg-muted transition-colors shrink-0"
+            >
+              <Plus className="h-3.5 w-3.5" /> Étape
+            </button>
+          </div>
           {recipe.techniques.length > 0 ? (
             <ol className="space-y-2">
               {recipe.techniques.map((t, i) => (
-                <li key={i} className="flex gap-3 items-start text-sm leading-relaxed">
-                  <span className="w-6 h-6 rounded-full bg-foreground text-background flex items-center justify-center text-xs font-bold shrink-0">{i + 1}</span>
-                  <span className="text-muted-foreground pt-0.5">{t}</span>
+                <li key={i} className="group flex gap-2 sm:gap-3 items-start text-sm leading-relaxed">
+                  <span className="w-6 h-6 rounded-full bg-foreground text-background flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">{i + 1}</span>
+                  {editingStep === i ? (
+                    <div className="flex-1 flex flex-col gap-2">
+                      <textarea
+                        className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:border-primary outline-none resize-none"
+                        rows={2}
+                        value={editStepValue}
+                        onChange={(e) => setEditStepValue(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveStep(i); } if (e.key === "Escape") setEditingStep(null); }}
+                        autoFocus
+                      />
+                      <div className="flex gap-2">
+                        <button onClick={() => handleSaveStep(i)} className="flex items-center gap-1 px-2 py-1 bg-primary text-primary-foreground rounded-md text-xs font-medium"><Check className="h-3 w-3" /> OK</button>
+                        <button onClick={() => setEditingStep(null)} className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground">Annuler</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <span
+                      className="text-muted-foreground pt-0.5 flex-1 cursor-pointer hover:text-foreground transition-colors rounded px-1 -mx-1 hover:bg-muted/50"
+                      onClick={() => { setEditingStep(i); setEditStepValue(t); }}
+                    >
+                      {t}
+                    </span>
+                  )}
+                  {editingStep !== i && (
+                    <button
+                      onClick={() => handleDeleteStep(i)}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition-all shrink-0"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </li>
               ))}
             </ol>
-          ) : (
-            <p className="text-sm text-muted-foreground italic">Aucune étape ajoutée. Modifiez la recette pour ajouter les étapes de préparation.</p>
+          ) : !addingStep ? (
+            <button
+              onClick={() => { setAddingStep(true); setTimeout(() => newStepRef.current?.focus(), 50); }}
+              className="w-full py-5 border-2 border-dashed rounded-xl text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors text-sm font-medium"
+            >
+              + Ajouter la première étape
+            </button>
+          ) : null}
+          {addingStep && (
+            <div className="mt-3 flex flex-col gap-2">
+              <textarea
+                ref={newStepRef}
+                className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:border-primary outline-none resize-none"
+                rows={2}
+                placeholder="Décrivez l'étape…"
+                value={newStep}
+                onChange={(e) => setNewStep(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAddStep(); } if (e.key === "Escape") { setAddingStep(false); setNewStep(""); } }}
+              />
+              <div className="flex gap-2">
+                <button onClick={handleAddStep} disabled={!newStep.trim()} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium disabled:opacity-50"><Plus className="h-3 w-3" /> Ajouter</button>
+                <button onClick={() => { setAddingStep(false); setNewStep(""); }} className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground">Annuler</button>
+              </div>
+            </div>
           )}
         </section>
 
-        <section className="card-elevated p-5">
-          <h2 className="font-serif text-lg font-bold mb-4">Ingrédients</h2>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b-2 border-border">
-                <th className="px-3 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Produit</th>
-                <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Qté</th>
-                <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Perte</th>
-                <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Prix/unité</th>
-                <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Coût</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recipe.ingredients.map((ri, idx) => {
-                const ing = ingredients.find((i) => i.ingredientId === ri.ingredientId);
-                if (!ing) return null;
-                const lineCost = calcIngredientLineCost(ri, ing);
-                return (
-                  <tr key={idx} className="border-b border-border/30">
-                    <td className="px-3 py-2">
-                      <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ background: supplierColor(ing.supplier) }} />
-                      {ing.name}
+        <section className="card-elevated p-4 sm:p-5">
+          <div className="flex justify-between items-center mb-4 gap-2">
+            <h2 className="font-serif text-lg font-bold">Ingrédients</h2>
+            {availableIngredients.length > 0 && (
+              <button
+                onClick={() => { setAddingIngredient(true); setNewIng({ ingredientId: availableIngredients[0].ingredientId, qty: 0, unit: "g", lossPct: 0 }); }}
+                className="flex items-center gap-1 px-2.5 py-1 border rounded-lg text-xs font-medium hover:bg-muted transition-colors shrink-0"
+              >
+                <Plus className="h-3.5 w-3.5" /> Ingrédient
+              </button>
+            )}
+          </div>
+          <div className="overflow-x-auto -mx-4 sm:-mx-5 px-4 sm:px-5">
+            <table className="w-full text-sm min-w-[400px]">
+              <thead>
+                <tr className="border-b-2 border-border">
+                  <th className="px-2 sm:px-3 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Produit</th>
+                  <th className="px-2 sm:px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Qté</th>
+                  <th className="px-2 sm:px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground hidden sm:table-cell">Perte</th>
+                  <th className="px-2 sm:px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground hidden sm:table-cell">Prix/unité</th>
+                  <th className="px-2 sm:px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Coût</th>
+                  <th className="w-8" />
+                </tr>
+              </thead>
+              <tbody>
+                {recipe.ingredients.map((ri, idx) => {
+                  const ing = ingredients.find((i) => i.ingredientId === ri.ingredientId);
+                  if (!ing) return null;
+                  const lineCost = calcIngredientLineCost(ri, ing);
+                  return (
+                    <tr key={idx} className="border-b border-border/30 group">
+                      <td className="px-2 sm:px-3 py-2">
+                        <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ background: supplierColor(ing.supplier) }} />
+                        {ing.name}
+                      </td>
+                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums whitespace-nowrap">{ri.qty} {ri.unit}</td>
+                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell">{ri.lossPct || 0}%</td>
+                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell">{fmt(ing.price)}</td>
+                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums font-semibold">{fmt(lineCost)}</td>
+                      <td className="px-1 py-2">
+                        <button onClick={() => handleRemoveIngredient(idx)} className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-destructive transition-all">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {addingIngredient && (
+                  <tr className="border-b border-primary/30 bg-muted/30">
+                    <td className="px-2 sm:px-3 py-1.5">
+                      <select
+                        className="w-full border rounded-md px-2 py-1 text-xs bg-background focus:border-primary outline-none"
+                        value={newIng.ingredientId}
+                        onChange={(e) => setNewIng((p) => ({ ...p, ingredientId: e.target.value }))}
+                      >
+                        {availableIngredients.map((ig) => <option key={ig.ingredientId} value={ig.ingredientId}>{ig.name}</option>)}
+                      </select>
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{ri.qty} {ri.unit}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{ri.lossPct || 0}%</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{fmt(ing.price)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-semibold">{fmt(lineCost)}</td>
+                    <td className="px-2 sm:px-3 py-1.5">
+                      <div className="flex gap-1 justify-end">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          className="w-16 border rounded-md px-2 py-1 text-xs text-right bg-background focus:border-primary outline-none"
+                          value={newIng.qty || ""}
+                          onChange={(e) => setNewIng((p) => ({ ...p, qty: +e.target.value }))}
+                          placeholder="Qté"
+                          autoFocus
+                        />
+                        <select
+                          className="border rounded-md px-1 py-1 text-xs bg-background focus:border-primary outline-none"
+                          value={newIng.unit}
+                          onChange={(e) => setNewIng((p) => ({ ...p, unit: e.target.value as typeof p.unit }))}
+                        >
+                          {UNITS_QTY.map((u) => <option key={u}>{u}</option>)}
+                        </select>
+                      </div>
+                    </td>
+                    <td className="hidden sm:table-cell" />
+                    <td className="hidden sm:table-cell" />
+                    <td className="px-2 sm:px-3 py-1.5" colSpan={2}>
+                      <div className="flex gap-1 justify-end">
+                        <button onClick={handleAddIngredient} disabled={!newIng.ingredientId || newIng.qty <= 0} className="p-1 bg-primary text-primary-foreground rounded-md disabled:opacity-50"><Check className="h-3.5 w-3.5" /></button>
+                        <button onClick={() => setAddingIngredient(false)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+                      </div>
+                    </td>
                   </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-border">
-                <td colSpan={4} className="px-3 py-2 font-bold">Total matières HTVA</td>
-                <td className="px-3 py-2 text-right font-bold tabular-nums">{fmt(totalCost)}</td>
-              </tr>
-            </tfoot>
-          </table>
+                )}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-border">
+                  <td colSpan={2} className="px-2 sm:px-3 py-2 font-bold sm:hidden">Total HTVA</td>
+                  <td colSpan={4} className="px-2 sm:px-3 py-2 font-bold hidden sm:table-cell">Total matières HTVA</td>
+                  <td className="px-2 sm:px-3 py-2 text-right font-bold tabular-nums" colSpan={2}>{fmt(totalCost)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </section>
 
         <PricingSimulation recipe={recipe} totalCost={totalCost} />
@@ -314,17 +491,18 @@ function PricingSimulation({ recipe, totalCost }: { recipe: Recipe; totalCost: n
   const taChosenMarge = taChosen > 0 ? taChosen / (1 + pricing.takeAway.tva / 100) - cpP : 0;
 
   return (
-    <section className="card-elevated p-5 bg-gradient-to-br from-card to-muted/30">
-      <div className="flex justify-between items-center mb-4">
+    <section className="card-elevated p-4 sm:p-5 bg-gradient-to-br from-card to-muted/30">
+      <div className="flex justify-between items-center mb-4 gap-2">
         <h2 className="font-serif text-lg font-bold">Simulation de prix</h2>
         {dirty && (
-          <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium shadow-sm disabled:opacity-50">
-            <Save className="h-3.5 w-3.5" /> {saving ? "Sauvegarde…" : "Enregistrer les prix"}
+          <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium shadow-sm disabled:opacity-50 shrink-0">
+            <Save className="h-3.5 w-3.5" /> {saving ? "…" : "Enregistrer"}
           </button>
         )}
       </div>
 
-      <table className="w-full text-sm border-collapse">
+      <div className="overflow-x-auto -mx-4 sm:-mx-5 px-4 sm:px-5">
+      <table className="w-full text-sm border-collapse min-w-[360px]">
         <thead>
           <tr>
             <th className="pb-2 text-left text-xs font-bold uppercase tracking-wider text-muted-foreground" />
@@ -371,6 +549,7 @@ function PricingSimulation({ recipe, totalCost }: { recipe: Recipe; totalCost: n
           />
         </tbody>
       </table>
+      </div>
     </section>
   );
 }

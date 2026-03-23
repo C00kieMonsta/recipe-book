@@ -1,5 +1,6 @@
+import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { BarChart3, BookOpen, ClipboardList, Calendar, Settings, LogOut } from "lucide-react";
+import { BarChart3, BookOpen, ClipboardList, Calendar, Settings, LogOut, Menu, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const menuItems = [
@@ -14,11 +15,14 @@ export default function AdminSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuth();
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => { setOpen(false); }, [location.pathname]);
 
   const handleLogout = () => { logout(); navigate("/login"); };
 
-  return (
-    <aside className="w-60 shrink-0 min-h-screen bg-sidebar text-sidebar-foreground flex flex-col">
+  const sidebarContent = (
+    <>
       <div className="p-6 pb-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shrink-0">
@@ -62,6 +66,38 @@ export default function AdminSidebar() {
           Déconnexion
         </button>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex w-60 shrink-0 min-h-screen bg-sidebar text-sidebar-foreground flex-col">
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile top bar */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-sidebar text-sidebar-foreground">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shrink-0">
+            <span className="font-serif text-sm font-bold text-white">A</span>
+          </div>
+          <span className="font-serif text-sm font-semibold opacity-95">La Table d'Amélie</span>
+        </div>
+        <button onClick={() => setOpen(!open)} className="p-2 -mr-2 rounded-lg hover:bg-sidebar-accent/50 transition-colors">
+          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </button>
+      </div>
+
+      {/* Mobile drawer overlay */}
+      {open && (
+        <div className="md:hidden fixed inset-0 z-30" onClick={() => setOpen(false)}>
+          <div className="absolute inset-0 bg-foreground/30 backdrop-blur-sm" />
+          <aside className="absolute top-[52px] left-0 right-0 bg-sidebar text-sidebar-foreground flex flex-col max-h-[calc(100vh-52px)] overflow-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
+            {sidebarContent}
+          </aside>
+        </div>
+      )}
+    </>
   );
 }
