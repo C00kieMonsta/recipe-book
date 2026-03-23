@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Search, Plus, Upload, Trash2, ArrowUpDown, X, Check, FileSpreadsheet } from "lucide-react";
 import type { Ingredient } from "@packages/types";
-import { SUPPLIERS, UNITS_PRICE } from "@packages/types";
+import { UNITS_PRICE, DEFAULT_SUPPLIERS } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { fmt, supplierColor } from "@/lib/recipe-helpers";
@@ -14,6 +14,7 @@ type SortKey = "name" | "price" | "supplier";
 
 export default function Ingredients() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [supplierNames, setSupplierNames] = useState<string[]>(DEFAULT_SUPPLIERS.map((s) => s.name));
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterSupplier, setFilterSupplier] = useState("all");
@@ -27,7 +28,11 @@ export default function Ingredients() {
   const { toast } = useToast();
 
   const load = async () => {
-    try { setIngredients(await api.ingredients.list()); }
+    try {
+      const [ings, settings] = await Promise.all([api.ingredients.list(), api.settings.get().catch(() => null)]);
+      setIngredients(ings);
+      if (settings?.suppliers?.length) setSupplierNames(settings.suppliers.map((s) => s.name));
+    }
     catch { toast({ title: "Erreur de chargement", variant: "destructive" }); }
     finally { setLoading(false); }
   };
@@ -93,7 +98,7 @@ export default function Ingredients() {
           <button onClick={() => setShowDedup(true)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors text-destructive border-destructive/30">Dédoublonner</button>
           <button onClick={exportExcel} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors"><FileSpreadsheet className="h-4 w-4" /> Excel</button>
           <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors"><Upload className="h-4 w-4" /> Importer CSV</button>
-          <button onClick={() => setEditing({ name: "", price: 0, unit: "€/kg", supplier: "Barn", comment: "" })} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm hover:opacity-90 transition-opacity"><Plus className="h-4 w-4" /> Nouvel ingrédient</button>
+          <button onClick={() => setEditing({ name: "", price: 0, unit: "€/kg", supplier: supplierNames[0] || "", comment: "" })} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm hover:opacity-90 transition-opacity"><Plus className="h-4 w-4" /> Nouvel ingrédient</button>
         </div>
       </div>
 
@@ -147,7 +152,7 @@ export default function Ingredients() {
 
       <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} onPrev={prev} onNext={next} />
 
-      {editing && <Modal onClose={() => setEditing(null)}><IngredientForm ingredient={editing} onSave={saveIngredient} onCancel={() => setEditing(null)} onDelete={editing.ingredientId ? () => setDeleteConfirm(editing.ingredientId!) : undefined} /></Modal>}
+      {editing && <Modal onClose={() => setEditing(null)}><IngredientForm ingredient={editing} supplierNames={supplierNames} onSave={saveIngredient} onCancel={() => setEditing(null)} onDelete={editing.ingredientId ? () => setDeleteConfirm(editing.ingredientId!) : undefined} /></Modal>}
 
       {deleteConfirm && (
         <Modal onClose={() => setDeleteConfirm(null)}>
@@ -208,7 +213,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
   );
 }
 
-function IngredientForm({ ingredient, onSave, onCancel, onDelete }: { ingredient: Partial<Ingredient>; onSave: (d: Partial<Ingredient>) => void; onCancel: () => void; onDelete?: () => void }) {
+function IngredientForm({ ingredient, supplierNames, onSave, onCancel, onDelete }: { ingredient: Partial<Ingredient>; supplierNames: string[]; onSave: (d: Partial<Ingredient>) => void; onCancel: () => void; onDelete?: () => void }) {
   const [form, setForm] = useState({ ...ingredient });
   const u = (k: string, v: unknown) => setForm((p) => ({ ...p, [k]: v }));
   return (
@@ -221,7 +226,7 @@ function IngredientForm({ ingredient, onSave, onCancel, onDelete }: { ingredient
         <div><label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Unité</label><select className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" value={form.unit || "€/kg"} onChange={(e) => u("unit", e.target.value)}>{UNITS_PRICE.map((u) => <option key={u}>{u}</option>)}</select></div>
       </div>
       <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Fournisseur</label>
-      <select className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" value={form.supplier || "Barn"} onChange={(e) => u("supplier", e.target.value)}>{SUPPLIERS.map((s) => <option key={s}>{s}</option>)}</select>
+      <select className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" value={form.supplier || supplierNames[0] || ""} onChange={(e) => u("supplier", e.target.value)}>{supplierNames.map((s) => <option key={s}>{s}</option>)}</select>
       <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Commentaire</label>
       <textarea className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none min-h-[60px]" value={form.comment || ""} onChange={(e) => u("comment", e.target.value)} />
       <div className="flex justify-between mt-6">
