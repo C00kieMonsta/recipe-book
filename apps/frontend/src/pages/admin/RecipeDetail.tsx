@@ -8,6 +8,7 @@ import { UNITS_QTY } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { calcRecipeCost, calcIngredientLineCost, fmt, supplierColor } from "@/lib/recipe-helpers";
+import ActionMenu from "@/components/ui/ActionMenu";
 
 const DEFAULT_PRICING: RecipePricing = {
   surPlace: { coef: 4, tva: 12 },
@@ -209,19 +210,15 @@ export default function RecipeDetail() {
         <button onClick={() => navigate("/recipes")} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors shrink-0">
           <ArrowLeft className="h-4 w-4" /> <span className="hidden sm:inline">Retour</span>
         </button>
-        <div className="flex gap-1.5 sm:gap-2 flex-wrap justify-end">
+        <div className="flex gap-1.5 sm:gap-2 items-center">
           <button onClick={() => navigate(`/recipes/${id}/cook`)} className="flex items-center gap-1.5 px-3 py-2 sm:px-4 border rounded-lg text-xs sm:text-sm font-medium hover:bg-muted transition-colors">
             <ChefHat className="h-4 w-4" /> <span className="hidden sm:inline">Mode recette</span><span className="sm:hidden">Cuisiner</span>
           </button>
-          <button onClick={() => exportPdf(recipe, ingredients)} className="flex items-center gap-1.5 px-3 py-2 sm:px-4 border rounded-lg text-xs sm:text-sm font-medium hover:bg-muted transition-colors">
-            <FileDown className="h-4 w-4" /> PDF
-          </button>
-          <button onClick={() => navigate(`/recipes/${id}/edit`)} className="flex items-center gap-1.5 px-3 py-2 sm:px-4 border rounded-lg text-xs sm:text-sm font-medium hover:bg-muted transition-colors">
-            <Pencil className="h-4 w-4" /> <span className="hidden sm:inline">Modifier</span>
-          </button>
-          <button onClick={() => setDeleteConfirm(true)} className="p-2 border border-destructive/30 text-destructive rounded-lg hover:bg-destructive/5 transition-colors">
-            <Trash2 className="h-4 w-4" />
-          </button>
+          <ActionMenu items={[
+            { label: "Exporter PDF", icon: <FileDown className="h-4 w-4" />, onClick: () => exportPdf(recipe, ingredients) },
+            { label: "Modifier", icon: <Pencil className="h-4 w-4" />, onClick: () => navigate(`/recipes/${id}/edit`) },
+            { label: "Supprimer", icon: <Trash2 className="h-4 w-4" />, onClick: () => setDeleteConfirm(true), variant: "danger" },
+          ]} />
         </div>
       </div>
 

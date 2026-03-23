@@ -20,6 +20,9 @@ export interface AppEvent {
   extraCosts: EventExtraCost[];
   sellingPricePerGuest: number;
   notes?: string;
+  contactName?: string;
+  contactPhone?: string;
+  contactEmail?: string;
   status: EventStatus;
   createdAt: string;
   updatedAt: string;

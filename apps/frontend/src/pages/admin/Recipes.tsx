@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Plus, Upload, Check, Download, AlertTriangle, FileSpreadsheet } from "lucide-react";
+import ActionMenu from "@/components/ui/ActionMenu";
 import type { Recipe, Ingredient } from "@packages/types";
 import { DEFAULT_RECIPE_CATEGORIES } from "@packages/types";
 import { api } from "@/lib/api";
@@ -124,16 +125,14 @@ export default function Recipes() {
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Recettes</h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-1">{recipes.length} recettes au total</p>
         </div>
-        <div className="flex gap-1.5 sm:gap-2">
-          <button onClick={exportExcel} className="flex items-center gap-1.5 px-3 py-2 sm:px-4 border rounded-lg text-xs sm:text-sm font-medium hover:bg-muted transition-colors">
-            <FileSpreadsheet className="h-4 w-4" /> <span className="hidden sm:inline">Excel</span>
-          </button>
-          <button onClick={() => setShowImport(true)} className="flex items-center gap-1.5 px-3 py-2 sm:px-4 border rounded-lg text-xs sm:text-sm font-medium hover:bg-muted transition-colors">
-            <Upload className="h-4 w-4" /> <span className="hidden sm:inline">Importer</span>
-          </button>
+        <div className="flex gap-1.5 sm:gap-2 items-center">
           <button onClick={() => navigate("/recipes/new")} className="flex items-center gap-1.5 px-3 py-2 sm:px-4 bg-primary text-primary-foreground rounded-lg text-xs sm:text-sm font-medium shadow-sm hover:opacity-90 transition-opacity">
             <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Nouvelle recette</span><span className="sm:hidden">Nouveau</span>
           </button>
+          <ActionMenu items={[
+            { label: "Exporter Excel", icon: <FileSpreadsheet className="h-4 w-4" />, onClick: exportExcel },
+            { label: "Importer", icon: <Upload className="h-4 w-4" />, onClick: () => setShowImport(true) },
+          ]} />
         </div>
       </div>
 

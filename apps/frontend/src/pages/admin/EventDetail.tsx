@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, Copy } from "lucide-react";
 import type { AppEvent, Recipe, Ingredient } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { calcRecipeCost, fmt } from "@/lib/recipe-helpers";
+import ActionMenu from "@/components/ui/ActionMenu";
 
 export default function EventDetail() {
   const { id } = useParams<{ id: string }>();
@@ -14,6 +15,7 @@ export default function EventDetail() {
   const [allRecipes, setAllRecipes] = useState<Recipe[]>([]);
   const [allIngredients, setAllIngredients] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -49,10 +51,36 @@ export default function EventDetail() {
   const marginPct = totalRevenue > 0 ? (margin / totalRevenue) * 100 : 0;
 
   const handleDelete = async () => {
-    if (!confirm("Supprimer cet événement ?")) return;
-    await api.events.delete(event.eventId);
-    toast({ title: "Événement supprimé" });
-    navigate("/events");
+    try {
+      await api.events.delete(event.eventId);
+      toast({ title: "Événement supprimé" });
+      navigate("/events");
+    } catch {
+      toast({ title: "Erreur lors de la suppression", variant: "destructive" });
+    }
+  };
+
+  const handleDuplicate = async () => {
+    try {
+      const data = {
+        name: `${event.name} (copie)`,
+        date: new Date().toISOString().split("T")[0],
+        guestCount: event.guestCount,
+        recipes: event.recipes,
+        extraCosts: event.extraCosts,
+        sellingPricePerGuest: event.sellingPricePerGuest,
+        notes: event.notes,
+        contactName: event.contactName,
+        contactPhone: event.contactPhone,
+        contactEmail: event.contactEmail,
+        status: "upcoming" as const,
+      };
+      const created = await api.events.create(data);
+      toast({ title: "Événement dupliqué" });
+      navigate(`/events/${created.eventId}/edit`);
+    } catch {
+      toast({ title: "Erreur lors de la duplication", variant: "destructive" });
+    }
   };
 
   return (
@@ -61,14 +89,11 @@ export default function EventDetail() {
         <button onClick={() => navigate("/events")} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-4 w-4" /> Retour
         </button>
-        <div className="flex gap-2">
-          <button onClick={() => navigate(`/events/${id}/edit`)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
-            <Pencil className="h-4 w-4" /> Modifier
-          </button>
-          <button onClick={handleDelete} className="p-2 border border-destructive/30 text-destructive rounded-lg hover:bg-destructive/5 transition-colors">
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
+        <ActionMenu items={[
+          { label: "Modifier", icon: <Pencil className="h-4 w-4" />, onClick: () => navigate(`/events/${id}/edit`) },
+          { label: "Dupliquer", icon: <Copy className="h-4 w-4" />, onClick: handleDuplicate },
+          { label: "Supprimer", icon: <Trash2 className="h-4 w-4" />, onClick: () => setDeleteConfirm(true), variant: "danger" },
+        ]} />
       </div>
 
       <div className="flex gap-4 items-start mb-6 flex-wrap">
@@ -81,6 +106,13 @@ export default function EventDetail() {
             {new Date(event.date).toLocaleDateString("fr-BE", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · {event.guestCount} convives
           </p>
           {event.notes && <p className="text-muted-foreground text-sm mt-2 italic">{event.notes}</p>}
+          {(event.contactName || event.contactPhone || event.contactEmail) && (
+            <div className="flex gap-4 mt-3 text-sm text-muted-foreground flex-wrap">
+              {event.contactName && <span>Contact: <strong className="text-foreground">{event.contactName}</strong></span>}
+              {event.contactPhone && <a href={`tel:${event.contactPhone}`} className="hover:text-foreground transition-colors">{event.contactPhone}</a>}
+              {event.contactEmail && <a href={`mailto:${event.contactEmail}`} className="hover:text-foreground transition-colors">{event.contactEmail}</a>}
+            </div>
+          )}
         </div>
       </div>
 
@@ -141,6 +173,19 @@ export default function EventDetail() {
             </tbody>
           </table>
         </section>
+      )}
+
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setDeleteConfirm(false)}>
+          <div className="bg-card rounded-2xl p-7 max-w-sm w-[92%] shadow-xl animate-fade-up text-center" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-serif text-lg font-bold mb-2">Confirmer la suppression</h3>
+            <p className="text-muted-foreground text-sm mb-6">Cette action est irréversible.</p>
+            <div className="flex gap-3 justify-center">
+              <button onClick={() => setDeleteConfirm(false)} className="px-4 py-2 border rounded-lg text-sm font-medium">Annuler</button>
+              <button onClick={handleDelete} className="px-4 py-2 bg-destructive text-destructive-foreground rounded-lg text-sm font-medium">Supprimer</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

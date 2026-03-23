@@ -23,6 +23,9 @@ export default function EventEditor() {
   const [extraCosts, setExtraCosts] = useState<EventExtraCost[]>([]);
   const [sellingPricePerGuest, setSellingPricePerGuest] = useState(0);
   const [notes, setNotes] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
   const [status, setStatus] = useState<"upcoming" | "completed">("upcoming");
   const [recipeSearch, setRecipeSearch] = useState("");
 
@@ -38,6 +41,7 @@ export default function EventEditor() {
           setRecipes(ev.recipes); setExtraCosts(ev.extraCosts);
           setSellingPricePerGuest(ev.sellingPricePerGuest);
           setNotes(ev.notes || ""); setStatus(ev.status);
+          setContactName(ev.contactName || ""); setContactPhone(ev.contactPhone || ""); setContactEmail(ev.contactEmail || "");
         }
       } catch {
         toast({ title: "Erreur de chargement", variant: "destructive" });
@@ -106,7 +110,11 @@ export default function EventEditor() {
     if (!name.trim()) { toast({ title: "Le nom est requis", variant: "destructive" }); return; }
     setSaving(true);
     try {
-      const data = { name, date, guestCount, recipes, extraCosts, sellingPricePerGuest, notes: notes || undefined, status };
+      const data = {
+        name, date, guestCount, recipes, extraCosts, sellingPricePerGuest,
+        notes: notes || undefined, status,
+        contactName: contactName || undefined, contactPhone: contactPhone || undefined, contactEmail: contactEmail || undefined,
+      };
       if (isNew) {
         const created = await api.events.create(data);
         toast({ title: "Événement créé" });
@@ -168,6 +176,21 @@ export default function EventEditor() {
           </div>
           <FieldLabel>Notes</FieldLabel>
           <textarea className="input-field min-h-[60px]" value={notes} onChange={(e) => setNotes(e.target.value)} />
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-5 mb-2 pt-4 border-t">Contact de l'hôte</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <FieldLabel>Nom</FieldLabel>
+              <input className="input-field" placeholder="Nom du contact" value={contactName} onChange={(e) => setContactName(e.target.value)} />
+            </div>
+            <div>
+              <FieldLabel>Téléphone</FieldLabel>
+              <input className="input-field" type="tel" placeholder="+32…" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+            </div>
+            <div>
+              <FieldLabel>Email</FieldLabel>
+              <input className="input-field" type="email" placeholder="email@exemple.com" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+            </div>
+          </div>
         </section>
 
         <section className="card-elevated p-5">

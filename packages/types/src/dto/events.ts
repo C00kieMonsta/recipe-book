@@ -18,6 +18,9 @@ export const createEventRequestSchema = z.object({
   extraCosts: z.array(eventExtraCostSchema).default([]),
   sellingPricePerGuest: z.number().nonnegative().default(0),
   notes: z.string().trim().optional(),
+  contactName: z.string().trim().optional(),
+  contactPhone: z.string().trim().optional(),
+  contactEmail: z.string().trim().optional(),
   status: z.enum(["upcoming", "completed"]).default("upcoming"),
 });
 export type CreateEventRequest = z.infer<typeof createEventRequestSchema>;

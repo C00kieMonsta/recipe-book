@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Search, Plus, Upload, Trash2, ArrowUpDown, X, Check, FileSpreadsheet } from "lucide-react";
+import ActionMenu from "@/components/ui/ActionMenu";
 import type { Ingredient } from "@packages/types";
 import { UNITS_PRICE, DEFAULT_SUPPLIERS } from "@packages/types";
 import { api } from "@/lib/api";
@@ -94,11 +95,13 @@ export default function Ingredients() {
           <h1 className="text-3xl font-bold tracking-tight">Ingrédients</h1>
           <p className="text-sm text-muted-foreground mt-1">{ingredients.length} ingrédients référencés</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowDedup(true)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors text-destructive border-destructive/30">Dédoublonner</button>
-          <button onClick={exportExcel} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors"><FileSpreadsheet className="h-4 w-4" /> Excel</button>
-          <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors"><Upload className="h-4 w-4" /> Importer CSV</button>
-          <button onClick={() => setEditing({ name: "", price: 0, unit: "€/kg", supplier: supplierNames[0] || "", comment: "" })} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm hover:opacity-90 transition-opacity"><Plus className="h-4 w-4" /> Nouvel ingrédient</button>
+        <div className="flex gap-1.5 sm:gap-2 items-center">
+          <button onClick={() => setEditing({ name: "", price: 0, unit: "€/kg", supplier: supplierNames[0] || "", comment: "" })} className="flex items-center gap-1.5 px-3 py-2 sm:px-4 bg-primary text-primary-foreground rounded-lg text-xs sm:text-sm font-medium shadow-sm hover:opacity-90 transition-opacity"><Plus className="h-4 w-4" /> <span className="hidden sm:inline">Nouvel ingrédient</span><span className="sm:hidden">Nouveau</span></button>
+          <ActionMenu items={[
+            { label: "Exporter Excel", icon: <FileSpreadsheet className="h-4 w-4" />, onClick: exportExcel },
+            { label: "Importer CSV", icon: <Upload className="h-4 w-4" />, onClick: () => setShowImport(true) },
+            { label: "Dédoublonner", icon: <Trash2 className="h-4 w-4" />, onClick: () => setShowDedup(true), variant: "danger" },
+          ]} />
         </div>
       </div>
 
