@@ -224,22 +224,29 @@ export default function RecipeEditor() {
             <h2 className="font-serif text-lg font-bold">Ingrédients</h2>
             <button onClick={addIngLine} className="flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium hover:bg-muted"><Plus className="h-3.5 w-3.5" /> Ajouter</button>
           </div>
-          <table className="w-full text-sm">
+          <table className="w-full text-sm table-fixed">
+            <colgroup>
+              <col className="w-[45%]" />
+              <col className="w-[15%]" />
+              <col className="w-[15%]" />
+              <col className="w-[15%]" />
+              <col className="w-[10%]" />
+            </colgroup>
             <thead><tr className="border-b">
               <th className="px-2 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Produit</th>
-              <th className="px-2 py-2 text-xs font-bold uppercase text-muted-foreground w-20">Qté</th>
-              <th className="px-2 py-2 text-xs font-bold uppercase text-muted-foreground w-16">Unité</th>
-              <th className="px-2 py-2 text-xs font-bold uppercase text-muted-foreground w-16">Perte %</th>
-              <th className="px-2 py-2 w-10" />
+              <th className="px-2 py-2 text-xs font-bold uppercase text-muted-foreground">Qté</th>
+              <th className="px-2 py-2 text-xs font-bold uppercase text-muted-foreground">Unité</th>
+              <th className="px-2 py-2 text-xs font-bold uppercase text-muted-foreground">Perte %</th>
+              <th className="px-2 py-2" />
             </tr></thead>
             <tbody>
               {form.ingredients.map((ri, i) => (
                 <tr key={i} className="border-b border-border/30">
-                  <td className="px-2 py-1"><select className="input-field !py-1 !text-xs" value={ri.ingredientId} onChange={(e) => updateIngLine(i, "ingredientId", e.target.value)}>{allIngredients.map((ing) => <option key={ing.ingredientId} value={ing.ingredientId}>{ing.name}</option>)}</select></td>
-                  <td className="px-2 py-1"><input className="input-field !py-1 !text-xs text-right" type="text" inputMode="numeric" value={ri.qty} onChange={(e) => updateIngLine(i, "qty", +e.target.value)} /></td>
-                  <td className="px-2 py-1"><select className="input-field !py-1 !text-xs" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)}>{UNITS_QTY.map((u) => <option key={u}>{u}</option>)}</select></td>
-                  <td className="px-2 py-1"><input className="input-field !py-1 !text-xs text-right" type="text" inputMode="numeric" value={ri.lossPct} onChange={(e) => updateIngLine(i, "lossPct", +e.target.value)} /></td>
-                  <td className="px-2 py-1"><button onClick={() => removeIngLine(i)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button></td>
+                  <td className="px-2 py-1"><select className="input-field !py-1 !text-xs w-full truncate" value={ri.ingredientId} onChange={(e) => updateIngLine(i, "ingredientId", e.target.value)}>{allIngredients.map((ing) => <option key={ing.ingredientId} value={ing.ingredientId}>{ing.name}</option>)}</select></td>
+                  <td className="px-2 py-1"><input className="input-field !py-1 !text-xs text-right w-full" type="text" inputMode="numeric" value={ri.qty} onChange={(e) => updateIngLine(i, "qty", +e.target.value)} /></td>
+                  <td className="px-2 py-1"><select className="input-field !py-1 !text-xs w-full" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)}>{UNITS_QTY.map((u) => <option key={u}>{u}</option>)}</select></td>
+                  <td className="px-2 py-1"><input className="input-field !py-1 !text-xs text-right w-full" type="text" inputMode="numeric" value={ri.lossPct} onChange={(e) => updateIngLine(i, "lossPct", +e.target.value)} /></td>
+                  <td className="px-2 py-1 text-center"><button onClick={() => removeIngLine(i)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button></td>
                 </tr>
               ))}
             </tbody>

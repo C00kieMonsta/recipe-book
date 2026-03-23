@@ -14,10 +14,23 @@ const DEFAULT_PRICING: RecipePricing = {
   chosenPrice: { surPlace: 0, takeAway: 0 },
 };
 
-function exportPdf(recipe: Recipe, ingredients: Ingredient[], totalCost: number) {
+async function exportPdf(recipe: Recipe, ingredients: Ingredient[]) {
   const doc = new jsPDF();
   const m = 15;
   let y = m;
+
+  if (recipe.photos?.length > 0 && recipe.photos[0].url) {
+    try {
+      const img = await loadImage(recipe.photos[0].url);
+      const maxW = 180;
+      const maxH = 60;
+      const ratio = Math.min(maxW / img.width, maxH / img.height);
+      const w = img.width * ratio;
+      const h = img.height * ratio;
+      doc.addImage(img, "JPEG", m, y, w, h);
+      y += h + 6;
+    } catch { /* skip photo on error */ }
+  }
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
@@ -44,15 +57,13 @@ function exportPdf(recipe: Recipe, ingredients: Ingredient[], totalCost: number)
 
   const ingRows = recipe.ingredients.map((ri) => {
     const ing = ingredients.find((i) => i.ingredientId === ri.ingredientId);
-    if (!ing) return ["-", "-", "-", "-"];
-    const cost = calcIngredientLineCost(ri, ing);
-    return [ing.name, `${ri.qty} ${ri.unit}`, fmt(ing.price), fmt(cost)];
+    if (!ing) return ["-", "-"];
+    return [ing.name, `${ri.qty} ${ri.unit}`];
   });
-  ingRows.push(["Total matières HTVA", "", "", fmt(totalCost)]);
 
   autoTable(doc, {
     startY: y,
-    head: [["Produit", "Quantité", "Prix/unité", "Coût"]],
+    head: [["Produit", "Quantité"]],
     body: ingRows,
     margin: { left: m },
     styles: { fontSize: 8 },
@@ -78,37 +89,17 @@ function exportPdf(recipe: Recipe, ingredients: Ingredient[], totalCost: number)
     });
   }
 
-  y += 6;
-  if (y > 250) { doc.addPage(); y = m; }
-
-  const portions = recipe.portions || 1;
-  const cpP = totalCost / portions;
-  const p = recipe.pricing || DEFAULT_PRICING;
-  const spHTVA = cpP * p.surPlace.coef;
-  const taHTVA = cpP * p.takeAway.coef;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text("Simulation de prix", m, y + 4);
-  y += 8;
-
-  autoTable(doc, {
-    startY: y,
-    head: [["", "Sur place", "Take away"]],
-    body: [
-      ["Coût/portion HTVA", fmt(cpP), fmt(cpP)],
-      ["COEF", String(p.surPlace.coef), String(p.takeAway.coef)],
-      ["Prix HTVA", fmt(spHTVA), fmt(taHTVA)],
-      ["TVA", `${p.surPlace.tva}%`, `${p.takeAway.tva}%`],
-      ["Prix TVAC", fmt(spHTVA * (1 + p.surPlace.tva / 100)), fmt(taHTVA * (1 + p.takeAway.tva / 100))],
-      ["Marge/portion", fmt(spHTVA - cpP), fmt(taHTVA - cpP)],
-    ],
-    margin: { left: m },
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [60, 60, 60] },
-  });
-
   doc.save(`${recipe.name.replace(/[^a-zA-Z0-9àâéèêëïîôùûüç\s-]/g, "")}.pdf`);
+}
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
 }
 
 export default function RecipeDetail() {
@@ -154,7 +145,7 @@ export default function RecipeDetail() {
           <button onClick={() => navigate(`/recipes/${id}/cook`)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
             <ChefHat className="h-4 w-4" /> Mode recette
           </button>
-          <button onClick={() => exportPdf(recipe, ingredients, totalCost)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
+          <button onClick={() => exportPdf(recipe, ingredients)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
             <FileDown className="h-4 w-4" /> PDF
           </button>
           <button onClick={() => navigate(`/recipes/${id}/edit`)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
