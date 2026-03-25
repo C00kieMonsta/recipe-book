@@ -9,6 +9,8 @@ import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { calcRecipeCost, calcIngredientLineCost, fmt, supplierColor } from "@/lib/recipe-helpers";
 import ActionMenu from "@/components/ui/ActionMenu";
+import NumericInput from "@/components/ui/NumericInput";
+import SearchSelect from "@/components/ui/SearchSelect";
 
 const DEFAULT_PRICING: RecipePricing = {
   surPlace: { coef: 4, tva: 12 },
@@ -355,7 +357,7 @@ export default function RecipeDetail() {
                     <tr key={idx} className="border-b border-border/30 group">
                       <td className="px-2 sm:px-3 py-2">
                         <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ background: supplierColor(ing.supplier) }} />
-                        {ing.name}
+                        <button onClick={() => navigate("/ingredients")} className="hover:underline hover:text-primary transition-colors text-left">{ing.name}</button>
                       </td>
                       <td className="px-2 sm:px-3 py-2 text-right tabular-nums whitespace-nowrap">{ri.qty} {ri.unit}</td>
                       <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell">{ri.lossPct || 0}%</td>
@@ -372,22 +374,19 @@ export default function RecipeDetail() {
                 {addingIngredient && (
                   <tr className="border-b border-primary/30 bg-muted/30">
                     <td className="px-2 sm:px-3 py-1.5">
-                      <select
-                        className="w-full border rounded-md px-2 py-1 text-xs bg-background focus:border-primary outline-none"
+                      <SearchSelect
+                        options={availableIngredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))}
                         value={newIng.ingredientId}
-                        onChange={(e) => setNewIng((p) => ({ ...p, ingredientId: e.target.value }))}
-                      >
-                        {availableIngredients.map((ig) => <option key={ig.ingredientId} value={ig.ingredientId}>{ig.name}</option>)}
-                      </select>
+                        onChange={(v) => setNewIng((p) => ({ ...p, ingredientId: v }))}
+                        placeholder="Rechercher un ingrédient…"
+                      />
                     </td>
                     <td className="px-2 sm:px-3 py-1.5">
                       <div className="flex gap-1 justify-end">
-                        <input
-                          type="text"
-                          inputMode="decimal"
+                        <NumericInput
                           className="w-16 border rounded-md px-2 py-1 text-xs text-right bg-background focus:border-primary outline-none"
-                          value={newIng.qty || ""}
-                          onChange={(e) => setNewIng((p) => ({ ...p, qty: +e.target.value }))}
+                          value={newIng.qty}
+                          onChange={(v) => setNewIng((p) => ({ ...p, qty: v }))}
                           placeholder="Qté"
                           autoFocus
                         />
@@ -578,16 +577,12 @@ function EditableNum({ value, onChange, suffix, placeholder }: {
   placeholder?: string;
 }) {
   return (
-    <div className="flex items-center justify-end gap-1">
-      <input
-        type="text"
-        inputMode="decimal"
-        value={value || ""}
-        placeholder={placeholder}
-        onChange={(e) => onChange(+e.target.value)}
-        className="w-20 text-right px-2 py-0.5 border rounded-md bg-background text-sm font-semibold tabular-nums focus:border-primary outline-none"
-      />
-      {suffix && <span className="text-muted-foreground text-xs w-4">{suffix}</span>}
-    </div>
+    <NumericInput
+      value={value}
+      onChange={onChange}
+      suffix={suffix}
+      placeholder={placeholder}
+      className="w-20 text-right px-2 py-0.5 border rounded-md bg-background text-sm font-semibold tabular-nums focus:border-primary outline-none"
+    />
   );
 }

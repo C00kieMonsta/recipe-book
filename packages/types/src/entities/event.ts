@@ -23,6 +23,7 @@ export interface AppEvent {
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
+  actualCost?: number;
   status: EventStatus;
   createdAt: string;
   updatedAt: string;

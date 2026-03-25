@@ -5,6 +5,7 @@ import type { AppEvent, Recipe, Ingredient, EventRecipeLine, EventExtraCost } fr
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { calcRecipeCost, fmt } from "@/lib/recipe-helpers";
+import NumericInput from "@/components/ui/NumericInput";
 
 export default function EventEditor() {
   const { id } = useParams<{ id: string }>();
@@ -26,6 +27,7 @@ export default function EventEditor() {
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactEmail, setContactEmail] = useState("");
+  const [actualCost, setActualCost] = useState<number | undefined>(undefined);
   const [status, setStatus] = useState<"upcoming" | "completed">("upcoming");
   const [recipeSearch, setRecipeSearch] = useState("");
 
@@ -42,6 +44,7 @@ export default function EventEditor() {
           setSellingPricePerGuest(ev.sellingPricePerGuest);
           setNotes(ev.notes || ""); setStatus(ev.status);
           setContactName(ev.contactName || ""); setContactPhone(ev.contactPhone || ""); setContactEmail(ev.contactEmail || "");
+          if (ev.actualCost !== undefined) setActualCost(ev.actualCost);
         }
       } catch {
         toast({ title: "Erreur de chargement", variant: "destructive" });
@@ -74,7 +77,8 @@ export default function EventEditor() {
   [recipes, recipeCostMap, recipePortionMap]);
 
   const totalExtraCosts = useMemo(() => extraCosts.reduce((s, c) => s + c.amount, 0), [extraCosts]);
-  const totalCost = totalRecipeCost + totalExtraCosts;
+  const calculatedCost = totalRecipeCost + totalExtraCosts;
+  const totalCost = actualCost !== undefined ? actualCost + totalExtraCosts : calculatedCost;
   const totalRevenue = sellingPricePerGuest * guestCount;
   const margin = totalRevenue - totalCost;
   const marginPct = totalRevenue > 0 ? (margin / totalRevenue) * 100 : 0;
@@ -112,7 +116,7 @@ export default function EventEditor() {
     try {
       const data = {
         name, date, guestCount, recipes, extraCosts, sellingPricePerGuest,
-        notes: notes || undefined, status,
+        notes: notes || undefined, status, actualCost,
         contactName: contactName || undefined, contactPhone: contactPhone || undefined, contactEmail: contactEmail || undefined,
       };
       if (isNew) {
@@ -160,11 +164,11 @@ export default function EventEditor() {
             </div>
             <div>
               <FieldLabel>Nombre de convives</FieldLabel>
-              <input className="input-field" type="text" inputMode="numeric" value={guestCount} onChange={(e) => setGuestCount(+e.target.value)} />
+              <NumericInput className="input-field" value={guestCount} onChange={setGuestCount} min={1} />
             </div>
             <div>
               <FieldLabel>Prix de vente par convive HTVA (€)</FieldLabel>
-              <input className="input-field" type="text" inputMode="decimal" value={sellingPricePerGuest} onChange={(e) => setSellingPricePerGuest(+e.target.value)} />
+              <NumericInput className="input-field" value={sellingPricePerGuest} onChange={setSellingPricePerGuest} />
             </div>
             <div>
               <FieldLabel>Statut</FieldLabel>
@@ -229,16 +233,19 @@ export default function EventEditor() {
                   const lineCost = costPerPortion * rl.portions;
                   return (
                     <tr key={rl.recipeId} className="border-b border-border/30">
-                      <td className="px-2 py-2 font-semibold">{rec?.name || "—"}</td>
-                      <td className="px-2 py-2"><input className="input-field !py-1 !text-xs text-right w-full" type="text" inputMode="numeric" value={rl.portions} onChange={(e) => updateRecipeLine(i, +e.target.value)} /></td>
+                      <td className="px-2 py-2 font-semibold">
+                        <a href={`/recipes/${rl.recipeId}`} target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-primary transition-colors">{rec?.name || "—"}</a>
+                      </td>
+                      <td className="px-2 py-2"><NumericInput className="input-field !py-1 !text-xs text-right w-full" value={rl.portions} onChange={(v) => updateRecipeLine(i, v)} min={1} /></td>
                       <td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{fmt(costPerPortion)}</td>
                       <td className="px-2 py-2 text-right tabular-nums font-medium">{fmt(lineCost)}</td>
                       <td className="px-2 py-2"><button onClick={() => removeRecipeLine(i)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button></td>
                     </tr>
                   );
                 })}
-                <tr className="font-bold">
-                  <td className="px-2 py-2" colSpan={3}>Sous-total recettes</td>
+                <tr className="font-bold border-t-2 border-border">
+                  <td className="px-2 py-2" colSpan={2}>Sous-total recettes</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{fmt(recipes.reduce((sum, rl) => { const tc = recipeCostMap[rl.recipeId] || 0; const rp = recipePortionMap[rl.recipeId] || 1; return sum + tc / rp; }, 0))}</td>
                   <td className="px-2 py-2 text-right tabular-nums">{fmt(totalRecipeCost)}</td>
                   <td />
                 </tr>
@@ -255,7 +262,7 @@ export default function EventEditor() {
           {extraCosts.map((ec, i) => (
             <div key={i} className="flex gap-3 mb-2 items-center">
               <input className="input-field flex-1 !py-1.5" placeholder="Description…" value={ec.label} onChange={(e) => updateExtraCost(i, "label", e.target.value)} />
-              <input className="input-field w-28 !py-1.5 text-right" type="text" inputMode="decimal" value={ec.amount} onChange={(e) => updateExtraCost(i, "amount", +e.target.value)} />
+              <NumericInput className="input-field w-28 !py-1.5 text-right" value={ec.amount as number} onChange={(v) => updateExtraCost(i, "amount", v)} />
               <button onClick={() => removeExtraCost(i)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
             </div>
           ))}
@@ -269,6 +276,29 @@ export default function EventEditor() {
 
         <section className="card-elevated p-5">
           <h2 className="font-serif text-lg font-bold mb-4">Résumé financier</h2>
+          <div className="mb-4 p-3 bg-muted/30 rounded-lg">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="text-sm">
+                <span className="text-muted-foreground">Coût calculé recettes : </span>
+                <span className="font-semibold tabular-nums">{fmt(totalRecipeCost)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Coût réel recettes HTVA</label>
+                <NumericInput
+                  className="input-field w-28 !py-1.5 text-right"
+                  value={actualCost ?? 0}
+                  onChange={(v) => setActualCost(v > 0 ? v : undefined)}
+                  placeholder="—"
+                />
+                {actualCost !== undefined && (
+                  <button onClick={() => setActualCost(undefined)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+                )}
+              </div>
+            </div>
+            {actualCost !== undefined && (
+              <p className="text-xs text-muted-foreground mt-1">Le coût réel remplace le coût calculé dans les calculs de marge.</p>
+            )}
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <SummaryCard label="Coût total HTVA" value={fmt(totalCost)} />
             <SummaryCard label="Revenu total HTVA" value={fmt(totalRevenue)} />

@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { fmt, supplierColor } from "@/lib/recipe-helpers";
 import { usePagination } from "@/hooks/use-pagination";
 import Pagination from "@/components/ui/Pagination";
+import NumericInput from "@/components/ui/NumericInput";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 
@@ -225,7 +226,7 @@ function IngredientForm({ ingredient, supplierNames, onSave, onCancel, onDelete 
       <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Nom</label>
       <input className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" value={form.name || ""} onChange={(e) => u("name", e.target.value)} />
       <div className="grid grid-cols-2 gap-3">
-        <div><label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Prix HTVA</label><input className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" type="text" inputMode="decimal" value={form.price ?? 0} onChange={(e) => u("price", +e.target.value)} /></div>
+        <div><label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Prix HTVA</label><NumericInput className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" value={form.price ?? 0} onChange={(v) => u("price", v)} /></div>
         <div><label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Unité</label><select className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" value={form.unit || "€/kg"} onChange={(e) => u("unit", e.target.value)}>{UNITS_PRICE.map((u) => <option key={u}>{u}</option>)}</select></div>
       </div>
       <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Fournisseur</label>

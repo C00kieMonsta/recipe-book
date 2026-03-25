@@ -24,7 +24,7 @@ export const createRecipeRequestSchema = z.object({
   name: z.string().min(1).trim(),
   type: z.string().default("Buffet"),
   portions: z.number().int().positive().default(1),
-  portionWeight: z.number().positive().default(150),
+  portionWeight: z.number().nonnegative().default(150),
   description: z.string().trim().optional(),
   techniques: z.array(z.string()).default([]),
   ingredients: z.array(recipeIngredientSchema).default([]),

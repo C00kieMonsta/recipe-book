@@ -5,6 +5,9 @@ import type { Recipe, RecipeIngredient, RecipePricing, RecipePhoto, Ingredient }
 import { UNITS_QTY, DEFAULT_RECIPE_CATEGORIES } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import NumericInput from "@/components/ui/NumericInput";
+import SearchSelect from "@/components/ui/SearchSelect";
+import { fmt } from "@/lib/recipe-helpers";
 
 const DEFAULT_PRICING: RecipePricing = {
   surPlace: { coef: 4, tva: 12 },
@@ -154,11 +157,11 @@ export default function RecipeEditor() {
             </div>
             <div>
               <FieldLabel>Portions</FieldLabel>
-              <input className="input-field" type="text" inputMode="numeric" value={form.portions} onChange={(e) => update("portions", +e.target.value)} />
+              <NumericInput className="input-field" value={form.portions} onChange={(v) => update("portions", v)} min={1} />
             </div>
             <div>
               <FieldLabel>Poids/pers (g)</FieldLabel>
-              <input className="input-field" type="text" inputMode="numeric" value={form.portionWeight} onChange={(e) => update("portionWeight", +e.target.value)} />
+              <NumericInput className="input-field" value={form.portionWeight} onChange={(v) => update("portionWeight", v)} />
             </div>
           </div>
         </section>
@@ -242,10 +245,10 @@ export default function RecipeEditor() {
             <tbody>
               {form.ingredients.map((ri, i) => (
                 <tr key={i} className="border-b border-border/30">
-                  <td className="px-2 py-1"><select className="input-field !py-1 !text-xs w-full truncate" value={ri.ingredientId} onChange={(e) => updateIngLine(i, "ingredientId", e.target.value)}>{allIngredients.map((ing) => <option key={ing.ingredientId} value={ing.ingredientId}>{ing.name}</option>)}</select></td>
-                  <td className="px-2 py-1"><input className="input-field !py-1 !text-xs text-right w-full" type="text" inputMode="numeric" value={ri.qty} onChange={(e) => updateIngLine(i, "qty", +e.target.value)} /></td>
+                  <td className="px-2 py-1"><SearchSelect options={allIngredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))} value={ri.ingredientId} onChange={(v) => updateIngLine(i, "ingredientId", v)} placeholder="Rechercher…" /></td>
+                  <td className="px-2 py-1"><NumericInput className="input-field !py-1 !text-xs text-right w-full" value={ri.qty} onChange={(v) => updateIngLine(i, "qty", v)} /></td>
                   <td className="px-2 py-1"><select className="input-field !py-1 !text-xs w-full" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)}>{UNITS_QTY.map((u) => <option key={u}>{u}</option>)}</select></td>
-                  <td className="px-2 py-1"><input className="input-field !py-1 !text-xs text-right w-full" type="text" inputMode="numeric" value={ri.lossPct} onChange={(e) => updateIngLine(i, "lossPct", +e.target.value)} /></td>
+                  <td className="px-2 py-1"><NumericInput className="input-field !py-1 !text-xs text-right w-full" value={ri.lossPct} onChange={(v) => updateIngLine(i, "lossPct", v)} /></td>
                   <td className="px-2 py-1 text-center"><button onClick={() => removeIngLine(i)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button></td>
                 </tr>
               ))}
@@ -259,20 +262,20 @@ export default function RecipeEditor() {
             <div>
               <h4 className="font-serif text-sm font-bold mb-3">Sur place</h4>
               <FieldLabel>Coefficient</FieldLabel>
-              <input className="input-field" type="text" inputMode="decimal" value={form.pricing.surPlace.coef} onChange={(e) => updatePricing("surPlace.coef", +e.target.value)} />
+              <NumericInput className="input-field" value={form.pricing.surPlace.coef} onChange={(v) => updatePricing("surPlace.coef", v)} />
               <FieldLabel>TVA %</FieldLabel>
-              <input className="input-field" type="text" inputMode="numeric" value={form.pricing.surPlace.tva} onChange={(e) => updatePricing("surPlace.tva", +e.target.value)} />
+              <NumericInput className="input-field" value={form.pricing.surPlace.tva} onChange={(v) => updatePricing("surPlace.tva", v)} />
               <FieldLabel>Prix choisi TVAC</FieldLabel>
-              <input className="input-field" type="text" inputMode="decimal" value={form.pricing.chosenPrice.surPlace} onChange={(e) => updatePricing("chosenPrice.surPlace", +e.target.value)} />
+              <NumericInput className="input-field" value={form.pricing.chosenPrice.surPlace} onChange={(v) => updatePricing("chosenPrice.surPlace", v)} />
             </div>
             <div>
               <h4 className="font-serif text-sm font-bold mb-3">Take away</h4>
               <FieldLabel>Coefficient</FieldLabel>
-              <input className="input-field" type="text" inputMode="decimal" value={form.pricing.takeAway.coef} onChange={(e) => updatePricing("takeAway.coef", +e.target.value)} />
+              <NumericInput className="input-field" value={form.pricing.takeAway.coef} onChange={(v) => updatePricing("takeAway.coef", v)} />
               <FieldLabel>TVA %</FieldLabel>
-              <input className="input-field" type="text" inputMode="numeric" value={form.pricing.takeAway.tva} onChange={(e) => updatePricing("takeAway.tva", +e.target.value)} />
+              <NumericInput className="input-field" value={form.pricing.takeAway.tva} onChange={(v) => updatePricing("takeAway.tva", v)} />
               <FieldLabel>Prix choisi TVAC</FieldLabel>
-              <input className="input-field" type="text" inputMode="decimal" value={form.pricing.chosenPrice.takeAway} onChange={(e) => updatePricing("chosenPrice.takeAway", +e.target.value)} />
+              <NumericInput className="input-field" value={form.pricing.chosenPrice.takeAway} onChange={(v) => updatePricing("chosenPrice.takeAway", v)} />
             </div>
           </div>
         </section>

@@ -45,7 +45,8 @@ export default function EventDetail() {
     return sum + (totalCost / portions) * rl.portions;
   }, 0);
   const totalExtraCosts = event.extraCosts.reduce((s, c) => s + c.amount, 0);
-  const totalCost = totalRecipeCost + totalExtraCosts;
+  const calculatedCost = totalRecipeCost + totalExtraCosts;
+  const totalCost = event.actualCost !== undefined ? event.actualCost + totalExtraCosts : calculatedCost;
   const totalRevenue = event.sellingPricePerGuest * event.guestCount;
   const margin = totalRevenue - totalCost;
   const marginPct = totalRevenue > 0 ? (margin / totalRevenue) * 100 : 0;
@@ -116,6 +117,12 @@ export default function EventDetail() {
         </div>
       </div>
 
+      {event.actualCost !== undefined && (
+        <div className="mb-4 px-4 py-2.5 bg-muted/30 rounded-lg text-sm flex gap-4 items-center flex-wrap">
+          <span className="text-muted-foreground">Coût calculé : <span className="line-through tabular-nums">{fmt(calculatedCost)}</span></span>
+          <span className="font-semibold">Coût réel recettes : <span className="tabular-nums">{fmt(event.actualCost)}</span></span>
+        </div>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <StatCard label="Coût total HTVA" value={fmt(totalCost)} />
         <StatCard label="Revenu total HTVA" value={fmt(totalRevenue)} />
@@ -140,7 +147,7 @@ export default function EventDetail() {
               const cpp = totalRecCost / recPortions;
               return (
                 <tr key={rl.recipeId} className="border-b border-border/30">
-                  <td className="px-3 py-2 font-semibold">{rec?.name || "—"}</td>
+                  <td className="px-3 py-2 font-semibold"><a href={`/recipes/${rl.recipeId}`} className="hover:underline hover:text-primary transition-colors">{rec?.name || "—"}</a></td>
                   <td className="px-3 py-2 text-right tabular-nums">{rl.portions}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{fmt(cpp)}</td>
                   <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt(cpp * rl.portions)}</td>
