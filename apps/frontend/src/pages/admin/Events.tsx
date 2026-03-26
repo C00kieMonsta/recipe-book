@@ -2,11 +2,13 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Calendar, Search, Trash2, ShoppingCart, X, Copy, FileDown, FileSpreadsheet, GripVertical } from "lucide-react";
 import type { AppEvent, Recipe, Ingredient } from "@packages/types";
+import { UNITS_QTY, PRICE_TO_QTY_UNIT } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { usePagination } from "@/hooks/use-pagination";
 import Pagination from "@/components/ui/Pagination";
 import NumericInput from "@/components/ui/NumericInput";
+import SearchSelect from "@/components/ui/SearchSelect";
 import { fmt, supplierColor } from "@/lib/recipe-helpers";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -29,6 +31,7 @@ export default function Events() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [groceryList, setGroceryList] = useState<GroceryItem[] | null>(null);
   const [groceryLoading, setGroceryLoading] = useState(false);
+  const [groceryIngredients, setGroceryIngredients] = useState<Ingredient[]>([]);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -71,6 +74,7 @@ export default function Events() {
     setGroceryLoading(true);
     try {
       const [allRecipes, allIngredients] = await Promise.all([api.recipes.list(), api.ingredients.list()]);
+      setGroceryIngredients(allIngredients);
       const recipeMap = new Map<string, Recipe>();
       allRecipes.forEach((r) => recipeMap.set(r.recipeId, r));
       const ingMap = new Map<string, Ingredient>();
@@ -312,6 +316,7 @@ export default function Events() {
         <GroceryModal
           groceryList={groceryList}
           setGroceryList={setGroceryList}
+          allIngredients={groceryIngredients}
           selectedCount={selected.size}
           onClose={() => setGroceryList(null)}
           onCopy={copyGroceryList}
@@ -323,9 +328,10 @@ export default function Events() {
   );
 }
 
-function GroceryModal({ groceryList, setGroceryList, selectedCount, onClose, onCopy, onExportPdf, onExportCsv }: {
+function GroceryModal({ groceryList, setGroceryList, allIngredients, selectedCount, onClose, onCopy, onExportPdf, onExportCsv }: {
   groceryList: GroceryItem[];
   setGroceryList: (list: GroceryItem[] | null) => void;
+  allIngredients: Ingredient[];
   selectedCount: number;
   onClose: () => void;
   onCopy: () => void;
@@ -334,6 +340,10 @@ function GroceryModal({ groceryList, setGroceryList, selectedCount, onClose, onC
 }) {
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dropSupplier, setDropSupplier] = useState<string | null>(null);
+  const [addingIng, setAddingIng] = useState(false);
+  const [newIngId, setNewIngId] = useState("");
+  const [newIngQty, setNewIngQty] = useState(0);
+  const [newIngUnit, setNewIngUnit] = useState<string>("g");
 
   const suppliers = useMemo(() => {
     const seen = new Set<string>();
@@ -370,6 +380,28 @@ function GroceryModal({ groceryList, setGroceryList, selectedCount, onClose, onC
   const getGlobalIdx = (item: GroceryItem) =>
     groceryList.findIndex((g) => g.ingredientId === item.ingredientId && g.unit === item.unit);
 
+  const usedIngIds = new Set(groceryList.map((g) => g.ingredientId));
+  const availableIngs = allIngredients.filter((i) => !usedIngIds.has(i.ingredientId));
+
+  const addItem = () => {
+    const ing = allIngredients.find((i) => i.ingredientId === newIngId);
+    if (!ing || newIngQty <= 0) return;
+    const item: GroceryItem = {
+      ingredientId: ing.ingredientId,
+      name: ing.name,
+      totalQty: newIngQty,
+      unit: newIngUnit,
+      supplier: ing.supplier,
+      pricePerUnit: ing.price,
+      priceUnit: ing.unit,
+    };
+    setGroceryList([...groceryList, item]);
+    setNewIngId("");
+    setNewIngQty(0);
+    setNewIngUnit("g");
+    setAddingIng(false);
+  };
+
   return (
     <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-card rounded-2xl p-6 max-w-2xl w-[95%] max-h-[85vh] overflow-auto shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
@@ -392,6 +424,43 @@ function GroceryModal({ groceryList, setGroceryList, selectedCount, onClose, onC
           {selectedCount} événement{selectedCount > 1 ? "s" : ""} sélectionné{selectedCount > 1 ? "s" : ""} · {groceryList.length} ingrédient{groceryList.length > 1 ? "s" : ""}
           <span className="ml-2 text-muted-foreground/60">Glissez un ingrédient vers un fournisseur pour le déplacer</span>
         </p>
+        {addingIng ? (
+          <div className="mt-2 flex items-center gap-2 flex-wrap border rounded-lg p-3 bg-muted/20">
+            <SearchSelect
+              options={availableIngs.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))}
+              value={newIngId}
+              onChange={(v) => {
+                setNewIngId(v);
+                const ing = allIngredients.find((i) => i.ingredientId === v);
+                if (ing) setNewIngUnit(PRICE_TO_QTY_UNIT[ing.unit] || "g");
+              }}
+              placeholder="Rechercher un ingrédient…"
+              className="flex-1 min-w-[160px]"
+            />
+            <NumericInput
+              className="w-20 text-right px-2 py-1 border rounded-md bg-background text-xs tabular-nums focus:border-primary outline-none"
+              value={newIngQty}
+              onChange={setNewIngQty}
+              placeholder="Qté"
+            />
+            <select
+              className="border rounded-md px-1 py-1 text-xs bg-background focus:border-primary outline-none"
+              value={newIngUnit}
+              onChange={(e) => setNewIngUnit(e.target.value)}
+            >
+              {UNITS_QTY.map((u) => <option key={u}>{u}</option>)}
+            </select>
+            <button onClick={addItem} disabled={!newIngId || newIngQty <= 0} className="px-3 py-1 bg-primary text-primary-foreground rounded-md text-xs font-medium disabled:opacity-50">Ajouter</button>
+            <button onClick={() => setAddingIng(false)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setAddingIng(true)}
+            className="m-2 flex items-center gap-1.5 px-3 py-2 border border-dashed rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors w-full justify-center"
+          >
+            <Plus className="h-3.5 w-3.5" /> Ajouter un ingrédient
+          </button>
+        )}
         {suppliers.map((supplier) => (
           <div
             key={supplier}
@@ -440,6 +509,7 @@ function GroceryModal({ groceryList, setGroceryList, selectedCount, onClose, onC
             </table>
           </div>
         ))}
+
       </div>
     </div>
   );
