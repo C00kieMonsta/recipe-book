@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Save, Plus, X, ImagePlus } from "lucide-react";
 import type { Recipe, RecipeIngredient, RecipePricing, RecipePhoto, Ingredient } from "@packages/types";
-import { UNITS_QTY, DEFAULT_RECIPE_CATEGORIES } from "@packages/types";
+import { UNITS_QTY, DEFAULT_RECIPE_CATEGORIES, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import NumericInput from "@/components/ui/NumericInput";
 import SearchSelect from "@/components/ui/SearchSelect";
+import IngredientFormModal from "@/components/ui/IngredientFormModal";
 import { fmt } from "@/lib/recipe-helpers";
 
 const DEFAULT_PRICING: RecipePricing = {
@@ -36,6 +37,8 @@ export default function RecipeEditor() {
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [creatingIngredient, setCreatingIngredient] = useState<string | null>(null);
+  const [supplierNames] = useState(() => DEFAULT_SUPPLIERS.map((s) => s.name));
 
   const [form, setForm] = useState<FormState>({
     name: "", type: "Buffet", portions: 1, portionWeight: 150, description: "",
@@ -89,6 +92,17 @@ export default function RecipeEditor() {
       obj[parts[parts.length - 1]] = v;
       return { ...p, pricing };
     });
+  };
+
+  const handleCreateIngredient = async (data: Partial<Ingredient>) => {
+    try {
+      const created = await api.ingredients.create(data);
+      setAllIngredients((prev) => [...prev, created]);
+      setCreatingIngredient(null);
+      toast({ title: "Ingrédient créé" });
+    } catch {
+      toast({ title: "Erreur lors de la création", variant: "destructive" });
+    }
   };
 
   const handleSave = async () => {
@@ -245,7 +259,7 @@ export default function RecipeEditor() {
             <tbody>
               {form.ingredients.map((ri, i) => (
                 <tr key={i} className="border-b border-border/30">
-                  <td className="px-2 py-1"><SearchSelect options={allIngredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))} value={ri.ingredientId} onChange={(v) => updateIngLine(i, "ingredientId", v)} placeholder="Rechercher…" /></td>
+                  <td className="px-2 py-1"><SearchSelect options={allIngredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))} value={ri.ingredientId} onChange={(v) => { updateIngLine(i, "ingredientId", v); const ing = allIngredients.find((ig) => ig.ingredientId === v); if (ing) updateIngLine(i, "unit", PRICE_TO_QTY_UNIT[ing.unit]); }} placeholder="Rechercher…" onCreateNew={(name) => setCreatingIngredient(name)} /></td>
                   <td className="px-2 py-1"><NumericInput className="input-field !py-1 !text-xs text-right w-full" value={ri.qty} onChange={(v) => updateIngLine(i, "qty", v)} /></td>
                   <td className="px-2 py-1"><select className="input-field !py-1 !text-xs w-full" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)}>{UNITS_QTY.map((u) => <option key={u}>{u}</option>)}</select></td>
                   <td className="px-2 py-1"><NumericInput className="input-field !py-1 !text-xs text-right w-full" value={ri.lossPct} onChange={(v) => updateIngLine(i, "lossPct", v)} /></td>
@@ -280,6 +294,15 @@ export default function RecipeEditor() {
           </div>
         </section>
       </div>
+
+      {creatingIngredient !== null && (
+        <IngredientFormModal
+          ingredient={{ name: creatingIngredient, price: 0, unit: "€/kg", supplier: supplierNames[0] || "" }}
+          supplierNames={supplierNames}
+          onSave={handleCreateIngredient}
+          onCancel={() => setCreatingIngredient(null)}
+        />
+      )}
     </div>
   );
 }

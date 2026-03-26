@@ -1,11 +1,12 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Calendar, Search, Trash2, ShoppingCart, X, Copy, FileDown, FileSpreadsheet } from "lucide-react";
+import { Plus, Calendar, Search, Trash2, ShoppingCart, X, Copy, FileDown, FileSpreadsheet, GripVertical } from "lucide-react";
 import type { AppEvent, Recipe, Ingredient } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { usePagination } from "@/hooks/use-pagination";
 import Pagination from "@/components/ui/Pagination";
+import NumericInput from "@/components/ui/NumericInput";
 import { fmt, supplierColor } from "@/lib/recipe-helpers";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -308,51 +309,138 @@ export default function Events() {
       <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} onPrev={prev} onNext={next} />
 
       {groceryList && (
-        <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setGroceryList(null)}>
-          <div className="bg-card rounded-2xl p-6 max-w-2xl w-[95%] max-h-[85vh] overflow-auto shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="font-serif text-xl font-bold">Liste de courses</h2>
-              <div className="flex gap-2">
-                <button onClick={exportGroceryPdf} className="flex items-center gap-1 px-3 py-1.5 border rounded-lg text-xs font-medium hover:bg-muted transition-colors">
-                  <FileDown className="h-3.5 w-3.5" /> PDF
-                </button>
-                <button onClick={exportGroceryCsv} className="flex items-center gap-1 px-3 py-1.5 border rounded-lg text-xs font-medium hover:bg-muted transition-colors">
-                  <FileSpreadsheet className="h-3.5 w-3.5" /> CSV
-                </button>
-                <button onClick={copyGroceryList} className="flex items-center gap-1 px-3 py-1.5 border rounded-lg text-xs font-medium hover:bg-muted transition-colors">
-                  <Copy className="h-3.5 w-3.5" /> Copier
-                </button>
-                <button onClick={() => setGroceryList(null)} className="p-1.5 text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
-              </div>
+        <GroceryModal
+          groceryList={groceryList}
+          setGroceryList={setGroceryList}
+          selectedCount={selected.size}
+          onClose={() => setGroceryList(null)}
+          onCopy={copyGroceryList}
+          onExportPdf={exportGroceryPdf}
+          onExportCsv={exportGroceryCsv}
+        />
+      )}
+    </div>
+  );
+}
+
+function GroceryModal({ groceryList, setGroceryList, selectedCount, onClose, onCopy, onExportPdf, onExportCsv }: {
+  groceryList: GroceryItem[];
+  setGroceryList: (list: GroceryItem[] | null) => void;
+  selectedCount: number;
+  onClose: () => void;
+  onCopy: () => void;
+  onExportPdf: () => void;
+  onExportCsv: () => void;
+}) {
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dropSupplier, setDropSupplier] = useState<string | null>(null);
+
+  const suppliers = useMemo(() => {
+    const seen = new Set<string>();
+    groceryList.forEach((g) => seen.add(g.supplier));
+    return [...seen].sort();
+  }, [groceryList]);
+
+  const grouped = useMemo(() => {
+    const map: Record<string, GroceryItem[]> = {};
+    suppliers.forEach((s) => { map[s] = []; });
+    groceryList.forEach((g) => { map[g.supplier]?.push(g); });
+    return map;
+  }, [groceryList, suppliers]);
+
+  const updateQty = (idx: number, qty: number) => {
+    const next = [...groceryList];
+    next[idx] = { ...next[idx], totalQty: qty };
+    setGroceryList(next);
+  };
+
+  const removeItem = (idx: number) => {
+    setGroceryList(groceryList.filter((_, i) => i !== idx));
+  };
+
+  const handleDrop = (targetSupplier: string) => {
+    if (dragIdx === null) return;
+    const next = [...groceryList];
+    next[dragIdx] = { ...next[dragIdx], supplier: targetSupplier };
+    setGroceryList(next);
+    setDragIdx(null);
+    setDropSupplier(null);
+  };
+
+  const getGlobalIdx = (item: GroceryItem) =>
+    groceryList.findIndex((g) => g.ingredientId === item.ingredientId && g.unit === item.unit);
+
+  return (
+    <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-card rounded-2xl p-6 max-w-2xl w-[95%] max-h-[85vh] overflow-auto shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="font-serif text-xl font-bold">Liste de courses</h2>
+          <div className="flex gap-2">
+            <button onClick={onExportPdf} className="flex items-center gap-1 px-3 py-1.5 border rounded-lg text-xs font-medium hover:bg-muted transition-colors">
+              <FileDown className="h-3.5 w-3.5" /> PDF
+            </button>
+            <button onClick={onExportCsv} className="flex items-center gap-1 px-3 py-1.5 border rounded-lg text-xs font-medium hover:bg-muted transition-colors">
+              <FileSpreadsheet className="h-3.5 w-3.5" /> CSV
+            </button>
+            <button onClick={onCopy} className="flex items-center gap-1 px-3 py-1.5 border rounded-lg text-xs font-medium hover:bg-muted transition-colors">
+              <Copy className="h-3.5 w-3.5" /> Copier
+            </button>
+            <button onClick={onClose} className="p-1.5 text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          {selectedCount} événement{selectedCount > 1 ? "s" : ""} sélectionné{selectedCount > 1 ? "s" : ""} · {groceryList.length} ingrédient{groceryList.length > 1 ? "s" : ""}
+          <span className="ml-2 text-muted-foreground/60">Glissez un ingrédient vers un fournisseur pour le déplacer</span>
+        </p>
+        {suppliers.map((supplier) => (
+          <div
+            key={supplier}
+            className={`mb-4 rounded-lg border transition-colors ${dropSupplier === supplier ? "border-primary bg-primary/5" : "border-border/40"}`}
+            onDragOver={(e) => { e.preventDefault(); setDropSupplier(supplier); }}
+            onDragLeave={() => setDropSupplier(null)}
+            onDrop={(e) => { e.preventDefault(); handleDrop(supplier); }}
+          >
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30">
+              <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: supplierColor(supplier) }} />
+              <span className="text-sm font-bold">{supplier}</span>
+              <span className="text-xs text-muted-foreground">({grouped[supplier]?.length || 0})</span>
             </div>
-            <p className="text-xs text-muted-foreground mb-3">
-              {selected.size} événement{selected.size > 1 ? "s" : ""} sélectionné{selected.size > 1 ? "s" : ""} · {groceryList.length} ingrédient{groceryList.length > 1 ? "s" : ""}
-            </p>
             <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b-2 border-border">
-                  <th className="px-3 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Ingrédient</th>
-                  <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Quantité</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Fournisseur</th>
-                  <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Prix/u</th>
-                </tr>
-              </thead>
               <tbody>
-                {groceryList.map((g) => (
-                  <tr key={`${g.ingredientId}:${g.unit}`} className="border-b border-border/30">
-                    <td className="px-3 py-2 font-medium">{g.name}</td>
-                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{Number(g.totalQty.toFixed(2))} {g.unit}</td>
-                    <td className="px-3 py-2">
-                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold border" style={{ color: supplierColor(g.supplier), borderColor: supplierColor(g.supplier) + "55", background: supplierColor(g.supplier) + "12" }}>{g.supplier}</span>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{fmt(g.pricePerUnit)} {g.priceUnit}</td>
-                  </tr>
-                ))}
+                {(grouped[supplier] || []).map((g) => {
+                  const gIdx = getGlobalIdx(g);
+                  return (
+                    <tr
+                      key={`${g.ingredientId}:${g.unit}`}
+                      draggable
+                      onDragStart={() => setDragIdx(gIdx)}
+                      onDragEnd={() => { setDragIdx(null); setDropSupplier(null); }}
+                      className={`border-b border-border/20 last:border-0 hover:bg-muted/30 cursor-grab active:cursor-grabbing ${dragIdx === gIdx ? "opacity-40" : ""}`}
+                    >
+                      <td className="pl-3 py-1.5 w-6 text-muted-foreground/40"><GripVertical className="h-3.5 w-3.5" /></td>
+                      <td className="px-2 py-1.5 font-medium">{g.name}</td>
+                      <td className="px-2 py-1.5 w-32">
+                        <div className="flex items-center justify-end gap-1">
+                          <NumericInput
+                            className="w-20 text-right px-2 py-0.5 border rounded-md bg-background text-xs tabular-nums focus:border-primary outline-none"
+                            value={g.totalQty}
+                            onChange={(v) => updateQty(gIdx, v)}
+                          />
+                          <span className="text-xs text-muted-foreground w-8">{g.unit}</span>
+                        </div>
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground text-xs w-24">{fmt(g.pricePerUnit)} {g.priceUnit}</td>
+                      <td className="pr-2 py-1.5 w-8">
+                        <button onClick={() => removeItem(gIdx)} className="p-0.5 text-muted-foreground hover:text-destructive transition-colors"><X className="h-3.5 w-3.5" /></button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 }

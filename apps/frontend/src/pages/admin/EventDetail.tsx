@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { calcRecipeCost, fmt } from "@/lib/recipe-helpers";
 import ActionMenu from "@/components/ui/ActionMenu";
+import NumericInput from "@/components/ui/NumericInput";
 
 export default function EventDetail() {
   const { id } = useParams<{ id: string }>();
@@ -24,6 +25,16 @@ export default function EventDetail() {
       .catch(() => toast({ title: "Erreur de chargement", variant: "destructive" }))
       .finally(() => setLoading(false));
   }, [id]);
+
+  const saveField = async (patch: Partial<AppEvent>) => {
+    if (!id || !event) return;
+    try {
+      const updated = await api.events.update(id, patch);
+      setEvent(updated);
+    } catch {
+      toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" });
+    }
+  };
 
   const recipeCostMap = useMemo(() => {
     const map: Record<string, number> = {};
@@ -84,6 +95,17 @@ export default function EventDetail() {
     }
   };
 
+  const updateRecipePortions = (recipeId: string, portions: number) => {
+    const recipes = event.recipes.map((rl) => rl.recipeId === recipeId ? { ...rl, portions } : rl);
+    saveField({ recipes });
+  };
+
+  const updateExtraCost = (idx: number, field: "label" | "amount", value: string | number) => {
+    const extraCosts = [...event.extraCosts];
+    extraCosts[idx] = { ...extraCosts[idx], [field]: value };
+    saveField({ extraCosts });
+  };
+
   return (
     <div className="max-w-[1100px] mx-auto">
       <div className="flex justify-between items-center mb-5">
@@ -99,21 +121,34 @@ export default function EventDetail() {
 
       <div className="flex gap-4 items-start mb-6 flex-wrap">
         <div className="flex-1">
-          <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold mb-2 ${event.status === "upcoming" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>
-            {event.status === "upcoming" ? "À venir" : "Terminé"}
-          </span>
-          <h1 className="text-3xl font-bold tracking-tight mb-1">{event.name}</h1>
-          <p className="text-muted-foreground text-sm">
-            {new Date(event.date).toLocaleDateString("fr-BE", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · {event.guestCount} convives
-          </p>
-          {event.notes && <p className="text-muted-foreground text-sm mt-2 italic">{event.notes}</p>}
-          {(event.contactName || event.contactPhone || event.contactEmail) && (
-            <div className="flex gap-4 mt-3 text-sm text-muted-foreground flex-wrap">
-              {event.contactName && <span>Contact: <strong className="text-foreground">{event.contactName}</strong></span>}
-              {event.contactPhone && <a href={`tel:${event.contactPhone}`} className="hover:text-foreground transition-colors">{event.contactPhone}</a>}
-              {event.contactEmail && <a href={`mailto:${event.contactEmail}`} className="hover:text-foreground transition-colors">{event.contactEmail}</a>}
-            </div>
-          )}
+          <EditableStatus value={event.status} onSave={(v) => saveField({ status: v })} />
+          <EditableText
+            value={event.name}
+            onSave={(v) => saveField({ name: v })}
+            className="text-3xl font-bold tracking-tight mb-1"
+            inputClassName="text-3xl font-bold tracking-tight mb-1 w-full border-b-2 border-primary bg-transparent outline-none"
+          />
+          <div className="flex gap-2 items-center text-muted-foreground text-sm mb-1">
+            <span>{new Date(event.date).toLocaleDateString("fr-BE", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span>
+            <span>·</span>
+            <EditableInlineNum value={event.guestCount} onSave={(v) => saveField({ guestCount: v })} min={1} suffix=" convives" />
+          </div>
+          <EditableText
+            value={event.notes || ""}
+            onSave={(v) => saveField({ notes: v })}
+            className="text-muted-foreground text-sm mt-2 italic"
+            inputClassName="text-muted-foreground text-sm mt-2 w-full border-b border-primary/50 bg-transparent outline-none"
+            placeholder="Ajouter des notes…"
+            multiline
+          />
+          <div className="flex gap-4 mt-3 text-sm text-muted-foreground flex-wrap">
+            <span>Contact: <EditableInlineText value={event.contactName || ""} onSave={(v) => saveField({ contactName: v })} placeholder="Nom…" /></span>
+            <EditableInlineText value={event.contactPhone || ""} onSave={(v) => saveField({ contactPhone: v })} placeholder="Téléphone…" />
+            <EditableInlineText value={event.contactEmail || ""} onSave={(v) => saveField({ contactEmail: v })} placeholder="Email…" />
+          </div>
+          <div className="mt-3 text-sm text-muted-foreground">
+            PV/pers HTVA: <EditableInlineNum value={event.sellingPricePerGuest} onSave={(v) => saveField({ sellingPricePerGuest: v })} suffix="€" />
+          </div>
         </div>
       </div>
 
@@ -148,7 +183,9 @@ export default function EventDetail() {
               return (
                 <tr key={rl.recipeId} className="border-b border-border/30">
                   <td className="px-3 py-2 font-semibold"><a href={`/recipes/${rl.recipeId}`} className="hover:underline hover:text-primary transition-colors">{rec?.name || "—"}</a></td>
-                  <td className="px-3 py-2 text-right tabular-nums">{rl.portions}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    <EditableInlineNum value={rl.portions} onSave={(v) => updateRecipePortions(rl.recipeId, v)} min={1} />
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{fmt(cpp)}</td>
                   <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt(cpp * rl.portions)}</td>
                 </tr>
@@ -169,8 +206,12 @@ export default function EventDetail() {
             <tbody>
               {event.extraCosts.map((ec, i) => (
                 <tr key={i} className="border-b border-border/30">
-                  <td className="px-3 py-2 font-medium">{ec.label}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmt(ec.amount)}</td>
+                  <td className="px-3 py-2 font-medium">
+                    <EditableInlineText value={ec.label} onSave={(v) => updateExtraCost(i, "label", v)} />
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    <EditableInlineNum value={ec.amount} onSave={(v) => updateExtraCost(i, "amount", v)} suffix="€" />
+                  </td>
                 </tr>
               ))}
               <tr className="font-bold border-t-2">
@@ -204,5 +245,156 @@ function StatCard({ label, value, className = "" }: { label: string; value: stri
       <div className="text-xs text-muted-foreground font-medium mb-1">{label}</div>
       <div className={`text-xl font-bold tabular-nums ${className}`}>{value}</div>
     </div>
+  );
+}
+
+function EditableText({ value, onSave, className, inputClassName, placeholder, multiline }: {
+  value: string;
+  onSave: (v: string) => void;
+  className?: string;
+  inputClassName?: string;
+  placeholder?: string;
+  multiline?: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(value);
+
+  useEffect(() => { setText(value); }, [value]);
+
+  const commit = () => {
+    setEditing(false);
+    if (text !== value) onSave(text);
+  };
+
+  if (editing) {
+    if (multiline) {
+      return (
+        <textarea
+          className={inputClassName}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === "Escape") { setText(value); setEditing(false); } }}
+          autoFocus
+          rows={2}
+        />
+      );
+    }
+    return (
+      <input
+        className={inputClassName}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setText(value); setEditing(false); } }}
+        autoFocus
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`${className} cursor-pointer rounded px-1 -mx-1 hover:bg-muted/50 transition-colors ${!value && placeholder ? "text-muted-foreground/50 italic" : ""}`}
+      onClick={() => setEditing(true)}
+    >
+      {value || placeholder || "—"}
+    </div>
+  );
+}
+
+function EditableInlineText({ value, onSave, placeholder }: {
+  value: string;
+  onSave: (v: string) => void;
+  placeholder?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(value);
+
+  useEffect(() => { setText(value); }, [value]);
+
+  const commit = () => {
+    setEditing(false);
+    if (text !== value) onSave(text);
+  };
+
+  if (editing) {
+    return (
+      <input
+        className="border-b border-primary bg-transparent text-foreground font-semibold outline-none text-sm w-32"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setText(value); setEditing(false); } }}
+        autoFocus
+      />
+    );
+  }
+
+  return (
+    <strong
+      className="text-foreground cursor-pointer hover:bg-muted/50 rounded px-0.5 transition-colors"
+      onClick={() => setEditing(true)}
+    >
+      {value || <span className="text-muted-foreground/50 font-normal italic">{placeholder || "—"}</span>}
+    </strong>
+  );
+}
+
+function EditableInlineNum({ value, onSave, suffix, min }: {
+  value: number;
+  onSave: (v: number) => void;
+  suffix?: string;
+  min?: number;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(String(value));
+
+  useEffect(() => { setText(String(value)); }, [value]);
+
+  const commit = () => {
+    setEditing(false);
+    const cleaned = text.replace(",", ".");
+    const parsed = parseFloat(cleaned);
+    const final = isNaN(parsed) ? 0 : (min !== undefined ? Math.max(min, parsed) : parsed);
+    if (final !== value) onSave(final);
+  };
+
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-0.5">
+        <input
+          className="w-16 text-right px-1 py-0 border-b border-primary bg-transparent text-foreground font-semibold tabular-nums outline-none text-sm"
+          type="text"
+          inputMode="decimal"
+          value={text}
+          onChange={(e) => { if (e.target.value === "" || /^-?\d*[.,]?\d*$/.test(e.target.value)) setText(e.target.value); }}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setText(String(value)); setEditing(false); } }}
+          autoFocus
+        />
+        {suffix && <span>{suffix}</span>}
+      </span>
+    );
+  }
+
+  return (
+    <strong
+      className="text-foreground cursor-pointer hover:bg-muted/50 rounded px-0.5 transition-colors tabular-nums"
+      onClick={() => setEditing(true)}
+    >
+      {value}{suffix || ""}
+    </strong>
+  );
+}
+
+function EditableStatus({ value, onSave }: { value: "upcoming" | "completed"; onSave: (v: "upcoming" | "completed") => void }) {
+  const toggle = () => onSave(value === "upcoming" ? "completed" : "upcoming");
+  return (
+    <button
+      onClick={toggle}
+      className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold mb-2 cursor-pointer hover:opacity-80 transition-opacity ${value === "upcoming" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}
+    >
+      {value === "upcoming" ? "À venir" : "Terminé"}
+    </button>
   );
 }

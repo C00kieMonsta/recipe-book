@@ -12,9 +12,10 @@ interface SearchSelectProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  onCreateNew?: (query: string) => void;
 }
 
-export default function SearchSelect({ options, value, onChange, placeholder = "Rechercher…", className = "" }: SearchSelectProps) {
+export default function SearchSelect({ options, value, onChange, placeholder = "Rechercher…", className = "", onCreateNew }: SearchSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -52,7 +53,7 @@ export default function SearchSelect({ options, value, onChange, placeholder = "
           }
         }}
       />
-      {open && filtered.length > 0 && (
+      {open && (filtered.length > 0 || (onCreateNew && query.trim())) && (
         <div className="absolute z-20 mt-1 w-full bg-card border rounded-lg shadow-lg max-h-48 overflow-auto">
           {filtered.map((opt) => (
             <button
@@ -64,6 +65,14 @@ export default function SearchSelect({ options, value, onChange, placeholder = "
               {opt.detail && <span className="text-muted-foreground text-[11px] shrink-0">{opt.detail}</span>}
             </button>
           ))}
+          {onCreateNew && query.trim() && (
+            <button
+              onClick={() => { onCreateNew(query.trim()); setOpen(false); setQuery(""); }}
+              className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors text-primary font-medium border-t border-border/30"
+            >
+              + Créer « {query.trim()} »
+            </button>
+          )}
         </div>
       )}
     </div>

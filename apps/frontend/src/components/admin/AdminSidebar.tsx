@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { BarChart3, BookOpen, ClipboardList, Calendar, Settings, LogOut, Menu, X } from "lucide-react";
+import { BarChart3, BookOpen, ClipboardList, Calendar, Settings, LogOut, Menu, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const menuItems = [
@@ -15,26 +15,48 @@ export default function AdminSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuth();
-  const [open, setOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
-  useEffect(() => { setOpen(false); }, [location.pathname]);
+  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
   const handleLogout = () => { logout(); navigate("/login"); };
 
-  const sidebarContent = (
+  const sidebarContent = (isCollapsed: boolean) => (
     <>
-      <div className="p-6 pb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shrink-0">
-            <span className="font-serif text-xl font-bold text-white">A</span>
+      <div className={`p-4 pb-3 flex items-center ${isCollapsed ? "justify-center" : "justify-between"}`}>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shrink-0">
+            <span className="font-serif text-lg font-bold text-white">A</span>
           </div>
-          <div>
-            <h1 className="text-sm font-serif font-semibold leading-tight opacity-95">La Table d'Amélie</h1>
-          </div>
+          {!isCollapsed && (
+            <h1 className="text-sm font-serif font-semibold leading-tight opacity-95 truncate">La Table d'Amélie</h1>
+          )}
         </div>
+        {!isCollapsed && (
+          <button
+            onClick={() => setCollapsed(true)}
+            className="p-1.5 rounded-lg hover:bg-sidebar-accent/50 transition-colors shrink-0 text-sidebar-foreground/50 hover:text-sidebar-foreground"
+            title="Réduire"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
-      <nav className="flex-1 px-3 space-y-1">
+      {isCollapsed && (
+        <div className="flex justify-center pb-2">
+          <button
+            onClick={() => setCollapsed(false)}
+            className="p-1.5 rounded-lg hover:bg-sidebar-accent/50 transition-colors text-sidebar-foreground/50 hover:text-sidebar-foreground"
+            title="Agrandir"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      <nav className={`flex-1 space-y-1 ${isCollapsed ? "px-2" : "px-3"}`}>
         {menuItems.map((item) => {
           const isActive = item.exact
             ? location.pathname === item.path
@@ -43,27 +65,33 @@ export default function AdminSidebar() {
             <Link
               key={item.path}
               to={item.path}
-              className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              title={isCollapsed ? item.label : undefined}
+              className={`flex items-center rounded-lg text-sm font-medium transition-colors ${
+                isCollapsed ? "justify-center px-2 py-2.5" : "gap-3 px-4 py-2.5"
+              } ${
                 isActive
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
               }`}
             >
-              <item.icon className="h-5 w-5" />
-              {item.label}
+              <item.icon className="h-5 w-5 shrink-0" />
+              {!isCollapsed && item.label}
             </Link>
           );
         })}
       </nav>
 
-      <div className="p-4 border-t border-sidebar-border">
-        <div className="text-[11px] text-sidebar-foreground/40 mb-2 px-3">admin · v1.0</div>
+      <div className={`p-3 border-t border-sidebar-border ${isCollapsed ? "flex flex-col items-center gap-1" : ""}`}>
+        {!isCollapsed && <div className="text-[11px] text-sidebar-foreground/40 mb-2 px-3">admin · v1.0</div>}
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-3 py-2 w-full rounded-lg text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"
+          title={isCollapsed ? "Déconnexion" : undefined}
+          className={`flex items-center rounded-lg text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors ${
+            isCollapsed ? "justify-center p-2" : "gap-3 px-3 py-2 w-full"
+          }`}
         >
-          <LogOut className="h-5 w-5" />
-          Déconnexion
+          <LogOut className="h-5 w-5 shrink-0" />
+          {!isCollapsed && "Déconnexion"}
         </button>
       </div>
     </>
@@ -72,8 +100,12 @@ export default function AdminSidebar() {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-60 shrink-0 min-h-screen bg-sidebar text-sidebar-foreground flex-col">
-        {sidebarContent}
+      <aside
+        className={`hidden md:flex shrink-0 h-screen sticky top-0 bg-sidebar text-sidebar-foreground flex-col transition-all duration-300 ${
+          collapsed ? "w-16" : "w-60"
+        }`}
+      >
+        {sidebarContent(collapsed)}
       </aside>
 
       {/* Mobile top bar */}
@@ -84,17 +116,17 @@ export default function AdminSidebar() {
           </div>
           <span className="font-serif text-sm font-semibold opacity-95">La Table d'Amélie</span>
         </div>
-        <button onClick={() => setOpen(!open)} className="p-2 -mr-2 rounded-lg hover:bg-sidebar-accent/50 transition-colors">
-          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        <button onClick={() => setMobileOpen(!mobileOpen)} className="p-2 -mr-2 rounded-lg hover:bg-sidebar-accent/50 transition-colors">
+          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
       </div>
 
       {/* Mobile drawer overlay */}
-      {open && (
-        <div className="md:hidden fixed inset-0 z-30" onClick={() => setOpen(false)}>
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-30" onClick={() => setMobileOpen(false)}>
           <div className="absolute inset-0 bg-foreground/30 backdrop-blur-sm" />
           <aside className="absolute top-[52px] left-0 right-0 bg-sidebar text-sidebar-foreground flex flex-col max-h-[calc(100vh-52px)] overflow-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
-            {sidebarContent}
+            {sidebarContent(false)}
           </aside>
         </div>
       )}

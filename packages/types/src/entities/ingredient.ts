@@ -1,3 +1,5 @@
+import type { UnitQty } from "./recipe";
+
 export const SUPPLIERS = [
   "Barn",
   "Vds",
@@ -27,3 +29,10 @@ export interface Ingredient {
 export interface IngredientKey {
   ingredientId: string;
 }
+
+export const PRICE_TO_QTY_UNIT: Record<UnitPrice, UnitQty> = {
+  "€/kg": "g",
+  "€/pièce": "pièce",
+  "€/l": "ml",
+  "€/botte": "botte",
+};

@@ -4,13 +4,14 @@ import { ArrowLeft, Pencil, Trash2, Save, FileDown, ChefHat, Plus, X, Check } fr
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Recipe, Ingredient, RecipePricing, RecipeIngredient } from "@packages/types";
-import { UNITS_QTY } from "@packages/types";
+import { UNITS_QTY, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { calcRecipeCost, calcIngredientLineCost, fmt, supplierColor } from "@/lib/recipe-helpers";
 import ActionMenu from "@/components/ui/ActionMenu";
 import NumericInput from "@/components/ui/NumericInput";
 import SearchSelect from "@/components/ui/SearchSelect";
+import IngredientFormModal from "@/components/ui/IngredientFormModal";
 
 const DEFAULT_PRICING: RecipePricing = {
   surPlace: { coef: 4, tva: 12 },
@@ -131,6 +132,9 @@ export default function RecipeDetail() {
   const [addingStep, setAddingStep] = useState(false);
   const [addingIngredient, setAddingIngredient] = useState(false);
   const [newIng, setNewIng] = useState<RecipeIngredient>({ ingredientId: "", qty: 0, unit: "g", lossPct: 0 });
+  const [creatingIngredient, setCreatingIngredient] = useState<string | null>(null);
+  const [viewingIngredient, setViewingIngredient] = useState<Ingredient | null>(null);
+  const [supplierNames] = useState(() => DEFAULT_SUPPLIERS.map((s) => s.name));
   const newStepRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -178,13 +182,41 @@ export default function RecipeDetail() {
     const ingList = [...recipe.ingredients, newIng];
     await saveRecipeField({ ingredients: ingList });
     setNewIng({ ingredientId: "", qty: 0, unit: "g", lossPct: 0 });
-    setAddingIngredient(false);
   };
 
   const handleRemoveIngredient = async (index: number) => {
     if (!recipe) return;
     const ingList = recipe.ingredients.filter((_, i) => i !== index);
     await saveRecipeField({ ingredients: ingList });
+  };
+
+  const handleCreateIngredient = async (data: Partial<Ingredient>) => {
+    try {
+      const created = await api.ingredients.create(data);
+      setIngredients((prev) => [...prev, created]);
+      setNewIng((p) => ({
+        ...p,
+        ingredientId: created.ingredientId,
+        unit: PRICE_TO_QTY_UNIT[created.unit] || "g",
+      }));
+      setCreatingIngredient(null);
+      toast({ title: "Ingrédient créé" });
+    } catch {
+      toast({ title: "Erreur lors de la création", variant: "destructive" });
+    }
+  };
+
+  const handleUpdateIngredient = async (data: Partial<Ingredient>) => {
+    if (!viewingIngredient) return;
+    try {
+      const updated = await api.ingredients.update(viewingIngredient.ingredientId, data);
+      setIngredients((prev) => prev.map((i) => i.ingredientId === updated.ingredientId ? updated : i));
+      setViewingIngredient(null);
+      if (recipe) setRecipe({ ...recipe });
+      toast({ title: "Ingrédient modifié" });
+    } catch {
+      toast({ title: "Erreur lors de la modification", variant: "destructive" });
+    }
   };
 
   const handleDelete = async () => {
@@ -227,11 +259,23 @@ export default function RecipeDetail() {
       <div className="flex gap-6 mb-7 flex-wrap">
         <div className="flex-1 min-w-0">
           <div className="inline-block px-3 py-1 rounded-full bg-foreground text-background text-xs font-semibold uppercase tracking-wider mb-3">{recipe.type}</div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2">{recipe.name}</h1>
-          <p className="text-muted-foreground leading-relaxed mb-4 text-sm sm:text-base">{recipe.description}</p>
+          <EditableText
+            value={recipe.name}
+            onSave={(v) => saveRecipeField({ name: v })}
+            className="text-2xl sm:text-3xl font-bold tracking-tight mb-2"
+            inputClassName="text-2xl sm:text-3xl font-bold tracking-tight mb-2 w-full border-b-2 border-primary bg-transparent outline-none"
+          />
+          <EditableText
+            value={recipe.description || ""}
+            onSave={(v) => saveRecipeField({ description: v })}
+            className="text-muted-foreground leading-relaxed mb-4 text-sm sm:text-base"
+            inputClassName="text-muted-foreground leading-relaxed mb-4 text-sm sm:text-base w-full border-b border-primary/50 bg-transparent outline-none"
+            placeholder="Ajouter une description…"
+            multiline
+          />
           <div className="flex gap-4 sm:gap-6 text-xs sm:text-sm text-muted-foreground flex-wrap">
-            <span>Portions: <strong className="text-foreground">{recipe.portions}</strong></span>
-            <span>Poids/pers: <strong className="text-foreground">{recipe.portionWeight}g</strong></span>
+            <span>Portions: <EditableInlineNum value={recipe.portions} onSave={(v) => saveRecipeField({ portions: v })} min={1} /></span>
+            <span>Poids/pers: <EditableInlineNum value={recipe.portionWeight} onSave={(v) => saveRecipeField({ portionWeight: v })} suffix="g" /></span>
             <span className="hidden sm:inline">Créé le: <strong className="text-foreground">{new Date(recipe.createdAt).toLocaleDateString("fr-BE")}</strong></span>
           </div>
         </div>
@@ -327,14 +371,12 @@ export default function RecipeDetail() {
         <section className="card-elevated p-4 sm:p-5">
           <div className="flex justify-between items-center mb-4 gap-2">
             <h2 className="font-serif text-lg font-bold">Ingrédients</h2>
-            {availableIngredients.length > 0 && (
-              <button
-                onClick={() => { setAddingIngredient(true); setNewIng({ ingredientId: availableIngredients[0].ingredientId, qty: 0, unit: "g", lossPct: 0 }); }}
-                className="flex items-center gap-1 px-2.5 py-1 border rounded-lg text-xs font-medium hover:bg-muted transition-colors shrink-0"
-              >
-                <Plus className="h-3.5 w-3.5" /> Ingrédient
-              </button>
-            )}
+            <button
+              onClick={() => { setAddingIngredient(true); setNewIng({ ingredientId: "", qty: 0, unit: "g", lossPct: 0 }); }}
+              className="flex items-center gap-1 px-2.5 py-1 border rounded-lg text-xs font-medium hover:bg-muted transition-colors shrink-0"
+            >
+              <Plus className="h-3.5 w-3.5" /> Ingrédient
+            </button>
           </div>
           <div className="overflow-x-auto -mx-4 sm:-mx-5 px-4 sm:px-5">
             <table className="w-full text-sm min-w-[400px]">
@@ -353,14 +395,23 @@ export default function RecipeDetail() {
                   const ing = ingredients.find((i) => i.ingredientId === ri.ingredientId);
                   if (!ing) return null;
                   const lineCost = calcIngredientLineCost(ri, ing);
+                  const updateIngField = (field: keyof RecipeIngredient, value: unknown) => {
+                    const ingList = [...recipe.ingredients];
+                    ingList[idx] = { ...ingList[idx], [field]: value };
+                    saveRecipeField({ ingredients: ingList });
+                  };
                   return (
                     <tr key={idx} className="border-b border-border/30 group">
                       <td className="px-2 sm:px-3 py-2">
                         <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ background: supplierColor(ing.supplier) }} />
-                        <button onClick={() => navigate("/ingredients")} className="hover:underline hover:text-primary transition-colors text-left">{ing.name}</button>
+                        <button onClick={() => setViewingIngredient(ing)} className="hover:underline hover:text-primary transition-colors text-left">{ing.name}</button>
                       </td>
-                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums whitespace-nowrap">{ri.qty} {ri.unit}</td>
-                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell">{ri.lossPct || 0}%</td>
+                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums whitespace-nowrap">
+                        <EditableInlineNum value={ri.qty} onSave={(v) => updateIngField("qty", v)} /> {ri.unit}
+                      </td>
+                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell">
+                        <EditableInlineNum value={ri.lossPct || 0} onSave={(v) => updateIngField("lossPct", v)} suffix="%" />
+                      </td>
                       <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell">{fmt(ing.price)}</td>
                       <td className="px-2 sm:px-3 py-2 text-right tabular-nums font-semibold">{fmt(lineCost)}</td>
                       <td className="px-1 py-2">
@@ -377,8 +428,13 @@ export default function RecipeDetail() {
                       <SearchSelect
                         options={availableIngredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))}
                         value={newIng.ingredientId}
-                        onChange={(v) => setNewIng((p) => ({ ...p, ingredientId: v }))}
+                        onChange={(v) => {
+                          const ing = ingredients.find((i) => i.ingredientId === v);
+                          const unit = ing ? PRICE_TO_QTY_UNIT[ing.unit] : "g";
+                          setNewIng((p) => ({ ...p, ingredientId: v, unit }));
+                        }}
                         placeholder="Rechercher un ingrédient…"
+                        onCreateNew={(name) => setCreatingIngredient(name)}
                       />
                     </td>
                     <td className="px-2 sm:px-3 py-1.5">
@@ -423,6 +479,24 @@ export default function RecipeDetail() {
 
         <PricingSimulation recipe={recipe} totalCost={totalCost} />
       </div>
+
+      {creatingIngredient !== null && (
+        <IngredientFormModal
+          ingredient={{ name: creatingIngredient, price: 0, unit: "€/kg", supplier: supplierNames[0] || "" }}
+          supplierNames={supplierNames}
+          onSave={handleCreateIngredient}
+          onCancel={() => setCreatingIngredient(null)}
+        />
+      )}
+
+      {viewingIngredient && (
+        <IngredientFormModal
+          ingredient={viewingIngredient}
+          supplierNames={supplierNames}
+          onSave={handleUpdateIngredient}
+          onCancel={() => setViewingIngredient(null)}
+        />
+      )}
 
       {deleteConfirm && (
         <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setDeleteConfirm(false)}>
@@ -584,5 +658,106 @@ function EditableNum({ value, onChange, suffix, placeholder }: {
       placeholder={placeholder}
       className="w-20 text-right px-2 py-0.5 border rounded-md bg-background text-sm font-semibold tabular-nums focus:border-primary outline-none"
     />
+  );
+}
+
+function EditableText({ value, onSave, className, inputClassName, placeholder, multiline }: {
+  value: string;
+  onSave: (v: string) => void;
+  className?: string;
+  inputClassName?: string;
+  placeholder?: string;
+  multiline?: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(value);
+
+  useEffect(() => { setText(value); }, [value]);
+
+  const commit = () => {
+    setEditing(false);
+    if (text !== value) onSave(text);
+  };
+
+  if (editing) {
+    if (multiline) {
+      return (
+        <textarea
+          className={inputClassName}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === "Escape") { setText(value); setEditing(false); } }}
+          autoFocus
+          rows={2}
+        />
+      );
+    }
+    return (
+      <input
+        className={inputClassName}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setText(value); setEditing(false); } }}
+        autoFocus
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`${className} cursor-pointer rounded px-1 -mx-1 hover:bg-muted/50 transition-colors ${!value && placeholder ? "text-muted-foreground/50 italic" : ""}`}
+      onClick={() => setEditing(true)}
+    >
+      {value || placeholder || "—"}
+    </div>
+  );
+}
+
+function EditableInlineNum({ value, onSave, suffix, min }: {
+  value: number;
+  onSave: (v: number) => void;
+  suffix?: string;
+  min?: number;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(String(value));
+
+  useEffect(() => { setText(String(value)); }, [value]);
+
+  const commit = () => {
+    setEditing(false);
+    const cleaned = text.replace(",", ".");
+    const parsed = parseFloat(cleaned);
+    const final = isNaN(parsed) ? 0 : (min !== undefined ? Math.max(min, parsed) : parsed);
+    if (final !== value) onSave(final);
+  };
+
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-0.5">
+        <input
+          className="w-16 text-right px-1 py-0 border-b border-primary bg-transparent text-foreground font-semibold tabular-nums outline-none text-sm"
+          type="text"
+          inputMode="decimal"
+          value={text}
+          onChange={(e) => { if (e.target.value === "" || /^-?\d*[.,]?\d*$/.test(e.target.value)) setText(e.target.value); }}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setText(String(value)); setEditing(false); } }}
+          autoFocus
+        />
+        {suffix && <span>{suffix}</span>}
+      </span>
+    );
+  }
+
+  return (
+    <strong
+      className="text-foreground cursor-pointer hover:bg-muted/50 rounded px-0.5 transition-colors tabular-nums"
+      onClick={() => setEditing(true)}
+    >
+      {value}{suffix || ""}
+    </strong>
   );
 }
