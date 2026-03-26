@@ -75,7 +75,7 @@ export default function Recipes() {
 
   const load = () =>
     Promise.all([api.recipes.list(), api.ingredients.list(), api.settings.get().catch(() => null)])
-      .then(([r, i, s]) => { setRecipes(r); setIngredients(i); setCategories(s?.recipeCategories?.length ? s.recipeCategories : DEFAULT_RECIPE_CATEGORIES); })
+      .then(([r, i, s]) => { setRecipes(r.sort((a, b) => a.name.localeCompare(b.name))); setIngredients(i); setCategories(s?.recipeCategories?.length ? s.recipeCategories : DEFAULT_RECIPE_CATEGORIES); })
       .catch(() => toast({ title: "Erreur de chargement", variant: "destructive" }))
       .finally(() => setLoading(false));
 
