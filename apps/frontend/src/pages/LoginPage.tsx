@@ -40,10 +40,12 @@ export default function LoginPage() {
           </div>
           <div>
             <label htmlFor="password" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Mot de passe</label>
-            <input id="password" type={showPassword ? "text" : "password"} className="input-field" value={password} onChange={(e) => setPassword(e.target.value)} required />
-            <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowPassword(!showPassword)}>
-              {showPassword ? <EyeOff /> : <Eye />}
-            </button>
+            <div className="relative">
+              <input id="password" type={showPassword ? "text" : "password"} className="input-field pr-10" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <button type="button" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors" onClick={() => setShowPassword(!showPassword)}>
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
           <button type="submit" className="w-full py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold shadow-sm hover:opacity-90 transition-opacity">
             Se connecter
