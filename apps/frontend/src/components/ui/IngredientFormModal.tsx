@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import type { Ingredient } from "@packages/types";
 import { UNITS_PRICE } from "@packages/types";
 import NumericInput from "@/components/ui/NumericInput";
+import SearchSelect from "@/components/ui/SearchSelect";
 
 interface IngredientFormModalProps {
   ingredient: Partial<Ingredient>;
@@ -14,19 +15,10 @@ interface IngredientFormModalProps {
 
 export default function IngredientFormModal({ ingredient, supplierNames, onSave, onCancel, onDelete }: IngredientFormModalProps) {
   const [form, setForm] = useState({ ...ingredient });
-  const [addingSupplier, setAddingSupplier] = useState(false);
-  const [newSupplier, setNewSupplier] = useState("");
   const [localSuppliers, setLocalSuppliers] = useState(supplierNames);
   const u = (k: string, v: unknown) => setForm((p) => ({ ...p, [k]: v }));
 
-  const handleAddSupplier = () => {
-    const trimmed = newSupplier.trim();
-    if (!trimmed || localSuppliers.includes(trimmed)) return;
-    setLocalSuppliers((prev) => [...prev, trimmed]);
-    u("supplier", trimmed);
-    setNewSupplier("");
-    setAddingSupplier(false);
-  };
+  const supplierOptions = localSuppliers.map((s) => ({ value: s, label: s }));
 
   return (
     <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={onCancel}>
@@ -47,29 +39,16 @@ export default function IngredientFormModal({ ingredient, supplierNames, onSave,
           </div>
         </div>
         <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Fournisseur</label>
-        {addingSupplier ? (
-          <div className="flex gap-2">
-            <input
-              className="flex-1 px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none"
-              value={newSupplier}
-              onChange={(e) => setNewSupplier(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddSupplier(); } if (e.key === "Escape") setAddingSupplier(false); }}
-              placeholder="Nom du fournisseur…"
-              autoFocus
-            />
-            <button onClick={handleAddSupplier} disabled={!newSupplier.trim()} className="px-3 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium disabled:opacity-50">OK</button>
-            <button onClick={() => setAddingSupplier(false)} className="px-3 py-2 border rounded-lg text-sm font-medium">Annuler</button>
-          </div>
-        ) : (
-          <div className="flex gap-2">
-            <select className="flex-1 px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none" value={form.supplier || localSuppliers[0] || ""} onChange={(e) => u("supplier", e.target.value)}>
-              {localSuppliers.map((s) => <option key={s}>{s}</option>)}
-            </select>
-            <button onClick={() => setAddingSupplier(true)} className="flex items-center gap-1 px-2.5 py-2 border rounded-lg text-xs font-medium hover:bg-muted transition-colors shrink-0" title="Nouveau fournisseur">
-              <Plus className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
+        <SearchSelect
+          options={supplierOptions}
+          value={form.supplier || localSuppliers[0] || ""}
+          onChange={(v) => u("supplier", v)}
+          placeholder="Rechercher un fournisseur…"
+          onCreateNew={(name) => {
+            setLocalSuppliers((prev) => [...prev, name]);
+            u("supplier", name);
+          }}
+        />
         <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">Commentaire</label>
         <textarea className="w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none min-h-[60px]" value={form.comment || ""} onChange={(e) => u("comment", e.target.value)} />
         <div className="flex justify-between mt-6">
