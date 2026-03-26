@@ -33,7 +33,7 @@ export default function Ingredients() {
   const load = async () => {
     try {
       const [ings, settings] = await Promise.all([api.ingredients.list(), api.settings.get().catch(() => null)]);
-      setIngredients(ings);
+      setIngredients(ings.sort((a, b) => a.name.localeCompare(b.name)));
       if (settings?.suppliers?.length) setSupplierNames(settings.suppliers.map((s) => s.name));
     }
     catch { toast({ title: "Erreur de chargement", variant: "destructive" }); }
