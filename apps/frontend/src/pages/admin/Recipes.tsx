@@ -126,7 +126,12 @@ export default function Recipes() {
           <p className="text-xs sm:text-sm text-muted-foreground mt-1">{recipes.length} recettes au total</p>
         </div>
         <div className="flex gap-1.5 sm:gap-2 items-center">
-          <button onClick={() => navigate("/recipes/new")} className="flex items-center gap-1.5 px-3 py-2 sm:px-4 bg-primary text-primary-foreground rounded-lg text-xs sm:text-sm font-medium shadow-sm hover:opacity-90 transition-opacity">
+          <button onClick={async () => {
+            try {
+              const created = await api.recipes.create({ name: "Nouvelle recette", type: categories[0] || "Buffet", portions: 1, portionWeight: 150, techniques: [], ingredients: [], photos: [] });
+              navigate(`/recipes/${created.recipeId}`);
+            } catch { toast({ title: "Erreur lors de la création", variant: "destructive" }); }
+          }} className="flex items-center gap-1.5 px-3 py-2 sm:px-4 bg-primary text-primary-foreground rounded-lg text-xs sm:text-sm font-medium shadow-sm hover:opacity-90 transition-opacity">
             <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Nouvelle recette</span><span className="sm:hidden">Nouveau</span>
           </button>
           <ActionMenu items={[

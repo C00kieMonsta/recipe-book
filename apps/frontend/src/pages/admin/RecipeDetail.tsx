@@ -4,7 +4,7 @@ import { ArrowLeft, Pencil, Trash2, Save, FileDown, ChefHat, Plus, X, Check } fr
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Recipe, Ingredient, RecipePricing, RecipeIngredient } from "@packages/types";
-import { UNITS_QTY, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS } from "@packages/types";
+import { UNITS_QTY, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS, DEFAULT_RECIPE_CATEGORIES } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { calcRecipeCost, calcIngredientLineCost, fmt, supplierColor } from "@/lib/recipe-helpers";
@@ -124,6 +124,7 @@ export default function RecipeDetail() {
   const { toast } = useToast();
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [categories, setCategories] = useState<string[]>(DEFAULT_RECIPE_CATEGORIES);
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [editingStep, setEditingStep] = useState<number | null>(null);
@@ -139,8 +140,8 @@ export default function RecipeDetail() {
 
   useEffect(() => {
     if (!id) return;
-    Promise.all([api.recipes.get(id), api.ingredients.list()])
-      .then(([r, i]) => { setRecipe(r); setIngredients(i); })
+    Promise.all([api.recipes.get(id), api.ingredients.list(), api.settings.get().catch(() => null)])
+      .then(([r, i, s]) => { setRecipe(r); setIngredients(i); if (s?.recipeCategories?.length) setCategories(s.recipeCategories); })
       .catch(() => toast({ title: "Recette introuvable", variant: "destructive" }))
       .finally(() => setLoading(false));
   }, [id]);
@@ -258,7 +259,7 @@ export default function RecipeDetail() {
 
       <div className="flex gap-6 mb-7 flex-wrap">
         <div className="flex-1 min-w-0">
-          <div className="inline-block px-3 py-1 rounded-full bg-foreground text-background text-xs font-semibold uppercase tracking-wider mb-3">{recipe.type}</div>
+          <EditableType value={recipe.type} options={categories} onSave={(v) => saveRecipeField({ type: v })} />
           <EditableText
             value={recipe.name}
             onSave={(v) => saveRecipeField({ name: v })}
@@ -759,5 +760,41 @@ function EditableInlineNum({ value, onSave, suffix, min }: {
     >
       {value}{suffix || ""}
     </strong>
+  );
+}
+
+function EditableType({ value, options, onSave }: { value: string; options: string[]; onSave: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative inline-block mb-3">
+      <button
+        onClick={() => setOpen(!open)}
+        className="px-3 py-1 rounded-full bg-foreground text-background text-xs font-semibold uppercase tracking-wider hover:opacity-80 transition-opacity"
+      >
+        {value}
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-1 left-0 bg-card border rounded-lg shadow-lg overflow-hidden">
+          {options.map((opt) => (
+            <button
+              key={opt}
+              onClick={() => { if (opt !== value) onSave(opt); setOpen(false); }}
+              className={`block w-full text-left px-4 py-1.5 text-xs hover:bg-muted transition-colors whitespace-nowrap ${opt === value ? "bg-muted/50 font-bold" : ""}`}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
