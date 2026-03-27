@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { BarChart3, BookOpen, ClipboardList, Calendar, Settings, LogOut, Menu, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { BarChart3, BookOpen, ClipboardList, Calendar, ShoppingCart, Settings, LogOut, Menu, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const menuItems = [
@@ -8,6 +8,7 @@ const menuItems = [
   { path: "/recipes", icon: BookOpen, label: "Recettes" },
   { path: "/ingredients", icon: ClipboardList, label: "Ingrédients" },
   { path: "/events", icon: Calendar, label: "Événements" },
+  { path: "/grocery-list", icon: ShoppingCart, label: "Listes de courses" },
   { path: "/settings", icon: Settings, label: "Paramètres" },
 ];
 

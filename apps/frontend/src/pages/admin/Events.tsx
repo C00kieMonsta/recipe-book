@@ -1,17 +1,11 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Calendar, Search, Trash2, ShoppingCart, X, Copy, FileDown, FileSpreadsheet, GripVertical } from "lucide-react";
+import { Plus, Calendar, Search, Trash2, ShoppingCart } from "lucide-react";
 import type { AppEvent, Recipe, Ingredient } from "@packages/types";
-import { UNITS_QTY, PRICE_TO_QTY_UNIT } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { usePagination } from "@/hooks/use-pagination";
 import Pagination from "@/components/ui/Pagination";
-import NumericInput from "@/components/ui/NumericInput";
-import SearchSelect from "@/components/ui/SearchSelect";
-import { fmt, supplierColor } from "@/lib/recipe-helpers";
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
 
 interface GroceryItem {
   ingredientId: string;
@@ -29,9 +23,7 @@ export default function Events() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "upcoming" | "completed">("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [groceryList, setGroceryList] = useState<GroceryItem[] | null>(null);
   const [groceryLoading, setGroceryLoading] = useState(false);
-  const [groceryIngredients, setGroceryIngredients] = useState<Ingredient[]>([]);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -74,7 +66,6 @@ export default function Events() {
     setGroceryLoading(true);
     try {
       const [allRecipes, allIngredients] = await Promise.all([api.recipes.list(), api.ingredients.list()]);
-      setGroceryIngredients(allIngredients);
       const recipeMap = new Map<string, Recipe>();
       allRecipes.forEach((r) => recipeMap.set(r.recipeId, r));
       const ingMap = new Map<string, Ingredient>();
@@ -112,99 +103,22 @@ export default function Events() {
         });
 
       const items = Object.values(agg).sort((a, b) => a.supplier.localeCompare(b.supplier) || a.name.localeCompare(b.name));
-      setGroceryList(items);
+      const selectedEvents = events.filter((ev) => selected.has(ev.eventId));
+      const defaultTitle = selectedEvents.length === 1
+        ? `Courses – ${selectedEvents[0].name}`
+        : `Courses – ${selectedEvents.length} événements`;
+
+      localStorage.setItem("recipe-book:grocery-list-pending", JSON.stringify({
+        title: defaultTitle,
+        items,
+        allIngredients,
+      }));
+      navigate("/grocery-list");
     } catch {
       toast({ title: "Erreur lors de la génération", variant: "destructive" });
     } finally {
       setGroceryLoading(false);
     }
-  };
-
-  const copyGroceryList = () => {
-    if (!groceryList) return;
-    const lines = groceryList.map((g) => `${g.name}\t${Number(g.totalQty.toFixed(2))} ${g.unit}\t${g.supplier}`);
-    navigator.clipboard.writeText(lines.join("\n"));
-    toast({ title: "Liste copiée dans le presse-papier" });
-  };
-
-  const exportGroceryPdf = () => {
-    if (!groceryList) return;
-    const doc = new jsPDF();
-    const m = 15;
-
-    const selectedEvents = events.filter((ev) => selected.has(ev.eventId));
-    const eventNames = selectedEvents.map((ev) => ev.name).join(", ");
-    const today = new Date().toLocaleDateString("fr-BE", { day: "numeric", month: "long", year: "numeric" });
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(18);
-    doc.text("Liste de courses", m, m + 7);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.text(`${today} · ${selectedEvents.length} événement${selectedEvents.length > 1 ? "s" : ""}`, m, m + 14);
-    doc.setFontSize(8);
-    const nameLines = doc.splitTextToSize(`Événements : ${eventNames}`, 180);
-    doc.text(nameLines, m, m + 20);
-
-    const suppliers = [...new Set(groceryList.map((g) => g.supplier))].sort();
-    let startY = m + 20 + nameLines.length * 4 + 4;
-
-    suppliers.forEach((supplier) => {
-      const items = groceryList.filter((g) => g.supplier === supplier);
-      if (startY > 260) { doc.addPage(); startY = m; }
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.text(supplier, m, startY + 5);
-      startY += 8;
-
-      autoTable(doc, {
-        startY,
-        head: [["Ingrédient", "Quantité", "Unité", "Prix/u"]],
-        body: items.map((g) => [
-          g.name,
-          Number(g.totalQty.toFixed(2)).toString(),
-          g.unit,
-          `${fmt(g.pricePerUnit)} ${g.priceUnit}`,
-        ]),
-        margin: { left: m },
-        styles: { fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [60, 60, 60] },
-        columnStyles: {
-          1: { halign: "right" },
-          3: { halign: "right" },
-        },
-      });
-
-      const lastTable = (doc as unknown as Record<string, unknown>).lastAutoTable as { finalY: number } | undefined;
-      startY = (lastTable?.finalY ?? startY + 34) + 6;
-    });
-
-    const fileName = selectedEvents.length === 1
-      ? `courses-${selectedEvents[0].name.replace(/[^a-zA-Z0-9àâéèêëïîôùûüç\s-]/g, "")}.pdf`
-      : `courses-${selectedEvents.length}-evenements.pdf`;
-    doc.save(fileName);
-  };
-
-  const exportGroceryCsv = () => {
-    if (!groceryList) return;
-    const sep = ";";
-    const header = ["Ingrédient", "Quantité", "Unité", "Fournisseur", "Prix/u", "Unité prix"].join(sep);
-    const rows = groceryList.map((g) =>
-      [g.name, Number(g.totalQty.toFixed(2)), g.unit, g.supplier, g.pricePerUnit, g.priceUnit].join(sep)
-    );
-    const csv = [header, ...rows].join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const selectedEvents = events.filter((ev) => selected.has(ev.eventId));
-    a.download = selectedEvents.length === 1
-      ? `courses-${selectedEvents[0].name.replace(/[^a-zA-Z0-9àâéèêëïîôùûüç\s-]/g, "")}.csv`
-      : `courses-${selectedEvents.length}-evenements.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
@@ -311,206 +225,6 @@ export default function Events() {
       </div>
 
       <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} onPrev={prev} onNext={next} />
-
-      {groceryList && (
-        <GroceryModal
-          groceryList={groceryList}
-          setGroceryList={setGroceryList}
-          allIngredients={groceryIngredients}
-          selectedCount={selected.size}
-          onClose={() => setGroceryList(null)}
-          onCopy={copyGroceryList}
-          onExportPdf={exportGroceryPdf}
-          onExportCsv={exportGroceryCsv}
-        />
-      )}
-    </div>
-  );
-}
-
-function GroceryModal({ groceryList, setGroceryList, allIngredients, selectedCount, onClose, onCopy, onExportPdf, onExportCsv }: {
-  groceryList: GroceryItem[];
-  setGroceryList: (list: GroceryItem[] | null) => void;
-  allIngredients: Ingredient[];
-  selectedCount: number;
-  onClose: () => void;
-  onCopy: () => void;
-  onExportPdf: () => void;
-  onExportCsv: () => void;
-}) {
-  const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [dropSupplier, setDropSupplier] = useState<string | null>(null);
-  const [addingIng, setAddingIng] = useState(false);
-  const [newIngId, setNewIngId] = useState("");
-  const [newIngQty, setNewIngQty] = useState(0);
-  const [newIngUnit, setNewIngUnit] = useState<string>("g");
-
-  const suppliers = useMemo(() => {
-    const seen = new Set<string>();
-    groceryList.forEach((g) => seen.add(g.supplier));
-    return [...seen].sort();
-  }, [groceryList]);
-
-  const grouped = useMemo(() => {
-    const map: Record<string, GroceryItem[]> = {};
-    suppliers.forEach((s) => { map[s] = []; });
-    groceryList.forEach((g) => { map[g.supplier]?.push(g); });
-    return map;
-  }, [groceryList, suppliers]);
-
-  const updateQty = (idx: number, qty: number) => {
-    const next = [...groceryList];
-    next[idx] = { ...next[idx], totalQty: qty };
-    setGroceryList(next);
-  };
-
-  const removeItem = (idx: number) => {
-    setGroceryList(groceryList.filter((_, i) => i !== idx));
-  };
-
-  const handleDrop = (targetSupplier: string) => {
-    if (dragIdx === null) return;
-    const next = [...groceryList];
-    next[dragIdx] = { ...next[dragIdx], supplier: targetSupplier };
-    setGroceryList(next);
-    setDragIdx(null);
-    setDropSupplier(null);
-  };
-
-  const getGlobalIdx = (item: GroceryItem) =>
-    groceryList.findIndex((g) => g.ingredientId === item.ingredientId && g.unit === item.unit);
-
-  const usedIngIds = new Set(groceryList.map((g) => g.ingredientId));
-  const availableIngs = allIngredients.filter((i) => !usedIngIds.has(i.ingredientId));
-
-  const addItem = () => {
-    const ing = allIngredients.find((i) => i.ingredientId === newIngId);
-    if (!ing || newIngQty <= 0) return;
-    const item: GroceryItem = {
-      ingredientId: ing.ingredientId,
-      name: ing.name,
-      totalQty: newIngQty,
-      unit: newIngUnit,
-      supplier: ing.supplier,
-      pricePerUnit: ing.price,
-      priceUnit: ing.unit,
-    };
-    setGroceryList([...groceryList, item]);
-    setNewIngId("");
-    setNewIngQty(0);
-    setNewIngUnit("g");
-    setAddingIng(false);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-card rounded-2xl p-6 max-w-2xl w-[95%] max-h-[85vh] overflow-auto shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="font-serif text-xl font-bold">Liste de courses</h2>
-          <div className="flex gap-2">
-            <button onClick={onExportPdf} className="flex items-center gap-1 px-3 py-1.5 border rounded-lg text-xs font-medium hover:bg-muted transition-colors">
-              <FileDown className="h-3.5 w-3.5" /> PDF
-            </button>
-            <button onClick={onExportCsv} className="flex items-center gap-1 px-3 py-1.5 border rounded-lg text-xs font-medium hover:bg-muted transition-colors">
-              <FileSpreadsheet className="h-3.5 w-3.5" /> CSV
-            </button>
-            <button onClick={onCopy} className="flex items-center gap-1 px-3 py-1.5 border rounded-lg text-xs font-medium hover:bg-muted transition-colors">
-              <Copy className="h-3.5 w-3.5" /> Copier
-            </button>
-            <button onClick={onClose} className="p-1.5 text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground mb-3">
-          {selectedCount} événement{selectedCount > 1 ? "s" : ""} sélectionné{selectedCount > 1 ? "s" : ""} · {groceryList.length} ingrédient{groceryList.length > 1 ? "s" : ""}
-          <span className="ml-2 text-muted-foreground/60">Glissez un ingrédient vers un fournisseur pour le déplacer</span>
-        </p>
-        {addingIng ? (
-          <div className="mt-2 flex items-center gap-2 flex-wrap border rounded-lg p-3 bg-muted/20">
-            <SearchSelect
-              options={availableIngs.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))}
-              value={newIngId}
-              onChange={(v) => {
-                setNewIngId(v);
-                const ing = allIngredients.find((i) => i.ingredientId === v);
-                if (ing) setNewIngUnit(PRICE_TO_QTY_UNIT[ing.unit] || "g");
-              }}
-              placeholder="Rechercher un ingrédient…"
-              className="flex-1 min-w-[160px]"
-            />
-            <NumericInput
-              className="w-20 text-right px-2 py-1 border rounded-md bg-background text-xs tabular-nums focus:border-primary outline-none"
-              value={newIngQty}
-              onChange={setNewIngQty}
-              placeholder="Qté"
-            />
-            <select
-              className="border rounded-md px-1 py-1 text-xs bg-background focus:border-primary outline-none"
-              value={newIngUnit}
-              onChange={(e) => setNewIngUnit(e.target.value)}
-            >
-              {UNITS_QTY.map((u) => <option key={u}>{u}</option>)}
-            </select>
-            <button onClick={addItem} disabled={!newIngId || newIngQty <= 0} className="px-3 py-1 bg-primary text-primary-foreground rounded-md text-xs font-medium disabled:opacity-50">Ajouter</button>
-            <button onClick={() => setAddingIng(false)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setAddingIng(true)}
-            className="m-2 flex items-center gap-1.5 px-3 py-2 border border-dashed rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors w-full justify-center"
-          >
-            <Plus className="h-3.5 w-3.5" /> Ajouter un ingrédient
-          </button>
-        )}
-        {suppliers.map((supplier) => (
-          <div
-            key={supplier}
-            className={`mb-4 rounded-lg border transition-colors ${dropSupplier === supplier ? "border-primary bg-primary/5" : "border-border/40"}`}
-            onDragOver={(e) => { e.preventDefault(); setDropSupplier(supplier); }}
-            onDragLeave={() => setDropSupplier(null)}
-            onDrop={(e) => { e.preventDefault(); handleDrop(supplier); }}
-          >
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30">
-              <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: supplierColor(supplier) }} />
-              <span className="text-sm font-bold">{supplier}</span>
-              <span className="text-xs text-muted-foreground">({grouped[supplier]?.length || 0})</span>
-            </div>
-            <table className="w-full text-sm">
-              <tbody>
-                {(grouped[supplier] || []).map((g) => {
-                  const gIdx = getGlobalIdx(g);
-                  return (
-                    <tr
-                      key={`${g.ingredientId}:${g.unit}`}
-                      draggable
-                      onDragStart={() => setDragIdx(gIdx)}
-                      onDragEnd={() => { setDragIdx(null); setDropSupplier(null); }}
-                      className={`border-b border-border/20 last:border-0 hover:bg-muted/30 cursor-grab active:cursor-grabbing ${dragIdx === gIdx ? "opacity-40" : ""}`}
-                    >
-                      <td className="pl-3 py-1.5 w-6 text-muted-foreground/40"><GripVertical className="h-3.5 w-3.5" /></td>
-                      <td className="px-2 py-1.5 font-medium">{g.name}</td>
-                      <td className="px-2 py-1.5 w-32">
-                        <div className="flex items-center justify-end gap-1">
-                          <NumericInput
-                            className="w-20 text-right px-2 py-0.5 border rounded-md bg-background text-xs tabular-nums focus:border-primary outline-none"
-                            value={g.totalQty}
-                            onChange={(v) => updateQty(gIdx, v)}
-                          />
-                          <span className="text-xs text-muted-foreground w-8">{g.unit}</span>
-                        </div>
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground text-xs w-24">{fmt(g.pricePerUnit)} {g.priceUnit}</td>
-                      <td className="pr-2 py-1.5 w-8">
-                        <button onClick={() => removeItem(gIdx)} className="p-0.5 text-muted-foreground hover:text-destructive transition-colors"><X className="h-3.5 w-3.5" /></button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ))}
-
-      </div>
     </div>
   );
 }

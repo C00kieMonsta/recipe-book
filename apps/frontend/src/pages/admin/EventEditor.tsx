@@ -27,7 +27,7 @@ export default function EventEditor() {
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactEmail, setContactEmail] = useState("");
-  const [actualCost, setActualCost] = useState<number | undefined>(undefined);
+  const [actualCost, setActualCost] = useState<number | null>(null);
   const [status, setStatus] = useState<"upcoming" | "completed">("upcoming");
   const [recipeSearch, setRecipeSearch] = useState("");
 
@@ -44,7 +44,7 @@ export default function EventEditor() {
           setSellingPricePerGuest(ev.sellingPricePerGuest);
           setNotes(ev.notes || ""); setStatus(ev.status);
           setContactName(ev.contactName || ""); setContactPhone(ev.contactPhone || ""); setContactEmail(ev.contactEmail || "");
-          if (ev.actualCost !== undefined) setActualCost(ev.actualCost);
+          if (ev.actualCost !== undefined) setActualCost(ev.actualCost ?? null);
         }
       } catch {
         toast({ title: "Erreur de chargement", variant: "destructive" });
@@ -78,7 +78,7 @@ export default function EventEditor() {
 
   const totalExtraCosts = useMemo(() => extraCosts.reduce((s, c) => s + c.amount, 0), [extraCosts]);
   const calculatedCost = totalRecipeCost + totalExtraCosts;
-  const totalCost = actualCost !== undefined ? actualCost + totalExtraCosts : calculatedCost;
+  const totalCost = actualCost !== null ? actualCost + totalExtraCosts : calculatedCost;
   const totalRevenue = sellingPricePerGuest * guestCount;
   const margin = totalRevenue - totalCost;
   const marginPct = totalRevenue > 0 ? (margin / totalRevenue) * 100 : 0;
@@ -287,15 +287,15 @@ export default function EventEditor() {
                 <NumericInput
                   className="input-field w-28 !py-1.5 text-right"
                   value={actualCost ?? 0}
-                  onChange={(v) => setActualCost(v > 0 ? v : undefined)}
+                  onChange={(v) => setActualCost(v > 0 ? v : null)}
                   placeholder="—"
                 />
-                {actualCost !== undefined && (
-                  <button onClick={() => setActualCost(undefined)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+                {actualCost !== null && (
+                  <button onClick={() => setActualCost(null)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
                 )}
               </div>
             </div>
-            {actualCost !== undefined && (
+            {actualCost !== null && (
               <p className="text-xs text-muted-foreground mt-1">Le coût réel remplace le coût calculé dans les calculs de marge.</p>
             )}
           </div>

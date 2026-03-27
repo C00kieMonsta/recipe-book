@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Pencil, Trash2, Copy } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, Copy, FileDown } from "lucide-react";
 import type { AppEvent, Recipe, Ingredient } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { calcRecipeCost, fmt } from "@/lib/recipe-helpers";
 import ActionMenu from "@/components/ui/ActionMenu";
 import NumericInput from "@/components/ui/NumericInput";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 
 export default function EventDetail() {
   const { id } = useParams<{ id: string }>();
@@ -95,6 +97,84 @@ export default function EventDetail() {
     }
   };
 
+  const exportRecipesPdf = () => {
+    const doc = new jsPDF();
+    const m = 15;
+    const dateStr = new Date(event.date).toLocaleDateString("fr-BE", { day: "numeric", month: "long", year: "numeric" });
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text(event.name, m, m + 7);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(`${dateStr} · ${event.guestCount} convives`, m, m + 14);
+
+    let startY = m + 22;
+
+    event.recipes.forEach((rl) => {
+      const recipe = allRecipes.find((r) => r.recipeId === rl.recipeId);
+      if (!recipe) return;
+      const scale = rl.portions / (recipe.portions || 1);
+
+      if (startY > 250) { doc.addPage(); startY = m; }
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text(`${recipe.name} — ${rl.portions} portion${rl.portions > 1 ? "s" : ""}`, m, startY + 6);
+      startY += 10;
+
+      autoTable(doc, {
+        startY,
+        head: [["", "Ingrédient", "Quantité", "Unité"]],
+        body: recipe.ingredients.map((ri) => {
+          const ing = allIngredients.find((i) => i.ingredientId === ri.ingredientId);
+          return ["", ing?.name || ri.ingredientId, Number((ri.qty * scale).toFixed(2)).toString(), ri.unit];
+        }),
+        margin: { left: m },
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [60, 60, 60] },
+        columnStyles: { 0: { cellWidth: 8 }, 2: { halign: "right" } },
+        didDrawCell: (data) => {
+          if (data.column.index === 0 && data.row.section === "body") {
+            const sz = 3;
+            doc.setDrawColor(100, 100, 100);
+            doc.rect(data.cell.x + (data.cell.width - sz) / 2, data.cell.y + (data.cell.height - sz) / 2, sz, sz);
+          }
+        },
+      });
+
+      const lastTable = (doc as unknown as Record<string, unknown>).lastAutoTable as { finalY: number } | undefined;
+      startY = (lastTable?.finalY ?? startY + 30) + 8;
+
+      if (recipe.techniques.length > 0) {
+        if (startY > 250) { doc.addPage(); startY = m; }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.text("Préparation", m, startY + 4);
+        startY += 8;
+
+        recipe.techniques.forEach((step, i) => {
+          const sz = 3.5;
+          const lines = doc.splitTextToSize(`${i + 1}. ${step}`, 170);
+          if (startY + lines.length * 4.5 > 280) { doc.addPage(); startY = m; }
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8);
+          doc.setDrawColor(100, 100, 100);
+          doc.rect(m, startY - sz + 0.5, sz, sz);
+          doc.text(lines, m + sz + 2, startY);
+          startY += lines.length * 4.5 + 2;
+        });
+
+        startY += 6;
+      } else {
+        startY += 2;
+      }
+    });
+
+    doc.save(`recettes-${event.name.replace(/[^a-zA-Z0-9àâéèêëïîôùûüç\s-]/g, "")}.pdf`);
+  };
+
   const updateRecipePortions = (recipeId: string, portions: number) => {
     const recipes = event.recipes.map((rl) => rl.recipeId === recipeId ? { ...rl, portions } : rl);
     saveField({ recipes });
@@ -112,11 +192,19 @@ export default function EventDetail() {
         <button onClick={() => navigate("/events")} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-4 w-4" /> Retour
         </button>
-        <ActionMenu items={[
-          { label: "Modifier", icon: <Pencil className="h-4 w-4" />, onClick: () => navigate(`/events/${id}/edit`) },
-          { label: "Dupliquer", icon: <Copy className="h-4 w-4" />, onClick: handleDuplicate },
-          { label: "Supprimer", icon: <Trash2 className="h-4 w-4" />, onClick: () => setDeleteConfirm(true), variant: "danger" },
-        ]} />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportRecipesPdf}
+            className="flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-sm font-medium hover:bg-muted transition-colors"
+          >
+            <FileDown className="h-4 w-4" /> PDF recettes
+          </button>
+          <ActionMenu items={[
+            { label: "Modifier", icon: <Pencil className="h-4 w-4" />, onClick: () => navigate(`/events/${id}/edit`) },
+            { label: "Dupliquer", icon: <Copy className="h-4 w-4" />, onClick: handleDuplicate },
+            { label: "Supprimer", icon: <Trash2 className="h-4 w-4" />, onClick: () => setDeleteConfirm(true), variant: "danger" },
+          ]} />
+        </div>
       </div>
 
       <div className="flex gap-4 items-start mb-6 flex-wrap">

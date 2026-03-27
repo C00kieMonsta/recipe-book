@@ -21,7 +21,7 @@ export const createEventRequestSchema = z.object({
   contactName: z.string().trim().optional(),
   contactPhone: z.string().trim().optional(),
   contactEmail: z.string().trim().optional(),
-  actualCost: z.number().nonnegative().optional(),
+  actualCost: z.number().nonnegative().nullish(),
   status: z.enum(["upcoming", "completed"]).default("upcoming"),
 });
 export type CreateEventRequest = z.infer<typeof createEventRequestSchema>;

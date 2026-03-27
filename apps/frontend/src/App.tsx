@@ -10,6 +10,7 @@ import Ingredients from "@/pages/admin/Ingredients";
 import Events from "@/pages/admin/Events";
 import EventEditor from "@/pages/admin/EventEditor";
 import EventDetail from "@/pages/admin/EventDetail";
+import GroceryListPage from "@/pages/admin/GroceryListPage";
 import Settings from "@/pages/admin/Settings";
 
 export default function App() {
@@ -28,6 +29,7 @@ export default function App() {
         <Route path="/events/new" element={<EventEditor />} />
         <Route path="/events/:id" element={<EventDetail />} />
         <Route path="/events/:id/edit" element={<EventEditor />} />
+        <Route path="/grocery-list" element={<GroceryListPage />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

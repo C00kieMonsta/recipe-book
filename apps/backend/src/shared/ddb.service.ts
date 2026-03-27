@@ -39,14 +39,28 @@ export class DdbService {
   }
 
   async update(table: string, key: Record<string, string>, fields: Record<string, unknown>) {
-    const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
-    if (entries.length === 0) return;
+    const setEntries = Object.entries(fields).filter(([, v]) => v !== undefined && v !== null);
+    const removeKeys = Object.entries(fields).filter(([, v]) => v === null).map(([k]) => k);
+
+    if (setEntries.length === 0 && removeKeys.length === 0) return;
+
+    const parts: string[] = [];
+    if (setEntries.length > 0) parts.push("SET " + setEntries.map((_, i) => `#k${i} = :v${i}`).join(", "));
+    if (removeKeys.length > 0) parts.push("REMOVE " + removeKeys.map((k) => `#r_${k}`).join(", "));
+
+    const names: Record<string, string> = {
+      ...Object.fromEntries(setEntries.map(([k], i) => [`#k${i}`, k])),
+      ...Object.fromEntries(removeKeys.map((k) => [`#r_${k}`, k])),
+    };
+
     await this.client.send(new UpdateCommand({
       TableName: table,
       Key: key,
-      UpdateExpression: "SET " + entries.map((_, i) => `#k${i} = :v${i}`).join(", "),
-      ExpressionAttributeNames: Object.fromEntries(entries.map(([k], i) => [`#k${i}`, k])),
-      ExpressionAttributeValues: Object.fromEntries(entries.map(([, v], i) => [`:v${i}`, v])),
+      UpdateExpression: parts.join(" "),
+      ExpressionAttributeNames: names,
+      ...(setEntries.length > 0 && {
+        ExpressionAttributeValues: Object.fromEntries(setEntries.map(([, v], i) => [`:v${i}`, v])),
+      }),
     }));
   }
 
