@@ -59,7 +59,7 @@ export default function EventDetail() {
   }, 0);
   const totalExtraCosts = event.extraCosts.reduce((s, c) => s + c.amount, 0);
   const calculatedCost = totalRecipeCost + totalExtraCosts;
-  const totalCost = event.actualCost !== undefined ? event.actualCost + totalExtraCosts : calculatedCost;
+  const totalCost = event.actualCost != null ? event.actualCost + totalExtraCosts : calculatedCost;
   const totalRevenue = event.sellingPricePerGuest * event.guestCount;
   const margin = totalRevenue - totalCost;
   const marginPct = totalRevenue > 0 ? (margin / totalRevenue) * 100 : 0;
@@ -240,7 +240,7 @@ export default function EventDetail() {
         </div>
       </div>
 
-      {event.actualCost !== undefined && (
+      {event.actualCost != null && (
         <div className="mb-4 px-4 py-2.5 bg-muted/30 rounded-lg text-sm flex gap-4 items-center flex-wrap">
           <span className="text-muted-foreground">Coût calculé : <span className="line-through tabular-nums">{fmt(calculatedCost)}</span></span>
           <span className="font-semibold">Coût réel recettes : <span className="tabular-nums">{fmt(event.actualCost)}</span></span>
