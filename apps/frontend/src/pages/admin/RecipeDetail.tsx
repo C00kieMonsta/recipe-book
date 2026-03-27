@@ -242,7 +242,7 @@ export default function RecipeDetail() {
   return (
     <div className="max-w-[1100px] mx-auto">
       <div className="flex justify-between items-center mb-5 gap-2">
-        <button onClick={() => navigate("/recipes")} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors shrink-0">
+        <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors shrink-0">
           <ArrowLeft className="h-4 w-4" /> <span className="hidden sm:inline">Retour</span>
         </button>
         <div className="flex gap-1.5 sm:gap-2 items-center">

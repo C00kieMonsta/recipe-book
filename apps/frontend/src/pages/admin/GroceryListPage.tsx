@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, X, Copy, FileDown, FileSpreadsheet, GripVertical, Save, ChevronDown } from "lucide-react";
+import { ArrowLeft, Plus, X, Copy, FileDown, FileSpreadsheet, GripVertical, Save, ChevronDown } from "lucide-react";
 import type { Ingredient } from "@packages/types";
 import { UNITS_QTY, PRICE_TO_QTY_UNIT } from "@packages/types";
 import { useToast } from "@/hooks/use-toast";
@@ -263,6 +263,9 @@ export default function GroceryListPage() {
 
   return (
     <div className="max-w-[1100px] mx-auto">
+      <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors mb-5">
+        <ArrowLeft className="h-4 w-4" /> Retour
+      </button>
       <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
         <div className="flex-1 min-w-0">
           {editingTitle ? (

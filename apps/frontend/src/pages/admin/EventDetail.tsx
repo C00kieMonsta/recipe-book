@@ -189,7 +189,7 @@ export default function EventDetail() {
   return (
     <div className="max-w-[1100px] mx-auto">
       <div className="flex justify-between items-center mb-5">
-        <button onClick={() => navigate("/events")} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+        <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-4 w-4" /> Retour
         </button>
         <div className="flex items-center gap-2">
