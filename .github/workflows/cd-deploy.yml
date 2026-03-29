@@ -150,6 +150,7 @@ jobs:
             RECIPES_TABLE=$(ssm_get RECIPES_TABLE)
             SETTINGS_TABLE=$(ssm_get SETTINGS_TABLE)
             EVENTS_TABLE=$(ssm_get EVENTS_TABLE)
+            GROCERY_LISTS_TABLE=$(ssm_get GROCERY_LISTS_TABLE)
             S3_BUCKET=$(ssm_get S3_BUCKET)
             ADMIN_CREDENTIALS=$(ssm_get ADMIN_CREDENTIALS)
             JWT_SECRET=$(ssm_get JWT_SECRET)
