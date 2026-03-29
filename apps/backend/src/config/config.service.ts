@@ -8,6 +8,7 @@ const schema = z.object({
   RECIPES_TABLE: z.string().min(1),
   SETTINGS_TABLE: z.string().min(1),
   EVENTS_TABLE: z.string().min(1),
+  GROCERY_LISTS_TABLE: z.string().min(1),
   DDB_ENDPOINT: z.string().url().optional(),
   S3_BUCKET: z.string().min(1),
   ADMIN_CREDENTIALS: z.string().min(1),
@@ -34,6 +35,7 @@ export class ConfigService {
       recipes: this.env.RECIPES_TABLE,
       settings: this.env.SETTINGS_TABLE,
       events: this.env.EVENTS_TABLE,
+      groceryLists: this.env.GROCERY_LISTS_TABLE,
     };
   }
 }

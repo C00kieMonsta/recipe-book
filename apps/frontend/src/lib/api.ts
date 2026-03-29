@@ -1,4 +1,4 @@
-import type { Ingredient, Recipe, AppSettings, AppEvent } from "@packages/types";
+import type { Ingredient, Recipe, AppSettings, AppEvent, GroceryList } from "@packages/types";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 const TOKEN_KEY = "admin_token";
@@ -109,5 +109,12 @@ export const api = {
     create: withInvalidate(["events"], (data: Partial<AppEvent>) => request<AppEvent>("/admin/events", { method: "POST", body: JSON.stringify(data) })),
     update: withInvalidate(["events"], (id: string, data: Partial<AppEvent>) => request<AppEvent>(`/admin/events/${id}`, { method: "PATCH", body: JSON.stringify(data) })),
     delete: withInvalidate(["events"], (id: string) => request<{ ok: boolean }>(`/admin/events/${id}`, { method: "DELETE" })),
+  },
+  groceryLists: {
+    list: () => request<GroceryList[]>("/admin/grocery-lists"),
+    get: (id: string) => request<GroceryList>(`/admin/grocery-lists/${id}`),
+    create: (data: { title: string; items?: GroceryList["items"] }) => request<GroceryList>("/admin/grocery-lists", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<Pick<GroceryList, "title" | "items">>) => request<GroceryList>(`/admin/grocery-lists/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    delete: (id: string) => request<{ ok: boolean }>(`/admin/grocery-lists/${id}`, { method: "DELETE" }),
   },
 };

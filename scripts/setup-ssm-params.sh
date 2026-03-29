@@ -56,6 +56,9 @@ if [[ "${1:-}" == "--file" ]]; then
 
   ingredients_table=$(get_json_field "$json" "INGREDIENTS_TABLE")
   recipes_table=$(get_json_field "$json" "RECIPES_TABLE")
+  settings_table=$(get_json_field "$json" "SETTINGS_TABLE")
+  events_table=$(get_json_field "$json" "EVENTS_TABLE")
+  grocery_lists_table=$(get_json_field "$json" "GROCERY_LISTS_TABLE")
   s3_bucket=$(get_json_field "$json" "S3_BUCKET")
   admin_credentials=$(get_json_field "$json" "ADMIN_CREDENTIALS" | jq -c .)
   jwt_secret=$(get_json_field "$json" "JWT_SECRET")
@@ -65,6 +68,15 @@ else
 
   read -rp "RECIPES_TABLE [ta-recipes-prod]: " recipes_table
   recipes_table="${recipes_table:-ta-recipes-prod}"
+
+  read -rp "SETTINGS_TABLE [ta-settings-prod]: " settings_table
+  settings_table="${settings_table:-ta-settings-prod}"
+
+  read -rp "EVENTS_TABLE [ta-events-prod]: " events_table
+  events_table="${events_table:-ta-events-prod}"
+
+  read -rp "GROCERY_LISTS_TABLE [ta-grocery-lists-prod]: " grocery_lists_table
+  grocery_lists_table="${grocery_lists_table:-ta-grocery-lists-prod}"
 
   read -rp "S3_BUCKET [la-table-amelie-uploads-prod]: " s3_bucket
   s3_bucket="${s3_bucket:-la-table-amelie-uploads-prod}"
@@ -78,11 +90,14 @@ fi
 
 echo ""
 echo "Storing parameters..."
-put_param "INGREDIENTS_TABLE" "$ingredients_table" "String"
-put_param "RECIPES_TABLE"     "$recipes_table"     "String"
-put_param "S3_BUCKET"         "$s3_bucket"         "String"
-put_param "ADMIN_CREDENTIALS" "$admin_credentials"
-put_param "JWT_SECRET"        "$jwt_secret"
+put_param "INGREDIENTS_TABLE"   "$ingredients_table"   "String"
+put_param "RECIPES_TABLE"       "$recipes_table"       "String"
+put_param "SETTINGS_TABLE"      "$settings_table"      "String"
+put_param "EVENTS_TABLE"        "$events_table"        "String"
+put_param "GROCERY_LISTS_TABLE" "$grocery_lists_table" "String"
+put_param "S3_BUCKET"           "$s3_bucket"           "String"
+put_param "ADMIN_CREDENTIALS"   "$admin_credentials"
+put_param "JWT_SECRET"          "$jwt_secret"
 
 echo ""
 echo "✅ All parameters stored under ${PREFIX}/"

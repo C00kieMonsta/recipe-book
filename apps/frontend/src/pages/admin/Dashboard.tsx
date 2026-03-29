@@ -1,38 +1,23 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Calendar, TrendingUp, Euro, BarChart3, ChevronRight, ShoppingCart } from "lucide-react";
-import type { AppEvent, Recipe, Ingredient } from "@packages/types";
+import type { AppEvent, Recipe, Ingredient, GroceryList } from "@packages/types";
 import { api } from "@/lib/api";
 import { calcRecipeCost, fmt } from "@/lib/recipe-helpers";
-
-interface SavedGroceryList {
-  id: string;
-  title: string;
-  items: { name: string }[];
-  savedAt: string;
-}
-
-function loadGroceryLists(): SavedGroceryList[] {
-  try {
-    return JSON.parse(localStorage.getItem("recipe-book:grocery-lists") || "[]");
-  } catch {
-    return [];
-  }
-}
 
 export default function Dashboard() {
   const [events, setEvents] = useState<AppEvent[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState(true);
-  const [groceryLists, setGroceryLists] = useState<SavedGroceryList[]>([]);
+  const [groceryLists, setGroceryLists] = useState<GroceryList[]>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
     Promise.all([api.events.list(), api.recipes.list(), api.ingredients.list()])
       .then(([ev, r, i]) => { setEvents(ev); setRecipes(r); setIngredients(i); })
       .finally(() => setLoading(false));
-    setGroceryLists(loadGroceryLists());
+    api.groceryLists.list().then(setGroceryLists).catch(() => {});
   }, []);
 
   const recipeCostMap = useMemo(() => {
@@ -143,13 +128,13 @@ export default function Dashboard() {
           <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {groceryLists.map((list) => (
               <button
-                key={list.id}
-                onClick={() => navigate(`/grocery-list?id=${list.id}`)}
+                key={list.listId}
+                onClick={() => navigate(`/grocery-list?id=${list.listId}`)}
                 className="text-left p-4 rounded-lg border border-border/60 hover:border-primary/40 hover:bg-muted/30 transition-colors"
               >
                 <p className="font-semibold text-sm truncate">{list.title}</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {list.items.length} ingrédient{list.items.length > 1 ? "s" : ""} · {new Date(list.savedAt).toLocaleDateString("fr-BE", { day: "numeric", month: "short", year: "numeric" })}
+                  {list.items.length} ingrédient{list.items.length > 1 ? "s" : ""} · {new Date(list.updatedAt).toLocaleDateString("fr-BE", { day: "numeric", month: "short", year: "numeric" })}
                 </p>
               </button>
             ))}

@@ -5,11 +5,12 @@ import { IngredientsModule } from "./ingredients/ingredients.module";
 import { RecipesModule } from "./recipes/recipes.module";
 import { SettingsModule } from "./settings/settings.module";
 import { EventsModule } from "./events/events.module";
+import { GroceryListsModule } from "./grocery-lists/grocery-lists.module";
 import { AuthModule } from "./auth/auth.module";
 import { HealthController } from "./health.controller";
 
 @Module({
-  imports: [ConfigModule, SharedModule, IngredientsModule, RecipesModule, SettingsModule, EventsModule, AuthModule],
+  imports: [ConfigModule, SharedModule, IngredientsModule, RecipesModule, SettingsModule, EventsModule, GroceryListsModule, AuthModule],
   controllers: [HealthController],
 })
 export class AppModule {}
