@@ -42,18 +42,23 @@ export default function GroceryListPage() {
   const [editing, setEditing] = useState(false);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
   const initialized = useRef(false);
+  const savingRef = useRef(false);
 
   const autoSave = useCallback(async (listId: string, t: string, i: GroceryListItem[]) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       const updated = await api.groceryLists.update(listId, { title: t, items: i });
       setList(updated);
       setSavedLists((prev) => prev.map((l) => l.listId === updated.listId ? updated : l));
     } catch { /* silent */ }
-    finally { setSaving(false); }
+    finally { savingRef.current = false; setSaving(false); }
   }, []);
 
   const createAndSave = useCallback(async (t: string, i: GroceryListItem[]) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       const created = await api.groceryLists.create({ title: t, items: i });
@@ -61,7 +66,7 @@ export default function GroceryListPage() {
       setSavedLists((prev) => [created, ...prev]);
       setSearchParams({ id: created.listId }, { replace: true });
     } catch { /* silent */ }
-    finally { setSaving(false); }
+    finally { savingRef.current = false; setSaving(false); }
   }, [setSearchParams]);
 
   useEffect(() => {
