@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, X, Copy, FileDown, FileSpreadsheet, GripVertical, Save, Check, Pencil, ShoppingCart, Trash2, ArrowLeft } from "lucide-react";
+import { Plus, X, Copy, FileDown, FileSpreadsheet, GripVertical, Check, Pencil, ShoppingCart, Trash2, ArrowLeft } from "lucide-react";
 import type { GroceryList, GroceryListItem, Ingredient } from "@packages/types";
 import { UNITS_QTY, PRICE_TO_QTY_UNIT } from "@packages/types";
 import { useToast } from "@/hooks/use-toast";
@@ -39,6 +39,44 @@ export default function GroceryListPage() {
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dropSupplier, setDropSupplier] = useState<string | null>(null);
   const [mobileShowList, setMobileShowList] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const initialized = useRef(false);
+
+  const autoSave = useCallback(async (listId: string, t: string, i: GroceryListItem[]) => {
+    setSaving(true);
+    try {
+      const updated = await api.groceryLists.update(listId, { title: t, items: i });
+      setList(updated);
+      setSavedLists((prev) => prev.map((l) => l.listId === updated.listId ? updated : l));
+    } catch { /* silent */ }
+    finally { setSaving(false); }
+  }, []);
+
+  const createAndSave = useCallback(async (t: string, i: GroceryListItem[]) => {
+    setSaving(true);
+    try {
+      const created = await api.groceryLists.create({ title: t, items: i });
+      setList(created);
+      setSavedLists((prev) => [created, ...prev]);
+      setSearchParams({ id: created.listId }, { replace: true });
+    } catch { /* silent */ }
+    finally { setSaving(false); }
+  }, [setSearchParams]);
+
+  useEffect(() => {
+    if (!initialized.current) return;
+    if (!editing) return;
+    clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      if (list) {
+        autoSave(list.listId, title, items);
+      } else {
+        createAndSave(title, items);
+      }
+    }, 800);
+    return () => clearTimeout(autoSaveTimer.current);
+  }, [title, items, list, editing, autoSave, createAndSave]);
 
   useEffect(() => {
     const init = async () => {
@@ -52,7 +90,7 @@ export default function GroceryListPage() {
       const idParam = searchParams.get("id");
       if (idParam) {
         const found = lists.find((l) => l.listId === idParam);
-        if (found) { setList(found); setTitle(found.title); setItems(found.items); }
+        if (found) { setList(found); setTitle(found.title); setItems(found.items); setEditing(true); }
       } else {
         const pendingRaw = localStorage.getItem(PENDING_KEY);
         if (pendingRaw) {
@@ -61,10 +99,12 @@ export default function GroceryListPage() {
             setTitle(pending.title);
             setItems(pending.items.map((i) => ({ ...i, checked: false })));
             localStorage.removeItem(PENDING_KEY);
+            setEditing(true);
           } catch { /* ignore */ }
         }
       }
       setLoading(false);
+      setTimeout(() => { initialized.current = true; }, 100);
     };
     init();
   }, []);
@@ -118,38 +158,19 @@ export default function GroceryListPage() {
   const selectList = (l: GroceryList) => {
     setList(l); setTitle(l.title); setItems(l.items);
     setSearchParams({ id: l.listId }, { replace: true });
-    setMobileShowList(false);
+    setEditing(true); setMobileShowList(false);
   };
 
   const startNewList = () => {
     setList(null); setTitle("Nouvelle liste"); setItems([]);
     setSearchParams({}, { replace: true });
-    setMobileShowList(false);
-  };
-
-  const saveList = async () => {
-    setSaving(true);
-    try {
-      if (list) {
-        const updated = await api.groceryLists.update(list.listId, { title, items });
-        setList(updated);
-        setSavedLists((prev) => prev.map((l) => l.listId === updated.listId ? updated : l));
-      } else {
-        const created = await api.groceryLists.create({ title, items });
-        setList(created);
-        setSavedLists((prev) => [created, ...prev]);
-        setSearchParams({ id: created.listId }, { replace: true });
-      }
-      toast({ title: "Liste sauvegardée" });
-    } catch {
-      toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
+    setEditing(true); setMobileShowList(false);
   };
 
   const deleteSaved = async (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
+    const target = savedLists.find((l) => l.listId === id);
+    if (!confirm(`Supprimer « ${target?.title ?? "cette liste"} » ?`)) return;
     await api.groceryLists.delete(id).catch(() => {});
     setSavedLists((prev) => prev.filter((l) => l.listId !== id));
     if (list?.listId === id) startNewList();
@@ -238,7 +259,6 @@ export default function GroceryListPage() {
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
 
   const uncheckedCount = items.filter((g) => !g.checked).length;
-  const hasContent = list || items.length > 0;
 
   const sidebar = (
     <div className="flex flex-col h-full">
@@ -260,10 +280,10 @@ export default function GroceryListPage() {
             const isActive = list?.listId === l.listId;
             const checkedCount = l.items.filter((i) => i.checked).length;
             return (
-              <button
+              <div
                 key={l.listId}
                 onClick={() => selectList(l)}
-                className={`w-full text-left px-3 py-2.5 border-b border-border/20 transition-colors group ${isActive ? "bg-primary/8 border-l-2 border-l-primary" : "hover:bg-muted/50"}`}
+                className={`w-full text-left px-3 py-2.5 border-b border-border/20 transition-colors group cursor-pointer ${isActive ? "bg-primary/8 border-l-2 border-l-primary" : "hover:bg-muted/50"}`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className={`text-sm truncate ${isActive ? "font-semibold" : "font-medium"}`}>{l.title}</span>
@@ -279,7 +299,7 @@ export default function GroceryListPage() {
                   {checkedCount > 0 && <span>· {checkedCount} cochés</span>}
                   <span className="ml-auto">{new Date(l.updatedAt).toLocaleDateString("fr-BE", { day: "numeric", month: "short" })}</span>
                 </div>
-              </button>
+              </div>
             );
           })
         )}
@@ -317,9 +337,9 @@ export default function GroceryListPage() {
             </p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <button onClick={saveList} disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 transition-opacity disabled:opacity-50" title="Sauvegarder">
-              <Save className="h-3.5 w-3.5" /> <span className="hidden sm:inline">{saving ? "…" : "Sauvegarder"}</span>
-            </button>
+            <span className={`text-[10px] text-muted-foreground tabular-nums transition-opacity ${saving ? "opacity-100" : "opacity-0"}`}>
+              Sauvegarde…
+            </span>
             <button onClick={exportPdf} className="p-1.5 border rounded-lg text-xs hover:bg-muted transition-colors" title="PDF">
               <FileDown className="h-3.5 w-3.5" />
             </button>
@@ -420,9 +440,9 @@ export default function GroceryListPage() {
                       <td className="py-1.5 w-7">
                         <button
                           onClick={() => patchItem(gIdx, { checked: !g.checked })}
-                          className={`w-4.5 h-4.5 rounded border-2 flex items-center justify-center transition-colors ${g.checked ? "bg-primary border-primary text-primary-foreground" : "border-border hover:border-primary"}`}
+                          className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${g.checked ? "bg-primary border-primary text-primary-foreground" : "border-border hover:border-primary"}`}
                         >
-                          {g.checked && <Check className="h-2.5 w-2.5" />}
+                          {g.checked && <Check className="h-3 w-3" />}
                         </button>
                       </td>
                       <td className={`px-2 py-1.5 text-xs font-medium ${g.checked ? "line-through text-muted-foreground" : ""}`}>{g.name}</td>
@@ -513,13 +533,13 @@ export default function GroceryListPage() {
         </div>
         {/* Right detail */}
         <div className="flex-1 min-w-0 flex flex-col">
-          {hasContent ? detail : emptyState}
+          {editing ? detail : emptyState}
         </div>
       </div>
 
       {/* Mobile: toggle between list and detail */}
       <div className="flex flex-col flex-1 min-h-0 md:hidden">
-        {mobileShowList || (!hasContent && !mobileShowList) ? (
+        {mobileShowList || !editing ? (
           <div className="flex-1 overflow-hidden flex flex-col">
             <div className="px-4 py-3 border-b">
               <h1 className="text-lg font-bold">Listes de courses</h1>
