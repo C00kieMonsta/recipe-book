@@ -16,12 +16,14 @@ export class DataStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
 
-    const retention = props.stage === "prod" ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
+    const isProd = props.stage === "prod";
+    const retention = isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
 
     this.ingredientsTable = new dynamodb.Table(this, "IngredientsTable", {
       tableName: `ta-ingredients-${props.stage}`,
       partitionKey: { name: "ingredientId", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: isProd,
       removalPolicy: retention,
     });
 
@@ -29,6 +31,7 @@ export class DataStack extends cdk.Stack {
       tableName: `ta-recipes-${props.stage}`,
       partitionKey: { name: "recipeId", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: isProd,
       removalPolicy: retention,
     });
 
@@ -36,6 +39,7 @@ export class DataStack extends cdk.Stack {
       tableName: `ta-settings-${props.stage}`,
       partitionKey: { name: "settingsId", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: isProd,
       removalPolicy: retention,
     });
 
@@ -43,6 +47,7 @@ export class DataStack extends cdk.Stack {
       tableName: `ta-events-${props.stage}`,
       partitionKey: { name: "eventId", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: isProd,
       removalPolicy: retention,
     });
 
@@ -50,6 +55,7 @@ export class DataStack extends cdk.Stack {
       tableName: `ta-grocery-lists-${props.stage}`,
       partitionKey: { name: "listId", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: isProd,
       removalPolicy: retention,
     });
   }
