@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { UNITS_PRICE, SUPPLIERS } from "../entities/ingredient";
+import { UNITS_PRICE } from "../entities/ingredient";
 
 export const createIngredientRequestSchema = z.object({
   name: z.string().min(1).trim(),
   price: z.number().nonnegative(),
   unit: z.enum(UNITS_PRICE),
-  supplier: z.string().trim().default(""),
-  comment: z.string().trim().optional(),
+  supplier: z.preprocess((v) => (v === null || v === undefined ? "" : v), z.string()).transform((s) => s.trim()),
+  comment: z.preprocess((v) => (v === null ? undefined : v), z.string().trim().optional()),
 });
 export type CreateIngredientRequest = z.infer<typeof createIngredientRequestSchema>;
 

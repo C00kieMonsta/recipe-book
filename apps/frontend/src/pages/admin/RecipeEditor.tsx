@@ -237,9 +237,30 @@ export default function RecipeEditor() {
         </section>
 
         <section className="card-elevated p-5">
-          <div className="flex justify-between items-center mb-3">
+          <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
             <h2 className="font-serif text-lg font-bold">Ingrédients</h2>
-            <button onClick={addIngLine} className="flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium hover:bg-muted"><Plus className="h-3.5 w-3.5" /> Ajouter</button>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                title="Ajouter plusieurs lignes vides d'un coup pour saisie au clavier"
+                onClick={() => {
+                  const raw = prompt("Nombre de lignes à ajouter (1 à 40) ?", "5");
+                  const n = parseInt(raw || "0", 10);
+                  if (Number.isNaN(n) || n < 1 || n > 40) return;
+                  const blank: RecipeIngredient = {
+                    ingredientId: allIngredients[0]?.ingredientId || "",
+                    qty: 0,
+                    unit: "g",
+                    lossPct: 0,
+                  };
+                  update("ingredients", [...form.ingredients, ...Array.from({ length: n }, () => ({ ...blank }))]);
+                }}
+                className="flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium hover:bg-muted"
+              >
+                <Plus className="h-3.5 w-3.5" /> Plusieurs lignes…
+              </button>
+              <button onClick={addIngLine} className="flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium hover:bg-muted"><Plus className="h-3.5 w-3.5" /> Ajouter</button>
+            </div>
           </div>
           <table className="w-full text-sm table-fixed">
             <colgroup>

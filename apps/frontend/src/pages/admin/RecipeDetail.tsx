@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Pencil, Trash2, Save, FileDown, ChefHat, Plus, X, Check } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, Save, FileDown, ChefHat, Plus, X, Check, Copy } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Recipe, Ingredient, RecipePricing, RecipeIngredient } from "@packages/types";
@@ -185,6 +185,27 @@ export default function RecipeDetail() {
     setNewIng({ ingredientId: "", qty: 0, unit: "g", lossPct: 0 });
   };
 
+  const handleDuplicateRecipe = async () => {
+    if (!recipe) return;
+    try {
+      const created = await api.recipes.create({
+        name: `${recipe.name} (copie)`,
+        type: recipe.type,
+        portions: recipe.portions,
+        portionWeight: recipe.portionWeight,
+        description: recipe.description || "",
+        techniques: [...recipe.techniques],
+        ingredients: [...recipe.ingredients],
+        photos: [...(recipe.photos?.map(({ key, label }) => ({ key, label })) || [])],
+        pricing: structuredClone(recipe.pricing || DEFAULT_PRICING),
+      });
+      toast({ title: "Recette dupliquée" });
+      navigate(`/recipes/${created.recipeId}/edit`);
+    } catch {
+      toast({ title: "Erreur lors de la duplication", variant: "destructive" });
+    }
+  };
+
   const handleRemoveIngredient = async (index: number) => {
     if (!recipe) return;
     const ingList = recipe.ingredients.filter((_, i) => i !== index);
@@ -231,9 +252,6 @@ export default function RecipeDetail() {
     }
   };
 
-  const usedIngredientIds = new Set(recipe?.ingredients.map((ri) => ri.ingredientId) ?? []);
-  const availableIngredients = ingredients.filter((i) => !usedIngredientIds.has(i.ingredientId));
-
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
   if (!recipe) return <div className="p-8 text-muted-foreground">Recette introuvable</div>;
 
@@ -251,6 +269,7 @@ export default function RecipeDetail() {
           </button>
           <ActionMenu items={[
             { label: "Exporter PDF", icon: <FileDown className="h-4 w-4" />, onClick: () => exportPdf(recipe, ingredients) },
+            { label: "Dupliquer", icon: <Copy className="h-4 w-4" />, onClick: handleDuplicateRecipe },
             { label: "Modifier", icon: <Pencil className="h-4 w-4" />, onClick: () => navigate(`/recipes/${id}/edit`) },
             { label: "Supprimer", icon: <Trash2 className="h-4 w-4" />, onClick: () => setDeleteConfirm(true), variant: "danger" },
           ]} />
@@ -427,7 +446,7 @@ export default function RecipeDetail() {
                   <tr className="border-b border-primary/30 bg-muted/30">
                     <td className="px-2 sm:px-3 py-1.5">
                       <SearchSelect
-                        options={availableIngredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))}
+                        options={ingredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))}
                         value={newIng.ingredientId}
                         onChange={(v) => {
                           const ing = ingredients.find((i) => i.ingredientId === v);

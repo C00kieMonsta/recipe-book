@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { ArrowLeft, Save, Plus, X, Search } from "lucide-react";
 import type { AppEvent, Recipe, Ingredient, EventRecipeLine, EventExtraCost } from "@packages/types";
 import { api } from "@/lib/api";
@@ -234,7 +234,7 @@ export default function EventEditor() {
                   return (
                     <tr key={rl.recipeId} className="border-b border-border/30">
                       <td className="px-2 py-2 font-semibold">
-                        <a href={`/recipes/${rl.recipeId}`} target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-primary transition-colors">{rec?.name || "—"}</a>
+                        <Link to={`/recipes/${rl.recipeId}`} className="hover:underline hover:text-primary transition-colors">{rec?.name || "—"}</Link>
                       </td>
                       <td className="px-2 py-2"><NumericInput className="input-field !py-1 !text-xs text-right w-full" value={rl.portions} onChange={(v) => updateRecipeLine(i, v)} min={1} /></td>
                       <td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{fmt(costPerPortion)}</td>

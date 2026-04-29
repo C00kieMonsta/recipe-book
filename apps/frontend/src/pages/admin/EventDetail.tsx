@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { ArrowLeft, Pencil, Trash2, Copy, FileDown } from "lucide-react";
 import type { AppEvent, Recipe, Ingredient } from "@packages/types";
 import { api } from "@/lib/api";
@@ -221,14 +221,6 @@ export default function EventDetail() {
             <span>·</span>
             <EditableInlineNum value={event.guestCount} onSave={(v) => saveField({ guestCount: v })} min={1} suffix=" convives" />
           </div>
-          <EditableText
-            value={event.notes || ""}
-            onSave={(v) => saveField({ notes: v })}
-            className="text-muted-foreground text-sm mt-2 italic"
-            inputClassName="text-muted-foreground text-sm mt-2 w-full border-b border-primary/50 bg-transparent outline-none"
-            placeholder="Ajouter des notes…"
-            multiline
-          />
           <div className="flex gap-4 mt-3 text-sm text-muted-foreground flex-wrap">
             <span>Contact: <EditableInlineText value={event.contactName || ""} onSave={(v) => saveField({ contactName: v })} placeholder="Nom…" /></span>
             <EditableInlineText value={event.contactPhone || ""} onSave={(v) => saveField({ contactPhone: v })} placeholder="Téléphone…" />
@@ -253,6 +245,18 @@ export default function EventDetail() {
         <StatCard label="Marge %" value={`${marginPct.toFixed(1)}%`} className={marginPct >= 0 ? "text-green-600" : "text-destructive"} />
       </div>
 
+      <section className="card-elevated p-4 mb-5">
+        <h2 className="font-serif text-sm font-bold uppercase tracking-wider text-muted-foreground mb-2">Notes</h2>
+        <EditableText
+          value={event.notes || ""}
+          onSave={(v) => saveField({ notes: v })}
+          className="text-foreground text-sm leading-relaxed italic min-h-[2.5rem]"
+          inputClassName="text-foreground text-sm w-full border border-primary/40 rounded-lg px-3 py-2 bg-background outline-none min-h-[80px]"
+          placeholder="Ajouter des notes visibles pour toute l'équipe…"
+          multiline
+        />
+      </section>
+
       <section className="card-elevated p-5 mb-5">
         <h2 className="font-serif text-lg font-bold mb-3">Recettes</h2>
         <table className="w-full text-sm">
@@ -270,7 +274,9 @@ export default function EventDetail() {
               const cpp = totalRecCost / recPortions;
               return (
                 <tr key={rl.recipeId} className="border-b border-border/30">
-                  <td className="px-3 py-2 font-semibold"><a href={`/recipes/${rl.recipeId}`} className="hover:underline hover:text-primary transition-colors">{rec?.name || "—"}</a></td>
+                  <td className="px-3 py-2 font-semibold">
+                    <Link to={`/recipes/${rl.recipeId}`} className="hover:underline hover:text-primary transition-colors">{rec?.name || "—"}</Link>
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     <EditableInlineNum value={rl.portions} onSave={(v) => updateRecipePortions(rl.recipeId, v)} min={1} />
                   </td>

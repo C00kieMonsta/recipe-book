@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Calendar, Search, Trash2, ShoppingCart } from "lucide-react";
+import { Plus, Calendar, Search, Trash2, ShoppingCart, FileDown } from "lucide-react";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import type { AppEvent, Recipe, Ingredient } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -24,6 +26,7 @@ export default function Events() {
   const [filterStatus, setFilterStatus] = useState<"all" | "upcoming" | "completed">("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [groceryLoading, setGroceryLoading] = useState(false);
+  const [weekPdfLoading, setWeekPdfLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -38,7 +41,7 @@ export default function Events() {
     let arr = [...events];
     if (search) arr = arr.filter((e) => e.name.toLowerCase().includes(search.toLowerCase()));
     if (filterStatus !== "all") arr = arr.filter((e) => e.status === filterStatus);
-    arr.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    arr.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     return arr;
   }, [events, search, filterStatus]);
 
@@ -121,6 +124,141 @@ export default function Events() {
     }
   };
 
+  const exportWeekPlannerPdf = async () => {
+    const ref = new Date();
+    const start = startOfWeekMonday(ref);
+    const end = endOfWeekSunday(ref);
+    const weekEv = events
+      .filter((e) => {
+        const t = new Date(`${e.date}T12:00:00`).getTime();
+        return t >= start.getTime() && t <= end.getTime();
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    if (weekEv.length === 0) {
+      toast({ title: "Aucun événement cette semaine", variant: "destructive" });
+      return;
+    }
+
+    setWeekPdfLoading(true);
+    try {
+      const [allRecipes, allIngredients] = await Promise.all([api.recipes.list(), api.ingredients.list()]);
+      const recipeMap = new Map(allRecipes.map((r) => [r.recipeId, r]));
+
+      const doc = new jsPDF();
+      const m = 15;
+      let startY = m;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.text("Planner — Semaine du " + fmtRangeFr(start, end), m, startY + 6);
+      startY += 14;
+
+      for (let evIdx = 0; evIdx < weekEv.length; evIdx++) {
+        const ev = weekEv[evIdx];
+        if (evIdx > 0) {
+          doc.addPage();
+          startY = m;
+        }
+
+        const dateStr = new Date(ev.date).toLocaleDateString("fr-BE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(13);
+        doc.text(ev.name, m, startY + 8);
+        startY += 6;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.text(`${dateStr} · ${ev.guestCount} convives`, m, startY + 8);
+        startY += 14;
+
+        if (ev.notes?.trim()) {
+          doc.setFontSize(8);
+          const noteLines = doc.splitTextToSize(`Notes : ${ev.notes.trim()}`, 180);
+          doc.text(noteLines, m, startY + 6);
+          startY += noteLines.length * 4 + 6;
+          doc.setFont("helvetica", "normal");
+        }
+
+        for (const rl of ev.recipes) {
+          const recipe = recipeMap.get(rl.recipeId);
+          if (!recipe) continue;
+          const scale = rl.portions / (recipe.portions || 1);
+
+          if (startY > 240) {
+            doc.addPage();
+            startY = m;
+          }
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.text(`${recipe.name} — ${rl.portions} portion${rl.portions > 1 ? "s" : ""}`, m, startY + 6);
+          startY += 10;
+
+          autoTable(doc, {
+            startY,
+            head: [["", "Ingrédient", "Quantité", "Unité"]],
+            body: recipe.ingredients.map((ri) => {
+              const ing = allIngredients.find((i) => i.ingredientId === ri.ingredientId);
+              return ["", ing?.name || ri.ingredientId, Number((ri.qty * scale).toFixed(2)).toString(), ri.unit];
+            }),
+            margin: { left: m },
+            styles: { fontSize: 8, cellPadding: 2 },
+            headStyles: { fillColor: [60, 60, 60] },
+            columnStyles: { 0: { cellWidth: 8 }, 2: { halign: "right" } },
+            didDrawCell: (data) => {
+              if (data.column.index === 0 && data.row.section === "body") {
+                const sz = 3;
+                doc.setDrawColor(100, 100, 100);
+                doc.rect(data.cell.x + (data.cell.width - sz) / 2, data.cell.y + (data.cell.height - sz) / 2, sz, sz);
+              }
+            },
+          });
+
+          const lastTable = (doc as unknown as Record<string, unknown>).lastAutoTable as { finalY: number } | undefined;
+          startY = (lastTable?.finalY ?? startY + 30) + 8;
+
+          if (recipe.techniques.length > 0) {
+            if (startY > 250) {
+              doc.addPage();
+              startY = m;
+            }
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9);
+            doc.text("Préparation", m, startY + 4);
+            startY += 8;
+
+            recipe.techniques.forEach((step, i) => {
+              const sz = 3.5;
+              const lines = doc.splitTextToSize(`${i + 1}. ${step}`, 170);
+              if (startY + lines.length * 4.5 > 280) {
+                doc.addPage();
+                startY = m;
+              }
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(8);
+              doc.setDrawColor(100, 100, 100);
+              doc.rect(m, startY - sz + 0.5, sz, sz);
+              doc.text(lines, m + sz + 2, startY);
+              startY += lines.length * 4.5 + 2;
+            });
+
+            startY += 6;
+          } else {
+            startY += 2;
+          }
+        }
+      }
+
+      const filename = `planner-${start.toISOString().slice(0, 10)}`;
+      doc.save(`${filename}.pdf`);
+      toast({ title: `PDF créé (${weekEv.length} événement${weekEv.length > 1 ? "s" : ""})` });
+    } catch {
+      toast({ title: "Erreur lors de l'export PDF", variant: "destructive" });
+    } finally {
+      setWeekPdfLoading(false);
+    }
+  };
+
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
 
   return (
@@ -141,6 +279,15 @@ export default function Events() {
               {groceryLoading ? "Chargement…" : `Liste de courses (${selected.size})`}
             </button>
           )}
+          <button
+            type="button"
+            onClick={exportWeekPlannerPdf}
+            disabled={weekPdfLoading}
+            className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
+          >
+            <FileDown className="h-4 w-4" />
+            {weekPdfLoading ? "PDF…" : "PDF planner (semaine)"}
+          </button>
           <button onClick={() => navigate("/events/new")} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm hover:opacity-90 transition-opacity">
             <Plus className="h-4 w-4" /> Nouvel événement
           </button>
@@ -227,4 +374,27 @@ export default function Events() {
       <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} onPrev={prev} onNext={next} />
     </div>
   );
+}
+
+function startOfWeekMonday(d: Date): Date {
+  const x = new Date(d);
+  const day = x.getDay();
+  const delta = day === 0 ? -6 : 1 - day;
+  x.setDate(x.getDate() + delta);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function endOfWeekSunday(d: Date): Date {
+  const s = startOfWeekMonday(d);
+  const e = new Date(s);
+  e.setDate(e.getDate() + 6);
+  e.setHours(23, 59, 59, 999);
+  return e;
+}
+
+function fmtRangeFr(start: Date, end: Date): string {
+  const a = start.toLocaleDateString("fr-BE", { day: "numeric", month: "short" });
+  const b = end.toLocaleDateString("fr-BE", { day: "numeric", month: "short", year: "numeric" });
+  return `${a} au ${b}`;
 }

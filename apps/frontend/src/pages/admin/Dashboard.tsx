@@ -34,7 +34,7 @@ export default function Dashboard() {
 
   const eventRows = useMemo(() =>
     events
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .map((ev) => {
         const recipeCost = ev.recipes.reduce((s, rl) => {
           const total = recipeCostMap[rl.recipeId] || 0;
