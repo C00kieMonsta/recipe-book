@@ -26,7 +26,7 @@ export default function Events() {
   const [filterStatus, setFilterStatus] = useState<"all" | "upcoming" | "completed">("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [groceryLoading, setGroceryLoading] = useState(false);
-  const [weekPdfLoading, setWeekPdfLoading] = useState(false);
+  const [plannerPdfLoading, setPlannerPdfLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -124,23 +124,17 @@ export default function Events() {
     }
   };
 
-  const exportWeekPlannerPdf = async () => {
-    const ref = new Date();
-    const start = startOfWeekMonday(ref);
-    const end = endOfWeekSunday(ref);
-    const weekEv = events
-      .filter((e) => {
-        const t = new Date(`${e.date}T12:00:00`).getTime();
-        return t >= start.getTime() && t <= end.getTime();
-      })
+  const exportSelectedPlannerPdf = async () => {
+    const selectedEvents = events
+      .filter((e) => selected.has(e.eventId))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    if (weekEv.length === 0) {
-      toast({ title: "Aucun événement cette semaine", variant: "destructive" });
+    if (selectedEvents.length === 0) {
+      toast({ title: "Sélectionnez au moins un événement", variant: "destructive" });
       return;
     }
 
-    setWeekPdfLoading(true);
+    setPlannerPdfLoading(true);
     try {
       const [allRecipes, allIngredients] = await Promise.all([api.recipes.list(), api.ingredients.list()]);
       const recipeMap = new Map(allRecipes.map((r) => [r.recipeId, r]));
@@ -151,11 +145,11 @@ export default function Events() {
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(16);
-      doc.text("Planner — Semaine du " + fmtRangeFr(start, end), m, startY + 6);
+      doc.text(`Planner — ${selectedEvents.length} événement${selectedEvents.length > 1 ? "s" : ""}`, m, startY + 6);
       startY += 14;
 
-      for (let evIdx = 0; evIdx < weekEv.length; evIdx++) {
-        const ev = weekEv[evIdx];
+      for (let evIdx = 0; evIdx < selectedEvents.length; evIdx++) {
+        const ev = selectedEvents[evIdx];
         if (evIdx > 0) {
           doc.addPage();
           startY = m;
@@ -249,13 +243,15 @@ export default function Events() {
         }
       }
 
-      const filename = `planner-${start.toISOString().slice(0, 10)}`;
-      doc.save(`${filename}.pdf`);
-      toast({ title: `PDF créé (${weekEv.length} événement${weekEv.length > 1 ? "s" : ""})` });
+      const filename = selectedEvents.length === 1
+        ? `planner-${selectedEvents[0].date}-${selectedEvents[0].name}`
+        : `planner-${selectedEvents.length}-evenements`;
+      doc.save(`${filename.replace(/[^a-zA-Z0-9àâéèêëïîôùûüç\s-]/g, "")}.pdf`);
+      toast({ title: `PDF créé (${selectedEvents.length} événement${selectedEvents.length > 1 ? "s" : ""})` });
     } catch {
       toast({ title: "Erreur lors de l'export PDF", variant: "destructive" });
     } finally {
-      setWeekPdfLoading(false);
+      setPlannerPdfLoading(false);
     }
   };
 
@@ -270,24 +266,26 @@ export default function Events() {
         </div>
         <div className="flex gap-2 items-center">
           {selected.size > 0 && (
-            <button
-              onClick={generateGroceryList}
-              disabled={groceryLoading}
-              className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
-            >
-              <ShoppingCart className="h-4 w-4" />
-              {groceryLoading ? "Chargement…" : `Liste de courses (${selected.size})`}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={exportSelectedPlannerPdf}
+                disabled={plannerPdfLoading}
+                className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
+              >
+                <FileDown className="h-4 w-4" />
+                {plannerPdfLoading ? "PDF…" : `PDF recettes (${selected.size})`}
+              </button>
+              <button
+                onClick={generateGroceryList}
+                disabled={groceryLoading}
+                className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
+              >
+                <ShoppingCart className="h-4 w-4" />
+                {groceryLoading ? "Chargement…" : `Liste de courses (${selected.size})`}
+              </button>
+            </>
           )}
-          <button
-            type="button"
-            onClick={exportWeekPlannerPdf}
-            disabled={weekPdfLoading}
-            className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
-          >
-            <FileDown className="h-4 w-4" />
-            {weekPdfLoading ? "PDF…" : "PDF planner (semaine)"}
-          </button>
           <button onClick={() => navigate("/events/new")} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm hover:opacity-90 transition-opacity">
             <Plus className="h-4 w-4" /> Nouvel événement
           </button>
@@ -374,27 +372,4 @@ export default function Events() {
       <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} onPrev={prev} onNext={next} />
     </div>
   );
-}
-
-function startOfWeekMonday(d: Date): Date {
-  const x = new Date(d);
-  const day = x.getDay();
-  const delta = day === 0 ? -6 : 1 - day;
-  x.setDate(x.getDate() + delta);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
-function endOfWeekSunday(d: Date): Date {
-  const s = startOfWeekMonday(d);
-  const e = new Date(s);
-  e.setDate(e.getDate() + 6);
-  e.setHours(23, 59, 59, 999);
-  return e;
-}
-
-function fmtRangeFr(start: Date, end: Date): string {
-  const a = start.toLocaleDateString("fr-BE", { day: "numeric", month: "short" });
-  const b = end.toLocaleDateString("fr-BE", { day: "numeric", month: "short", year: "numeric" });
-  return `${a} au ${b}`;
 }

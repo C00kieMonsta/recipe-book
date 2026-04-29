@@ -70,7 +70,7 @@ export default function Ingredients() {
       else await api.ingredients.create(data);
       setEditing(null); load();
       toast({ title: data.ingredientId ? "Ingrédient modifié" : "Ingrédient créé" });
-    } catch { toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" }); }
+    } catch (e) { toast({ title: (e as Error).message || "Erreur lors de la sauvegarde", variant: "destructive" }); }
   };
 
   const deleteIngredient = async (id: string) => {
