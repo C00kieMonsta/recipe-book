@@ -139,107 +139,127 @@ export default function Events() {
       const [allRecipes, allIngredients] = await Promise.all([api.recipes.list(), api.ingredients.list()]);
       const recipeMap = new Map(allRecipes.map((r) => [r.recipeId, r]));
 
+      /** Sum of rl.portions / recipe.portions for each recipe across all selected events (and duplicate lines within an event). */
+      const aggregatedScale = new Map<string, number>();
+      for (const ev of selectedEvents) {
+        for (const rl of ev.recipes) {
+          const recipe = recipeMap.get(rl.recipeId);
+          if (!recipe) continue;
+          const lineScale = rl.portions / (recipe.portions || 1);
+          aggregatedScale.set(rl.recipeId, (aggregatedScale.get(rl.recipeId) ?? 0) + lineScale);
+        }
+      }
+
+      const mergedRecipes = [...aggregatedScale.entries()]
+        .map(([recipeId, totalScale]) => {
+          const recipe = recipeMap.get(recipeId);
+          if (!recipe) return null;
+          const portionsCommandees = totalScale * (recipe.portions || 1);
+          return { recipe, totalScale, portionsCommandees };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null)
+        .sort((a, b) => a.recipe.name.localeCompare(b.recipe.name, "fr"));
+
+      if (mergedRecipes.length === 0) {
+        toast({ title: "Aucune recette dans la sélection", variant: "destructive" });
+        return;
+      }
+
       const doc = new jsPDF();
       const m = 15;
       let startY = m;
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(16);
-      doc.text(`Planner — ${selectedEvents.length} événement${selectedEvents.length > 1 ? "s" : ""}`, m, startY + 6);
-      startY += 14;
+      doc.text(`Recettes agrégées — ${selectedEvents.length} événement${selectedEvents.length > 1 ? "s" : ""}`, m, startY + 6);
+      startY += 12;
 
-      for (let evIdx = 0; evIdx < selectedEvents.length; evIdx++) {
-        const ev = selectedEvents[evIdx];
-        if (evIdx > 0) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text("Événements inclus", m, startY + 6);
+      startY += 8;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      selectedEvents.forEach((ev) => {
+        const dateStr = new Date(ev.date).toLocaleDateString("fr-BE", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+        const line = `• ${ev.name} — ${dateStr} (${ev.guestCount} conv.)`;
+        const wrapped = doc.splitTextToSize(line, 175);
+        if (startY + wrapped.length * 4 > 270) {
+          doc.addPage();
+          startY = m;
+        }
+        doc.text(wrapped, m, startY + 6);
+        startY += wrapped.length * 4 + 1;
+      });
+      startY += 6;
+
+      for (const { recipe, totalScale, portionsCommandees } of mergedRecipes) {
+        const portionsLabel = Number.isInteger(portionsCommandees)
+          ? String(portionsCommandees)
+          : portionsCommandees.toFixed(2).replace(/\.?0+$/, "");
+        const portionPlural = Math.abs(portionsCommandees - 1) > 1e-6;
+
+        if (startY > 240) {
           doc.addPage();
           startY = m;
         }
 
-        const dateStr = new Date(ev.date).toLocaleDateString("fr-BE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(13);
-        doc.text(ev.name, m, startY + 8);
-        startY += 6;
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(9);
-        doc.text(`${dateStr} · ${ev.guestCount} convives`, m, startY + 8);
-        startY += 14;
+        doc.setFontSize(11);
+        doc.text(`${recipe.name} — ${portionsLabel} portion${portionPlural ? "s" : ""} (total sélection)`, m, startY + 6);
+        startY += 10;
 
-        if (ev.notes?.trim()) {
-          doc.setFontSize(8);
-          const noteLines = doc.splitTextToSize(`Notes : ${ev.notes.trim()}`, 180);
-          doc.text(noteLines, m, startY + 6);
-          startY += noteLines.length * 4 + 6;
-          doc.setFont("helvetica", "normal");
-        }
+        autoTable(doc, {
+          startY,
+          head: [["", "Ingrédient", "Quantité", "Unité"]],
+          body: recipe.ingredients.map((ri) => {
+            const ing = allIngredients.find((i) => i.ingredientId === ri.ingredientId);
+            return ["", ing?.name || ri.ingredientId, Number((ri.qty * totalScale).toFixed(2)).toString(), ri.unit];
+          }),
+          margin: { left: m },
+          styles: { fontSize: 8, cellPadding: 2 },
+          headStyles: { fillColor: [60, 60, 60] },
+          columnStyles: { 0: { cellWidth: 8 }, 2: { halign: "right" } },
+          didDrawCell: (data) => {
+            if (data.column.index === 0 && data.row.section === "body") {
+              const sz = 3;
+              doc.setDrawColor(100, 100, 100);
+              doc.rect(data.cell.x + (data.cell.width - sz) / 2, data.cell.y + (data.cell.height - sz) / 2, sz, sz);
+            }
+          },
+        });
 
-        for (const rl of ev.recipes) {
-          const recipe = recipeMap.get(rl.recipeId);
-          if (!recipe) continue;
-          const scale = rl.portions / (recipe.portions || 1);
+        const lastTable = (doc as unknown as Record<string, unknown>).lastAutoTable as { finalY: number } | undefined;
+        startY = (lastTable?.finalY ?? startY + 30) + 8;
 
-          if (startY > 240) {
+        if (recipe.techniques.length > 0) {
+          if (startY > 250) {
             doc.addPage();
             startY = m;
           }
-
           doc.setFont("helvetica", "bold");
-          doc.setFontSize(11);
-          doc.text(`${recipe.name} — ${rl.portions} portion${rl.portions > 1 ? "s" : ""}`, m, startY + 6);
-          startY += 10;
+          doc.setFontSize(9);
+          doc.text("Préparation", m, startY + 4);
+          startY += 8;
 
-          autoTable(doc, {
-            startY,
-            head: [["", "Ingrédient", "Quantité", "Unité"]],
-            body: recipe.ingredients.map((ri) => {
-              const ing = allIngredients.find((i) => i.ingredientId === ri.ingredientId);
-              return ["", ing?.name || ri.ingredientId, Number((ri.qty * scale).toFixed(2)).toString(), ri.unit];
-            }),
-            margin: { left: m },
-            styles: { fontSize: 8, cellPadding: 2 },
-            headStyles: { fillColor: [60, 60, 60] },
-            columnStyles: { 0: { cellWidth: 8 }, 2: { halign: "right" } },
-            didDrawCell: (data) => {
-              if (data.column.index === 0 && data.row.section === "body") {
-                const sz = 3;
-                doc.setDrawColor(100, 100, 100);
-                doc.rect(data.cell.x + (data.cell.width - sz) / 2, data.cell.y + (data.cell.height - sz) / 2, sz, sz);
-              }
-            },
-          });
-
-          const lastTable = (doc as unknown as Record<string, unknown>).lastAutoTable as { finalY: number } | undefined;
-          startY = (lastTable?.finalY ?? startY + 30) + 8;
-
-          if (recipe.techniques.length > 0) {
-            if (startY > 250) {
+          recipe.techniques.forEach((step, i) => {
+            const sz = 3.5;
+            const lines = doc.splitTextToSize(`${i + 1}. ${step}`, 170);
+            if (startY + lines.length * 4.5 > 280) {
               doc.addPage();
               startY = m;
             }
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(9);
-            doc.text("Préparation", m, startY + 4);
-            startY += 8;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            doc.setDrawColor(100, 100, 100);
+            doc.rect(m, startY - sz + 0.5, sz, sz);
+            doc.text(lines, m + sz + 2, startY);
+            startY += lines.length * 4.5 + 2;
+          });
 
-            recipe.techniques.forEach((step, i) => {
-              const sz = 3.5;
-              const lines = doc.splitTextToSize(`${i + 1}. ${step}`, 170);
-              if (startY + lines.length * 4.5 > 280) {
-                doc.addPage();
-                startY = m;
-              }
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(8);
-              doc.setDrawColor(100, 100, 100);
-              doc.rect(m, startY - sz + 0.5, sz, sz);
-              doc.text(lines, m + sz + 2, startY);
-              startY += lines.length * 4.5 + 2;
-            });
-
-            startY += 6;
-          } else {
-            startY += 2;
-          }
+          startY += 6;
+        } else {
+          startY += 2;
         }
       }
 
