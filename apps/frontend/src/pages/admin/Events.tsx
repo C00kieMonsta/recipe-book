@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Calendar, Search, Trash2, ShoppingCart, FileDown } from "lucide-react";
+import { Plus, Calendar, Search, Trash2, ShoppingCart, FileDown, X } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { AppEvent, Recipe, Ingredient } from "@packages/types";
@@ -27,6 +27,7 @@ export default function Events() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [groceryLoading, setGroceryLoading] = useState(false);
   const [plannerPdfLoading, setPlannerPdfLoading] = useState(false);
+  const [showWeekPlanner, setShowWeekPlanner] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -124,24 +125,19 @@ export default function Events() {
     }
   };
 
-  const exportSelectedPlannerPdf = async () => {
-    const selectedEvents = events
-      .filter((e) => selected.has(e.eventId))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    if (selectedEvents.length === 0) {
-      toast({ title: "Sélectionnez au moins un événement", variant: "destructive" });
+  const generateAggregatedPdf = async (eventsToExport: AppEvent[], titlePrefix: string) => {
+    if (eventsToExport.length === 0) {
+      toast({ title: "Aucun événement à exporter", variant: "destructive" });
       return;
     }
 
-    setPlannerPdfLoading(true);
     try {
       const [allRecipes, allIngredients] = await Promise.all([api.recipes.list(), api.ingredients.list()]);
       const recipeMap = new Map(allRecipes.map((r) => [r.recipeId, r]));
 
       /** Sum of rl.portions / recipe.portions for each recipe across all selected events (and duplicate lines within an event). */
       const aggregatedScale = new Map<string, number>();
-      for (const ev of selectedEvents) {
+      for (const ev of eventsToExport) {
         for (const rl of ev.recipes) {
           const recipe = recipeMap.get(rl.recipeId);
           if (!recipe) continue;
@@ -171,7 +167,7 @@ export default function Events() {
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(16);
-      doc.text(`Recettes agrégées — ${selectedEvents.length} événement${selectedEvents.length > 1 ? "s" : ""}`, m, startY + 6);
+      doc.text(`Recettes agrégées — ${eventsToExport.length} événement${eventsToExport.length > 1 ? "s" : ""}`, m, startY + 6);
       startY += 12;
 
       doc.setFont("helvetica", "bold");
@@ -180,7 +176,7 @@ export default function Events() {
       startY += 8;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
-      selectedEvents.forEach((ev) => {
+      eventsToExport.forEach((ev) => {
         const dateStr = new Date(ev.date).toLocaleDateString("fr-BE", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
         const line = `• ${ev.name} — ${dateStr} (${ev.guestCount} conv.)`;
         const wrapped = doc.splitTextToSize(line, 175);
@@ -263,16 +259,29 @@ export default function Events() {
         }
       }
 
-      const filename = selectedEvents.length === 1
-        ? `planner-${selectedEvents[0].date}-${selectedEvents[0].name}`
-        : `planner-${selectedEvents.length}-evenements`;
+      const filename = eventsToExport.length === 1
+        ? `${titlePrefix}-${eventsToExport[0].date}-${eventsToExport[0].name}`
+        : `${titlePrefix}-${eventsToExport.length}-evenements`;
       doc.save(`${filename.replace(/[^a-zA-Z0-9àâéèêëïîôùûüç\s-]/g, "")}.pdf`);
-      toast({ title: `PDF créé (${selectedEvents.length} événement${selectedEvents.length > 1 ? "s" : ""})` });
+      toast({ title: `PDF créé (${eventsToExport.length} événement${eventsToExport.length > 1 ? "s" : ""})` });
     } catch {
       toast({ title: "Erreur lors de l'export PDF", variant: "destructive" });
-    } finally {
-      setPlannerPdfLoading(false);
     }
+  };
+
+  const exportSelectedPlannerPdf = async () => {
+    const selectedEvents = events
+      .filter((e) => selected.has(e.eventId))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    if (selectedEvents.length === 0) {
+      toast({ title: "Sélectionnez au moins un événement", variant: "destructive" });
+      return;
+    }
+
+    setPlannerPdfLoading(true);
+    await generateAggregatedPdf(selectedEvents, "planner");
+    setPlannerPdfLoading(false);
   };
 
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
@@ -306,6 +315,9 @@ export default function Events() {
               </button>
             </>
           )}
+          <button onClick={() => setShowWeekPlanner(true)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
+            <Calendar className="h-4 w-4" /> Planning semaine
+          </button>
           <button onClick={() => navigate("/events/new")} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm hover:opacity-90 transition-opacity">
             <Plus className="h-4 w-4" /> Nouvel événement
           </button>
@@ -390,6 +402,130 @@ export default function Events() {
       </div>
 
       <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} onPrev={prev} onNext={next} />
+
+      {showWeekPlanner && (
+        <WeekPlannerModal
+          events={events}
+          onClose={() => setShowWeekPlanner(false)}
+          onDownload={async (weekEvents) => {
+            await generateAggregatedPdf(weekEvents, "semaine");
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function startOfWeekMonday(d: Date): Date {
+  const x = new Date(d);
+  const day = x.getDay();
+  const delta = day === 0 ? -6 : 1 - day;
+  x.setDate(x.getDate() + delta);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function endOfWeekSunday(d: Date): Date {
+  const s = startOfWeekMonday(d);
+  const e = new Date(s);
+  e.setDate(e.getDate() + 6);
+  e.setHours(23, 59, 59, 999);
+  return e;
+}
+
+function WeekPlannerModal({ events, onClose, onDownload }: { events: AppEvent[]; onClose: () => void; onDownload: (events: AppEvent[]) => Promise<void> }) {
+  const [downloading, setDownloading] = useState(false);
+  
+  const ref = new Date();
+  const start = startOfWeekMonday(ref);
+  const end = endOfWeekSunday(ref);
+
+  const weekEvents = useMemo(() => {
+    return events
+      .filter((e) => {
+        const t = new Date(`${e.date}T12:00:00`).getTime();
+        return t >= start.getTime() && t <= end.getTime();
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [events, start, end]);
+
+  const days = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
+  
+  const eventsByDay = useMemo(() => {
+    const grouped: Record<number, AppEvent[]> = {};
+    for (let i = 0; i < 7; i++) grouped[i] = [];
+    
+    weekEvents.forEach(ev => {
+      const d = new Date(`${ev.date}T12:00:00`);
+      let dayIdx = d.getDay() - 1;
+      if (dayIdx === -1) dayIdx = 6; // Sunday
+      grouped[dayIdx].push(ev);
+    });
+    return grouped;
+  }, [weekEvents]);
+
+  return (
+    <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-card rounded-2xl p-7 max-w-2xl w-[92%] max-h-[90vh] flex flex-col shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h2 className="font-serif text-xl font-bold">Planning de la semaine</h2>
+            <p className="text-sm text-muted-foreground mt-1">Du {start.toLocaleDateString("fr-BE")} au {end.toLocaleDateString("fr-BE")}</p>
+          </div>
+          <button onClick={onClose} className="p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors"><X className="h-5 w-5" /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto pr-2 -mr-2 space-y-4">
+          {days.map((dayName, idx) => {
+            const dayEvents = eventsByDay[idx];
+            const date = new Date(start);
+            date.setDate(date.getDate() + idx);
+            
+            return (
+              <div key={idx} className="border rounded-xl overflow-hidden">
+                <div className="bg-muted/50 px-4 py-2 border-b flex justify-between items-center">
+                  <span className="font-semibold text-sm">{dayName} {date.toLocaleDateString("fr-BE", { day: "numeric", month: "short" })}</span>
+                  <span className="text-xs text-muted-foreground font-medium">{dayEvents.length} événement{dayEvents.length > 1 ? "s" : ""}</span>
+                </div>
+                <div className="p-4">
+                  {dayEvents.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic">Aucun événement</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {dayEvents.map(ev => (
+                        <div key={ev.eventId} className="flex flex-col gap-1">
+                          <div className="flex justify-between items-start">
+                            <span className="font-medium text-sm">{ev.name}</span>
+                            <span className="text-xs font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded-full">{ev.guestCount} conv.</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{ev.recipes.length} recette{ev.recipes.length > 1 ? "s" : ""}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-6 pt-4 border-t flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">Annuler</button>
+          <button 
+            onClick={async () => {
+              setDownloading(true);
+              await onDownload(weekEvents);
+              setDownloading(false);
+              onClose();
+            }} 
+            disabled={downloading || weekEvents.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            <FileDown className="h-4 w-4" />
+            {downloading ? "Génération..." : "Télécharger PDF agrégé"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
