@@ -176,9 +176,23 @@ export default function GroceryListPage() {
     e?.stopPropagation();
     const target = savedLists.find((l) => l.listId === id);
     if (!confirm(`Supprimer « ${target?.title ?? "cette liste"} » ?`)) return;
-    await api.groceryLists.delete(id).catch(() => {});
-    setSavedLists((prev) => prev.filter((l) => l.listId !== id));
-    if (list?.listId === id) startNewList();
+    // Cancel any pending autosave and stop the editor from re-saving so the
+    // debounced PATCH/create can't resurrect or re-create the deleted list.
+    clearTimeout(autoSaveTimer.current);
+    if (list?.listId === id) {
+      setEditing(false);
+      setList(null);
+      setItems([]);
+      setTitle("Liste de courses");
+      setSearchParams({}, { replace: true });
+      setMobileShowList(true);
+    }
+    try {
+      await api.groceryLists.delete(id);
+      setSavedLists((prev) => prev.filter((l) => l.listId !== id));
+    } catch {
+      toast({ title: "Échec de la suppression de la liste", variant: "destructive" });
+    }
   };
 
   const needQty = (g: GroceryListItem) => Math.max(0, g.totalQty - (g.haveQty ?? 0));

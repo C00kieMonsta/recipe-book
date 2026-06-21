@@ -48,7 +48,11 @@ export class DdbService {
     if (setEntries.length > 0) parts.push("SET " + setEntries.map((_, i) => `#k${i} = :v${i}`).join(", "));
     if (removeKeys.length > 0) parts.push("REMOVE " + removeKeys.map((k) => `#r_${k}`).join(", "));
 
+    // Guard the key attribute so an update can never create (resurrect) a row
+    // that was concurrently deleted — UpdateItem otherwise upserts.
+    const [keyAttr] = Object.keys(key);
     const names: Record<string, string> = {
+      "#pk": keyAttr,
       ...Object.fromEntries(setEntries.map(([k], i) => [`#k${i}`, k])),
       ...Object.fromEntries(removeKeys.map((k) => [`#r_${k}`, k])),
     };
@@ -57,6 +61,7 @@ export class DdbService {
       TableName: table,
       Key: key,
       UpdateExpression: parts.join(" "),
+      ConditionExpression: "attribute_exists(#pk)",
       ExpressionAttributeNames: names,
       ...(setEntries.length > 0 && {
         ExpressionAttributeValues: Object.fromEntries(setEntries.map(([, v], i) => [`:v${i}`, v])),
