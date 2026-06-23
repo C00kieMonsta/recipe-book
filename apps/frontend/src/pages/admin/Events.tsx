@@ -23,7 +23,7 @@ export default function Events() {
   const [events, setEvents] = useState<AppEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState<"all" | "upcoming" | "completed">("all");
+  const [filterStatus, setFilterStatus] = useState<"all" | "upcoming" | "completed">("upcoming");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [groceryLoading, setGroceryLoading] = useState(false);
   const [plannerPdfLoading, setPlannerPdfLoading] = useState(false);
@@ -42,11 +42,23 @@ export default function Events() {
     let arr = [...events];
     if (search) arr = arr.filter((e) => e.name.toLowerCase().includes(search.toLowerCase()));
     if (filterStatus !== "all") arr = arr.filter((e) => e.status === filterStatus);
-    arr.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    arr.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return arr;
   }, [events, search, filterStatus]);
 
   const { page, totalPages, paginatedItems, setPage, next, prev, total } = usePagination(filtered, 20);
+
+  const toggleStatus = async (ev: AppEvent, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = ev.status === "upcoming" ? "completed" : "upcoming";
+    setEvents((prev) => prev.map((x) => x.eventId === ev.eventId ? { ...x, status: next } : x));
+    try {
+      await api.events.update(ev.eventId, { status: next });
+    } catch {
+      setEvents((prev) => prev.map((x) => x.eventId === ev.eventId ? { ...x, status: ev.status } : x));
+      toast({ title: "Erreur lors du changement de statut", variant: "destructive" });
+    }
+  };
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -380,9 +392,13 @@ export default function Events() {
                 <td className="px-3 py-2.5 text-right tabular-nums">{ev.guestCount}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{ev.recipes.length}</td>
                 <td className="px-3 py-2.5">
-                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${ev.status === "upcoming" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>
+                  <button
+                    onClick={(e) => toggleStatus(ev, e)}
+                    title="Cliquer pour changer le statut"
+                    className={`px-2.5 py-0.5 rounded-full text-xs font-semibold cursor-pointer hover:opacity-80 transition-opacity ${ev.status === "upcoming" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}
+                  >
                     {ev.status === "upcoming" ? "À venir" : "Terminé"}
-                  </span>
+                  </button>
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums font-medium">{ev.sellingPricePerGuest.toFixed(2)}€</td>
                 <td className="px-3 py-2.5">

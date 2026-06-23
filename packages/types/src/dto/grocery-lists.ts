@@ -5,11 +5,11 @@ const groceryListItemSchema = z.object({
   name: z.string().min(1),
   totalQty: z.number().nonnegative(),
   unit: z.string().min(1),
-  supplier: z.string().min(1),
-  pricePerUnit: z.number().nonnegative(),
-  priceUnit: z.string().min(1),
+  supplier: z.preprocess((v) => (v == null || v === "" ? "Autre" : v), z.string()),
+  pricePerUnit: z.preprocess((v) => (v == null ? 0 : v), z.number().nonnegative()),
+  priceUnit: z.preprocess((v) => (v == null || v === "" ? "€/kg" : v), z.string()),
   checked: z.boolean().default(false),
-  haveQty: z.number().nonnegative().optional(),
+  haveQty: z.preprocess((v) => (v === null ? undefined : v), z.number().nonnegative().optional()),
 });
 
 export const createGroceryListSchema = z.object({

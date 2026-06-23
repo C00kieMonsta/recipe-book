@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, X, Copy, FileDown, FileSpreadsheet, GripVertical, Check, Pencil, ShoppingCart, Trash2, ArrowLeft } from "lucide-react";
+import { Plus, X, Copy, FileDown, FileSpreadsheet, GripVertical, Check, Pencil, ShoppingCart, Trash2, ArrowLeft, Eye, EyeOff } from "lucide-react";
 import type { GroceryList, GroceryListItem, Ingredient } from "@packages/types";
-import { UNITS_QTY, PRICE_TO_QTY_UNIT } from "@packages/types";
+import { UNITS_QTY, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS } from "@packages/types";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import NumericInput from "@/components/ui/NumericInput";
 import SearchSelect from "@/components/ui/SearchSelect";
+import IngredientFormModal from "@/components/ui/IngredientFormModal";
 import { fmt, supplierColor } from "@/lib/recipe-helpers";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -40,6 +41,9 @@ export default function GroceryListPage() {
   const [dropSupplier, setDropSupplier] = useState<string | null>(null);
   const [mobileShowList, setMobileShowList] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [hideChecked, setHideChecked] = useState(false);
+  const [creatingIngredient, setCreatingIngredient] = useState<string | null>(null);
+  const [supplierNames] = useState(() => DEFAULT_SUPPLIERS.map((s) => s.name));
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
   const initialized = useRef(false);
   const savingRef = useRef(false);
@@ -114,13 +118,14 @@ export default function GroceryListPage() {
     init();
   }, []);
 
-  const suppliers = useMemo(() => [...new Set(items.map((g) => g.supplier))].sort(), [items]);
+  const visibleItems = useMemo(() => hideChecked ? items.filter((g) => !g.checked) : items, [items, hideChecked]);
+  const suppliers = useMemo(() => [...new Set(visibleItems.map((g) => g.supplier))].sort(), [visibleItems]);
   const grouped = useMemo(() => {
     const map: Record<string, GroceryListItem[]> = {};
     suppliers.forEach((s) => { map[s] = []; });
-    items.forEach((g) => { map[g.supplier]?.push(g); });
+    visibleItems.forEach((g) => { map[g.supplier]?.push(g); });
     return map;
-  }, [items, suppliers]);
+  }, [visibleItems, suppliers]);
 
   const usedIngIds = new Set(items.map((g) => g.ingredientId));
   const availableIngs = allIngredients.filter((i) => !usedIngIds.has(i.ingredientId));
@@ -143,21 +148,38 @@ export default function GroceryListPage() {
     setDropSupplier(null);
   };
 
-  const addItem = () => {
-    const ing = allIngredients.find((i) => i.ingredientId === newIngId);
-    if (!ing || newIngQty <= 0) return;
-    setItems([...items, {
+  const addItemFromIngredient = (ing: Ingredient, qty: number, unit: string) => {
+    setItems((prev) => [...prev, {
       ingredientId: ing.ingredientId,
       name: ing.name,
-      totalQty: newIngQty,
-      unit: newIngUnit,
-      supplier: ing.supplier,
+      totalQty: qty,
+      unit,
+      supplier: ing.supplier || "Autre",
       pricePerUnit: ing.price,
       priceUnit: ing.unit,
       checked: false,
     }]);
+  };
+
+  const addItem = () => {
+    const ing = allIngredients.find((i) => i.ingredientId === newIngId);
+    if (!ing || newIngQty <= 0) return;
+    addItemFromIngredient(ing, newIngQty, newIngUnit);
     setNewIngId(""); setNewIngQty(0); setNewIngUnit("g");
     setAddingIng(false);
+  };
+
+  const handleCreateIngredient = async (data: Partial<Ingredient>) => {
+    try {
+      const created = await api.ingredients.create(data);
+      setAllIngredients((prev) => [...prev, created]);
+      setNewIngId(created.ingredientId);
+      setNewIngUnit(PRICE_TO_QTY_UNIT[created.unit] || "g");
+      setCreatingIngredient(null);
+      toast({ title: "Ingrédient créé" });
+    } catch {
+      toast({ title: "Erreur lors de la création", variant: "destructive" });
+    }
   };
 
   const selectList = (l: GroceryList) => {
@@ -359,6 +381,13 @@ export default function GroceryListPage() {
             <span className={`text-[10px] text-muted-foreground tabular-nums transition-opacity ${saving ? "opacity-100" : "opacity-0"}`}>
               Sauvegarde…
             </span>
+            <button
+              onClick={() => setHideChecked((v) => !v)}
+              className={`p-1.5 border rounded-lg text-xs transition-colors ${hideChecked ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"}`}
+              title={hideChecked ? "Afficher les ingrédients cochés" : "Masquer les ingrédients cochés"}
+            >
+              {hideChecked ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
             <button onClick={exportPdf} className="p-1.5 border rounded-lg text-xs hover:bg-muted transition-colors" title="PDF">
               <FileDown className="h-3.5 w-3.5" />
             </button>
@@ -387,6 +416,7 @@ export default function GroceryListPage() {
               }}
               placeholder="Rechercher un ingrédient…"
               className="flex-1 min-w-[160px]"
+              onCreateNew={(name) => setCreatingIngredient(name)}
             />
             <NumericInput className="w-20 text-right px-2 py-1 border rounded-md bg-background text-xs tabular-nums focus:border-primary outline-none" value={newIngQty} onChange={setNewIngQty} placeholder="Qté" />
             <select className="border rounded-md px-1 py-1 text-xs bg-background focus:border-primary outline-none" value={newIngUnit} onChange={(e) => setNewIngUnit(e.target.value)}>
@@ -569,6 +599,15 @@ export default function GroceryListPage() {
           detail
         )}
       </div>
+
+      {creatingIngredient !== null && (
+        <IngredientFormModal
+          ingredient={{ name: creatingIngredient, price: 0, unit: "€/kg", supplier: supplierNames[0] || "" }}
+          supplierNames={supplierNames}
+          onSave={handleCreateIngredient}
+          onCancel={() => setCreatingIngredient(null)}
+        />
+      )}
     </div>
   );
 }

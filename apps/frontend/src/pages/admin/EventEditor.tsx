@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, Save, Plus, X, Search } from "lucide-react";
+import { ArrowLeft, Check, Plus, X, Search } from "lucide-react";
 import type { AppEvent, Recipe, Ingredient, EventRecipeLine, EventExtraCost } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -16,6 +16,8 @@ export default function EventEditor() {
   const [allIngredients, setAllIngredients] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savedOnce, setSavedOnce] = useState(false);
+  const [currentId, setCurrentId] = useState<string | null>(isNew ? null : id ?? null);
 
   const [name, setName] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
@@ -31,6 +33,10 @@ export default function EventEditor() {
   const [status, setStatus] = useState<"upcoming" | "completed">("upcoming");
   const [recipeSearch, setRecipeSearch] = useState("");
 
+  const initialized = useRef(false);
+  const savingRef = useRef(false);
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -45,15 +51,53 @@ export default function EventEditor() {
           setNotes(ev.notes || ""); setStatus(ev.status);
           setContactName(ev.contactName || ""); setContactPhone(ev.contactPhone || ""); setContactEmail(ev.contactEmail || "");
           if (ev.actualCost !== undefined) setActualCost(ev.actualCost ?? null);
+          setSavedOnce(true);
         }
       } catch {
         toast({ title: "Erreur de chargement", variant: "destructive" });
       } finally {
         setLoading(false);
+        setTimeout(() => { initialized.current = true; }, 100);
       }
     };
     load();
   }, [id]);
+
+  const buildPayload = useCallback(() => ({
+    name: name.trim(), date, guestCount, recipes, extraCosts, sellingPricePerGuest,
+    notes: notes || undefined, status, actualCost,
+    contactName: contactName || undefined, contactPhone: contactPhone || undefined, contactEmail: contactEmail || undefined,
+  }), [name, date, guestCount, recipes, extraCosts, sellingPricePerGuest, notes, status, actualCost, contactName, contactPhone, contactEmail]);
+
+  const autoSave = useCallback(async () => {
+    if (savingRef.current) return;
+    if (!name.trim()) return; // wait for a name before creating/saving
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      const payload = buildPayload();
+      if (currentId) {
+        await api.events.update(currentId, payload);
+      } else {
+        const created = await api.events.create(payload);
+        setCurrentId(created.eventId);
+        navigate(`/events/${created.eventId}/edit`, { replace: true });
+      }
+      setSavedOnce(true);
+    } catch {
+      toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" });
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }, [name, currentId, buildPayload, navigate, toast]);
+
+  useEffect(() => {
+    if (!initialized.current) return;
+    clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => { autoSave(); }, 800);
+    return () => clearTimeout(autoSaveTimer.current);
+  }, [name, date, guestCount, recipes, extraCosts, sellingPricePerGuest, notes, status, actualCost, contactName, contactPhone, contactEmail, autoSave]);
 
   const recipeCostMap = useMemo(() => {
     const map: Record<string, number> = {};
@@ -110,29 +154,11 @@ export default function EventEditor() {
   };
   const removeExtraCost = (i: number) => setExtraCosts(extraCosts.filter((_, idx) => idx !== i));
 
-  const handleSave = async () => {
-    if (!name.trim()) { toast({ title: "Le nom est requis", variant: "destructive" }); return; }
-    setSaving(true);
-    try {
-      const data = {
-        name, date, guestCount, recipes, extraCosts, sellingPricePerGuest,
-        notes: notes || undefined, status, actualCost,
-        contactName: contactName || undefined, contactPhone: contactPhone || undefined, contactEmail: contactEmail || undefined,
-      };
-      if (isNew) {
-        const created = await api.events.create(data);
-        toast({ title: "Événement créé" });
-        navigate(`/events/${created.eventId}`);
-      } else {
-        await api.events.update(id!, data);
-        toast({ title: "Événement modifié" });
-        navigate(`/events/${id}`);
-      }
-    } catch {
-      toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
+  const handleDone = async () => {
+    clearTimeout(autoSaveTimer.current);
+    if (!name.trim()) { navigate("/events"); return; }
+    await autoSave();
+    navigate(currentId ? `/events/${currentId}` : "/events");
   };
 
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
@@ -140,12 +166,17 @@ export default function EventEditor() {
   return (
     <div className="max-w-[1100px] mx-auto">
       <div className="flex justify-between items-center mb-5">
-        <button onClick={() => navigate(isNew ? "/events" : `/events/${id}`)} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-          <ArrowLeft className="h-4 w-4" /> Annuler
+        <button onClick={() => navigate(currentId ? `/events/${currentId}` : "/events")} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft className="h-4 w-4" /> Retour
         </button>
-        <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm disabled:opacity-50">
-          <Save className="h-4 w-4" /> {saving ? "Sauvegarde…" : "Enregistrer"}
-        </button>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {saving ? "Sauvegarde…" : savedOnce ? "Enregistré ✓" : name.trim() ? "" : "Saisissez un nom pour démarrer"}
+          </span>
+          <button onClick={handleDone} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm hover:opacity-90 transition-opacity">
+            <Check className="h-4 w-4" /> Terminé
+          </button>
+        </div>
       </div>
 
       <h1 className="text-3xl font-bold tracking-tight mb-6">{isNew ? "Nouvel événement" : "Modifier l'événement"}</h1>
