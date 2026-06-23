@@ -13,6 +13,7 @@ interface MonthlyDatum {
   month: number;
   revenue: number;
   margin: number;
+  tax: number;
   count: number;
 }
 
@@ -62,6 +63,8 @@ export default function Dashboard() {
   [events, recipeCostMap, recipePortionMap]);
 
   const [taxMode, setTaxMode] = useState(false);
+  const [overrideStr, setOverrideStr] = useState("");
+  const overrideRate = overrideStr.trim() === "" || isNaN(Number(overrideStr)) ? null : Math.max(0, Math.min(100, Number(overrideStr)));
 
   // Effective Belgian tax rate per year, computed on that year's total profit so the
   // progressive income tax is reflected accurately, then spread evenly across events.
@@ -78,10 +81,11 @@ export default function Dashboard() {
     return map;
   }, [eventRows]);
 
+  const rateForYear = (y: number) => (overrideRate != null ? overrideRate / 100 : taxRateByYear[y] || 0);
+
   const netMargin = (margin: number, dateStr: string) => {
     if (!taxMode) return margin;
-    const rate = taxRateByYear[new Date(dateStr).getFullYear()] || 0;
-    return margin * (1 - rate);
+    return margin * (1 - rateForYear(new Date(dateStr).getFullYear()));
   };
 
   const availableYears = useMemo(() => {
@@ -97,20 +101,24 @@ export default function Dashboard() {
   }, [availableYears]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const monthlyData = useMemo<MonthlyDatum[]>(() => {
-    const months: MonthlyDatum[] = MONTH_LABELS.map((_, i) => ({ month: i, revenue: 0, margin: 0, count: 0 }));
+    const months: MonthlyDatum[] = MONTH_LABELS.map((_, i) => ({ month: i, revenue: 0, margin: 0, tax: 0, count: 0 }));
     eventRows.forEach((ev) => {
       const d = new Date(ev.date);
       if (d.getFullYear() !== year) return;
       const m = d.getMonth();
+      const net = netMargin(ev.margin, ev.date);
       months[m].revenue += ev.revenue;
-      months[m].margin += netMargin(ev.margin, ev.date);
+      months[m].margin += net;
+      months[m].tax += ev.margin - net;
       months[m].count += 1;
     });
     return months;
-  }, [eventRows, year, taxMode, taxRateByYear]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [eventRows, year, taxMode, taxRateByYear, overrideStr]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const yearRevenue = monthlyData.reduce((s, m) => s + m.revenue, 0);
   const yearMargin = monthlyData.reduce((s, m) => s + m.margin, 0);
+  const yearTax = monthlyData.reduce((s, m) => s + m.tax, 0);
+  const effectiveRatePct = rateForYear(year) * 100;
 
   const { page, totalPages, paginatedItems, setPage, next, prev, total } = usePagination(eventRows, 15);
 
@@ -157,7 +165,7 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Legend />
+            <Legend taxMode={taxMode} />
             <select
               value={year}
               onChange={(e) => setYear(Number(e.target.value))}
@@ -167,7 +175,47 @@ export default function Dashboard() {
             </select>
           </div>
         </div>
-        <MonthlyChart data={monthlyData} />
+
+        {taxMode && (
+          <div className="mb-5 rounded-lg border border-primary/30 bg-primary/5 p-3.5 text-xs">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="space-y-1 max-w-xl">
+                <p className="font-semibold text-foreground text-sm">Estimation nette — indépendant (Belgique)</p>
+                {overrideRate != null ? (
+                  <p className="text-muted-foreground">Taux personnalisé appliqué uniformément : <span className="font-medium text-foreground">{overrideRate}%</span></p>
+                ) : (
+                  <p className="text-muted-foreground">
+                    Cotisations sociales <strong className="font-medium text-foreground">20,5 %</strong> (déductibles) · abattement <strong className="font-medium text-foreground">10 570 €</strong> · IPP progressif <strong className="font-medium text-foreground">25 / 40 / 45 / 50 %</strong> · taxe communale <strong className="font-medium text-foreground">~7,5 %</strong>. Calculé sur le bénéfice annuel puis réparti par événement.
+                  </p>
+                )}
+                <p className="text-muted-foreground">
+                  {year} · Taux effectif <span className="font-semibold text-foreground">{effectiveRatePct.toFixed(1)}%</span> · Impôts estimés déduits <span className="font-semibold text-destructive">−{fmt(yearTax)}</span>
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <label className="text-muted-foreground">Taux perso.</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={overrideStr}
+                    onChange={(e) => setOverrideStr(e.target.value)}
+                    placeholder="auto"
+                    className="w-16 px-2 py-1 border rounded-md text-sm bg-card focus:border-primary outline-none tabular-nums"
+                  />
+                  <span className="text-muted-foreground">%</span>
+                </div>
+                {overrideRate != null && (
+                  <button onClick={() => setOverrideStr("")} className="px-2 py-1 rounded-md border text-[11px] hover:bg-muted transition-colors">Auto</button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <MonthlyChart data={monthlyData} taxMode={taxMode} />
       </section>
 
       <section className="card-elevated">
@@ -252,6 +300,7 @@ const COLOR_REVENUE = "hsl(var(--primary))";
 const COLOR_MARGIN = "#16a34a";
 const COLOR_MARGIN_NEG = "hsl(var(--destructive))";
 const COLOR_TREND = "#0f766e";
+const COLOR_TAX = "hsl(var(--destructive))";
 
 // Rough net-profit estimate for a Belgian self-employed (indépendant) caterer.
 // Combines social contributions, the tax-free allowance, progressive federal
@@ -294,17 +343,18 @@ function linearRegression(points: { x: number; y: number }[]) {
   return { slope, intercept };
 }
 
-function Legend() {
+function Legend({ taxMode }: { taxMode: boolean }) {
   return (
     <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
       <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: COLOR_REVENUE }} /> Revenu</span>
-      <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: COLOR_MARGIN }} /> Marge</span>
+      <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: COLOR_MARGIN }} /> {taxMode ? "Marge nette" : "Marge"}</span>
+      {taxMode && <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: COLOR_TAX, opacity: 0.35 }} /> Impôts</span>}
       <span className="flex items-center gap-1.5"><span className="w-4 h-0.5" style={{ background: COLOR_TREND }} /> Tendance</span>
     </div>
   );
 }
 
-function MonthlyChart({ data }: { data: MonthlyDatum[] }) {
+function MonthlyChart({ data, taxMode }: { data: MonthlyDatum[]; taxMode: boolean }) {
   const [hover, setHover] = useState<number | null>(null);
 
   const W = 800, H = 320;
@@ -313,7 +363,7 @@ function MonthlyChart({ data }: { data: MonthlyDatum[] }) {
   const plotW = x1 - x0, plotH = y1 - y0;
   const groupW = plotW / 12;
 
-  const maxVal = Math.max(0, ...data.map((d) => Math.max(d.revenue, d.margin)));
+  const maxVal = Math.max(0, ...data.map((d) => Math.max(d.revenue, d.margin + Math.max(0, d.tax))));
   const minVal = Math.min(0, ...data.map((d) => d.margin));
   const yMax = maxVal === 0 && minVal === 0 ? 100 : maxVal * 1.1;
   const yMin = minVal * 1.1;
@@ -352,10 +402,12 @@ function MonthlyChart({ data }: { data: MonthlyDatum[] }) {
           const revH = Math.abs(zeroY - yOf(d.revenue));
           const marTop = d.margin >= 0 ? yOf(d.margin) : zeroY;
           const marH = Math.abs(yOf(d.margin) - zeroY);
+          const showTax = d.margin >= 0 && d.tax > 0;
           return (
             <g key={d.month} onMouseEnter={() => setHover(d.month)} onMouseLeave={() => setHover(null)}>
               {hover === d.month && <rect x={x0 + d.month * groupW} y={y0} width={groupW} height={plotH} fill="hsl(var(--muted))" opacity={0.4} />}
               <rect x={c - barW - 1} y={yOf(d.revenue)} width={barW} height={revH} rx={2} fill={COLOR_REVENUE} />
+              {showTax && <rect x={c + 1} y={yOf(d.margin + d.tax)} width={barW} height={Math.abs(yOf(d.margin + d.tax) - yOf(d.margin))} rx={2} fill={COLOR_TAX} opacity={0.32} />}
               <rect x={c + 1} y={marTop} width={barW} height={marH} rx={2} fill={d.margin >= 0 ? COLOR_MARGIN : COLOR_MARGIN_NEG} />
               <text x={c} y={H - 10} textAnchor="middle" fontSize={10} fill="hsl(var(--muted-foreground))">{MONTH_LABELS[d.month]}</text>
             </g>
@@ -371,7 +423,9 @@ function MonthlyChart({ data }: { data: MonthlyDatum[] }) {
         <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-card border rounded-lg shadow-sm px-3 py-2 text-xs pointer-events-none">
           <p className="font-semibold mb-0.5">{MONTH_LABELS[hover]} · {data[hover].count} évén.</p>
           <p>Revenu : <span className="font-medium">{fmt(data[hover].revenue)}</span></p>
-          <p>Marge : <span className={data[hover].margin >= 0 ? "text-green-600 font-medium" : "text-destructive font-medium"}>{fmt(data[hover].margin)}</span></p>
+          {taxMode && data[hover].tax > 0 && <p>Marge brute : <span className="font-medium">{fmt(data[hover].margin + data[hover].tax)}</span></p>}
+          {taxMode && data[hover].tax > 0 && <p>Impôts : <span className="text-destructive font-medium">−{fmt(data[hover].tax)}</span></p>}
+          <p>{taxMode ? "Marge nette" : "Marge"} : <span className={data[hover].margin >= 0 ? "text-green-600 font-medium" : "text-destructive font-medium"}>{fmt(data[hover].margin)}</span></p>
         </div>
       )}
     </div>
