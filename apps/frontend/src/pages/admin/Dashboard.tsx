@@ -5,6 +5,15 @@ import type { AppEvent, Recipe, Ingredient, GroceryList } from "@packages/types"
 import { api } from "@/lib/api";
 import { calcRecipeCost, fmt } from "@/lib/recipe-helpers";
 
+const MONTH_LABELS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
+
+interface MonthlyDatum {
+  month: number;
+  revenue: number;
+  margin: number;
+  count: number;
+}
+
 export default function Dashboard() {
   const [events, setEvents] = useState<AppEvent[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -50,6 +59,34 @@ export default function Dashboard() {
       }),
   [events, recipeCostMap, recipePortionMap]);
 
+  const availableYears = useMemo(() => {
+    const set = new Set(events.map((e) => new Date(e.date).getFullYear()));
+    const arr = [...set].sort((a, b) => b - a);
+    return arr.length ? arr : [new Date().getFullYear()];
+  }, [events]);
+
+  const [year, setYear] = useState(() => new Date().getFullYear());
+
+  useEffect(() => {
+    if (!availableYears.includes(year)) setYear(availableYears[0]);
+  }, [availableYears]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const monthlyData = useMemo<MonthlyDatum[]>(() => {
+    const months: MonthlyDatum[] = MONTH_LABELS.map((_, i) => ({ month: i, revenue: 0, margin: 0, count: 0 }));
+    eventRows.forEach((ev) => {
+      const d = new Date(ev.date);
+      if (d.getFullYear() !== year) return;
+      const m = d.getMonth();
+      months[m].revenue += ev.revenue;
+      months[m].margin += ev.margin;
+      months[m].count += 1;
+    });
+    return months;
+  }, [eventRows, year]);
+
+  const yearRevenue = monthlyData.reduce((s, m) => s + m.revenue, 0);
+  const yearMargin = monthlyData.reduce((s, m) => s + m.margin, 0);
+
   const totalEvents = events.length;
   const completedEvents = eventRows.filter((e) => e.status === "completed");
   const totalRevenue = completedEvents.reduce((s, e) => s + e.revenue, 0);
@@ -71,6 +108,28 @@ export default function Dashboard() {
         <KpiCard icon={TrendingUp} label="Marge totale HTVA" value={fmt(totalMargin)} sub="Événements terminés" className={totalMargin >= 0 ? "text-green-600" : "text-destructive"} />
         <KpiCard icon={BarChart3} label="Marge moyenne" value={`${isNaN(avgMarginPct) ? 0 : avgMarginPct.toFixed(1)}%`} sub="Événements terminés" className={avgMarginPct >= 0 ? "text-green-600" : "text-destructive"} />
       </div>
+
+      <section className="card-elevated p-5 mb-6">
+        <div className="flex flex-wrap justify-between items-center gap-3 mb-5">
+          <div>
+            <h2 className="font-serif text-lg font-bold">Performance mensuelle</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {year} · Revenu {fmt(yearRevenue)} · Marge <span className={yearMargin >= 0 ? "text-green-600" : "text-destructive"}>{fmt(yearMargin)}</span>
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <Legend />
+            <select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              className="px-3 py-1.5 border rounded-lg text-sm font-medium bg-card focus:border-primary outline-none cursor-pointer"
+            >
+              {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+        </div>
+        <MonthlyChart data={monthlyData} />
+      </section>
 
       <section className="card-elevated">
         <div className="flex justify-between items-center p-5 pb-3">
@@ -140,6 +199,113 @@ export default function Dashboard() {
             ))}
           </div>
         </section>
+      )}
+    </div>
+  );
+}
+
+const COLOR_REVENUE = "hsl(var(--primary))";
+const COLOR_MARGIN = "#16a34a";
+const COLOR_MARGIN_NEG = "hsl(var(--destructive))";
+const COLOR_TREND = "#0f766e";
+
+function compactEuro(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1000) return `${(n / 1000).toFixed(abs >= 10000 ? 0 : 1)}k`;
+  return String(Math.round(n));
+}
+
+function linearRegression(points: { x: number; y: number }[]) {
+  const n = points.length;
+  if (n < 2) return null;
+  let sx = 0, sy = 0, sxy = 0, sxx = 0;
+  for (const p of points) { sx += p.x; sy += p.y; sxy += p.x * p.y; sxx += p.x * p.x; }
+  const denom = n * sxx - sx * sx;
+  if (denom === 0) return null;
+  const slope = (n * sxy - sx * sy) / denom;
+  const intercept = (sy - slope * sx) / n;
+  return { slope, intercept };
+}
+
+function Legend() {
+  return (
+    <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+      <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: COLOR_REVENUE }} /> Revenu</span>
+      <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: COLOR_MARGIN }} /> Marge</span>
+      <span className="flex items-center gap-1.5"><span className="w-4 h-0.5" style={{ background: COLOR_TREND }} /> Tendance</span>
+    </div>
+  );
+}
+
+function MonthlyChart({ data }: { data: MonthlyDatum[] }) {
+  const [hover, setHover] = useState<number | null>(null);
+
+  const W = 800, H = 320;
+  const padL = 48, padR = 12, padT = 12, padB = 28;
+  const x0 = padL, x1 = W - padR, y0 = padT, y1 = H - padB;
+  const plotW = x1 - x0, plotH = y1 - y0;
+  const groupW = plotW / 12;
+
+  const maxVal = Math.max(0, ...data.map((d) => Math.max(d.revenue, d.margin)));
+  const minVal = Math.min(0, ...data.map((d) => d.margin));
+  const yMax = maxVal === 0 && minVal === 0 ? 100 : maxVal * 1.1;
+  const yMin = minVal * 1.1;
+  const span = yMax - yMin || 1;
+
+  const yOf = (v: number) => y1 - ((v - yMin) / span) * plotH;
+  const center = (m: number) => x0 + (m + 0.5) * groupW;
+  const zeroY = yOf(0);
+  const barW = Math.min(16, groupW * 0.32);
+
+  const activePoints = data.filter((d) => d.count > 0).map((d) => ({ x: d.month, y: d.margin }));
+  const reg = linearRegression(activePoints);
+  let trend: { x1: number; y1: number; x2: number; y2: number } | null = null;
+  if (reg && activePoints.length >= 2) {
+    const first = activePoints[0].x, last = activePoints[activePoints.length - 1].x;
+    trend = {
+      x1: center(first), y1: yOf(reg.slope * first + reg.intercept),
+      x2: center(last), y2: yOf(reg.slope * last + reg.intercept),
+    };
+  }
+
+  const ticks = Array.from({ length: 5 }, (_, i) => yMin + (span * i) / 4);
+
+  return (
+    <div className="relative w-full">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: "auto" }} role="img">
+        {ticks.map((t, i) => (
+          <g key={i}>
+            <line x1={x0} y1={yOf(t)} x2={x1} y2={yOf(t)} stroke="hsl(var(--border))" strokeWidth={1} strokeDasharray={t === 0 ? "0" : "3 3"} opacity={t === 0 ? 0.9 : 0.5} />
+            <text x={x0 - 8} y={yOf(t) + 3} textAnchor="end" fontSize={10} fill="hsl(var(--muted-foreground))">{compactEuro(t)}</text>
+          </g>
+        ))}
+
+        {data.map((d) => {
+          const c = center(d.month);
+          const revH = Math.abs(zeroY - yOf(d.revenue));
+          const marTop = d.margin >= 0 ? yOf(d.margin) : zeroY;
+          const marH = Math.abs(yOf(d.margin) - zeroY);
+          return (
+            <g key={d.month} onMouseEnter={() => setHover(d.month)} onMouseLeave={() => setHover(null)}>
+              {hover === d.month && <rect x={x0 + d.month * groupW} y={y0} width={groupW} height={plotH} fill="hsl(var(--muted))" opacity={0.4} />}
+              <rect x={c - barW - 1} y={yOf(d.revenue)} width={barW} height={revH} rx={2} fill={COLOR_REVENUE} />
+              <rect x={c + 1} y={marTop} width={barW} height={marH} rx={2} fill={d.margin >= 0 ? COLOR_MARGIN : COLOR_MARGIN_NEG} />
+              <text x={c} y={H - 10} textAnchor="middle" fontSize={10} fill="hsl(var(--muted-foreground))">{MONTH_LABELS[d.month]}</text>
+            </g>
+          );
+        })}
+
+        {trend && (
+          <line x1={trend.x1} y1={trend.y1} x2={trend.x2} y2={trend.y2} stroke={COLOR_TREND} strokeWidth={2} strokeDasharray="5 4" strokeLinecap="round" />
+        )}
+      </svg>
+
+      {hover !== null && data[hover].count > 0 && (
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-card border rounded-lg shadow-sm px-3 py-2 text-xs pointer-events-none">
+          <p className="font-semibold mb-0.5">{MONTH_LABELS[hover]} · {data[hover].count} évén.</p>
+          <p>Revenu : <span className="font-medium">{fmt(data[hover].revenue)}</span></p>
+          <p>Marge : <span className={data[hover].margin >= 0 ? "text-green-600 font-medium" : "text-destructive font-medium"}>{fmt(data[hover].margin)}</span></p>
+        </div>
       )}
     </div>
   );
