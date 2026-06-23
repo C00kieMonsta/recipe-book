@@ -4,6 +4,8 @@ import { Calendar, TrendingUp, Euro, BarChart3, ChevronRight, ShoppingCart } fro
 import type { AppEvent, Recipe, Ingredient, GroceryList } from "@packages/types";
 import { api } from "@/lib/api";
 import { calcRecipeCost, fmt } from "@/lib/recipe-helpers";
+import { usePagination } from "@/hooks/use-pagination";
+import Pagination from "@/components/ui/Pagination";
 
 const MONTH_LABELS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
 
@@ -59,6 +61,29 @@ export default function Dashboard() {
       }),
   [events, recipeCostMap, recipePortionMap]);
 
+  const [taxMode, setTaxMode] = useState(false);
+
+  // Effective Belgian tax rate per year, computed on that year's total profit so the
+  // progressive income tax is reflected accurately, then spread evenly across events.
+  const taxRateByYear = useMemo(() => {
+    const grossByYear: Record<number, number> = {};
+    eventRows.forEach((e) => {
+      const y = new Date(e.date).getFullYear();
+      grossByYear[y] = (grossByYear[y] || 0) + e.margin;
+    });
+    const map: Record<number, number> = {};
+    for (const [y, gross] of Object.entries(grossByYear)) {
+      map[Number(y)] = gross > 0 ? estimateBelgianTax(gross) / gross : 0;
+    }
+    return map;
+  }, [eventRows]);
+
+  const netMargin = (margin: number, dateStr: string) => {
+    if (!taxMode) return margin;
+    const rate = taxRateByYear[new Date(dateStr).getFullYear()] || 0;
+    return margin * (1 - rate);
+  };
+
   const availableYears = useMemo(() => {
     const set = new Set(events.map((e) => new Date(e.date).getFullYear()));
     const arr = [...set].sort((a, b) => b - a);
@@ -78,35 +103,49 @@ export default function Dashboard() {
       if (d.getFullYear() !== year) return;
       const m = d.getMonth();
       months[m].revenue += ev.revenue;
-      months[m].margin += ev.margin;
+      months[m].margin += netMargin(ev.margin, ev.date);
       months[m].count += 1;
     });
     return months;
-  }, [eventRows, year]);
+  }, [eventRows, year, taxMode, taxRateByYear]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const yearRevenue = monthlyData.reduce((s, m) => s + m.revenue, 0);
   const yearMargin = monthlyData.reduce((s, m) => s + m.margin, 0);
 
+  const { page, totalPages, paginatedItems, setPage, next, prev, total } = usePagination(eventRows, 15);
+
   const totalEvents = events.length;
   const completedEvents = eventRows.filter((e) => e.status === "completed");
   const totalRevenue = completedEvents.reduce((s, e) => s + e.revenue, 0);
-  const totalMargin = completedEvents.reduce((s, e) => s + e.margin, 0);
+  const totalMargin = completedEvents.reduce((s, e) => s + netMargin(e.margin, e.date), 0);
   const avgMarginPct = completedEvents.length > 0 ? (totalMargin / totalRevenue) * 100 : 0;
 
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
 
   return (
     <div className="max-w-[1100px] mx-auto">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">Tableau de bord</h1>
-        <p className="text-sm text-muted-foreground mt-1">Vue d'ensemble de l'activité</p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Tableau de bord</h1>
+          <p className="text-sm text-muted-foreground mt-1">Vue d'ensemble de l'activité</p>
+        </div>
+        <button
+          onClick={() => setTaxMode((v) => !v)}
+          title="Estimation de la marge nette après cotisations sociales et impôts (indépendant, Belgique)"
+          className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${taxMode ? "border-primary bg-primary/10 text-primary" : "hover:bg-muted"}`}
+        >
+          <span className={`relative w-9 h-5 rounded-full transition-colors ${taxMode ? "bg-primary" : "bg-muted-foreground/30"}`}>
+            <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${taxMode ? "left-[1.125rem]" : "left-0.5"}`} />
+          </span>
+          Net après impôts (BE)
+        </button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <KpiCard icon={Calendar} label="Événements" value={String(totalEvents)} sub={`${completedEvents.length} terminés`} />
         <KpiCard icon={Euro} label="Revenu total HTVA" value={fmt(totalRevenue)} sub="Événements terminés" />
-        <KpiCard icon={TrendingUp} label="Marge totale HTVA" value={fmt(totalMargin)} sub="Événements terminés" className={totalMargin >= 0 ? "text-green-600" : "text-destructive"} />
-        <KpiCard icon={BarChart3} label="Marge moyenne" value={`${isNaN(avgMarginPct) ? 0 : avgMarginPct.toFixed(1)}%`} sub="Événements terminés" className={avgMarginPct >= 0 ? "text-green-600" : "text-destructive"} />
+        <KpiCard icon={TrendingUp} label={taxMode ? "Marge nette estimée" : "Marge totale HTVA"} value={fmt(totalMargin)} sub={taxMode ? "Après cotis. & impôts (BE)" : "Événements terminés"} className={totalMargin >= 0 ? "text-green-600" : "text-destructive"} />
+        <KpiCard icon={BarChart3} label={taxMode ? "Marge nette moy." : "Marge moyenne"} value={`${isNaN(avgMarginPct) ? 0 : avgMarginPct.toFixed(1)}%`} sub={taxMode ? "Après cotis. & impôts (BE)" : "Événements terminés"} className={avgMarginPct >= 0 ? "text-green-600" : "text-destructive"} />
       </div>
 
       <section className="card-elevated p-5 mb-6">
@@ -114,7 +153,7 @@ export default function Dashboard() {
           <div>
             <h2 className="font-serif text-lg font-bold">Performance mensuelle</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {year} · Revenu {fmt(yearRevenue)} · Marge <span className={yearMargin >= 0 ? "text-green-600" : "text-destructive"}>{fmt(yearMargin)}</span>
+              {year} · Revenu {fmt(yearRevenue)} · {taxMode ? "Marge nette" : "Marge"} <span className={yearMargin >= 0 ? "text-green-600" : "text-destructive"}>{fmt(yearMargin)}</span>
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -152,15 +191,15 @@ export default function Dashboard() {
             </tr>
           </thead>
           <tbody>
-            {eventRows.slice(0, 15).map((ev) => (
+            {paginatedItems.map((ev) => (
               <tr key={ev.eventId} onClick={() => navigate(`/events/${ev.eventId}`)} className="border-b border-border/50 hover:bg-muted/30 cursor-pointer transition-colors">
                 <td className="px-5 py-2.5 font-semibold">{ev.name}</td>
                 <td className="px-3 py-2.5 text-muted-foreground">{new Date(ev.date).toLocaleDateString("fr-BE", { day: "numeric", month: "short" })}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{ev.guestCount}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{fmt(ev.revenue)}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{fmt(ev.totalCost)}</td>
-                <td className={`px-3 py-2.5 text-right tabular-nums font-semibold ${ev.margin >= 0 ? "text-green-600" : "text-destructive"}`}>{fmt(ev.margin)}</td>
-                <td className={`px-3 py-2.5 text-right tabular-nums ${ev.marginPct >= 0 ? "text-green-600" : "text-destructive"}`}>{ev.marginPct.toFixed(1)}%</td>
+                <td className={`px-3 py-2.5 text-right tabular-nums font-semibold ${netMargin(ev.margin, ev.date) >= 0 ? "text-green-600" : "text-destructive"}`}>{fmt(netMargin(ev.margin, ev.date))}</td>
+                <td className={`px-3 py-2.5 text-right tabular-nums ${ev.marginPct >= 0 ? "text-green-600" : "text-destructive"}`}>{ev.revenue > 0 ? ((netMargin(ev.margin, ev.date) / ev.revenue) * 100).toFixed(1) : "0.0"}%</td>
                 <td className="px-3 py-2.5">
                   <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${ev.status === "upcoming" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>
                     {ev.status === "upcoming" ? "À venir" : "Terminé"}
@@ -171,6 +210,11 @@ export default function Dashboard() {
           </tbody>
         </table>
         {eventRows.length === 0 && <p className="px-5 py-10 text-center text-muted-foreground">Aucun événement pour le moment</p>}
+        {totalPages > 1 && (
+          <div className="px-5 pb-4">
+            <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} onPrev={prev} onNext={next} />
+          </div>
+        )}
       </section>
 
       {groceryLists.length > 0 && (
@@ -208,6 +252,29 @@ const COLOR_REVENUE = "hsl(var(--primary))";
 const COLOR_MARGIN = "#16a34a";
 const COLOR_MARGIN_NEG = "hsl(var(--destructive))";
 const COLOR_TREND = "#0f766e";
+
+// Rough net-profit estimate for a Belgian self-employed (indépendant) caterer.
+// Combines social contributions, the tax-free allowance, progressive federal
+// income tax (IPP) and an average communal surcharge. Approximation only.
+function estimateBelgianTax(annualProfit: number): number {
+  if (annualProfit <= 0) return 0;
+  const social = annualProfit * 0.205;
+  let taxable = Math.max(0, annualProfit - social - 10570);
+  const brackets = [
+    { upTo: 15820, rate: 0.25 },
+    { upTo: 27920, rate: 0.4 },
+    { upTo: 48320, rate: 0.45 },
+    { upTo: Infinity, rate: 0.5 },
+  ];
+  let tax = 0, prev = 0;
+  for (const b of brackets) {
+    if (taxable <= prev) break;
+    tax += (Math.min(taxable, b.upTo) - prev) * b.rate;
+    prev = b.upTo;
+  }
+  tax *= 1.075; // average communal surcharge
+  return social + tax;
+}
 
 function compactEuro(n: number): string {
   const abs = Math.abs(n);
