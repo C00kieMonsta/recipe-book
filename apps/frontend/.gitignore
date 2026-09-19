@@ -25,3 +25,5 @@ dist-node
 *.sw?
 
 !.env.*.template
+
+.DS_Store

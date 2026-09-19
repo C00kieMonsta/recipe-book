@@ -330,8 +330,8 @@ export default function RecipeDetail() {
                   {editingStep === i ? (
                     <div className="flex-1 flex flex-col gap-2">
                       <textarea
-                        className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:border-primary outline-none resize-none"
-                        rows={2}
+                        className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:border-primary outline-none resize-y"
+                        rows={Math.max(2, editStepValue.split("\n").length)}
                         value={editStepValue}
                         onChange={(e) => setEditStepValue(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveStep(i); } if (e.key === "Escape") setEditingStep(null); }}
@@ -344,7 +344,7 @@ export default function RecipeDetail() {
                     </div>
                   ) : (
                     <span
-                      className="text-muted-foreground pt-0.5 flex-1 cursor-pointer hover:text-foreground transition-colors rounded px-1 -mx-1 hover:bg-muted/50"
+                      className="text-muted-foreground pt-0.5 flex-1 cursor-pointer hover:text-foreground transition-colors rounded px-1 -mx-1 hover:bg-muted/50 whitespace-pre-wrap"
                       onClick={() => { setEditingStep(i); setEditStepValue(t); }}
                     >
                       {t}
@@ -373,8 +373,8 @@ export default function RecipeDetail() {
             <div className="mt-3 flex flex-col gap-2">
               <textarea
                 ref={newStepRef}
-                className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:border-primary outline-none resize-none"
-                rows={2}
+                className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:border-primary outline-none resize-y"
+                rows={Math.max(2, newStep.split("\n").length)}
                 placeholder="Décrivez l'étape…"
                 value={newStep}
                 onChange={(e) => setNewStep(e.target.value)}

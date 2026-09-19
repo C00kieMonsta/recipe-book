@@ -102,7 +102,7 @@ export default function RecipeCook() {
             <div className="w-16 h-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-2xl font-bold mb-6">
               {techniqueIndex + 1}
             </div>
-            <p className="text-2xl md:text-3xl text-center leading-relaxed font-serif">
+            <p className="text-2xl md:text-3xl text-center leading-relaxed font-serif whitespace-pre-wrap">
               {recipe.techniques[techniqueIndex]}
             </p>
             {isLast && (
