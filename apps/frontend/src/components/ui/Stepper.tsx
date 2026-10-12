@@ -9,7 +9,8 @@ export interface StepperProps {
   className?: string;
 }
 
-const BTN = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-input bg-card text-foreground hover:bg-hover disabled:opacity-40 disabled:hover:bg-card";
+const BTN = "inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-hover hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent touch:h-11 touch:w-11";
+const TEXT_BTN = "inline-flex h-7 items-center rounded px-1.5 text-sm text-muted-foreground hover:bg-hover hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent touch:h-11 touch:px-3 touch:text-base";
 
 export default function Stepper({ value, onChange, min = 1, label, className = "" }: StepperProps) {
   const [text, setText] = useState(String(value));
@@ -30,9 +31,9 @@ export default function Stepper({ value, onChange, min = 1, label, className = "
 
   return (
     <div className={`inline-flex flex-wrap items-center gap-2 ${className}`}>
-      <div className="inline-flex items-center gap-1">
+      <div className="inline-flex items-center gap-0.5">
         <button type="button" className={BTN} onClick={() => set(value - 1)} disabled={value <= min} aria-label="Moins">
-          <Minus className="h-5 w-5" />
+          <Minus className="h-4 w-4 touch:h-5 touch:w-5" />
         </button>
         <input
           type="text"
@@ -44,18 +45,18 @@ export default function Stepper({ value, onChange, min = 1, label, className = "
           onFocus={(e) => e.target.select()}
           onBlur={commit}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
-          className="min-h-11 w-16 rounded-lg border border-input bg-card text-center text-base font-semibold tabular-nums outline-none focus:border-primary focus:shadow-ring"
+          className="h-7 w-12 rounded bg-input-bg text-center text-sm font-medium tabular-nums shadow-input outline-none focus:shadow-ring touch:h-11 touch:w-14 touch:text-base"
         />
         <button type="button" className={BTN} onClick={() => set(value + 1)} aria-label="Plus">
-          <Plus className="h-5 w-5" />
+          <Plus className="h-4 w-4 touch:h-5 touch:w-5" />
         </button>
       </div>
-      {label && <span className="text-base text-muted-foreground">{label}</span>}
-      <div className="inline-flex items-center gap-1">
-        <button type="button" className={`${BTN} px-2 text-sm font-semibold`} onClick={() => set(value * 2)} aria-label="Doubler">
+      {label && <span className="text-sm text-muted-foreground">{label}</span>}
+      <div className="inline-flex items-center gap-0.5">
+        <button type="button" className={TEXT_BTN} onClick={() => set(value * 2)} aria-label="Doubler">
           ×2
         </button>
-        <button type="button" className={`${BTN} px-2 text-sm font-semibold`} onClick={() => set(value / 2)} disabled={value <= min} aria-label="Diviser par deux">
+        <button type="button" className={TEXT_BTN} onClick={() => set(value / 2)} disabled={value <= min} aria-label="Diviser par deux">
           ÷2
         </button>
       </div>

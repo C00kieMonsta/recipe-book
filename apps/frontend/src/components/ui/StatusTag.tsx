@@ -1,6 +1,6 @@
-import Tag, { type TagVariant } from "./Tag";
+import Tag, { type TagColour } from "./Tag";
 
-export type TagStatus = "upcoming" | "completed" | "invoiced" | "deposit" | "paid";
+export type TagStatus = "upcoming" | "completed" | "invoiced" | "deposit" | "paid" | "unpaid";
 
 export interface StatusTagProps {
   status: TagStatus;
@@ -8,18 +8,19 @@ export interface StatusTagProps {
   className?: string;
 }
 
-const STATUS: Record<TagStatus, { label: string; variant: TagVariant }> = {
-  upcoming: { label: "À venir", variant: "info" },
-  completed: { label: "Terminé", variant: "success" },
-  invoiced: { label: "Facturé", variant: "primary" },
-  deposit: { label: "Acompte reçu", variant: "warning" },
-  paid: { label: "Payé", variant: "success" },
+export const STATUS_TAG: Record<TagStatus, { label: string; colour: TagColour }> = {
+  upcoming: { label: "À venir", colour: "blue" },
+  completed: { label: "Terminé", colour: "green" },
+  invoiced: { label: "Facturé", colour: "purple" },
+  deposit: { label: "Acompte reçu", colour: "yellow" },
+  paid: { label: "Payé", colour: "green" },
+  unpaid: { label: "Impayée", colour: "red" },
 };
 
 export default function StatusTag({ status, label, className }: StatusTagProps) {
-  const s = STATUS[status];
+  const s = STATUS_TAG[status];
   return (
-    <Tag variant={s.variant} className={className}>
+    <Tag colour={s.colour} className={className}>
       {label ?? s.label}
     </Tag>
   );

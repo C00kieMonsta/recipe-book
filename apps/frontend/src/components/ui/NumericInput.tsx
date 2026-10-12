@@ -8,9 +8,11 @@ interface NumericInputProps {
   suffix?: string;
   autoFocus?: boolean;
   min?: number;
+  id?: string;
+  "aria-label"?: string;
 }
 
-export default function NumericInput({ value, onChange, className = "", placeholder, suffix, autoFocus, min }: NumericInputProps) {
+export default function NumericInput({ value, onChange, className = "", placeholder, suffix, autoFocus, min, id, "aria-label": ariaLabel }: NumericInputProps) {
   const [text, setText] = useState(value ? String(value) : "");
 
   useEffect(() => {
@@ -30,11 +32,13 @@ export default function NumericInput({ value, onChange, className = "", placehol
   return (
     <div className={suffix ? "flex items-center justify-end gap-1" : ""}>
       <input
+        id={id}
         type="text"
         inputMode="decimal"
         value={text}
         placeholder={placeholder}
         autoFocus={autoFocus}
+        aria-label={ariaLabel}
         onChange={(e) => {
           const v = e.target.value;
           if (v === "" || /^-?\d*[.,]?\d*$/.test(v)) setText(v);

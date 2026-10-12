@@ -7,18 +7,20 @@ export interface SearchSelectOption {
   detail?: string;
 }
 
-interface SearchSelectProps {
+export interface SearchSelectProps {
   options: SearchSelectOption[];
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
   onCreateNew?: (query: string) => void;
+  autoFocus?: boolean;
+  id?: string;
 }
 
-const ROW = "flex min-h-11 w-full items-center gap-2 px-3 text-left text-base transition-colors hover:bg-hover";
+const ROW = "mx-1 flex h-7 items-center justify-between gap-2 rounded px-2 text-left text-sm hover:bg-hover touch:h-11 touch:text-base";
 
-export default function SearchSelect({ options, value, onChange, placeholder = "Rechercher…", className = "", onCreateNew }: SearchSelectProps) {
+export default function SearchSelect({ options, value, onChange, placeholder = "Rechercher…", className = "", onCreateNew, autoFocus, id }: SearchSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(-1);
@@ -74,19 +76,21 @@ export default function SearchSelect({ options, value, onChange, placeholder = "
     <div ref={ref} className={`relative ${className}`}>
       <input
         ref={inputRef}
+        id={id}
         type="text"
         role="combobox"
         aria-expanded={open}
         aria-autocomplete="list"
         className="input-field"
         placeholder={placeholder}
+        autoFocus={autoFocus}
         value={open ? query : selected?.label || ""}
         onFocus={() => { setOpen(true); setQuery(""); setActive(-1); }}
         onChange={(e) => { setQuery(e.target.value); setActive(-1); }}
         onKeyDown={onKeyDown}
       />
       {open && rowCount > 0 && (
-        <div ref={listRef} role="listbox" className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border bg-card shadow-lg">
+        <div ref={listRef} role="listbox" className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-lg bg-background py-1 shadow-menu">
           {filtered.map((opt, i) => (
             <button
               key={opt.value}
@@ -96,10 +100,10 @@ export default function SearchSelect({ options, value, onChange, placeholder = "
               data-active={i === active}
               onMouseEnter={() => setActive(i)}
               onClick={() => select(opt.value)}
-              className={`${ROW} justify-between ${i === active ? "bg-hover" : ""} ${opt.value === value ? "font-semibold" : ""}`}
+              className={`${ROW} ${i === active ? "bg-hover" : ""} ${opt.value === value ? "font-medium" : ""}`}
             >
               <span className="truncate">{opt.label}</span>
-              {opt.detail && <span className="shrink-0 text-sm text-muted-foreground">{opt.detail}</span>}
+              {opt.detail && <span className="shrink-0 text-caption text-muted-foreground">{opt.detail}</span>}
             </button>
           ))}
           {canCreate && (
@@ -110,7 +114,7 @@ export default function SearchSelect({ options, value, onChange, placeholder = "
               data-active={active === filtered.length}
               onMouseEnter={() => setActive(filtered.length)}
               onClick={create}
-              className={`${ROW} border-t border-border font-medium text-primary ${active === filtered.length ? "bg-hover" : ""}`}
+              className={`${ROW} mt-1 rounded-none border-t border-border pt-1 text-primary ${active === filtered.length ? "bg-hover" : ""}`}
             >
               + Créer « {trimmed} »
             </button>

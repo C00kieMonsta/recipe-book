@@ -1,44 +1,45 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 
+export type TagColour = "gray" | "brown" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink" | "red";
+// Old names; alias for one release.
 export type TagVariant = "neutral" | "primary" | "success" | "warning" | "info" | "danger" | "supplier";
 
 export interface TagProps {
+  colour?: TagColour;
   variant?: TagVariant;
-  tint?: string;
   children: ReactNode;
   className?: string;
+  title?: string;
 }
 
-// Text on a tint is the dark role colour; the primary tint uses foreground (see REDESIGN.md section 4).
-const VARIANT_CLASS: Record<TagVariant, string> = {
-  neutral: "bg-muted text-foreground",
-  primary: "bg-muted text-foreground",
-  success: "bg-success-soft text-success",
-  warning: "bg-warning-soft text-warning",
-  info: "bg-info-soft text-info",
-  danger: "bg-destructive-soft text-destructive",
-  supplier: "bg-secondary text-secondary-foreground",
+export const TAG_COLOUR_CLASS: Record<TagColour, string> = {
+  gray: "bg-tag-gray-bg text-tag-gray-fg",
+  brown: "bg-tag-brown-bg text-tag-brown-fg",
+  orange: "bg-tag-orange-bg text-tag-orange-fg",
+  yellow: "bg-tag-yellow-bg text-tag-yellow-fg",
+  green: "bg-tag-green-bg text-tag-green-fg",
+  blue: "bg-tag-blue-bg text-tag-blue-fg",
+  purple: "bg-tag-purple-bg text-tag-purple-fg",
+  pink: "bg-tag-pink-bg text-tag-pink-fg",
+  red: "bg-tag-red-bg text-tag-red-fg",
 };
 
-const TINT_ALPHA = 0.18;
+const VARIANT_TO_COLOUR: Record<TagVariant, TagColour> = {
+  neutral: "gray",
+  primary: "blue",
+  success: "green",
+  warning: "yellow",
+  info: "blue",
+  danger: "red",
+  supplier: "gray",
+};
 
-// Lowers a solid colour to a background tint that keeps dark text readable.
-function softTint(color: string): string {
-  const m = color.trim().match(/^hsla?\((.+)\)$/i);
-  if (m) {
-    const inner = m[1].trim();
-    if (inner.includes("/")) return color;
-    if (inner.includes(",")) return `hsla(${inner}, ${TINT_ALPHA})`;
-    return `hsl(${inner} / ${TINT_ALPHA})`;
-  }
-  return `color-mix(in srgb, ${color} ${Math.round(TINT_ALPHA * 100)}%, transparent)`;
-}
+export const TAG_BASE = "inline-flex h-5 max-w-full items-center gap-1 whitespace-nowrap rounded-sm px-1.5 text-sm leading-none";
 
-export default function Tag({ variant = "neutral", tint, children, className = "" }: TagProps) {
-  const style: CSSProperties | undefined = tint ? { backgroundColor: softTint(tint) } : undefined;
-  const colour = tint ? "text-foreground" : VARIANT_CLASS[variant];
+export default function Tag({ colour, variant, children, className = "", title }: TagProps) {
+  const c: TagColour = colour ?? (variant ? VARIANT_TO_COLOUR[variant] : "gray");
   return (
-    <span className={`inline-flex items-center whitespace-nowrap rounded-sm px-2.5 py-0.5 text-sm font-medium ${colour} ${className}`} style={style}>
+    <span className={`${TAG_BASE} ${TAG_COLOUR_CLASS[c]} ${className}`} title={title}>
       {children}
     </span>
   );

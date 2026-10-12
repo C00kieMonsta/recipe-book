@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { cn } from "@/lib/utils";
 
 export interface MoneyTick {
   label: string;
@@ -18,6 +19,8 @@ export interface MoneyTileProps {
   sub?: ReactNode;
   progress?: MoneyProgress;
   to?: string;
+  // No own background; the parent draws the shared bg-surface stat row.
+  flat?: boolean;
   className?: string;
 }
 
@@ -26,15 +29,15 @@ function pct(value: number, max: number): number {
   return Math.min(100, Math.max(0, (value / max) * 100));
 }
 
-export default function MoneyTile({ label, value, sub, progress, to, className = "" }: MoneyTileProps) {
+export default function MoneyTile({ label, value, sub, progress, to, flat = false, className = "" }: MoneyTileProps) {
   const body = (
     <>
       <div className="text-sm text-muted-foreground">{label}</div>
-      <div className="mt-1 text-h2 font-semibold tabular-nums text-foreground">{value}</div>
-      {sub && <div className="mt-1 text-sm text-muted-foreground">{sub}</div>}
+      <div className="mt-0.5 text-h3 tabular-nums text-foreground">{value}</div>
+      {sub && <div className="text-caption text-muted-foreground">{sub}</div>}
       {progress && (
-        <div className={`mt-3 ${progress.ticks?.length ? "pb-5" : ""}`}>
-          <div className="relative h-1 w-full rounded-full bg-muted">
+        <div className={cn("mt-3", progress.ticks?.length && "pb-5")}>
+          <div className="relative h-1 w-full rounded-full bg-divider">
             <div className="h-1 rounded-full bg-primary" style={{ width: `${pct(progress.value, progress.max)}%` }} />
             {progress.ticks?.map((tick) => (
               <div key={tick.label} className="absolute top-0" style={{ left: `${pct(tick.value, progress.max)}%` }}>
@@ -50,10 +53,10 @@ export default function MoneyTile({ label, value, sub, progress, to, className =
     </>
   );
 
-  const base = `card-elevated block p-4 ${className}`;
+  const base = cn("block p-3", flat ? "rounded-none" : "rounded-lg bg-surface", className);
   if (to) {
     return (
-      <Link to={to} className={`${base} hover:bg-hover transition-colors`}>
+      <Link to={to} className={cn(base, "transition-colors hover:bg-hover")}>
         {body}
       </Link>
     );

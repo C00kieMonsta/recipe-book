@@ -1,5 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type RefObject } from "react";
+import { cn } from "@/lib/utils";
 import NumericInput from "./NumericInput";
+import SelectPill from "./SelectPill";
+
+const EDIT_INPUT = "-mx-1.5 w-full min-w-0 rounded border-0 bg-input-bg px-1.5 shadow-ring outline-none";
 
 export function EditableNum({ value, onChange, suffix, placeholder }: {
   value: number;
@@ -13,11 +17,12 @@ export function EditableNum({ value, onChange, suffix, placeholder }: {
       onChange={onChange}
       suffix={suffix}
       placeholder={placeholder}
-      className="w-20 text-right px-2 py-0.5 border rounded-md bg-background text-sm font-semibold tabular-nums focus:border-primary outline-none"
+      className="input-field w-20 text-right tabular-nums"
     />
   );
 }
 
+// Click to edit in place; Enter commits, Escape reverts, blur commits.
 export function EditableText({ value, onSave, className, inputClassName, placeholder, multiline }: {
   value: string;
   onSave: (v: string) => void;
@@ -28,49 +33,66 @@ export function EditableText({ value, onSave, className, inputClassName, placeho
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
+  const ref = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
-  useEffect(() => { setText(value); }, [value]);
+  useEffect(() => { if (!editing) setText(value); }, [value, editing]);
+  useEffect(() => {
+    if (!editing || !ref.current) return;
+    const el = ref.current;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    if (el instanceof HTMLTextAreaElement) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; }
+  }, [editing]);
 
   const commit = () => {
     setEditing(false);
     if (text !== value) onSave(text);
   };
+  const revert = () => { setText(value); setEditing(false); };
 
   if (editing) {
     if (multiline) {
       return (
         <textarea
-          className={inputClassName}
+          ref={ref as RefObject<HTMLTextAreaElement>}
+          className={cn(className, inputClassName, EDIT_INPUT, "resize-none py-0.5 leading-normal")}
           value={text}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => { if (e.key === "Escape") { setText(value); setEditing(false); } }}
-          autoFocus
           rows={2}
+          onChange={(e) => { setText(e.target.value); e.target.style.height = "auto"; e.target.style.height = `${e.target.scrollHeight}px`; }}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); revert(); } }}
         />
       );
     }
     return (
       <input
-        className={inputClassName}
+        ref={ref as RefObject<HTMLInputElement>}
+        className={cn(className, inputClassName, EDIT_INPUT)}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={commit}
-        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setText(value); setEditing(false); } }}
-        autoFocus
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); commit(); }
+          if (e.key === "Escape") { e.preventDefault(); revert(); }
+        }}
       />
     );
   }
 
   return (
     <div
-      className={`${className} cursor-pointer rounded px-1 -mx-1 hover:bg-hover transition-colors ${!value && placeholder ? "text-placeholder italic" : ""}`}
+      role="button"
+      tabIndex={0}
+      className={cn(className, "prop-value", multiline && "whitespace-pre-wrap", !value && placeholder && "text-placeholder")}
       onClick={() => setEditing(true)}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
     >
-      {value || placeholder || "–"}
+      {value || placeholder || "Vide"}
     </div>
   );
 }
+
+const INLINE_INPUT = "-mx-1 w-32 rounded border-0 bg-input-bg px-1 font-medium shadow-ring outline-none";
 
 export function EditableInlineText({ value, onSave, placeholder }: {
   value: string;
@@ -80,7 +102,7 @@ export function EditableInlineText({ value, onSave, placeholder }: {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
 
-  useEffect(() => { setText(value); }, [value]);
+  useEffect(() => { if (!editing) setText(value); }, [value, editing]);
 
   const commit = () => {
     setEditing(false);
@@ -90,11 +112,14 @@ export function EditableInlineText({ value, onSave, placeholder }: {
   if (editing) {
     return (
       <input
-        className="border-b border-primary bg-transparent text-foreground font-semibold outline-none text-sm w-32"
+        className={INLINE_INPUT}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={commit}
-        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setText(value); setEditing(false); } }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); commit(); }
+          if (e.key === "Escape") { e.preventDefault(); setText(value); setEditing(false); }
+        }}
         autoFocus
       />
     );
@@ -102,10 +127,13 @@ export function EditableInlineText({ value, onSave, placeholder }: {
 
   return (
     <strong
-      className="text-foreground cursor-pointer hover:bg-hover rounded px-0.5 transition-colors"
+      role="button"
+      tabIndex={0}
+      className="prop-value font-medium"
       onClick={() => setEditing(true)}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
     >
-      {value || <span className="text-placeholder font-normal italic">{placeholder || "–"}</span>}
+      {value || <span className="font-normal text-placeholder">{placeholder || "Vide"}</span>}
     </strong>
   );
 }
@@ -119,7 +147,7 @@ export function EditableInlineNum({ value, onSave, suffix, min }: {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(String(value));
 
-  useEffect(() => { setText(String(value)); }, [value]);
+  useEffect(() => { if (!editing) setText(String(value)); }, [value, editing]);
 
   const commit = () => {
     setEditing(false);
@@ -133,13 +161,17 @@ export function EditableInlineNum({ value, onSave, suffix, min }: {
     return (
       <span className="inline-flex items-center gap-0.5">
         <input
-          className="w-16 text-right px-1 py-0 border-b border-primary bg-transparent text-foreground font-semibold tabular-nums outline-none text-sm"
+          className={cn(INLINE_INPUT, "w-16 text-right tabular-nums")}
           type="text"
           inputMode="decimal"
           value={text}
           onChange={(e) => { if (e.target.value === "" || /^-?\d*[.,]?\d*$/.test(e.target.value)) setText(e.target.value); }}
+          onFocus={(e) => e.target.select()}
           onBlur={commit}
-          onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setText(String(value)); setEditing(false); } }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commit(); }
+            if (e.key === "Escape") { e.preventDefault(); setText(String(value)); setEditing(false); }
+          }}
           autoFocus
         />
         {suffix && <span>{suffix}</span>}
@@ -149,8 +181,11 @@ export function EditableInlineNum({ value, onSave, suffix, min }: {
 
   return (
     <strong
-      className="text-foreground cursor-pointer hover:bg-hover rounded px-0.5 transition-colors tabular-nums"
+      role="button"
+      tabIndex={0}
+      className="prop-value font-medium tabular-nums"
       onClick={() => setEditing(true)}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
     >
       {value}{suffix || ""}
     </strong>
@@ -158,56 +193,31 @@ export function EditableInlineNum({ value, onSave, suffix, min }: {
 }
 
 export function EditableType({ value, options, onSave }: { value: string; options: string[]; onSave: (v: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
+  const opts = options.includes(value) || !value ? options : [value, ...options];
   return (
-    <div ref={ref} className="relative inline-block mb-3">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className="inline-flex items-center whitespace-nowrap rounded-sm bg-muted px-3 py-1 text-sm font-medium text-foreground transition-opacity hover:opacity-80"
-      >
-        {value}
-      </button>
-      {open && (
-        <div role="listbox" className="absolute left-0 z-20 mt-1 overflow-hidden rounded-lg border bg-card shadow-lg">
-          {options.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              role="option"
-              aria-selected={opt === value}
-              onClick={() => { if (opt !== value) onSave(opt); setOpen(false); }}
-              className={`flex min-h-11 w-full items-center whitespace-nowrap px-4 text-left text-base transition-colors hover:bg-hover ${opt === value ? "bg-muted font-semibold" : ""}`}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <SelectPill
+      value={value}
+      options={opts.map((o) => ({ value: o, label: o }))}
+      onChange={(v) => { if (v !== value) onSave(v); }}
+      colour="gray"
+      placeholder="Choisir"
+      aria-label="Type"
+    />
   );
 }
 
+const EVENT_STATUS_OPTIONS = [
+  { value: "upcoming", label: "À venir", colour: "blue" as const },
+  { value: "completed", label: "Terminé", colour: "green" as const },
+];
+
 export function EditableStatus({ value, onSave }: { value: "upcoming" | "completed"; onSave: (v: "upcoming" | "completed") => void }) {
-  const toggle = () => onSave(value === "upcoming" ? "completed" : "upcoming");
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      className={`mb-2 inline-flex items-center whitespace-nowrap rounded-sm px-2.5 py-0.5 text-sm font-medium transition-opacity hover:opacity-80 ${value === "upcoming" ? "bg-info-soft text-info" : "bg-success-soft text-success"}`}
-    >
-      {value === "upcoming" ? "À venir" : "Terminé"}
-    </button>
+    <SelectPill
+      value={value}
+      options={EVENT_STATUS_OPTIONS}
+      onChange={(v) => { if (v !== value) onSave(v as "upcoming" | "completed"); }}
+      aria-label="Statut"
+    />
   );
 }

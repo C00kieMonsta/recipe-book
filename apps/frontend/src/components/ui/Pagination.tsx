@@ -9,8 +9,7 @@ interface PaginationProps {
   onNext: () => void;
 }
 
-const BTN = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-sm font-medium transition-colors disabled:opacity-40";
-const ARROW = `${BTN} border border-input bg-card text-foreground hover:bg-hover disabled:hover:bg-card`;
+const BTN = "inline-flex h-7 min-w-7 items-center justify-center rounded px-1 text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-40 touch:h-11 touch:min-w-11";
 
 export default function Pagination({ page, totalPages, total, onPage, onPrev, onNext }: PaginationProps) {
   if (totalPages <= 1) return null;
@@ -27,9 +26,9 @@ export default function Pagination({ page, totalPages, total, onPage, onPrev, on
   return (
     <nav aria-label="Pagination" className="flex flex-wrap items-center justify-between gap-2 pt-4">
       <span className="text-sm text-muted-foreground">{total} résultats</span>
-      <div className="flex items-center gap-1">
-        <button type="button" onClick={onPrev} disabled={page <= 1} aria-label="Page précédente" className={ARROW}>
-          <ChevronLeft className="h-5 w-5" />
+      <div className="flex items-center gap-0.5">
+        <button type="button" onClick={onPrev} disabled={page <= 1} aria-label="Page précédente" className={BTN}>
+          <ChevronLeft className="h-4 w-4" />
         </button>
         {pages.map((p, i) =>
           p === "..." ? (
@@ -41,14 +40,14 @@ export default function Pagination({ page, totalPages, total, onPage, onPrev, on
               onClick={() => onPage(p)}
               aria-label={`Page ${p}`}
               aria-current={p === page ? "page" : undefined}
-              className={`${BTN} ${p === page ? "bg-active font-medium text-foreground" : "hover:bg-hover"}`}
+              className={`${BTN} tabular-nums ${p === page ? "bg-active font-medium text-foreground" : ""}`}
             >
               {p}
             </button>
           ),
         )}
-        <button type="button" onClick={onNext} disabled={page >= totalPages} aria-label="Page suivante" className={ARROW}>
-          <ChevronRight className="h-5 w-5" />
+        <button type="button" onClick={onNext} disabled={page >= totalPages} aria-label="Page suivante" className={BTN}>
+          <ChevronRight className="h-4 w-4" />
         </button>
       </div>
     </nav>

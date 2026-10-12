@@ -1,62 +1,49 @@
-import { useState, useRef, useEffect } from "react";
 import type { ReactNode } from "react";
 import { MoreHorizontal } from "lucide-react";
+import { IconButton } from "./Button";
+import { Menu, MenuCheck, MenuItem, MenuSection, MenuSeparator, useMenu } from "./Menu";
 
-export interface ActionMenuItem {
-  label: string;
-  icon?: ReactNode;
-  onClick: () => void;
-  variant?: "default" | "danger";
+export type ActionMenuItem =
+  | { kind?: "item"; label: string; icon?: ReactNode; onClick: () => void; variant?: "default" | "danger"; disabled?: boolean }
+  | { kind: "separator" }
+  | { kind: "check"; label: string; icon?: ReactNode; checked: boolean; onClick: () => void }
+  | { kind: "section"; label: string };
+
+export interface ActionMenuProps {
+  items: ActionMenuItem[];
+  align?: "left" | "right";
+  "aria-label"?: string;
+  // Sheet title on touch screens.
+  title?: string;
+  className?: string;
 }
 
-export default function ActionMenu({ items }: { items: ActionMenuItem[] }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
+export default function ActionMenu({ items, align = "right", "aria-label": ariaLabel = "Plus d'actions", title, className }: ActionMenuProps) {
+  const menu = useMenu();
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-label="Actions"
+    <div ref={menu.ref} className={`relative inline-flex ${className ?? ""}`}>
+      <IconButton
+        size="sm"
+        aria-label={ariaLabel}
         aria-haspopup="menu"
-        aria-expanded={open}
-        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-input bg-card text-foreground transition-colors hover:bg-hover"
-      >
-        <MoreHorizontal className="h-5 w-5" />
-      </button>
-      {open && (
-        <div role="menu" className="absolute right-0 top-full z-50 mt-1 min-w-[200px] overflow-hidden rounded-xl border bg-card py-1 shadow-lg animate-fade-up">
-          {items.map((item, i) => (
-            <button
-              key={i}
-              type="button"
-              role="menuitem"
-              onClick={() => { item.onClick(); setOpen(false); }}
-              className={`flex min-h-11 w-full items-center gap-2.5 px-4 text-left text-base font-medium transition-colors ${
-                item.variant === "danger" ? "text-destructive hover:bg-destructive-soft" : "text-foreground hover:bg-hover"
-              }`}
-            >
-              {item.icon}
+        aria-expanded={menu.open}
+        onClick={menu.toggle}
+        icon={<MoreHorizontal />}
+      />
+      <Menu {...menu.props} align={align} title={title} aria-label={ariaLabel}>
+        {items.map((item, i) => {
+          if (item.kind === "separator") return <MenuSeparator key={i} />;
+          if (item.kind === "section") return <MenuSection key={i} label={item.label}>{null}</MenuSection>;
+          if (item.kind === "check") {
+            return <MenuCheck key={i} checked={item.checked} onChange={() => item.onClick()} icon={item.icon}>{item.label}</MenuCheck>;
+          }
+          return (
+            <MenuItem key={i} icon={item.icon} onSelect={item.onClick} danger={item.variant === "danger"} disabled={item.disabled}>
               {item.label}
-            </button>
-          ))}
-        </div>
-      )}
+            </MenuItem>
+          );
+        })}
+      </Menu>
     </div>
   );
 }
