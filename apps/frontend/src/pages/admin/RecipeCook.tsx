@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { X, ChevronLeft, ChevronRight, Check, Circle, CheckCircle2, ListChecks } from "lucide-react";
 import type { Recipe, Ingredient, AppEvent } from "@packages/types";
+import { fmtQty, scaleQtyNumber } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { scaleQty } from "@/lib/recipe-helpers";
+import { useLocalStorage } from "@/hooks/use-local-storage";
+import { useMiseEnPlace } from "@/hooks/use-mise-en-place";
 import Stepper from "@/components/ui/Stepper";
+import { StepText } from "@/components/ui/RecipeReader";
 
 const SWIPE_MIN_PX = 60;
 
@@ -15,10 +18,14 @@ export default function RecipeCook() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const portionsParam = searchParams.get("portions");
   const eventId = searchParams.get("event");
   const lineId = searchParams.get("line");
+  const personne = searchParams.get("personne") ?? "";
+  const personQuery = personne ? `?personne=${encodeURIComponent(personne)}` : "";
+  const from = (location.state as { from?: string } | null)?.from;
 
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -28,7 +35,8 @@ export default function RecipeCook() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [cookPortions, setCookPortions] = useState(0);
-  const [ticked, setTicked] = useState<Set<number>>(new Set());
+  const [scaleSteps] = useLocalStorage<boolean>("recipe-book:scale-steps", true);
+  const mep = useMiseEnPlace(lineId ?? undefined);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [marking, setMarking] = useState(false);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
@@ -87,7 +95,12 @@ export default function RecipeCook() {
   const goNext = useCallback(() => setStep((s) => Math.min(s + 1, Math.max(0, totalSteps - 1))), [totalSteps]);
   const goPrev = useCallback(() => setStep((s) => Math.max(s - 1, 0)), []);
 
-  const exitTo = event ? `/jour/${event.date}` : `/recipes/${id}`;
+  const line = lineId && event ? event.recipes.find((l) => l.lineId === lineId) : undefined;
+  const exitTo = from ?? (eventId && lineId
+    ? `/events/${eventId}/lines/${lineId}${personQuery}`
+    : event
+      ? `/jour/${event.date.slice(0, 10)}${personQuery}`
+      : `/recipes/${id}`);
   const exit = useCallback(() => navigate(exitTo), [navigate, exitTo]);
 
   useEffect(() => {
@@ -115,13 +128,15 @@ export default function RecipeCook() {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background p-6">
         <p className="text-lead text-muted-foreground">Recette introuvable.</p>
-        <button type="button" onClick={() => navigate(-1)} className="inline-flex min-h-11 items-center rounded-lg border px-4 text-base font-medium hover:bg-hover">Quitter</button>
+        <button type="button" onClick={exit} className="inline-flex min-h-11 items-center rounded-lg border px-4 text-base font-medium hover:bg-hover">Quitter</button>
       </div>
     );
   }
 
   const ratio = cookPortions / (recipe.portions || 1);
+  const stepRatio = scaleSteps ? ratio : 1;
   const contextName = clientName || event?.contactName || event?.name || null;
+  const subtitle = [`${cookPortions} portions`, contextName].filter(Boolean).join(" · ");
 
   const onTouchStart = (e: React.TouchEvent) => {
     const el = e.target as HTMLElement;
@@ -141,12 +156,15 @@ export default function RecipeCook() {
     if (dx < 0) goNext(); else goPrev();
   };
 
+  // The first tick moves a line still to do into "En cours".
   const toggleTick = (i: number) => {
-    setTicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(i)) next.delete(i); else next.add(i);
-      return next;
-    });
+    const first = mep.ticked.size === 0;
+    mep.toggle(i);
+    if (first && eventId && lineId && line && (line.prepStatus ?? "todo") === "todo") {
+      api.events.lines.patch(eventId, lineId, { prepStatus: "doing" })
+        .then((ev) => setEvent(ev))
+        .catch(() => toast({ title: "Erreur lors de la mise à jour du statut", variant: "destructive" }));
+    }
   };
 
   const markDone = async () => {
@@ -154,7 +172,8 @@ export default function RecipeCook() {
     setMarking(true);
     try {
       await api.events.lines.patch(eventId, lineId, { prepStatus: "done" });
-      navigate(`/jour/${event.date}?done=${lineId}`);
+      mep.clear();
+      navigate(`/jour/${event.date.slice(0, 10)}?done=${lineId}${personne ? `&personne=${encodeURIComponent(personne)}` : ""}`);
     } catch {
       toast({ title: "Erreur lors de la mise à jour", variant: "destructive" });
       setMarking(false);
@@ -165,19 +184,20 @@ export default function RecipeCook() {
     <ul className="divide-y divide-border">
       {recipe.ingredients.map((ri, i) => {
         const ing = ingredientById.get(ri.ingredientId);
-        const done = ticked.has(i);
+        const done = mep.ticked.has(i);
+        const q = fmtQty(scaleQtyNumber(ri.qty, ratio), ri.unit);
         return (
           <li key={`${ri.ingredientId}-${i}`}>
             <button
               type="button"
               onClick={() => toggleTick(i)}
               aria-pressed={done}
-              className={`flex w-full min-h-12 items-center gap-3 py-2 text-left text-lead transition-colors ${done ? "text-muted-foreground line-through" : "text-foreground"}`}
+              className={`flex w-full min-h-12 items-center gap-3 py-2 text-left text-lead transition-colors ${done ? "text-muted-foreground" : "text-foreground"}`}
             >
               {done ? <CheckCircle2 className="h-6 w-6 shrink-0 text-success" /> : <Circle className="h-6 w-6 shrink-0 text-muted-foreground" />}
               <span className="min-w-0 flex-1">{ing?.name ?? "Ingrédient inconnu"}</span>
               <span className="shrink-0 whitespace-nowrap font-semibold tabular-nums">
-                {scaleQty(ri.qty, ratio)} <span className="font-normal text-muted-foreground">{ri.unit}</span>
+                {q.value} <span className="font-normal text-muted-foreground">{q.unit}</span>
               </span>
             </button>
           </li>
@@ -187,6 +207,13 @@ export default function RecipeCook() {
   );
 
   const prevStep = step > 0 ? recipe.techniques[step - 1] : null;
+  const scaledNote = ratio !== 1 && (
+    <p className="mb-3 text-sm text-muted-foreground">
+      {scaleSteps
+        ? `Quantités adaptées pour ${cookPortions} portions (recette de base : ${recipe.portions})`
+        : `Quantités de la recette de base (${recipe.portions} portions)`}
+    </p>
+  );
 
   return (
     <div className="fixed inset-0 flex flex-col bg-background select-text">
@@ -201,14 +228,14 @@ export default function RecipeCook() {
         <div className="min-w-0 flex-1">
           <h1 className="truncate font-serif text-h2 leading-tight">{recipe.name}</h1>
           {(contextName || cookPortions !== recipe.portions) && (
-            <p className="truncate text-sm text-muted-foreground">
-              {contextName ? `pour ${contextName} · ` : ""}{cookPortions} portions
-            </p>
+            <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
           )}
         </div>
-        <div className="hidden md:block">
-          <Stepper value={cookPortions} onChange={setCookPortions} min={1} label="portions" />
-        </div>
+        {!lineId && (
+          <div className="hidden md:block">
+            <Stepper value={cookPortions} onChange={setCookPortions} min={1} label="portions" />
+          </div>
+        )}
         {totalSteps > 0 && (
           <div className="shrink-0 text-base tabular-nums text-muted-foreground">
             Étape {step + 1} / {totalSteps}
@@ -236,35 +263,39 @@ export default function RecipeCook() {
           ) : (
             <>
               <div className="mx-auto max-w-doc md:hidden">
+                {scaledNote}
                 {prevStep && (
                   <p className="mb-4 whitespace-pre-wrap text-base text-muted-foreground">
-                    <span className="font-semibold">{step}.</span> {prevStep}
+                    <span className="font-semibold">{step}.</span> <StepText step={prevStep} ratio={stepRatio} />
                   </p>
                 )}
                 <p className="whitespace-pre-wrap font-serif text-cook text-foreground">
                   <span className="mr-2 text-muted-foreground">{step + 1}.</span>
-                  {recipe.techniques[step]}
+                  <StepText step={recipe.techniques[step]} ratio={stepRatio} />
                 </p>
               </div>
 
-              <ol className="mx-auto hidden max-w-doc space-y-6 md:block">
-                {recipe.techniques.map((t, i) => {
-                  const current = i === step;
-                  return (
-                    <li key={i} id={`cook-step-${i}`}>
-                      <button
-                        type="button"
-                        onClick={() => setStep(i)}
-                        aria-current={current ? "step" : undefined}
-                        className={`flex w-full gap-4 rounded-lg text-left transition-colors ${current ? "font-serif text-cook md:text-cook-lg text-foreground" : "text-lead text-muted-foreground hover:text-foreground"}`}
-                      >
-                        <span className={`shrink-0 tabular-nums ${current ? "" : "pt-0.5"}`}>{i + 1}.</span>
-                        <span className="min-w-0 flex-1 whitespace-pre-wrap">{t}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ol>
+              <div className="mx-auto hidden max-w-doc md:block">
+                {scaledNote}
+                <ol className="space-y-6">
+                  {recipe.techniques.map((t, i) => {
+                    const current = i === step;
+                    return (
+                      <li key={i} id={`cook-step-${i}`}>
+                        <button
+                          type="button"
+                          onClick={() => setStep(i)}
+                          aria-current={current ? "step" : undefined}
+                          className={`flex w-full gap-4 rounded-lg text-left transition-colors ${current ? "font-serif text-cook md:text-cook-lg text-foreground" : "text-lead text-muted-foreground hover:text-foreground"}`}
+                        >
+                          <span className={`shrink-0 tabular-nums ${current ? "" : "pt-0.5"}`}>{i + 1}.</span>
+                          <span className="min-w-0 flex-1 whitespace-pre-wrap"><StepText step={t} ratio={stepRatio} /></span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
             </>
           )}
         </main>
@@ -289,7 +320,7 @@ export default function RecipeCook() {
               <Check className="h-6 w-6" /> {marking ? "Enregistrement…" : "Marquer fait"}
             </button>
           ) : (
-            <button type="button" onClick={() => navigate(`/recipes/${id}`)} className={`${FOOTER_BTN} bg-primary text-primary-foreground hover:opacity-90`}>
+            <button type="button" onClick={exit} className={`${FOOTER_BTN} bg-primary text-primary-foreground hover:opacity-90`}>
               <Check className="h-6 w-6" /> Terminer
             </button>
           )
@@ -314,9 +345,11 @@ export default function RecipeCook() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="border-b px-4 py-3">
-              <Stepper value={cookPortions} onChange={setCookPortions} min={1} label="portions" />
-            </div>
+            {!lineId && (
+              <div className="border-b px-4 py-3">
+                <Stepper value={cookPortions} onChange={setCookPortions} min={1} label="portions" />
+              </div>
+            )}
             <div className="overflow-y-auto px-4 pb-6">{ingredientList}</div>
           </div>
         </div>

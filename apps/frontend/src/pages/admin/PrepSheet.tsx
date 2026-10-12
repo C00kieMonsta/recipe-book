@@ -265,13 +265,13 @@ export default function PrepSheet() {
               <span className="truncate">{who}</span>
             </Link>
             <div className="ml-auto flex shrink-0 items-center gap-1">
-              {prev ? (
+              {prevUrl ? (
                 <Link to={prevUrl} state={{ from }} aria-label="Ligne précédente" className={ICON_BTN}><ChevronLeft className="h-5 w-5" /></Link>
               ) : (
                 <span className={ICON_BTN} aria-hidden="true"><ChevronLeft className="h-5 w-5 opacity-30" /></span>
               )}
               <span className="text-sm tabular-nums text-muted-foreground">{index + 1}/{dayLines.length}</span>
-              {next ? (
+              {nextUrl ? (
                 <Link to={nextUrl} state={{ from }} aria-label="Ligne suivante" className={ICON_BTN}><ChevronRight className="h-5 w-5" /></Link>
               ) : (
                 <span className={ICON_BTN} aria-hidden="true"><ChevronRight className="h-5 w-5 opacity-30" /></span>

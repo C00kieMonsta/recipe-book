@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Plus, Save, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Link2, Plus, Save, X } from "lucide-react";
 import type {
   AppEvent,
   AppSettings,
   CompanySettings,
   FixedCharge,
   FixedChargeCategory,
+  Person,
   PrestationTypeSetting,
   SettingsSupplier,
   VatRate,
@@ -19,13 +20,16 @@ import {
   DEFAULT_SUPPLIERS,
   VAT_RATES,
   fmtEur,
+  personInitials,
   round2,
+  slugifyPersonId,
   sumMoney,
 } from "@packages/types";
-import { api } from "@/lib/api";
+import { api, type HealthResponse } from "@/lib/api";
 import { supplierColor } from "@/lib/recipe-helpers";
 import { useToast } from "@/hooks/use-toast";
-import { FieldLabel, PageHeader, Section, Tag } from "@/components/ui";
+import { EditableInlineText, FieldLabel, PageHeader, Section, Tag } from "@/components/ui";
+import { PersonChip } from "@/components/admin/PersonChips";
 
 // ── Local types and constants ────────────────────────────────────────────────
 
@@ -36,6 +40,7 @@ interface Draft {
   courses: string[];
   prestationTypes: DraftPrestationType[];
   suppliers: SettingsSupplier[];
+  people: Person[];
   fixedCharges: FixedCharge[];
   objectives: Record<string, Partial<YearObjective>>;
   yearActuals: Record<string, YearActuals>;
@@ -91,6 +96,7 @@ function fromSettings(s: AppSettings): Draft {
     courses: s.courses?.length ? s.courses : DEFAULT_COURSES,
     prestationTypes: s.prestationTypes?.length ? s.prestationTypes : DEFAULT_PRESTATION_TYPES,
     suppliers: s.suppliers?.length ? s.suppliers : DEFAULT_SUPPLIERS,
+    people: s.people ?? [],
     fixedCharges: s.fixedCharges ?? [],
     objectives: s.objectives ?? {},
     yearActuals: s.yearActuals ?? {},
@@ -251,6 +257,8 @@ export default function Settings() {
   const [objYear, setObjYear] = useState(currentYear);
   const [actYear, setActYear] = useState(String(Number(currentYear) - 1));
   const courseFocusName = useRef<string>("");
+  const [newPersonName, setNewPersonName] = useState<string | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null | undefined>(undefined);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -258,7 +266,14 @@ export default function Settings() {
       .then((s) => setDraft(fromSettings(s)))
       .catch(() => setLoadError("Impossible de charger les paramètres"))
       .finally(() => setLoading(false));
+    api.health.get().then(setHealth).catch(() => setHealth(null));
   }, []);
+
+  // Scrolls to #objectifs or #apropos once the sections exist.
+  useEffect(() => {
+    if (loading || !window.location.hash) return;
+    document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
+  }, [loading]);
 
   const patch = (fn: (d: Draft) => Draft) => {
     setDraft((d) => (d ? fn(d) : d));
@@ -292,6 +307,13 @@ export default function Settings() {
     const suppliers = draft.suppliers
       .filter((s) => s.name.trim())
       .map((s) => ({ name: s.name.trim(), address: s.address?.trim() || undefined, phone: s.phone?.trim() || undefined }));
+    const people = draft.people
+      .filter((p) => p.name.trim())
+      .map((p) => ({ personId: p.personId, name: p.name.trim(), initials: p.initials?.trim() || undefined, active: p.active }));
+    const activeInitials = people.filter((p) => p.active).map((p) => personInitials(p).toUpperCase());
+    if (new Set(activeInitials).size !== activeInitials.length) {
+      return toast({ title: "Deux personnes actives ont les mêmes initiales", variant: "destructive" });
+    }
     const fixedCharges = draft.fixedCharges
       .filter((c) => c.label.trim())
       .map((c) => ({
@@ -326,6 +348,7 @@ export default function Settings() {
         courses,
         prestationTypes,
         suppliers,
+        people,
         fixedCharges,
         objectives,
         yearActuals,
@@ -453,6 +476,30 @@ export default function Settings() {
         },
       },
     }));
+  };
+
+  const setPerson = (i: number, p: Partial<Person>) =>
+    patch((d) => ({ ...d, people: d.people.map((row, j) => (j === i ? { ...row, ...p } : row)) }));
+  const addPerson = () => {
+    const name = (newPersonName ?? "").trim();
+    if (!name) return;
+    patch((d) => ({ ...d, people: [...d.people, { personId: slugifyPersonId(name, d.people.map((p) => p.personId)), name, active: true }] }));
+    setNewPersonName(null);
+  };
+  const activeInitialCounts = new Map<string, number>();
+  for (const p of draft.people) {
+    if (!p.active) continue;
+    const key = personInitials(p).toUpperCase();
+    activeInitialCounts.set(key, (activeInitialCounts.get(key) ?? 0) + 1);
+  }
+  const copyDayLink = async (p: Person) => {
+    const url = `${window.location.origin}/jour/aujourdhui?personne=${p.personId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({ title: "Lien copié, à mettre sur l'écran d'accueil du téléphone" });
+    } catch {
+      window.prompt("Copier le lien", url);
+    }
   };
 
   const setByPrestation = (type: string, p: Partial<{ amount: number; eventsNeeded: number | undefined; guestsPerEvent: number | undefined }>) => {
@@ -668,6 +715,67 @@ export default function Settings() {
         </div>
       </Section>
 
+      {/* ── Équipe ── */}
+      <Section
+        title="Équipe"
+        action={
+          <button type="button" className={btnSecondary} onClick={() => setNewPersonName((v) => (v === null ? "" : v))}>
+            <Plus className="h-5 w-5" /> Ajouter une personne
+          </button>
+        }
+      >
+        <p className="mb-3 text-base text-muted-foreground">Les personnes à qui les événements et les lignes sont assignés. Le lien du jour ouvre leur liste sur leur téléphone.</p>
+        <div className="space-y-1">
+          {draft.people.map((p, i) => {
+            const duplicate = p.active && (activeInitialCounts.get(personInitials(p).toUpperCase()) ?? 0) > 1;
+            return (
+              <div key={p.personId} className={`flex flex-wrap items-center gap-2 min-h-11 ${p.active ? "" : "text-muted-foreground"}`}>
+                <PersonChip personId={p.personId} people={draft.people} size="md" />
+                <span className="min-w-[8rem] flex-1 text-base">
+                  <EditableInlineText value={p.name} placeholder="Nom" onSave={(v) => { if (v.trim()) setPerson(i, { name: v.trim() }); }} />
+                </span>
+                <input
+                  aria-label={`Initiales de ${p.name}`}
+                  aria-invalid={duplicate || undefined}
+                  className={`input-field w-20 text-center uppercase ${duplicate ? "border-destructive" : ""}`}
+                  value={p.initials ?? ""}
+                  placeholder={personInitials(p)}
+                  maxLength={3}
+                  onChange={(e) => setPerson(i, { initials: e.target.value.replace(/[^a-zA-ZÀ-ÿ]/g, "").toUpperCase().slice(0, 3) || undefined })}
+                />
+                <label className="flex min-h-11 items-center gap-2 text-base">
+                  <input type="checkbox" className="h-5 w-5" checked={p.active} onChange={(e) => setPerson(i, { active: e.target.checked })} />
+                  Actif
+                </label>
+                <button type="button" className={btnSecondary} onClick={() => void copyDayLink(p)}>
+                  <Link2 className="h-5 w-5" /> Lien du jour
+                </button>
+                <MoveButtons index={i} length={draft.people.length} onMove={(from, to) => patch((d) => ({ ...d, people: moveItem(d.people, from, to) }))} />
+                <button type="button" className={btnSecondary} onClick={() => setPerson(i, { active: !p.active })}>
+                  {p.active ? "Désactiver" : "Réactiver"}
+                </button>
+              </div>
+            );
+          })}
+          {draft.people.length === 0 && newPersonName === null && <p className="text-base text-muted-foreground">Aucune personne</p>}
+          {newPersonName !== null && (
+            <div className="flex flex-wrap items-center gap-2 min-h-11">
+              <input
+                autoFocus
+                aria-label="Nom de la personne"
+                className="input-field flex-1 min-w-[10rem]"
+                value={newPersonName}
+                placeholder="Prénom…"
+                onChange={(e) => setNewPersonName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addPerson(); } if (e.key === "Escape") setNewPersonName(null); }}
+              />
+              <button type="button" className={btnPrimary} disabled={!newPersonName.trim()} onClick={addPerson}>Ajouter</button>
+              <button type="button" className={btnSecondary} onClick={() => setNewPersonName(null)}>Annuler</button>
+            </div>
+          )}
+        </div>
+      </Section>
+
       {/* ── Charges fixes ── */}
       <Section
         title="Charges fixes"
@@ -790,6 +898,7 @@ export default function Settings() {
       </Section>
 
       {/* ── Objectifs par année ── */}
+      <div id="objectifs" className="scroll-mt-20">
       <Section
         title="Objectifs par année"
         action={
@@ -969,6 +1078,7 @@ export default function Settings() {
           </div>
         </div>
       </Section>
+      </div>
 
       {/* ── Années précédentes ── */}
       <Section title="Années précédentes" action={<YearSelect id="act-year" value={actYear} years={actYears} onChange={setActYear} />}>
@@ -1098,9 +1208,35 @@ export default function Settings() {
       </Section>
 
       {/* ── À propos ── */}
+      <div id="apropos" className="scroll-mt-20">
       <Section title="À propos">
         <p className="text-base text-muted-foreground">admin · v1.0</p>
+        <dl className="mt-3 space-y-1 text-base">
+          {([["ta-clients", health?.tables.clients], ["ta-ledger", health?.tables.ledger]] as const).map(([table, present]) => (
+            <div key={table} className="flex min-h-11 items-center gap-3">
+              <dt className="w-28 font-mono">{table}</dt>
+              <dd>
+                {health === undefined ? (
+                  <span className="text-muted-foreground">Vérification…</span>
+                ) : health === null ? (
+                  <Tag variant="neutral">État inconnu</Tag>
+                ) : present ? (
+                  <Tag variant="success">Table présente</Tag>
+                ) : (
+                  <Tag variant="warning">Table absente</Tag>
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        {health && (!health.tables.clients || !health.tables.ledger) && (
+          <p className="mt-2 text-base text-muted-foreground">
+            Créer la table {!health.tables.clients ? "ta-clients" : "ta-ledger"}-&lt;stage&gt; puis renseigner le paramètre SSM (README, étape 4)
+            {!health.tables.clients && !health.tables.ledger ? ", de même pour ta-ledger-<stage>." : "."}
+          </p>
+        )}
       </Section>
+      </div>
 
       {/* ── Dialogs ── */}
       {confirm && (

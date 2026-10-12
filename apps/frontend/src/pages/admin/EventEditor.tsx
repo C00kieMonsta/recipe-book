@@ -10,6 +10,7 @@ import type {
   EventRecipeLine,
   ExtraCostKind,
   Ingredient,
+  Person,
   PrestationTypeSetting,
   Recipe,
   VatRate,
@@ -20,6 +21,7 @@ import { longDayLabel, todayIso, weekdayOf } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
 import { calcEventCost, calcRecipeCost, fmt } from "@/lib/recipe-helpers";
 import { FieldLabel, NumericInput, PageHeader, Section, Tag } from "@/components/ui";
+import { PersonChip } from "@/components/admin/PersonChips";
 
 // Lines of a not-yet-created event have no lineId; the server fills it on POST.
 type LocalLine = Omit<EventRecipeLine, "lineId"> & { lineId?: string };
@@ -34,6 +36,11 @@ const EXTRA_KINDS: { value: ExtraCostKind; label: string }[] = [
 
 const NEW_CLIENT = "__new__";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Only an in-app path is honoured as a return target.
+function safeReturn(raw: string | null): string | null {
+  return raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : null;
+}
 
 const ICON_BTN = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-hover hover:text-foreground";
 
@@ -68,7 +75,9 @@ export default function EventEditor() {
   const [templateId, setTemplateId] = useState("");
   const [prestationType, setPrestationType] = useState("");
   const [vatRate, setVatRate] = useState<VatRate | undefined>(undefined);
+  const [assignedTo, setAssignedTo] = useState<string[]>([]);
   const [recipeSearch, setRecipeSearch] = useState("");
+  const retour = safeReturn(searchParams.get("retour"));
 
   const [newClientOpen, setNewClientOpen] = useState(false);
   const [newClientName, setNewClientName] = useState("");
@@ -84,6 +93,7 @@ export default function EventEditor() {
 
   const prestationTypes: PrestationTypeSetting[] = settings?.prestationTypes?.length ? settings.prestationTypes : DEFAULT_PRESTATION_TYPES;
   const courses: string[] = settings?.courses?.length ? settings.courses : DEFAULT_COURSES;
+  const people: Person[] = settings?.people?.filter((p) => p.active) ?? [];
 
   const defaultVatFor = (types: PrestationTypeSetting[], key: string | undefined): VatRate | undefined =>
     types.find((t) => t.key === key)?.defaultVatRate;
@@ -129,6 +139,7 @@ export default function EventEditor() {
           setTemplateId(ev.templateId || "");
           setPrestationType(ev.prestationType || "");
           setVatRate(ev.vatRate);
+          setAssignedTo(ev.assignedTo ?? []);
           setSavedOnce(true);
         } else {
           const dateParam = searchParams.get("date");
@@ -151,6 +162,7 @@ export default function EventEditor() {
               setExtraCosts(t.extraCosts);
               setNotes(t.notes ?? "");
               setTemplateId(t.templateId);
+              setAssignedTo(t.assignedTo ?? []);
             }
           }
         }
@@ -170,7 +182,8 @@ export default function EventEditor() {
     notes: notes || undefined, actualCost, templateId: templateId || undefined,
     contactName: contactName || undefined, contactPhone: contactPhone || undefined, contactEmail: contactEmail || undefined,
     clientId: clientId || undefined, prestationType: prestationType || undefined, vatRate,
-  }), [name, date, guestCount, extraCosts, sellingPricePerGuest, notes, actualCost, templateId, contactName, contactPhone, contactEmail, clientId, prestationType, vatRate]);
+    assignedTo,
+  }), [name, date, guestCount, extraCosts, sellingPricePerGuest, notes, actualCost, templateId, contactName, contactPhone, contactEmail, clientId, prestationType, vatRate, assignedTo]);
 
   // Recipes travel in the payload only until the event exists; after that the line endpoints own them.
   const buildPayload = useCallback((): EventInput => {
@@ -221,7 +234,7 @@ export default function EventEditor() {
     clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(() => { autoSaveRef.current(); }, 800);
     return () => clearTimeout(autoSaveTimer.current);
-  }, [name, date, guestCount, extraCosts, sellingPricePerGuest, notes, actualCost, templateId, contactName, contactPhone, contactEmail, clientId, prestationType, vatRate, localLineVersion]);
+  }, [name, date, guestCount, extraCosts, sellingPricePerGuest, notes, actualCost, templateId, contactName, contactPhone, contactEmail, clientId, prestationType, vatRate, assignedTo, localLineVersion]);
 
   const recipeCostMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -349,13 +362,18 @@ export default function EventEditor() {
 
   const handleDone = async () => {
     clearTimeout(autoSaveTimer.current);
-    if (!name.trim()) { navigate("/events"); return; }
+    if (!name.trim()) { navigate(retour ?? "/events"); return; }
     if (!currentId && !prestationType) {
       toast({ title: "Choisissez un type de prestation pour enregistrer l'événement", variant: "destructive" });
       return;
     }
     const savedId = await autoSave();
-    navigate(savedId ? `/events/${savedId}` : "/events");
+    navigate(retour ?? (savedId ? `/events/${savedId}` : "/events"));
+  };
+
+  const handleCancel = () => {
+    clearTimeout(autoSaveTimer.current);
+    navigate(retour ?? (currentId ? `/events/${currentId}` : "/events"));
   };
 
   if (loading) return <div className="p-8 text-base text-muted-foreground">Chargement…</div>;
@@ -380,9 +398,14 @@ export default function EventEditor() {
         title={isNew && !currentId ? "Nouvel événement" : name || "Modifier l'événement"}
         meta={hint || undefined}
         actions={
-          <button onClick={handleDone} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 text-base font-medium text-primary-foreground hover:opacity-90">
-            <Check className="h-5 w-5" /> Terminé
-          </button>
+          <>
+            <button type="button" onClick={handleCancel} className="inline-flex min-h-11 items-center rounded-lg border border-border px-4 text-base font-medium hover:bg-hover">
+              Annuler
+            </button>
+            <button type="button" onClick={handleDone} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 text-base font-medium text-primary-foreground hover:opacity-90">
+              <Check className="h-5 w-5" /> Enregistrer
+            </button>
+          </>
         }
       />
 
@@ -425,6 +448,28 @@ export default function EventEditor() {
               </div>
             )}
           </div>
+          {people.length > 0 && (
+            <div className="sm:col-span-2">
+              <FieldLabel>Équipe</FieldLabel>
+              <div className="flex flex-wrap gap-2">
+                {people.map((p) => {
+                  const on = assignedTo.includes(p.personId);
+                  return (
+                    <button
+                      key={p.personId}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => setAssignedTo(on ? assignedTo.filter((id) => id !== p.personId) : [...assignedTo, p.personId])}
+                      className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-3 pl-1.5 text-base ${on ? "border-primary bg-primary-soft font-medium" : "border-border hover:bg-hover"}`}
+                    >
+                      <PersonChip personId={p.personId} people={people} size="md" />
+                      {p.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div>
             <FieldLabel htmlFor="ev-prestation">
               <span className="inline-flex items-center gap-2">

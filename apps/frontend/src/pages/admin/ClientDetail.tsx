@@ -11,6 +11,7 @@ import type {
   EventExtraCost,
   ExtraCostKind,
   LedgerEntry,
+  Person,
   PrestationTypeSetting,
   Recipe,
   TemplateLine,
@@ -18,12 +19,13 @@ import type {
   VatRate,
   Weekday,
 } from "@packages/types";
-import { DEFAULT_COURSES, DEFAULT_PRESTATION_TYPES, VAT_RATES, fmtEur, round2 } from "@packages/types";
+import { DEFAULT_COURSES, DEFAULT_PRESTATION_TYPES, VAT_RATES, fmtEur, isWeekdayLabel, round2 } from "@packages/types";
 import { ApiError, api } from "@/lib/api";
 import { dayMonthLabel, longDayLabel, todayIso, ymOf } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
 import { ActionMenu, FieldLabel, ListRow, PageHeader, SearchSelect, Section, StatusTag, Tag } from "@/components/ui";
 import { EditableText } from "@/components/ui/editable";
+import { PersonAssign } from "@/components/admin/PersonPicker";
 
 const WEEKDAYS: { value: Weekday; label: string }[] = [
   { value: 1, label: "Lundi" },
@@ -112,6 +114,7 @@ function templateFromEvent(ev: AppEvent, weekday: Weekday, existing?: ClientTemp
     recipes: ev.recipes.map((l) => ({ recipeId: l.recipeId, portions: l.portions, course: l.course, notes: l.notes })),
     extraCosts: (ev.extraCosts ?? []).map((c) => ({ label: c.label, amount: c.amount, kind: c.kind })),
     notes: ev.notes,
+    assignedTo: existing?.assignedTo ?? ev.assignedTo,
   };
 }
 
@@ -135,6 +138,7 @@ function toTemplatePayload(t: ClientTemplate): ClientTemplateRequest {
       .filter((c) => c.label.trim())
       .map((c) => ({ label: c.label.trim(), amount: round2(Math.max(0, c.amount || 0)), kind: c.kind })),
     notes: t.notes || undefined,
+    ...(t.assignedTo?.length ? { assignedTo: t.assignedTo } : {}),
   };
 }
 
@@ -163,6 +167,7 @@ export default function ClientDetail() {
 
   const prestationTypes = settings?.prestationTypes?.length ? settings.prestationTypes : DEFAULT_PRESTATION_TYPES;
   const courses = settings?.courses?.length ? settings.courses : DEFAULT_COURSES;
+  const people: Person[] = settings?.people ?? [];
   const prestationLabel = (key?: string) => (key ? prestationTypes.find((p) => p.key === key)?.label ?? key : undefined);
   const recipeById = useMemo(() => new Map(recipes.map((r) => [r.recipeId, r])), [recipes]);
 
@@ -519,6 +524,8 @@ export default function ClientDetail() {
                       recipeById={recipeById}
                       courses={courses}
                       prestationLabel={prestationLabel(t.prestationType)}
+                      people={people}
+                      onAssign={(next) => void saveTemplates(templates.map((x) => (x.templateId === t.templateId ? { ...x, assignedTo: next } : x)))}
                       onEdit={() => { setPickFor(null); setEditing({ ...t, recipes: [...t.recipes], extraCosts: [...t.extraCosts] }); }}
                       onFromEvent={() => { setEditing(null); setPickFor(pickFor === w.value ? null : w.value); }}
                     />
@@ -595,11 +602,13 @@ export default function ClientDetail() {
   );
 }
 
-function TemplateView({ template: t, recipeById, courses, prestationLabel, onEdit, onFromEvent }: {
+function TemplateView({ template: t, recipeById, courses, prestationLabel, people, onAssign, onEdit, onFromEvent }: {
   template: ClientTemplate;
   recipeById: Map<string, Recipe>;
   courses: string[];
   prestationLabel?: string;
+  people: Person[];
+  onAssign: (next: string[]) => void;
   onEdit: () => void;
   onFromEvent: () => void;
 }) {
@@ -620,9 +629,10 @@ function TemplateView({ template: t, recipeById, courses, prestationLabel, onEdi
   return (
     <div className="mt-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-base font-medium">{t.name}</span>
+        {!isWeekdayLabel(t.name) && <span className="text-base font-medium">{t.name}</span>}
         {prestationLabel && <Tag variant="primary">{prestationLabel}</Tag>}
         {t.vatRate !== undefined && <Tag>{t.vatRate} %</Tag>}
+        <PersonAssign value={t.assignedTo ?? []} options={people} onChange={onAssign} size="md" title="Équipe du modèle" />
       </div>
       <div className="mt-1 text-base text-muted-foreground">
         {t.guestCount} convives · {fmtEur(t.sellingPricePerGuest)} / convive · {fmtEur(t.guestCount * t.sellingPricePerGuest)}
