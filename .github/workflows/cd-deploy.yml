@@ -24,9 +24,10 @@ on:
         default: true
         type: boolean
 
+# A newer push supersedes a running deploy; the next run redoes every step, so cancelling is safe.
 concurrency:
   group: deploy-${{ github.event.inputs.environment || 'production' }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   AWS_REGION: eu-north-1

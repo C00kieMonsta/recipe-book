@@ -19,6 +19,10 @@ on:
           - basic
           - full
 
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   security-basic:
     name: Basic Security Scan
