@@ -579,8 +579,9 @@ export default function Week() {
                                   <Link to={prepUrl(ev.eventId, line.lineId)} state={state} title={recipeName(line.recipeId)} className={`min-w-0 flex-1 truncate rounded px-0.5 ${status === "done" ? "text-muted-foreground" : ""}`}>
                                     {recipeName(line.recipeId)}
                                   </Link>
-                                  {ids.length > 0 && (
-                                    <AssignChips value={own ? line.assignedTo ?? [] : ids} options={people} enabled={canAssign} inherited={!own} allowInherit max={2} onChange={(next) => assignLine(ev.eventId, line.lineId, next)} title={recipeName(line.recipeId)} />
+                                  {/* The event card already shows inherited people; a line chip means an override. */}
+                                  {own && (
+                                    <AssignChips value={line.assignedTo ?? []} options={people} enabled={canAssign} allowInherit max={2} onChange={(next) => assignLine(ev.eventId, line.lineId, next)} title={recipeName(line.recipeId)} />
                                   )}
                                   <span className={`pl-0.5 pr-1 tabular-nums ${status === "done" ? "text-muted-foreground" : "text-muted-foreground"}`}>{line.portions}</span>
                                 </li>
