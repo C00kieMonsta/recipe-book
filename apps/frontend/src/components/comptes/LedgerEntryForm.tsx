@@ -21,7 +21,7 @@ import {
   fmtDateFr,
   ledgerErrorMessage,
 } from "@/lib/accounting";
-import { FieldLabel, Tag } from "@/components/ui";
+import { Button, Callout, Checkbox, Dialog, FieldLabel, IconButton, Tag, ViewTabs } from "@/components/ui";
 
 export interface LedgerEntryFormProps {
   initial?: Partial<CreateLedgerEntryRequest>;
@@ -40,7 +40,11 @@ export interface LedgerEntryFormProps {
   above?: ReactNode;
   // Shown when set and the entry is unlocked; the form confirms before calling it.
   onDeleted?: (entryId: string) => void;
+  // "dialog" wraps the form in a Dialog (a Sheet on touch); "inline" renders it in place.
+  layout?: "inline" | "dialog";
 }
+
+const FORM_ID = "ledger-entry-form";
 
 const SALES_KINDS = Object.keys(SALES_KIND_LABEL) as SalesKind[];
 const PURCHASE_KINDS = Object.keys(PURCHASE_KIND_LABEL) as PurchaseKind[];
@@ -289,34 +293,56 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
   const kinds = isSales ? SALES_KINDS : PURCHASE_KINDS;
   const kindLabelOf = (k: string) => (isSales ? SALES_KIND_LABEL[k as SalesKind] : PURCHASE_KIND_LABEL[k as PurchaseKind]);
   const title = target ? "Modifier la ligne" : props.kind === "acompte" ? "Enregistrer un acompte" : props.kind === "facture" ? "Créer la facture" : "Nouvelle ligne";
+  const dialog = props.layout === "dialog";
 
-  return (
+  const footer = (
+    <div className="flex w-full flex-wrap items-center gap-2">
+      {target && onDeleted && !ro && (
+        confirmDelete ? (
+          <span className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Supprimer cette ligne ?</span>
+            <Button variant="danger" size="md" disabled={saving} onClick={() => void remove()}>Oui</Button>
+            <Button variant="subtle" size="md" onClick={() => setConfirmDelete(false)}>Non</Button>
+          </span>
+        ) : (
+          <Button variant="danger" size="md" onClick={() => setConfirmDelete(true)}>Supprimer</Button>
+        )
+      )}
+      <span className="ml-auto flex flex-wrap items-center justify-end gap-2">
+        {!ro && (
+          <Button variant="subtle" size="md" disabled={saving} onClick={() => void save(true)}>Ajouter une ligne pour l'autre taux</Button>
+        )}
+        <Button variant="default" size="md" onClick={onCancel}>Annuler</Button>
+        <Button variant="primary" size="md" type="submit" form={FORM_ID} disabled={saving}>{saving ? "Enregistrement…" : "Enregistrer"}</Button>
+      </span>
+    </div>
+  );
+
+  const form = (
     <form
+      id={FORM_ID}
       className="flex flex-col gap-4"
       onSubmit={(e) => { e.preventDefault(); void save(false); }}
       noValidate
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-h2">{title}</h2>
-        {locked && <Tag variant="warning">Mois verrouillé</Tag>}
-        {savedNumber !== null && <Tag variant="success">Ligne {savedNumber || "sans numéro"} enregistrée, ajoutez l'autre taux</Tag>}
-      </div>
+      {(!dialog || locked || savedNumber !== null) && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {!dialog && <h2 className="text-h3">{title}</h2>}
+          {locked && <Tag colour="yellow">Mois verrouillé</Tag>}
+          {savedNumber !== null && <Tag colour="green">Ligne {savedNumber || "sans numéro"} enregistrée, ajoutez l'autre taux</Tag>}
+        </div>
+      )}
 
-      {above && <div className="rounded-lg bg-surface p-3 text-base">{above}</div>}
+      {above && <div className="rounded-lg bg-surface p-3 text-sm">{above}</div>}
 
       {!bookFixed && (
-        <div className="flex gap-2">
-          {(["ventes", "achats"] as LedgerBook[]).map((b) => (
-            <button
-              key={b}
-              type="button"
-              disabled={ro}
-              onClick={() => setF((p) => ({ ...p, book: b, kind: b === "ventes" ? "facture" : "mp" }))}
-              className={`min-h-11 rounded-lg border px-4 text-base ${f.book === b ? "border-primary bg-selected font-medium" : "border-border bg-card"}`}
-            >
-              {b === "ventes" ? "Ventes" : "Achats"}
-            </button>
-          ))}
+        <div className="flex h-10 items-center border-b border-border">
+          <ViewTabs
+            aria-label="Livre"
+            value={f.book}
+            items={[{ key: "ventes", label: "Ventes" }, { key: "achats", label: "Achats" }]}
+            onChange={(b) => { if (!ro) setF((p) => ({ ...p, book: b as LedgerBook, kind: b === "ventes" ? "facture" : "mp" })); }}
+          />
         </div>
       )}
 
@@ -385,12 +411,16 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
           {!ro && (
             <input id="le-event-search" className="input-field mb-2" placeholder="Rechercher un événement" value={eventQuery} onChange={(e) => setEventQuery(e.target.value)} />
           )}
-          <div className="max-h-56 overflow-auto rounded-lg border border-border">
+          <div className="max-h-56 overflow-auto rounded-lg bg-surface py-1">
             {(ro ? eventOptions.filter((o) => f.eventIds.includes(o.eventId)) : filteredEvents).map((o) => (
-              <label key={o.eventId} className={`flex min-h-11 cursor-pointer items-center gap-3 px-3 text-base hover:bg-hover ${ro ? "cursor-default" : ""}`}>
-                <input type="checkbox" className="h-5 w-5" checked={f.eventIds.includes(o.eventId)} disabled={ro} onChange={() => toggleEvent(o.eventId)} />
-                <span className="truncate">{o.label}</span>
-              </label>
+              <Checkbox
+                key={o.eventId}
+                checked={f.eventIds.includes(o.eventId)}
+                disabled={ro}
+                onChange={() => toggleEvent(o.eventId)}
+                label={o.label}
+                className="mx-1 flex h-8 w-auto items-center gap-2 rounded px-2 text-sm hover:bg-hover touch:h-11 touch:text-base"
+              />
             ))}
             {filteredEvents.length === 0 && !ro && <p className="px-3 py-2 text-sm text-muted-foreground">Aucun événement</p>}
             {ro && f.eventIds.length === 0 && <p className="px-3 py-2 text-sm text-muted-foreground">Aucun événement lié</p>}
@@ -399,7 +429,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
       )}
 
       {isPersonnel && (
-        <div className="rounded-lg border border-border p-3">
+        <div className="rounded-lg bg-surface p-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <FieldLabel htmlFor="le-person">Personne</FieldLabel>
@@ -411,29 +441,25 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
             </div>
           </div>
           <div className="mt-3 flex items-center justify-between">
-            <span className="text-base font-medium">Prestations</span>
+            <span className="text-sm font-medium">Prestations</span>
             {!ro && (
-              <button type="button" className="inline-flex min-h-11 items-center gap-1 rounded-lg px-3 text-base text-primary hover:bg-hover" onClick={() => set("shifts", [...f.shifts, { date: f.date, hours: "" }])}>
-                <Plus className="h-4 w-4" /> Ajouter une date
-              </button>
+              <Button variant="link" size="sm" icon={<Plus />} onClick={() => set("shifts", [...f.shifts, { date: f.date, hours: "" }])}>Ajouter une date</Button>
             )}
           </div>
           {f.shifts.map((s, i) => (
             <div key={i} className="mt-2 flex items-center gap-2">
-              <input type="date" className={field} value={s.date} readOnly={ro} onChange={(e) => set("shifts", f.shifts.map((x, j) => (j === i ? { ...x, date: e.target.value } : x)))} />
-              <input inputMode="decimal" className={`${field} w-28`} placeholder="Heures" value={s.hours} readOnly={ro} onChange={(e) => set("shifts", f.shifts.map((x, j) => (j === i ? { ...x, hours: e.target.value } : x)))} />
+              <input type="date" aria-label="Date" className={field} value={s.date} readOnly={ro} onChange={(e) => set("shifts", f.shifts.map((x, j) => (j === i ? { ...x, date: e.target.value } : x)))} />
+              <input inputMode="decimal" aria-label="Heures" className={`${field} w-28`} placeholder="Heures" value={s.hours} readOnly={ro} onChange={(e) => set("shifts", f.shifts.map((x, j) => (j === i ? { ...x, hours: e.target.value } : x)))} />
               {!ro && (
-                <button type="button" aria-label="Retirer" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-hover" onClick={() => set("shifts", f.shifts.filter((_, j) => j !== i))}>
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <IconButton size="md" aria-label="Retirer" icon={<Trash2 />} onClick={() => set("shifts", f.shifts.filter((_, j) => j !== i))} />
               )}
             </div>
           ))}
           {f.shifts.length > 0 && (
-            <p className="mt-2 text-base text-muted-foreground">
+            <p className="mt-2 text-sm text-muted-foreground">
               Σ {f.shifts.reduce((n, s) => n + num(s.hours), 0)} h × {num(f.hourlyRate)} € = <span className="font-medium text-foreground">{fmtEur(suggestedHtva)}</span>
               {!ro && suggestedHtva > 0 && num(f.htva) !== suggestedHtva && (
-                <button type="button" className="ml-2 min-h-11 text-primary underline" onClick={() => onHtva(String(suggestedHtva))}>Utiliser comme HTVA</button>
+                <Button variant="link" size="sm" className="ml-2" onClick={() => onHtva(String(suggestedHtva))}>Utiliser comme HTVA</Button>
               )}
             </p>
           )}
@@ -470,17 +496,14 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
         </div>
       </div>
       {!identityOk && !ro && (
-        <p className="text-sm text-destructive">HTVA + TVA diffère de TVAC de {fmtEur(round2(identityGap))}.</p>
+        <p className="text-sm text-danger">HTVA + TVA diffère de TVAC de {fmtEur(round2(identityGap))}.</p>
       )}
       {f.kind === "acompte" && (
         <p className="text-sm text-muted-foreground">Traitement TVA des acomptes à confirmer avec le comptable.</p>
       )}
 
-      <div className="rounded-lg border border-border p-3">
-        <label className="flex min-h-11 cursor-pointer items-center gap-3 text-base">
-          <input type="checkbox" className="h-5 w-5" checked={f.paid} onChange={(e) => set("paid", e.target.checked)} />
-          Réglé
-        </label>
+      <div className="rounded-lg bg-surface p-3">
+        <Checkbox checked={f.paid} onChange={(v) => set("paid", v)} label="Réglé" className="-mx-1" />
         {f.paid && (
           <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
@@ -519,38 +542,20 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
         </p>
       )}
 
-      {error && <p className="rounded-lg bg-destructive-soft px-3 py-2 text-base text-destructive">{error}</p>}
+      {error && <Callout tone="danger">{error}</Callout>}
 
-      <div className="flex flex-wrap items-center gap-2 pt-2">
-        <button type="submit" disabled={saving} className="min-h-11 rounded-lg bg-primary px-5 text-base font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
-          {saving ? "Enregistrement…" : "Enregistrer"}
-        </button>
-        {!ro && (
-          <button type="button" disabled={saving} className="min-h-11 rounded-lg border border-border px-4 text-base hover:bg-hover disabled:opacity-50" onClick={() => void save(true)}>
-            Ajouter une ligne pour l'autre taux
-          </button>
-        )}
-        <button type="button" className="min-h-11 rounded-lg px-4 text-base text-muted-foreground hover:bg-hover" onClick={onCancel}>
-          Annuler
-        </button>
-        {target && onDeleted && !ro && (
-          <div className="ml-auto flex items-center gap-2">
-            {confirmDelete ? (
-              <>
-                <span className="text-sm text-muted-foreground">Supprimer cette ligne ?</span>
-                <button type="button" disabled={saving} className="min-h-11 rounded-lg bg-destructive px-4 text-base text-destructive-foreground" onClick={() => void remove()}>Oui</button>
-                <button type="button" className="min-h-11 rounded-lg px-3 text-base" onClick={() => setConfirmDelete(false)}>Non</button>
-              </>
-            ) : (
-              <button type="button" className="min-h-11 rounded-lg px-3 text-base text-destructive hover:bg-destructive-soft" onClick={() => setConfirmDelete(true)}>
-                Supprimer
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      {!dialog && <div className="pt-2">{footer}</div>}
     </form>
   );
+
+  if (dialog) {
+    return (
+      <Dialog open onClose={onCancel} title={title} size="lg" footer={footer} aria-label={title}>
+        {form}
+      </Dialog>
+    );
+  }
+  return form;
 }
 
 // The other common rate of a line: 6 pairs with 12 (mixed take-away and on-site), 21 with 6.

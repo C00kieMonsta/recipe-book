@@ -25,6 +25,7 @@ export default function DayStrip({ dates, counts, today, selected, href, state, 
         const isToday = date === today;
         const isSelected = date === selected;
         const n = counts[date] ?? 0;
+        const muted = isSelected ? "text-primary" : "text-muted-foreground";
         return (
           <Link
             key={date}
@@ -32,11 +33,13 @@ export default function DayStrip({ dates, counts, today, selected, href, state, 
             state={state}
             aria-label={longDay.format(parseYmd(date))}
             aria-current={isSelected ? "page" : isToday ? "date" : undefined}
-            className={`relative flex min-h-11 flex-col items-center justify-center rounded-lg leading-none ${isToday ? "bg-selected" : "hover:bg-hover"} ${isSelected ? "font-semibold after:absolute after:inset-x-2 after:bottom-0 after:h-[3px] after:rounded-full after:bg-primary" : ""}`}
+            className={`relative flex h-11 flex-col items-center justify-center gap-0.5 rounded hover:bg-hover ${isSelected ? "bg-selected" : ""}`}
           >
-            <span className={`text-caption leading-none ${isSelected ? "text-foreground" : "text-muted-foreground"}`}>{LETTERS[i]}</span>
-            <span className="text-base font-semibold leading-none tabular-nums">{Number(date.slice(8, 10))}</span>
-            <span className={`text-caption leading-none tabular-nums ${!n ? "text-transparent" : isSelected ? "text-foreground" : "text-muted-foreground"}`}>{n || "0"}</span>
+            <span className={`text-caption leading-none ${muted}`}>{LETTERS[i]}</span>
+            <span className={`flex h-5 w-5 items-center justify-center rounded-full text-sm font-medium leading-none tabular-nums touch:text-base ${isToday ? "bg-danger-solid text-white" : ""}`}>
+              {Number(date.slice(8, 10))}
+            </span>
+            <span className={`text-caption leading-none tabular-nums ${n ? muted : "text-transparent"}`}>{n || "0"}</span>
           </Link>
         );
       })}

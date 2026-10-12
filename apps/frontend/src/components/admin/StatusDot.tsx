@@ -4,9 +4,9 @@ import { Check } from "lucide-react";
 export const STATUS_LABEL: Record<PrepStatus, string> = { todo: "À faire", doing: "En cours", done: "Fait" };
 
 const DOT: Record<PrepStatus, string> = {
-  todo: "border-2 border-muted-foreground bg-transparent",
-  doing: "border-2 border-warning bg-warning",
-  done: "border-2 border-success bg-success text-primary-foreground",
+  todo: "border-[1.5px] border-[rgba(55,53,47,0.45)]",
+  doing: "bg-status-doing",
+  done: "bg-status-done text-white",
 };
 
 export function Dot({ status, className = "" }: { status: PrepStatus; className?: string }) {
@@ -20,51 +20,20 @@ export function Dot({ status, className = "" }: { status: PrepStatus; className?
 export interface StatusDotProps {
   value: PrepStatus;
   onCycle: () => void;
-  // "touch" keeps the 44px target only on touch screens; "always" keeps it everywhere.
-  target?: "touch" | "always";
   className?: string;
 }
 
 // One tap cycles todo, doing, done.
-export function StatusDot({ value, onCycle, target = "touch", className = "" }: StatusDotProps) {
-  const size = target === "always" ? "min-h-11 min-w-11" : "min-h-9 min-w-9 touch:min-h-11 touch:min-w-11";
+export function StatusDot({ value, onCycle, className = "" }: StatusDotProps) {
   return (
     <button
       type="button"
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); onCycle(); }}
       aria-label={`Statut : ${STATUS_LABEL[value]}. Changer`}
       title={STATUS_LABEL[value]}
-      className={`inline-flex shrink-0 items-center justify-center rounded-lg hover:bg-hover ${size} ${className}`}
+      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded hover:bg-hover touch:h-11 touch:w-11 ${className}`}
     >
       <Dot status={value} />
     </button>
-  );
-}
-
-export interface StatusDotsProps {
-  value: PrepStatus;
-  onChange: (v: PrepStatus) => void;
-  className?: string;
-}
-
-// Three dots side by side for narrow hover reveals where the labelled StatusControl does not fit.
-export function StatusDots({ value, onChange, className = "" }: StatusDotsProps) {
-  const all: PrepStatus[] = ["todo", "doing", "done"];
-  return (
-    <div role="group" aria-label="Statut de préparation" className={`inline-flex items-center rounded-lg border border-border bg-card p-0.5 ${className}`}>
-      {all.map((s) => (
-        <button
-          key={s}
-          type="button"
-          aria-pressed={s === value}
-          aria-label={STATUS_LABEL[s]}
-          title={STATUS_LABEL[s]}
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (s !== value) onChange(s); }}
-          className={`inline-flex min-h-9 min-w-9 items-center justify-center rounded-md ${s === value ? "bg-muted" : "hover:bg-hover"}`}
-        >
-          <Dot status={s} />
-        </button>
-      ))}
-    </div>
   );
 }

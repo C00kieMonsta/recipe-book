@@ -5,9 +5,11 @@ import { UserPlus } from "lucide-react";
 export type PersonChipSize = "sm" | "md";
 
 const SIZE: Record<PersonChipSize, string> = {
-  sm: "h-5 w-5 text-[10px]",
-  md: "h-7 w-7 text-caption",
+  sm: "h-5 w-5 text-caption",
+  md: "h-6 w-6 text-caption",
 };
+
+const CIRCLE = "inline-flex shrink-0 items-center justify-center rounded-full bg-muted font-medium leading-none";
 
 export interface PersonChipProps {
   personId: string;
@@ -26,9 +28,7 @@ export function PersonChip({ personId, people, size = "md", className = "" }: Pe
       title={name}
       aria-label={name}
       role="img"
-      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-muted font-semibold leading-none ${
-        person ? "text-foreground" : "text-muted-foreground"
-      } ${SIZE[size]} ${className}`}
+      className={`${CIRCLE} ${person ? "text-foreground" : "text-muted-foreground"} ${SIZE[size]} ${className}`}
     >
       {text}
     </span>
@@ -53,27 +53,20 @@ export default function PersonChips({ personIds, people, size = "md", inherited 
   const shown = personIds.slice(0, max);
   const extra = personIds.length - shown.length;
   const names = personIds.map((id) => personName(people, id)).join(", ");
-  const ring = size === "sm" ? "ring-1" : "ring-2";
 
   const inner = (
-    <span className={`inline-flex items-center ${size === "sm" ? "-space-x-1" : "-space-x-1.5"} ${inherited ? "opacity-60" : ""}`}>
+    <span className={`inline-flex items-center -space-x-1 ${inherited ? "opacity-50" : ""}`}>
       {shown.map((id) => (
-        <PersonChip key={id} personId={id} people={people} size={size} className={`${ring} ring-card`} />
+        <PersonChip key={id} personId={id} people={people} size={size} className="ring-1 ring-background" />
       ))}
       {extra > 0 && (
-        <span
-          className={`inline-flex shrink-0 items-center justify-center rounded-full bg-muted font-semibold leading-none text-muted-foreground ${ring} ring-card ${SIZE[size]}`}
-          aria-hidden="true"
-        >
+        <span className={`${CIRCLE} text-muted-foreground ring-1 ring-background ${SIZE[size]}`} aria-hidden="true">
           +{extra}
         </span>
       )}
       {personIds.length === 0 && onClick && (
-        <span
-          aria-hidden="true"
-          className={`inline-flex shrink-0 items-center justify-center rounded-full border border-dashed border-muted-foreground text-muted-foreground ${SIZE[size]}`}
-        >
-          <UserPlus className={size === "sm" ? "h-3 w-3" : "h-4 w-4"} />
+        <span aria-hidden="true" className={`inline-flex shrink-0 items-center justify-center rounded-full border border-dashed border-divider text-icon ${SIZE[size]}`}>
+          <UserPlus className="h-3 w-3" />
         </span>
       )}
     </span>
@@ -95,9 +88,7 @@ export default function PersonChips({ personIds, people, size = "md", inherited 
       title={names || "Assigner"}
       aria-label={label ?? (names ? `Assigné à ${names}. Modifier` : "Assigner")}
       aria-haspopup="dialog"
-      className={`inline-flex items-center justify-center rounded-lg px-1 hover:bg-hover ${
-        size === "sm" ? "min-h-7 touch:min-h-11 touch:min-w-11" : "min-h-9 min-w-9 touch:min-h-11 touch:min-w-11"
-      } ${className}`}
+      className={`inline-flex h-7 shrink-0 items-center justify-center rounded px-0.5 hover:bg-hover touch:h-11 ${className}`}
     >
       {inner}
     </button>

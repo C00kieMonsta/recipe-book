@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation, Link } from "react-router-dom";
-import { ChevronLeft, ChevronUp, ChevronDown, GripVertical, Plus, X } from "lucide-react";
+import { Calendar, Users, Building2, Euro, Phone, Circle, Clock, GripVertical, Plus, X, Check } from "lucide-react";
 import type {
   AppEvent,
   AppSettings,
@@ -39,15 +39,14 @@ import {
 } from "@packages/types";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { useTouchScreen } from "@/hooks/use-touch-screen";
 import { dayMonthShortLabel, longDayLabel, dayMonthLabel, weekdayOf, todayIso } from "@/lib/dates";
 import {
   PageHeader,
   Section,
-  SectionToggle,
   Tag,
   StatusTag,
   ListRow,
-  StatusControl,
   MoneyTile,
   FieldLabel,
   ActionMenu,
@@ -55,11 +54,25 @@ import {
   EditableText,
   EditableInlineText,
   EditableInlineNum,
+  EditableStatus,
+  Button,
+  IconButton,
+  Dialog,
+  PropertyList,
+  Property,
+  SelectPill,
+  Menu,
+  MenuRadio,
+  useMenu,
+  PillTag,
+  EmptyState,
+  Callout,
 } from "@/components/ui";
+import { PREP_STATUS_OPTIONS } from "@/components/ui/StatusControl";
 import LedgerEntryForm from "@/components/comptes/LedgerEntryForm";
-import PersonChips, { PersonChip } from "@/components/admin/PersonChips";
+import PersonChips from "@/components/admin/PersonChips";
 import PersonPicker from "@/components/admin/PersonPicker";
-import { useBackLink } from "@/components/admin/AdminLayout";
+import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
 import { PaidPopover } from "@/pages/admin/comptes/Journal";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -89,23 +102,13 @@ const ENTRY_KIND_LABEL: Record<string, string> = {
 const NEXT_STATUS: Record<PrepStatus, PrepStatus> = { todo: "doing", doing: "done", done: "todo" };
 const STATUS_LABEL: Record<PrepStatus, string> = { todo: "À préparer", doing: "En cours", done: "Fait" };
 
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
-  useEffect(() => {
-    const mql = window.matchMedia(query);
-    const onChange = () => setMatches(mql.matches);
-    onChange();
-    mql.addEventListener("change", onChange);
-    return () => mql.removeEventListener("change", onChange);
-  }, [query]);
-  return matches;
-}
-
 function safeFileName(name: string): string {
   return name.replace(/[^a-zA-Z0-9àâéèêëïîôùûüç\s-]/g, "").trim() || "evenement";
 }
 
 type DropTarget = { course: string; lineId: string | null };
+
+const ROW = "group flex min-h-9 items-center gap-1 rounded px-1 hover:bg-hover touch:min-h-11";
 
 export default function EventDetail() {
   const { id } = useParams<{ id: string }>();
@@ -113,8 +116,7 @@ export default function EventDetail() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
-  const isTouch = useMediaQuery("(hover: none)");
-  const isPhone = useMediaQuery("(max-width: 767.98px)");
+  const isTouch = useTouchScreen();
 
   const [event, setEvent] = useState<AppEvent | null>(null);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -145,9 +147,9 @@ export default function EventDetail() {
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const [billingForm, setBillingForm] = useState<"facture" | "acompte" | null>(null);
   const [pickerLineId, setPickerLineId] = useState<string | null>(null);
-  const [courseLineId, setCourseLineId] = useState<string | null>(null);
-  const priceRef = useRef<HTMLSpanElement>(null);
+  const priceRef = useRef<HTMLDivElement>(null);
   const addRef = useRef<HTMLDivElement>(null);
+  const lineRefs = useRef(new Map<string, HTMLDivElement>());
 
   useEffect(() => {
     if (!id) return;
@@ -197,11 +199,11 @@ export default function EventDetail() {
 
   const grouped = useMemo(() => (event ? groupByCourse(event.recipes, courses, recipeById) : []), [event, courses, recipeById]);
   const people: Person[] = useMemo(() => settings?.people ?? [], [settings]);
-  const activePeople = useMemo(() => people.filter((p) => p.active), [people]);
 
   // "‹ Sam 17" in the phone top bar.
   const backLabel = event ? dayMonthShortLabel(event.date).split(" ").slice(0, 2).join(" ") : "";
   useBackLink(event ? { to: `/jour/${event.date}`, label: backLabel } : null);
+  useTopTitle(event?.name ?? "");
 
   // One-shot URL params from the week and À facturer: open a form, focus a field, then drop the param.
   const loaded = Boolean(event);
@@ -215,7 +217,7 @@ export default function EventDetail() {
       setBillingForm(facturer === "acompte" ? "acompte" : "facture");
       setTimeout(() => document.getElementById("facturation")?.scrollIntoView({ block: "start" }), 50);
     }
-    if (focus === "prix") priceRef.current?.querySelector("strong")?.click();
+    if (focus === "prix") priceRef.current?.querySelector<HTMLElement>("[role=button]")?.click();
     if (ajouter === "1") {
       setAddingRecipe(true);
       setTimeout(() => addRef.current?.querySelector("input")?.focus(), 50);
@@ -239,8 +241,10 @@ export default function EventDetail() {
       if (okTitle) toast({ title: okTitle });
     } catch {
       toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" });
+      throw new Error("save failed");
     }
   };
+  const save = (patch: Partial<AppEvent>) => saveField(patch).catch(() => undefined);
 
   // Every line call returns the whole event, which replaces the local copy.
   const runLines = async (call: Promise<AppEvent>) => {
@@ -262,13 +266,13 @@ export default function EventDetail() {
   const client = event.clientId ? clients.find((c) => c.clientId === event.clientId) : undefined;
   const weekUrl = `/semaine/${isoWeekOf(event.date)}`;
   const weekNumber = Number(isoWeekOf(event.date).slice(-2));
-  const prestationLabel = event.prestationType ? prestationTypes.find((t) => t.key === event.prestationType)?.label ?? event.prestationType : undefined;
   const cost = calcEventCost(event, recipeCostById, recipePortionsById);
   const matieres = cost.rawMaterial + cost.extras.matiere;
   const revenue = signedRevenue(event);
   const margin = revenue - cost.total;
   const marginPct = revenue > 0 ? (margin / revenue) * 100 : 0;
   const costSub = event.actualCost != null ? "réel" : event.costSnapshot ? `figé le ${dayMonthLabel(event.costSnapshot.takenAt)}` : "estimé";
+  const isPast = event.date < todayIso();
 
   const linkedEntries = entriesForEvent(event.eventId, entries);
   const billing = eventBillingStatus(event.eventId, entries);
@@ -276,14 +280,9 @@ export default function EventDetail() {
   const lastPaidAt = linkedEntries.map((e) => e.paidAt).filter((d): d is string => !!d).sort().pop();
 
   const snapshot = () => buildCostSnapshot(event, recipeCostById, recipePortionsById) as EventCostSnapshot;
-  const complete = () => saveField({ status: "completed", costSnapshot: snapshot() }, "Événement terminé");
-  const reopen = () => saveField({ status: "upcoming" }, "Événement rouvert");
-  const retakeCost = () => saveField({ costSnapshot: snapshot() }, "Coût repris");
-
-  const toggleEventPerson = (personId: string) => {
-    const current = event.assignedTo ?? [];
-    saveField({ assignedTo: current.includes(personId) ? current.filter((x) => x !== personId) : [...current, personId] });
-  };
+  const complete = () => saveField({ status: "completed", costSnapshot: snapshot() }, "Événement terminé").catch(() => undefined);
+  const reopen = () => saveField({ status: "upcoming" }, "Événement rouvert").catch(() => undefined);
+  const retakeCost = () => saveField({ costSnapshot: snapshot() }, "Coût repris").catch(() => undefined);
 
   // ── Menu lines ────────────────────────────────────────────────────────────
   const orderedPut = (groups: { course: string; lines: EventRecipeLine[] }[], changed?: { lineId: string; course: string }) =>
@@ -343,13 +342,13 @@ export default function EventDetail() {
     await runLines(api.events.lines.remove(id, lineId));
   };
 
-  // ── Extra costs and hours ─────────────────────────────────────────────────
+  // ── Extra costs ───────────────────────────────────────────────────────────
   const updateExtraCost = (idx: number, patch: Partial<EventExtraCost>) => {
     const extraCosts = event.extraCosts.map((c, i) => (i === idx ? { ...c, ...patch } : c));
-    saveField({ extraCosts });
+    save({ extraCosts });
   };
-  const addExtraCost = () => saveField({ extraCosts: [...event.extraCosts, { label: "Nouveau coût", amount: 0, kind: "autre" }] });
-  const removeExtraCost = (idx: number) => saveField({ extraCosts: event.extraCosts.filter((_, i) => i !== idx) });
+  const addExtraCost = () => save({ extraCosts: [...event.extraCosts, { label: "Nouveau coût", amount: 0, kind: "autre" }] });
+  const removeExtraCost = (idx: number) => save({ extraCosts: event.extraCosts.filter((_, i) => i !== idx) });
 
   // ── Overflow actions ──────────────────────────────────────────────────────
   const handleDelete = async () => {
@@ -471,6 +470,8 @@ export default function EventDetail() {
     }
   };
 
+  const prestationLabel = event.prestationType ? prestationTypes.find((t) => t.key === event.prestationType)?.label ?? event.prestationType : undefined;
+
   const exportMenuPdf = () => {
     const doc = new jsPDF();
     const m = 15;
@@ -591,7 +592,11 @@ export default function EventDetail() {
     doc.save(`recettes-${safeFileName(event.name)}.pdf`);
   };
 
+  const terminerLabel = event.status === "upcoming" ? "Terminer l'événement" : "Rouvrir";
+  const terminer = event.status === "upcoming" ? complete : reopen;
+
   const menuItems = [
+    ...(isTouch ? [{ label: terminerLabel, onClick: terminer }, { kind: "separator" as const }] : []),
     { label: "Modifier", onClick: () => navigate(`/events/${id}/edit`) },
     { label: "Reprendre le coût", onClick: retakeCost },
     { label: "Ajuster les portions aux convives", onClick: () => { setAdjustGuests(String(event.guestCount)); setDialog({ kind: "adjust" }); } },
@@ -602,506 +607,464 @@ export default function EventDetail() {
     ...(event.clientId && event.templateId ? [{ label: "Mettre à jour le modèle", onClick: updateTemplate }] : []),
     { label: "Proposition de menu (PDF)", onClick: exportMenuPdf },
     { label: "Exporter les recettes (PDF)", onClick: exportRecipesPdf },
+    { kind: "separator" as const },
     { label: "Supprimer", onClick: () => setDialog({ kind: "delete" }), variant: "danger" as const },
   ];
 
-  const canDrag = !isTouch && !isPhone;
+  const canDrag = !isTouch;
   const prefill = billingForm ? prefillFromEvent(event, client, entries, settings ?? { prestationTypes: undefined }, billingForm) : null;
   const recipeOptions = [...recipes]
     .sort((a, b) => a.name.localeCompare(b.name, "fr"))
     .map((r) => ({ value: r.recipeId, label: r.name, detail: r.type }));
+  const clientOptions = [...clients]
+    .sort((a, b) => a.name.localeCompare(b.name, "fr"))
+    .map((c) => ({ value: c.clientId, label: c.name, detail: c.kind === "particulier" ? "Particulier" : c.kind === "entreprise" ? "Entreprise" : undefined }));
+  const prestationOptions = prestationTypes.map((t) => ({ value: t.key, label: t.label }));
 
-  const renderCourseBlock = (group: { course: string; lines: EventRecipeLine[] }) => {
-    const isDropHere = dropTarget?.course === group.course && dropTarget.lineId === null;
-    const body = (
-      <div
-        className={`rounded-lg transition-colors ${isDropHere ? "bg-selected" : ""}`}
-        onDragOver={canDrag ? (e) => { e.preventDefault(); setDropTarget({ course: group.course, lineId: null }); } : undefined}
-        onDrop={canDrag ? (e) => { e.preventDefault(); handleDrop({ course: group.course, lineId: null }); } : undefined}
-      >
-        {group.lines.map((line, index) => {
-          const recipe = recipeById.get(line.recipeId);
-          const status: PrepStatus = line.prepStatus ?? "todo";
-          const isDropBefore = dropTarget?.course === group.course && dropTarget.lineId === line.lineId;
-          return (
-            <div
-              key={line.lineId}
-              className={`border-b border-border last:border-b-0 ${dragId === line.lineId ? "opacity-40" : ""} ${isDropBefore ? "border-t-2 border-t-primary" : ""}`}
-              onDragOver={canDrag ? (e) => { e.preventDefault(); e.stopPropagation(); setDropTarget({ course: group.course, lineId: line.lineId }); } : undefined}
-              onDrop={canDrag ? (e) => { e.preventDefault(); e.stopPropagation(); handleDrop({ course: group.course, lineId: line.lineId }); } : undefined}
-            >
-              <div className={`flex min-h-14 items-center py-1 ${isPhone ? "gap-0.5" : "flex-wrap gap-1"}`}>
-                {canDrag && (
-                  <span
-                    draggable
-                    onDragStart={() => setDragId(line.lineId)}
-                    onDragEnd={() => { setDragId(null); setDropTarget(null); }}
-                    className="flex min-h-11 min-w-8 cursor-grab items-center justify-center text-muted-foreground active:cursor-grabbing"
-                    aria-label="Glisser pour réordonner"
-                  >
-                    <GripVertical className="h-5 w-5" />
-                  </span>
-                )}
-                {!isPhone && (
-                  <div className="flex shrink-0">
-                    <button type="button" aria-label="Monter" disabled={index === 0} onClick={() => moveLine(group.course, index, -1)} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-hover disabled:opacity-30">
-                      <ChevronUp className="h-5 w-5" />
-                    </button>
-                    <button type="button" aria-label="Descendre" disabled={index === group.lines.length - 1} onClick={() => moveLine(group.course, index, 1)} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-hover disabled:opacity-30">
-                      <ChevronDown className="h-5 w-5" />
-                    </button>
-                  </div>
-                )}
-                <div className={`flex-1 ${isPhone ? "min-w-0 px-0.5" : "min-w-[8rem] px-1"}`}>
-                  <Link to={`/recipes/${line.recipeId}`} title={recipe?.name} className={`text-base font-medium text-foreground hover:underline ${isPhone ? "line-clamp-2" : ""}`}>
-                    {recipe?.name ?? "Recette supprimée"}
-                  </Link>
-                  {line.notes && noteLineId !== line.lineId && <div className="text-sm text-muted-foreground">{line.notes}</div>}
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <span className="whitespace-nowrap text-base tabular-nums">
-                    <EditableInlineNum value={line.portions} min={1} onSave={(v) => patchLine(line.lineId, { portions: Math.max(1, Math.round(v)) })} suffix=" port." />
-                  </span>
-                  <span className={`relative ${isPhone ? "" : "inline-flex"}`}>
-                    {!isPhone && (
-                      <PersonChips
-                        personIds={assigneesOf(line, event)}
-                        people={people}
-                        size="md"
-                        inherited={!line.assignedTo?.length}
-                        onClick={() => setPickerLineId(line.lineId)}
-                      />
-                    )}
-                    {pickerLineId === line.lineId && (
-                      <PersonPicker
-                        value={line.assignedTo ?? []}
-                        options={people}
-                        onChange={(next) => patchLine(line.lineId, { assignedTo: next })}
-                        allowInherit
-                        align="right"
-                        title={recipe?.name ?? "Assigner"}
-                        onClose={() => setPickerLineId(null)}
-                      />
-                    )}
-                  </span>
-                  <StatusDot value={status} isTouch={isTouch} onChange={(v) => patchLine(line.lineId, { prepStatus: v })} />
-                  {!isPhone && (
-                    <select
-                      aria-label="Catégorie"
-                      value={group.course}
-                      onChange={(e) => changeCourse(line, e.target.value)}
-                      className="input-field input-compact min-h-11 w-auto"
-                    >
-                      {courses.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  )}
-                  <ActionMenu items={[
-                    ...(isPhone && index > 0 ? [{ label: "Monter", onClick: () => moveLine(group.course, index, -1) }] : []),
-                    ...(isPhone && index < group.lines.length - 1 ? [{ label: "Descendre", onClick: () => moveLine(group.course, index, 1) }] : []),
-                    ...(isPhone
-                      ? [
-                          { label: "Catégorie ›", onClick: () => setCourseLineId(line.lineId) },
-                          { label: "Assigner ›", onClick: () => setPickerLineId(line.lineId) },
-                        ]
-                      : []),
-                    { label: "Note", onClick: () => setNoteLineId(line.lineId) },
-                    { label: "Cuisiner", onClick: () => navigate(`/recipes/${line.recipeId}/cook?portions=${line.portions}&event=${id}&line=${line.lineId}`) },
-                    { label: "Retirer", onClick: () => setDialog({ kind: "removeLine", lineId: line.lineId }), variant: "danger" },
-                  ]} />
-                </div>
-              </div>
-              {courseLineId === line.lineId && (
-                <div className="px-1 pb-3">
-                  <select
-                    autoFocus
-                    aria-label="Catégorie"
-                    value={group.course}
-                    onChange={(e) => { setCourseLineId(null); changeCourse(line, e.target.value); }}
-                    onBlur={() => setCourseLineId(null)}
-                    className="input-field min-h-11"
-                  >
-                    {courses.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-              )}
-              {noteLineId === line.lineId && (
-                <LineNote
-                  value={line.notes ?? ""}
-                  onSave={(v) => { setNoteLineId(null); if (v !== (line.notes ?? "")) patchLine(line.lineId, { notes: v }); }}
-                  onCancel={() => setNoteLineId(null)}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-    if (isPhone) {
-      return (
-        <SectionToggle key={group.course} title={`${group.course} · ${group.lines.length}`} defaultOpen storageKey={`event-course-${group.course}`} className="mt-6">
-          {body}
-        </SectionToggle>
-      );
-    }
+  const focusPortions = (lineId: string) => {
+    lineRefs.current.get(lineId)?.querySelector<HTMLElement>("[data-portions] [role=button]")?.click();
+  };
+
+  const renderLine = (group: { course: string; lines: EventRecipeLine[] }, line: EventRecipeLine, index: number) => {
+    const recipe = recipeById.get(line.recipeId);
+    const status: PrepStatus = line.prepStatus ?? "todo";
+    const isDropBefore = dropTarget?.course === group.course && dropTarget.lineId === line.lineId;
     return (
-      <div key={group.course} className="mt-6">
-        <h3 className="text-lead font-semibold">{group.course}</h3>
-        <div className="mt-2">{body}</div>
+      <div
+        key={line.lineId}
+        ref={(el) => { if (el) lineRefs.current.set(line.lineId, el); else lineRefs.current.delete(line.lineId); }}
+        className={`${dragId === line.lineId ? "opacity-40" : ""} ${isDropBefore ? "shadow-[0_-2px_0_0_var(--primary)]" : ""}`}
+        onDragOver={canDrag ? (e) => { e.preventDefault(); e.stopPropagation(); setDropTarget({ course: group.course, lineId: line.lineId }); } : undefined}
+        onDrop={canDrag ? (e) => { e.preventDefault(); e.stopPropagation(); handleDrop({ course: group.course, lineId: line.lineId }); } : undefined}
+      >
+        <div className={ROW}>
+          {canDrag && (
+            <span
+              draggable
+              onDragStart={() => setDragId(line.lineId)}
+              onDragEnd={() => { setDragId(null); setDropTarget(null); }}
+              className="reveal flex h-7 w-5 shrink-0 cursor-grab items-center justify-center text-icon active:cursor-grabbing"
+              aria-label="Glisser pour réordonner"
+            >
+              <GripVertical className="h-4 w-4" />
+            </span>
+          )}
+          <LineStatus value={status} isTouch={isTouch} onChange={(v) => patchLine(line.lineId, { prepStatus: v })} />
+          <div className="min-w-0 flex-1 px-1">
+            <Link to={`/recipes/${line.recipeId}`} title={recipe?.name} className="text-sm text-foreground hover:underline touch:text-base">
+              {recipe?.name ?? "Recette supprimée"}
+            </Link>
+            {line.notes && noteLineId !== line.lineId && <span className="text-sm text-muted-foreground"> · {line.notes}</span>}
+          </div>
+          <span className="shrink-0 whitespace-nowrap text-sm tabular-nums touch:text-base" data-portions>
+            <EditableInlineNum value={line.portions} min={1} onSave={(v) => patchLine(line.lineId, { portions: Math.max(1, Math.round(v)) })} suffix=" port." />
+          </span>
+          <span className="relative inline-flex shrink-0">
+            <PersonChips
+              personIds={assigneesOf(line, event)}
+              people={people}
+              size="sm"
+              inherited={!line.assignedTo?.length}
+              onClick={() => setPickerLineId(line.lineId)}
+            />
+            {pickerLineId === line.lineId && (
+              <PersonPicker
+                value={line.assignedTo ?? []}
+                options={people}
+                onChange={(next) => patchLine(line.lineId, { assignedTo: next })}
+                allowInherit
+                align="right"
+                title={recipe?.name ?? "Assigner"}
+                onClose={() => setPickerLineId(null)}
+              />
+            )}
+          </span>
+          <ActionMenu
+            className="reveal"
+            title={recipe?.name}
+            items={[
+              { kind: "section", label: "Changer de catégorie" },
+              ...courses.map((c) => ({ kind: "check" as const, label: c, checked: c === group.course, onClick: () => { if (c !== group.course) changeCourse(line, c); } })),
+              { kind: "separator" },
+              { label: "Monter", onClick: () => moveLine(group.course, index, -1), disabled: index === 0 },
+              { label: "Descendre", onClick: () => moveLine(group.course, index, 1), disabled: index === group.lines.length - 1 },
+              { label: "Modifier les portions", onClick: () => focusPortions(line.lineId) },
+              { label: "Attribuer", onClick: () => setPickerLineId(line.lineId) },
+              { label: "Note", onClick: () => setNoteLineId(line.lineId) },
+              { kind: "separator" },
+              { label: "Ouvrir la fiche", onClick: () => navigate(`/events/${id}/lines/${line.lineId}`) },
+              { label: "Cuisiner", onClick: () => navigate(`/recipes/${line.recipeId}/cook?portions=${line.portions}&event=${id}&line=${line.lineId}`) },
+              { kind: "separator" },
+              { label: "Retirer", onClick: () => setDialog({ kind: "removeLine", lineId: line.lineId }), variant: "danger" },
+            ]}
+          />
+        </div>
+        {noteLineId === line.lineId && (
+          <LineNote
+            value={line.notes ?? ""}
+            onSave={(v) => { setNoteLineId(null); if (v !== (line.notes ?? "")) patchLine(line.lineId, { notes: v }); }}
+            onCancel={() => setNoteLineId(null)}
+          />
+        )}
       </div>
     );
   };
 
+  const renderCourseBlock = (group: { course: string; lines: EventRecipeLine[] }) => {
+    const isDropHere = dropTarget?.course === group.course && dropTarget.lineId === null;
+    return (
+      <div key={group.course} className="mt-4">
+        <h3 className="text-base font-semibold">{group.course}</h3>
+        <div
+          className={`mt-1 rounded transition-colors ${isDropHere ? "bg-selected" : ""}`}
+          onDragOver={canDrag ? (e) => { e.preventDefault(); setDropTarget({ course: group.course, lineId: null }); } : undefined}
+          onDrop={canDrag ? (e) => { e.preventDefault(); handleDrop({ course: group.course, lineId: null }); } : undefined}
+        >
+          {group.lines.map((line, index) => renderLine(group, line, index))}
+        </div>
+      </div>
+    );
+  };
+
+  const terminerButton = (className: string, size: "md" | "lg") => (
+    <Button variant={event.status === "upcoming" && isPast ? "primary" : "default"} size={size} onClick={terminer} className={className}>
+      {terminerLabel}
+    </Button>
+  );
+
   return (
     <div className="mx-auto max-w-doc">
-      <div className="no-print mb-3 hidden flex-wrap items-center gap-x-2 gap-y-1 md:flex">
-        <Link to={`/jour/${event.date}`} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-muted pl-2 pr-3 text-base font-medium text-foreground hover:border-primary">
-          <ChevronLeft className="h-5 w-5" /> {backLabel}
-        </Link>
-        <Link to={weekUrl} className="inline-flex min-h-11 items-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Semaine {weekNumber}</Link>
-      </div>
       <PageHeader
         breadcrumb={[
           { label: `Semaine ${weekNumber}`, to: weekUrl },
           { label: dayMonthShortLabel(event.date), to: `/jour/${event.date}` },
           { label: event.name },
         ]}
-        title={
-          <EditableText
-            value={event.name}
-            onSave={(v) => { if (v.trim()) saveField({ name: v.trim() }); }}
-            className="text-h1 md:text-h1-lg"
-            inputClassName="w-full border-b-2 border-primary bg-transparent text-h1 outline-none md:text-h1-lg"
-          />
+        iconKey="evenement"
+        title={event.name}
+        onTitleChange={(v) => save({ name: v })}
+        actions={
+          <>
+            {terminerButton("hidden md:inline-flex", "md")}
+            <ActionMenu items={menuItems} title={event.name} />
+          </>
         }
-        meta={
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span>{longDayLabel(event.date)}</span>
-              <span aria-hidden="true">·</span>
-              <EditableInlineNum value={event.guestCount} onSave={(v) => saveField({ guestCount: Math.max(1, Math.round(v)) })} min={1} suffix=" convives" />
-              {prestationLabel && (<><span aria-hidden="true">·</span><span>{prestationLabel}</span></>)}
-              {client && (<><span aria-hidden="true">·</span><Link to={`/clients/${client.clientId}`} className="text-foreground hover:underline">{client.name}</Link></>)}
-            </div>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-              <span ref={priceRef}>Prix par convive HTVA : <EditableInlineNum value={event.sellingPricePerGuest} onSave={(v) => saveField({ sellingPricePerGuest: round2(Math.max(0, v)) })} min={0} suffix=" €" /></span>
-              <span aria-hidden="true">·</span>
-              <span>Contact : <EditableInlineText value={event.contactName || ""} onSave={(v) => saveField({ contactName: v })} placeholder="Nom" /></span>
-              <InlineContact value={event.contactPhone || ""} onSave={(v) => saveField({ contactPhone: v })} placeholder="Ajouter un téléphone" inputMode="tel" />
-              <InlineContact value={event.contactEmail || ""} onSave={(v) => saveField({ contactEmail: v })} placeholder="Ajouter un e-mail" inputMode="email" />
-            </div>
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <StatusTag status={event.status} />
+        properties={
+          <PropertyList>
+            <Property icon={Calendar} label="Date" kind="date" value={event.date} onSave={(v) => saveField({ date: v })} />
+            <Property icon={Users} label="Convives" kind="number" value={event.guestCount} min={1} decimals={0} onSave={(v) => saveField({ guestCount: Math.max(1, Math.round(v)) })} />
+            <Property icon="🍽" label="Prestation" kind="select" value={event.prestationType ?? ""} options={prestationOptions} colour="gray" placeholder="Choisir une prestation" onSave={(v) => saveField({ prestationType: v })} />
+            <Property icon={Building2} label="Client" kind="relation" value={event.clientId ?? ""} options={clientOptions} href={(cid) => `/clients/${cid}`} allowEmpty placeholder="Aucun client" onSave={(v) => saveField({ clientId: v || undefined })} />
+            <Property icon={Euro} label="Prix / convive" kind="custom">
+              <div ref={priceRef} className="flex items-center gap-1">
+                <EditableInlineNum value={event.sellingPricePerGuest} onSave={(v) => save({ sellingPricePerGuest: round2(Math.max(0, v)) })} min={0} suffix=" €" />
+                <span className="text-sm text-muted-foreground">HTVA</span>
+              </div>
+            </Property>
+            <Property icon={Phone} label="Contact" kind="custom">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0 md:flex-nowrap">
+                <InlineContact value={event.contactName || ""} onSave={(v) => save({ contactName: v })} placeholder="Ajouter un nom" inputMode="text" />
+                <Dot className="hidden md:inline" />
+                <InlineContact value={event.contactPhone || ""} onSave={(v) => save({ contactPhone: v })} placeholder="Ajouter un téléphone" inputMode="tel" />
+                <Dot className="hidden md:inline" />
+                <InlineContact value={event.contactEmail || ""} onSave={(v) => save({ contactEmail: v })} placeholder="Ajouter un e-mail" inputMode="email" />
+              </div>
+            </Property>
+            <Property icon={Circle} label="Statut" kind="custom">
+              <EditableStatus value={event.status} onSave={(v) => { if (v === "completed") complete(); else reopen(); }} />
               {billing === "facture" && <StatusTag status="invoiced" label={invoiceNumber ? `Facturé n° ${invoiceNumber}` : "Facturé"} />}
               {billing === "acompte_recu" && <StatusTag status="deposit" />}
               {billing === "paye" && <StatusTag status="paid" label={lastPaidAt ? `Payé le ${dayMonthLabel(lastPaidAt)}` : "Payé"} />}
-              {!event.prestationType && <Tag variant="danger">Type de prestation manquant</Tag>}
-            </div>
-            {activePeople.length > 0 && (
-              <div className="no-print flex flex-wrap items-center gap-2 pt-1">
-                <span className="text-sm">Équipe</span>
-                {activePeople.map((p) => {
-                  const on = (event.assignedTo ?? []).includes(p.personId);
-                  return (
-                    <button
-                      key={p.personId}
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() => toggleEventPerson(p.personId)}
-                      className={`inline-flex min-h-11 items-center gap-2 rounded-sm border pl-1.5 pr-3 text-base ${on ? "border-primary bg-selected font-medium text-foreground" : "border-border text-foreground hover:bg-hover"}`}
-                    >
-                      <PersonChip personId={p.personId} people={people} size="md" />
-                      {p.name}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        }
-        actions={
-          <>
-            {event.status === "upcoming" ? (
-              <button type="button" onClick={complete} className="min-h-11 rounded-lg bg-primary px-4 text-base font-medium text-primary-foreground hover:opacity-90">
-                Terminer l'événement
-              </button>
-            ) : (
-              <button type="button" onClick={reopen} className="min-h-11 rounded-lg border border-border px-4 text-base font-medium hover:bg-hover">
-                Rouvrir
-              </button>
-            )}
-            <ActionMenu items={menuItems} />
-          </>
+              {!event.prestationType && <Tag colour="red">Type de prestation manquant</Tag>}
+            </Property>
+            <Property icon="👩‍🍳" label="Équipe" kind="people" value={event.assignedTo ?? []} people={people} placeholder="Ajouter une personne" onSave={(ids) => saveField({ assignedTo: ids })} />
+            <Property icon={Clock} label="Heures passées" kind="number" value={event.hoursSpent ?? 0} min={0} suffix="h" onSave={(v) => saveField({ hoursSpent: round2(Math.max(0, v)) })} />
+          </PropertyList>
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <MoneyTile label="Coût matières" value={fmtEur(matieres)} sub={costSub} />
-        <MoneyTile label="Revenu HTVA" value={fmtEur(revenue)} />
-        <MoneyTile label="Marge" value={fmtEur(margin)} sub={margin < 0 ? "négative" : undefined} />
-        <MoneyTile label="Marge %" value={`${marginPct.toFixed(1)} %`} />
+      {terminerButton("mb-4 w-full md:hidden", "lg")}
+
+      <div className="grid grid-cols-2 overflow-hidden rounded-lg bg-surface md:grid-cols-4 md:divide-x md:divide-border">
+        <MoneyTile flat label="Coût matières" value={fmtEur(matieres)} sub={costSub} />
+        <MoneyTile flat label="Revenu HTVA" value={fmtEur(revenue)} />
+        <MoneyTile flat label="Marge" value={fmtEur(margin)} sub={margin < 0 ? "négative" : undefined} />
+        <MoneyTile flat label="Marge %" value={`${marginPct.toFixed(1).replace(".", ",")} %`} />
       </div>
 
       <div id="menu" className="scroll-mt-20">
-      <Section
-        title="Menu"
-        meta={`${event.recipes.length} ligne${event.recipes.length > 1 ? "s" : ""}`}
-        action={
-          <button type="button" onClick={() => setAddingRecipe((o) => !o)} className="flex min-h-11 items-center gap-1 rounded-lg border border-border px-3 text-base font-medium hover:bg-hover">
-            <Plus className="h-4 w-4" /> Recette
-          </button>
-        }
-      >
-        {addingRecipe && (
-          <div className="mb-4" ref={addRef}>
-            <FieldLabel>Ajouter une recette</FieldLabel>
-            <SearchSelect options={recipeOptions} value="" onChange={addRecipe} placeholder="Rechercher une recette…" />
+        <Section
+          title="Menu"
+          meta={`${event.recipes.length} ligne${event.recipes.length > 1 ? "s" : ""}`}
+          action={
+            <Button variant="ghost" size="sm" icon={<Plus />} onClick={() => { setAddingRecipe((o) => !o); setTimeout(() => addRef.current?.querySelector("input")?.focus(), 50); }}>
+              Recette
+            </Button>
+          }
+        >
+          {grouped.length === 0 && !addingRecipe && <EmptyState message="Aucune recette au menu." action={{ label: "+ Ajouter une recette", onClick: () => setAddingRecipe(true) }} />}
+          <div className="-mt-4">{grouped.map(renderCourseBlock)}</div>
+          <div className="mt-2" ref={addRef}>
+            {addingRecipe ? (
+              <SearchSelect options={recipeOptions} value="" onChange={addRecipe} placeholder="Rechercher une recette…" autoFocus />
+            ) : (
+              <Button variant="subtle" size="sm" icon={<Plus />} onClick={() => setAddingRecipe(true)} className="-mx-1">
+                Ajouter une recette
+              </Button>
+            )}
           </div>
-        )}
-        {grouped.length === 0 && !addingRecipe && <p className="text-base text-muted-foreground">Aucune recette au menu.</p>}
-        {grouped.map(renderCourseBlock)}
-      </Section>
+        </Section>
       </div>
 
       <Section
         title="Coûts supplémentaires"
         meta={event.extraCosts.length > 0 ? fmtEur(sumExtraCosts(event.extraCosts)) : undefined}
-        action={
-          <button type="button" onClick={addExtraCost} className="flex min-h-11 items-center gap-1 rounded-lg border border-border px-3 text-base font-medium hover:bg-hover">
-            <Plus className="h-4 w-4" /> Ajouter
-          </button>
-        }
+        action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addExtraCost}>Ajouter</Button>}
       >
         {event.extraCosts.length === 0 ? (
-          <p className="text-base text-muted-foreground">Aucun coût supplémentaire.</p>
+          <p className="text-sm text-muted-foreground">Aucun coût supplémentaire.</p>
         ) : (
           <div>
             {event.extraCosts.map((ec, i) => (
-              <div key={i} className="flex min-h-14 flex-wrap items-center gap-2 border-b border-border py-1 last:border-b-0">
-                <span className="min-w-[8rem] flex-1 text-base">
+              <div key={i} className={`${ROW} gap-2`}>
+                <span className="min-w-0 flex-1 text-sm touch:text-base">
                   <EditableInlineText value={ec.label} onSave={(v) => { if (v.trim()) updateExtraCost(i, { label: v.trim() }); }} />
                 </span>
-                <select
-                  aria-label="Nature du coût"
+                <SelectPill
                   value={ec.kind ?? "autre"}
-                  onChange={(e) => updateExtraCost(i, { kind: e.target.value as ExtraCostKind })}
-                  className="input-field input-compact min-h-11 w-auto"
-                >
-                  {EXTRA_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
-                </select>
-                <span className="text-base tabular-nums">
+                  options={EXTRA_KINDS}
+                  colour="gray"
+                  align="right"
+                  aria-label="Nature du coût"
+                  title="Nature du coût"
+                  onChange={(v) => updateExtraCost(i, { kind: v as ExtraCostKind })}
+                />
+                <span className="w-20 text-right text-sm tabular-nums touch:text-base">
                   <EditableInlineNum value={ec.amount} min={0} onSave={(v) => updateExtraCost(i, { amount: round2(Math.max(0, v)) })} suffix=" €" />
                 </span>
-                <button type="button" aria-label="Retirer ce coût" onClick={() => removeExtraCost(i)} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-hover hover:text-destructive">
-                  <X className="h-5 w-5" />
-                </button>
+                <IconButton size="sm" aria-label="Retirer ce coût" onClick={() => removeExtraCost(i)} icon={<X />} className="reveal" />
               </div>
             ))}
           </div>
         )}
       </Section>
 
-      <Section title="Heures">
-        <p className="text-base">
-          Heures passées : <EditableInlineNum value={event.hoursSpent ?? 0} min={0} onSave={(v) => saveField({ hoursSpent: round2(Math.max(0, v)) })} suffix=" h" />
-        </p>
-      </Section>
-
       <div id="facturation" className="scroll-mt-20">
-      <Section
-        title="Facturation"
-        action={!ledgerNotConfigured && !billingForm ? (
-          <>
-            <button type="button" onClick={() => setBillingForm("acompte")} className="min-h-11 rounded-lg border border-border px-3 text-base font-medium hover:bg-hover">
-              Enregistrer un acompte
-            </button>
-            <button type="button" onClick={() => setBillingForm("facture")} className="min-h-11 rounded-lg bg-primary px-3 text-base font-medium text-primary-foreground hover:opacity-90">
-              Créer la facture
-            </button>
-          </>
-        ) : undefined}
-      >
-        {ledgerNotConfigured ? (
-          <p className="text-base text-muted-foreground">{NOT_CONFIGURED}</p>
-        ) : (
-          <>
-            {linkedEntries.length === 0 ? (
-              <p className="text-base text-muted-foreground">Aucune écriture liée à cet événement.</p>
-            ) : (
-              <div>
-                {linkedEntries.map((e) => (
-                  <ListRow
-                    key={e.entryId}
-                    title={`${ENTRY_KIND_LABEL[e.kind] ?? e.kind}${e.number ? ` n° ${e.number}` : ""} · ${e.label}`}
-                    subtitle={`${dayMonthLabel(e.date)} · ${fmtEur(e.htva)} HTVA`}
-                    trailing={
-                      e.paid ? (
-                        <StatusTag status="paid" label={e.paidAt ? `Payé le ${dayMonthLabel(e.paidAt)}` : "Payé"} />
-                      ) : (
-                        <PaidPopover entry={e} onSaved={loadEntries} align="right" trigger={<Tag variant="warning">À encaisser ▾</Tag>} />
-                      )
-                    }
-                    className="border-b border-border last:border-b-0"
-                  />
-                ))}
-              </div>
-            )}
-            {billingForm && prefill && (
-              <div className="mt-6">
-                <h3 className="text-lead font-semibold">{billingForm === "facture" ? "Créer la facture" : "Enregistrer un acompte"}</h3>
-                <dl className="mt-3 grid grid-cols-2 gap-3">
-                  <div>
-                    <dt className="text-sm text-muted-foreground">Revenu prévu</dt>
-                    <dd className="text-base font-medium tabular-nums">{fmtEur(prefill.revenuePrevu)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-sm text-muted-foreground">Acomptes déjà reçus</dt>
-                    <dd className="text-base font-medium tabular-nums">{fmtEur(prefill.acomptesRecus)}</dd>
-                  </div>
-                </dl>
-                <div className="mt-4">
-                  <LedgerEntryForm
-                    key={billingForm}
-                    initial={prefill.entry}
-                    kind={billingForm}
-                    eventOptions={[{ eventId: event.eventId, label: `${event.name} · ${dayMonthShortLabel(event.date)}` }]}
-                    clientOptions={clients.map((c) => ({ clientId: c.clientId, name: c.name }))}
-                    onSaved={() => {
-                      setBillingForm(null);
-                      loadEntries();
-                      toast({ title: billingForm === "facture" ? "Facture enregistrée" : "Acompte enregistré" });
-                    }}
-                    onCancel={() => setBillingForm(null)}
-                  />
+        <Section
+          title="Facturation"
+          action={!ledgerNotConfigured && !billingForm ? (
+            <>
+              <Button variant="default" size="md" onClick={() => setBillingForm("acompte")}>Enregistrer un acompte</Button>
+              <Button variant="primary" size="md" icon={<Plus />} onClick={() => setBillingForm("facture")}>Créer la facture</Button>
+            </>
+          ) : undefined}
+        >
+          {ledgerNotConfigured ? (
+            <Callout emoji="💶" tone="warning">{NOT_CONFIGURED}</Callout>
+          ) : (
+            <>
+              {linkedEntries.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Aucune écriture liée à cet événement.</p>
+              ) : (
+                <div className="divide-y divide-border">
+                  {linkedEntries.map((e) => (
+                    <ListRow
+                      key={e.entryId}
+                      title={`${ENTRY_KIND_LABEL[e.kind] ?? e.kind}${e.number ? ` n° ${e.number}` : ""} · ${e.label} · ${dayMonthLabel(e.date)} · ${fmtEur(e.htva)} HTVA`}
+                      trailing={
+                        e.paid ? (
+                          <StatusTag status="paid" label={e.paidAt ? `Payé le ${dayMonthLabel(e.paidAt)}` : "Payé"} />
+                        ) : (
+                          <PaidPopover entry={e} onSaved={loadEntries} align="right" trigger={<Tag colour="yellow">À encaisser ▾</Tag>} />
+                        )
+                      }
+                    />
+                  ))}
                 </div>
-              </div>
-            )}
-          </>
-        )}
-      </Section>
+              )}
+              {billingForm && prefill && (
+                <div className="mt-6">
+                  <h3 className="text-base font-semibold">{billingForm === "facture" ? "Créer la facture" : "Enregistrer un acompte"}</h3>
+                  <dl className="mt-3 grid grid-cols-2 gap-3">
+                    <div>
+                      <dt className="text-sm text-muted-foreground">Revenu prévu</dt>
+                      <dd className="text-base font-medium tabular-nums">{fmtEur(prefill.revenuePrevu)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm text-muted-foreground">Acomptes déjà reçus</dt>
+                      <dd className="text-base font-medium tabular-nums">{fmtEur(prefill.acomptesRecus)}</dd>
+                    </div>
+                  </dl>
+                  <div className="mt-4">
+                    <LedgerEntryForm
+                      key={billingForm}
+                      initial={prefill.entry}
+                      kind={billingForm}
+                      eventOptions={[{ eventId: event.eventId, label: `${event.name} · ${dayMonthShortLabel(event.date)}` }]}
+                      clientOptions={clients.map((c) => ({ clientId: c.clientId, name: c.name }))}
+                      onSaved={() => {
+                        setBillingForm(null);
+                        loadEntries();
+                        toast({ title: billingForm === "facture" ? "Facture enregistrée" : "Acompte enregistré" });
+                      }}
+                      onCancel={() => setBillingForm(null)}
+                    />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </Section>
       </div>
 
       <Section title="Notes">
         <EditableText
           value={event.notes || ""}
-          onSave={(v) => saveField({ notes: v })}
-          className="min-h-[2.5rem] whitespace-pre-wrap text-base leading-relaxed text-foreground"
-          inputClassName="input-field min-h-[120px]"
-          placeholder="Ajouter des notes visibles pour toute l'équipe…"
+          onSave={(v) => save({ notes: v })}
+          className="min-h-8 whitespace-pre-wrap text-base leading-relaxed text-foreground"
+          placeholder="Ajouter une note…"
           multiline
         />
       </Section>
 
-      {dialog?.kind === "delete" && (
-        <Dialog title="Confirmer la suppression" onClose={() => setDialog(null)}>
-          <p className="text-base text-muted-foreground">Cette action est irréversible.</p>
-          <DialogActions onCancel={() => setDialog(null)} onConfirm={handleDelete} confirmLabel="Supprimer" danger busy={busy} />
-        </Dialog>
-      )}
+      <Dialog
+        open={dialog?.kind === "delete"}
+        onClose={() => setDialog(null)}
+        title="Confirmer la suppression"
+        size="sm"
+        footer={<DialogActions onCancel={() => setDialog(null)} onConfirm={handleDelete} confirmLabel="Supprimer" danger busy={busy} />}
+      >
+        <p className="text-muted-foreground">Cette action est irréversible.</p>
+      </Dialog>
 
-      {dialog?.kind === "removeLine" && (
-        <Dialog title="Retirer cette recette du menu ?" onClose={() => setDialog(null)}>
-          <p className="text-base text-muted-foreground">{recipeById.get(event.recipes.find((l) => l.lineId === dialog.lineId)?.recipeId ?? "")?.name ?? "Cette ligne"} sera retirée de l'événement.</p>
-          <DialogActions onCancel={() => setDialog(null)} onConfirm={() => removeLine(dialog.lineId)} confirmLabel="Retirer" danger />
-        </Dialog>
-      )}
+      <Dialog
+        open={dialog?.kind === "removeLine"}
+        onClose={() => setDialog(null)}
+        title="Retirer cette recette du menu ?"
+        size="sm"
+        footer={<DialogActions onCancel={() => setDialog(null)} onConfirm={() => { if (dialog?.kind === "removeLine") removeLine(dialog.lineId); }} confirmLabel="Retirer" danger />}
+      >
+        <p className="text-muted-foreground">
+          {dialog?.kind === "removeLine" ? recipeById.get(event.recipes.find((l) => l.lineId === dialog.lineId)?.recipeId ?? "")?.name ?? "Cette ligne" : ""} sera retirée de l'événement.
+        </p>
+      </Dialog>
 
-      {dialog?.kind === "adjust" && (
-        <Dialog title="Ajuster les portions aux convives" onClose={() => setDialog(null)}>
-          <p className="text-base text-muted-foreground">Chaque ligne sera rescalée par le rapport nouveau / ancien nombre de convives ({event.guestCount} aujourd'hui).</p>
-          <div className="mt-4 text-left">
-            <FieldLabel htmlFor="adjust-guests">Nouveau nombre de convives</FieldLabel>
-            <input id="adjust-guests" type="number" min={1} inputMode="numeric" value={adjustGuests} onChange={(e) => setAdjustGuests(e.target.value)} className="input-field" />
-          </div>
-          <DialogActions onCancel={() => setDialog(null)} onConfirm={adjustPortions} confirmLabel="Ajuster" busy={busy} />
-        </Dialog>
-      )}
+      <Dialog
+        open={dialog?.kind === "adjust"}
+        onClose={() => setDialog(null)}
+        title="Ajuster les portions aux convives"
+        size="sm"
+        footer={<DialogActions onCancel={() => setDialog(null)} onConfirm={adjustPortions} confirmLabel="Ajuster" busy={busy} />}
+      >
+        <p className="text-muted-foreground">Chaque ligne sera rescalée par le rapport nouveau / ancien nombre de convives ({event.guestCount} aujourd'hui).</p>
+        <div className="mt-4">
+          <FieldLabel htmlFor="adjust-guests">Nouveau nombre de convives</FieldLabel>
+          <input id="adjust-guests" type="number" min={1} inputMode="numeric" value={adjustGuests} onChange={(e) => setAdjustGuests(e.target.value)} className="input-field" />
+        </div>
+      </Dialog>
 
-      {dialog?.kind === "duplicate" && (
-        <Dialog title="Dupliquer l'événement" onClose={() => setDialog(null)}>
-          <div className="text-left">
-            <FieldLabel htmlFor="duplicate-date">Date du nouvel événement</FieldLabel>
-            <input id="duplicate-date" type="date" value={duplicateDate} onChange={(e) => setDuplicateDate(e.target.value)} className="input-field" />
-          </div>
-          <DialogActions onCancel={() => setDialog(null)} onConfirm={duplicate} confirmLabel="Dupliquer" busy={busy} />
-        </Dialog>
-      )}
+      <Dialog
+        open={dialog?.kind === "duplicate"}
+        onClose={() => setDialog(null)}
+        title="Dupliquer l'événement"
+        size="sm"
+        footer={<DialogActions onCancel={() => setDialog(null)} onConfirm={duplicate} confirmLabel="Dupliquer" busy={busy} />}
+      >
+        <FieldLabel htmlFor="duplicate-date">Date du nouvel événement</FieldLabel>
+        <input id="duplicate-date" type="date" value={duplicateDate} onChange={(e) => setDuplicateDate(e.target.value)} className="input-field" />
+      </Dialog>
 
-      {dialog?.kind === "template" && (
-        <Dialog title="Enregistrer comme modèle" onClose={() => setDialog(null)}>
-          <p className="text-base text-muted-foreground">Le menu, les convives, le prix et les coûts de cet événement deviennent le modèle de {client?.name ?? "ce client"} pour le jour choisi.</p>
-          <div className="mt-4 text-left">
-            <FieldLabel htmlFor="template-weekday">Jour de la semaine</FieldLabel>
-            <select id="template-weekday" value={templateWeekday} onChange={(e) => setTemplateWeekday(Number(e.target.value))} className="input-field">
-              {WEEKDAYS.map((w, i) => <option key={w} value={i + 1}>{w}</option>)}
-            </select>
-          </div>
-          <DialogActions onCancel={() => setDialog(null)} onConfirm={saveAsTemplate} confirmLabel="Enregistrer" busy={busy} />
-        </Dialog>
-      )}
+      <Dialog
+        open={dialog?.kind === "template"}
+        onClose={() => setDialog(null)}
+        title="Enregistrer comme modèle"
+        size="sm"
+        footer={<DialogActions onCancel={() => setDialog(null)} onConfirm={saveAsTemplate} confirmLabel="Enregistrer" busy={busy} />}
+      >
+        <p className="text-muted-foreground">Le menu, les convives, le prix et les coûts de cet événement deviennent le modèle de {client?.name ?? "ce client"} pour le jour choisi.</p>
+        <div className="mt-4">
+          <FieldLabel htmlFor="template-weekday">Jour de la semaine</FieldLabel>
+          <select id="template-weekday" value={templateWeekday} onChange={(e) => setTemplateWeekday(Number(e.target.value))} className="input-field">
+            {WEEKDAYS.map((w, i) => <option key={w} value={i + 1}>{w}</option>)}
+          </select>
+        </div>
+      </Dialog>
     </div>
   );
 }
 
-function StatusDot({ value, isTouch, onChange }: { value: PrepStatus; isTouch: boolean; onChange: (v: PrepStatus) => void }) {
-  const [open, setOpen] = useState(false);
-  const dot = value === "done" ? "bg-success" : value === "doing" ? "bg-warning" : "border-2 border-muted-foreground";
+function Dot({ className = "" }: { className?: string }) {
+  return <span aria-hidden="true" className={`text-icon ${className}`}>·</span>;
+}
+
+// 16px status dot in a 28px hit area; a tap cycles on touch, a click opens the three options on pointer screens.
+function LineStatus({ value, isTouch, onChange }: { value: PrepStatus; isTouch: boolean; onChange: (v: PrepStatus) => void }) {
+  const menu = useMenu();
+  const dot = value === "done"
+    ? "bg-status-done text-white"
+    : value === "doing"
+      ? "bg-status-doing"
+      : "border-[1.5px] border-[rgba(55,53,47,0.45)]";
   return (
-    <div
-      className="relative"
-      onMouseEnter={isTouch ? undefined : () => setOpen(true)}
-      onMouseLeave={isTouch ? undefined : () => setOpen(false)}
-    >
+    <div ref={menu.ref} className="relative inline-flex shrink-0">
       <button
         type="button"
         aria-label={`Statut : ${STATUS_LABEL[value]}`}
-        onClick={() => { if (isTouch) onChange(NEXT_STATUS[value]); else setOpen((o) => !o); }}
-        className="flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-hover"
+        aria-haspopup={isTouch ? undefined : "menu"}
+        onClick={() => { if (isTouch) onChange(NEXT_STATUS[value]); else menu.toggle(); }}
+        className="flex h-7 w-7 items-center justify-center rounded hover:bg-hover touch:h-11 touch:w-11"
       >
-        <span className={`block h-3.5 w-3.5 rounded-full ${dot}`} />
+        <span className={`flex h-4 w-4 items-center justify-center rounded-full ${dot}`}>
+          {value === "done" && <Check className="h-3 w-3" strokeWidth={3} />}
+        </span>
       </button>
-      {open && !isTouch && (
-        <div className="absolute right-0 top-full z-20 w-80 rounded-lg border border-border bg-card p-1 shadow-lg">
-          <StatusControl value={value} onChange={(v) => { onChange(v); setOpen(false); }} />
-        </div>
-      )}
+      <Menu {...menu.props} aria-label="Statut de préparation">
+        {PREP_STATUS_OPTIONS.map((o) => (
+          <MenuRadio key={o.value} checked={o.value === value} onSelect={() => { if (o.value !== value) onChange(o.value); }}>
+            <PillTag option={o} />
+          </MenuRadio>
+        ))}
+      </Menu>
     </div>
   );
 }
 
-// Contact value with an upright muted placeholder; the placeholder is not printed.
-function InlineContact({ value, onSave, placeholder, inputMode }: { value: string; onSave: (v: string) => void; placeholder: string; inputMode: "tel" | "email" }) {
+// Inline contact value with a placeholder; the placeholder is not printed.
+function InlineContact({ value, onSave, placeholder, inputMode }: { value: string; onSave: (v: string) => void; placeholder: string; inputMode: "tel" | "email" | "text" }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
-  useEffect(() => { setText(value); }, [value]);
+  useEffect(() => { if (!editing) setText(value); }, [value, editing]);
   const commit = () => { setEditing(false); if (text !== value) onSave(text.trim()); };
   if (editing) {
     return (
       <input
         autoFocus
         inputMode={inputMode}
-        className="w-40 border-b border-primary bg-transparent text-sm font-semibold text-foreground outline-none"
+        className="-mx-1 w-44 rounded bg-input-bg px-1 text-base shadow-ring outline-none"
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={commit}
-        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setText(value); setEditing(false); } }}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } if (e.key === "Escape") { e.preventDefault(); setText(value); setEditing(false); } }}
       />
     );
   }
   return (
-    <button
-      type="button"
+    <span
+      role="button"
+      tabIndex={0}
       onClick={() => setEditing(true)}
-      className={`rounded px-0.5 text-left hover:bg-hover ${value ? "font-semibold text-foreground" : "no-print text-muted-foreground"}`}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
+      className={`prop-value inline-flex min-h-6 items-center text-base ${value ? "" : "no-print text-placeholder"}`}
     >
       {value || placeholder}
-    </button>
+    </span>
   );
 }
 
 function LineNote({ value, onSave, onCancel }: { value: string; onSave: (v: string) => void; onCancel: () => void }) {
   const [text, setText] = useState(value);
   return (
-    <div className="pb-3 pl-1 pr-1">
+    <div className="px-1 pb-2 pl-8">
       <textarea
         autoFocus
         rows={2}
@@ -1116,29 +1079,11 @@ function LineNote({ value, onSave, onCancel }: { value: string; onSave: (v: stri
   );
 }
 
-function Dialog({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay" onClick={onClose}>
-      <div role="dialog" aria-modal="true" className="w-[92%] max-w-sm rounded-2xl bg-card p-6 text-center shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-3 text-h3">{title}</h3>
-        {children}
-      </div>
-    </div>
-  );
-}
-
 function DialogActions({ onCancel, onConfirm, confirmLabel, danger, busy }: { onCancel: () => void; onConfirm: () => void; confirmLabel: string; danger?: boolean; busy?: boolean }) {
   return (
-    <div className="mt-6 flex justify-center gap-3">
-      <button type="button" onClick={onCancel} className="min-h-11 rounded-lg border border-border px-4 text-base font-medium hover:bg-hover">Annuler</button>
-      <button
-        type="button"
-        onClick={onConfirm}
-        disabled={busy}
-        className={`min-h-11 rounded-lg px-4 text-base font-medium disabled:opacity-60 ${danger ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground"}`}
-      >
-        {confirmLabel}
-      </button>
-    </div>
+    <>
+      <Button variant="default" size="md" onClick={onCancel}>Annuler</Button>
+      <Button variant={danger ? "danger" : "primary"} size="md" onClick={onConfirm} disabled={busy}>{confirmLabel}</Button>
+    </>
   );
 }

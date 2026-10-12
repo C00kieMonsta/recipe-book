@@ -1,18 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { Person } from "@packages/types";
-import { X } from "lucide-react";
+import { useTouchScreen } from "@/hooks/use-touch-screen";
+import Button from "@/components/ui/Button";
+import Checkbox from "@/components/ui/Checkbox";
+import Sheet from "@/components/ui/Sheet";
 import PersonChips, { PersonChip, type PersonChipSize } from "./PersonChips";
-
-function useTouchScreen(): boolean {
-  const [touch, setTouch] = useState(() => typeof window !== "undefined" && window.matchMedia("(hover: none)").matches);
-  useEffect(() => {
-    const mql = window.matchMedia("(hover: none)");
-    const onChange = () => setTouch(mql.matches);
-    mql.addEventListener("change", onChange);
-    return () => mql.removeEventListener("change", onChange);
-  }, []);
-  return touch;
-}
 
 export interface PersonPickerProps {
   value: string[];
@@ -29,7 +21,10 @@ export interface PersonPickerProps {
   className?: string;
 }
 
-// Checkbox rows of 44px; renders a popover on pointer screens and a bottom sheet on touch screens.
+const ROW = "flex h-8 w-auto items-center gap-2 rounded px-2 text-sm hover:bg-hover";
+const ROW_TOUCH = "flex h-11 w-auto items-center gap-2 rounded-none px-4 text-base";
+
+// Checkbox rows; a Menu panel on pointer screens and a bottom Sheet on touch screens.
 // Mount it inside a `relative` element next to the chips; the parent owns the open state.
 export default function PersonPicker({ value, options, onChange, allowInherit = false, onNext, onClose, title = "Assigner", align = "left", className = "" }: PersonPickerProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -38,6 +33,7 @@ export default function PersonPicker({ value, options, onChange, allowInherit = 
   const unknown = value.filter((id) => !options.some((p) => p.personId === id));
 
   useEffect(() => {
+    if (touch) return;
     const down = (e: MouseEvent | TouchEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
@@ -50,42 +46,41 @@ export default function PersonPicker({ value, options, onChange, allowInherit = 
       document.removeEventListener("touchstart", down);
       document.removeEventListener("keydown", key);
     };
-  }, [onClose]);
+  }, [onClose, touch]);
 
   const toggle = (id: string) => onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
+  const row = touch ? ROW_TOUCH : ROW;
 
   const rows = (
     <div role="group" aria-label={title}>
-      {active.map((p) => {
-        const checked = value.includes(p.personId);
-        return (
-          <label key={p.personId} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-3 text-base hover:bg-hover">
-            <input type="checkbox" className="h-5 w-5 rounded border-input accent-primary" checked={checked} onChange={() => toggle(p.personId)} />
-            <PersonChip personId={p.personId} people={options} size="md" />
-            <span className="truncate">{p.name}</span>
-          </label>
-        );
-      })}
-      {unknown.map((id) => (
-        <label key={id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-3 text-base text-muted-foreground hover:bg-hover">
-          <input type="checkbox" className="h-5 w-5 rounded border-input accent-primary" checked onChange={() => toggle(id)} />
-          <PersonChip personId={id} people={options} size="md" />
-          <span className="truncate">{id}</span>
-        </label>
+      {active.map((p) => (
+        <Checkbox
+          key={p.personId}
+          checked={value.includes(p.personId)}
+          onChange={() => toggle(p.personId)}
+          className={row}
+          label={<span className="inline-flex items-center gap-2"><PersonChip personId={p.personId} people={options} size="sm" /><span className="truncate">{p.name}</span></span>}
+        />
       ))}
-      <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-3 text-base text-muted-foreground hover:bg-hover">
-        <input type="checkbox" className="h-5 w-5 rounded border-input accent-primary" checked={value.length === 0} onChange={() => onChange([])} />
-        <span>{allowInherit ? "Comme l'événement" : "Personne"}</span>
-      </label>
+      {unknown.map((id) => (
+        <Checkbox
+          key={id}
+          checked
+          onChange={() => toggle(id)}
+          className={`${row} text-muted-foreground`}
+          label={<span className="inline-flex items-center gap-2"><PersonChip personId={id} people={options} size="sm" /><span className="truncate">{id}</span></span>}
+        />
+      ))}
+      <Checkbox
+        shape="circle"
+        checked={value.length === 0}
+        onChange={() => onChange([])}
+        className={`${row} text-muted-foreground`}
+        label={allowInherit ? "Comme l'événement" : "Personne"}
+      />
       {onNext && (
-        <div className="px-2 pt-1">
-          <button
-            type="button"
-            onClick={onNext}
-            className="w-full min-h-11 rounded-lg bg-primary text-base font-semibold text-primary-foreground hover:opacity-90"
-          >
-            Suivant
-          </button>
+        <div className={touch ? "px-4 pt-2" : "px-1 pt-1"}>
+          <Button variant="primary" size="sm" className="w-full" onClick={onNext}>Suivant</Button>
         </div>
       )}
     </div>
@@ -93,17 +88,9 @@ export default function PersonPicker({ value, options, onChange, allowInherit = 
 
   if (touch) {
     return (
-      <div className="fixed inset-0 z-50 flex items-end bg-overlay" role="presentation">
-        <div ref={ref} role="dialog" aria-label={title} className={`w-full rounded-t-2xl bg-card p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-xl animate-fade-up ${className}`}>
-          <div className="flex items-center justify-between px-3 py-1">
-            <span className="text-base font-semibold">{title}</span>
-            <button type="button" onClick={onClose} aria-label="Fermer" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-hover">
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-          {rows}
-        </div>
-      </div>
+      <Sheet open onClose={onClose} title={title} aria-label={title} className={className}>
+        <div className="pb-2">{rows}</div>
+      </Sheet>
     );
   }
 
@@ -112,7 +99,7 @@ export default function PersonPicker({ value, options, onChange, allowInherit = 
       ref={ref}
       role="dialog"
       aria-label={title}
-      className={`card-elevated absolute top-full z-50 mt-1 min-w-[240px] p-1 shadow-lg animate-fade-up ${align === "right" ? "right-0" : "left-0"} ${className}`}
+      className={`absolute top-full z-50 mt-1 min-w-[220px] rounded-lg bg-background p-1 shadow-menu animate-pop ${align === "right" ? "right-0" : "left-0"} ${className}`}
     >
       {rows}
     </div>

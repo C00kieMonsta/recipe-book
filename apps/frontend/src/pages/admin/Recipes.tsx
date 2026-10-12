@@ -1,18 +1,31 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Plus, Upload, Check, Download, AlertTriangle, FileSpreadsheet, BookOpen } from "lucide-react";
-import ActionMenu from "@/components/ui/ActionMenu";
-import PageHeader from "@/components/ui/PageHeader";
-import Tag from "@/components/ui/Tag";
-import ListRow from "@/components/ui/ListRow";
-import FieldLabel from "@/components/ui/FieldLabel";
+import { Search, Plus, Upload, Check, Download, AlertTriangle, FileSpreadsheet, Copy, ArrowUpDown, X, LayoutGrid, List } from "lucide-react";
 import type { Recipe, Ingredient } from "@packages/types";
 import { DEFAULT_RECIPE_CATEGORIES } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { useLocalStorage } from "@/hooks/use-local-storage";
 import { calcRecipeCost, fmt } from "@/lib/recipe-helpers";
 import { usePagination } from "@/hooks/use-pagination";
-import Pagination from "@/components/ui/Pagination";
+import { PAGE_ICONS } from "@/lib/page-icons";
+import {
+  PageHeader,
+  Tag,
+  Pagination,
+  ActionMenu,
+  FieldLabel,
+  Button,
+  IconButton,
+  Toolbar,
+  ViewTabs,
+  Table,
+  EmptyState,
+  Dialog,
+  Menu,
+  MenuRadio,
+  useMenu,
+} from "@/components/ui";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 
@@ -27,10 +40,6 @@ const CSV_HEADERS = [
 const CSV_SAMPLE = [
   ["Pâtes pesto", "Buffet", "1", "150", "4", "3", "12", "6", "10.00", "10.00", "Fusilis au pesto, edamame, parmesan"],
 ];
-
-const BTN = "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-base font-medium transition-colors";
-const BTN_PRIMARY = `${BTN} bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50`;
-const BTN_OUTLINE = `${BTN} border bg-card hover:bg-hover disabled:opacity-50`;
 
 function downloadTemplate() {
   const rows = [CSV_HEADERS, ...CSV_SAMPLE];
@@ -70,14 +79,21 @@ interface PreviewRow {
   raw: unknown;
 }
 
+type View = "list" | "gallery";
+type SortKey = "name" | "type" | "portions";
+
 export default function Recipes() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [filterType, setFilterType] = useState("all");
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [view, setView] = useLocalStorage<View>("recipe-book:recipes-view", "gallery");
   const [showImport, setShowImport] = useState(false);
+  const sortMenu = useMenu();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -91,16 +107,25 @@ export default function Recipes() {
 
   const types = useMemo(() => {
     const fromRecipes = [...new Set(recipes.map((r) => r.type))];
-    const all = [...new Set([...categories, ...fromRecipes])];
-    return all;
+    return [...new Set([...categories, ...fromRecipes])];
   }, [recipes, categories]);
+
+  const duplicateNames = useMemo(() => {
+    const seen = new Map<string, number>();
+    for (const r of recipes) seen.set(r.nameLower, (seen.get(r.nameLower) ?? 0) + 1);
+    return new Set([...seen.entries()].filter(([, n]) => n > 1).map(([k]) => k));
+  }, [recipes]);
 
   const shown = useMemo(() => {
     let arr = recipes;
     if (search) arr = arr.filter((r) => r.name.toLowerCase().includes(search.toLowerCase()));
     if (filterType !== "all") arr = arr.filter((r) => r.type === filterType);
-    return arr;
-  }, [recipes, search, filterType]);
+    return [...arr].sort((a, b) => {
+      if (sortKey === "type") return a.type.localeCompare(b.type, "fr") || a.name.localeCompare(b.name, "fr");
+      if (sortKey === "portions") return b.portions - a.portions;
+      return a.name.localeCompare(b.name, "fr");
+    });
+  }, [recipes, search, filterType, sortKey]);
 
   const { page, totalPages, paginatedItems, setPage, next, prev, total } = usePagination(shown, 24);
 
@@ -133,136 +158,197 @@ export default function Recipes() {
 
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
 
+  const searchField = (
+    <input
+      className="input-field input-compact w-[220px] touch:w-full"
+      placeholder="Rechercher une recette…"
+      value={search}
+      autoFocus
+      onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+      onKeyDown={(e) => { if (e.key === "Escape") { setSearch(""); setSearchOpen(false); } }}
+      onBlur={() => { if (!search) setSearchOpen(false); }}
+    />
+  );
+
+  const more = (
+    <ActionMenu
+      title="Recettes"
+      items={[
+        { label: "Exporter Excel", icon: <FileSpreadsheet />, onClick: exportExcel },
+        { label: "Importer", icon: <Upload />, onClick: () => setShowImport(true) },
+        { label: "Doublons d'ingrédients", icon: <Copy />, onClick: () => navigate("/ingredients/doublons") },
+      ]}
+    />
+  );
+
+  const nameCell = (r: Recipe) => (
+    <span className="inline-flex min-w-0 items-center gap-2 font-medium">
+      <Thumb recipe={r} className="md:hidden" />
+      <span aria-hidden="true" className="hidden text-base leading-none md:inline">{PAGE_ICONS.recette}</span>
+      {duplicateNames.has(r.nameLower) && <AlertTriangle className="h-4 w-4 shrink-0 text-tag-orange-fg" aria-label="Doublon probable" />}
+      <span className="truncate">{r.name}</span>
+    </span>
+  );
+
+  const empty = <EmptyState message="Aucune recette." action={{ label: "+ Nouvelle recette", onClick: createRecipe }} />;
+
   return (
     <div className="mx-auto max-w-wide">
       <PageHeader
+        iconKey="recettes"
         title="Recettes"
-        meta={`${recipes.length} recettes`}
+        meta={`${recipes.length} recette${recipes.length > 1 ? "s" : ""}`}
         actions={
-          <>
-            <button onClick={createRecipe} className={BTN_PRIMARY}>
-              <Plus className="h-5 w-5" /> <span className="hidden sm:inline">Nouvelle recette</span><span className="sm:hidden">Nouvelle</span>
-            </button>
-            <ActionMenu items={[
-              { label: "Exporter Excel", icon: <FileSpreadsheet className="h-4 w-4" />, onClick: exportExcel },
-              { label: "Importer", icon: <Upload className="h-4 w-4" />, onClick: () => setShowImport(true) },
-            ]} />
-          </>
+          <Button variant="primary" size="lg" icon={<Plus />} onClick={createRecipe}>
+            <span className="hidden sm:inline">Nouvelle recette</span><span className="sm:hidden">Nouvelle</span>
+          </Button>
         }
       />
 
-      <div className="sticky top-[68px] z-30 -mx-4 bg-background px-4 py-2 md:static md:mx-0 md:px-0 md:py-0">
-        <label className="flex min-h-11 w-full items-center gap-2 rounded-lg border bg-card px-3 md:max-w-sm">
-          <Search className="h-5 w-5 text-muted-foreground" />
-          <input className="min-w-0 flex-1 bg-transparent text-base outline-none" placeholder="Rechercher une recette…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
-        </label>
-      </div>
+      <Toolbar
+        left={
+          <>
+            <ViewTabs
+              items={[{ key: "all", label: "Toutes" }, ...types.map((t) => ({ key: t, label: t }))]}
+              value={filterType}
+              onChange={(k) => { setFilterType(k); setPage(1); }}
+              aria-label="Format"
+            />
+            <span aria-hidden="true" className="hidden px-1 text-icon md:inline">·</span>
+            <ViewTabs
+              className="hidden md:flex"
+              items={[{ key: "list", label: <><List className="h-4 w-4" /> Liste</> }, { key: "gallery", label: <><LayoutGrid className="h-4 w-4" /> Galerie</> }]}
+              value={view}
+              onChange={(k) => setView(k as View)}
+              aria-label="Affichage"
+            />
+          </>
+        }
+        right={
+          <>
+            {searchOpen ? searchField : <IconButton size="sm" aria-label="Rechercher" icon={<Search />} onClick={() => setSearchOpen(true)} />}
+            <div ref={sortMenu.ref} className="relative inline-flex">
+              <Button variant="subtle" size="sm" icon={<ArrowUpDown />} onClick={sortMenu.toggle} aria-haspopup="menu" aria-expanded={sortMenu.open}>Trier</Button>
+              <Menu {...sortMenu.props} align="right" title="Trier">
+                <MenuRadio checked={sortKey === "name"} onSelect={() => setSortKey("name")}>Nom</MenuRadio>
+                <MenuRadio checked={sortKey === "type"} onSelect={() => setSortKey("type")}>Format</MenuRadio>
+                <MenuRadio checked={sortKey === "portions"} onSelect={() => setSortKey("portions")}>Portions</MenuRadio>
+              </Menu>
+            </div>
+            {more}
+          </>
+        }
+        rightTouch={
+          <>
+            <IconButton size="sm" aria-label="Rechercher" icon={<Search />} onClick={() => setSearchOpen((o) => !o)} className={searchOpen ? "bg-active" : ""} />
+            {more}
+          </>
+        }
+      />
+      {searchOpen && (
+        <div className="hidden items-center gap-1 py-2 touch:flex">
+          {searchField}
+          <IconButton size="sm" aria-label="Fermer la recherche" icon={<X />} onClick={() => { setSearch(""); setSearchOpen(false); }} />
+        </div>
+      )}
 
-      <div className="mt-3 flex gap-2 overflow-x-auto pb-1 md:flex-wrap">
-        <ChipBtn active={filterType === "all"} onClick={() => { setFilterType("all"); setPage(1); }}>Tous</ChipBtn>
-        {types.map((t) => <ChipBtn key={t} active={filterType === t} onClick={() => { setFilterType(t); setPage(1); }}>{t}</ChipBtn>)}
-      </div>
-
-      <div className="mt-4 divide-y divide-border md:hidden">
-        {paginatedItems.map((r) => (
-          <ListRow
-            key={r.recipeId}
-            to={`/recipes/${r.recipeId}`}
-            leading={<Thumb recipe={r} />}
-            title={r.name}
-            subtitle={`${r.type} · ${r.portions} portions · ${r.ingredients.length} ingrédients`}
-          />
-        ))}
-        {paginatedItems.length === 0 && <p className="py-8 text-center text-base text-muted-foreground">Aucune recette.</p>}
-      </div>
-
-      <div className="mt-6 hidden gap-5 md:grid md:grid-cols-2 lg:grid-cols-3">
-        {paginatedItems.map((r) => {
-          const cost = calcRecipeCost(r, ingredients);
-          return (
-            <button key={r.recipeId} onClick={() => navigate(`/recipes/${r.recipeId}`)} className="card-elevated overflow-hidden text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:shadow-ring">
-              {r.photos?.[0]?.url ? (
-                <img src={r.photos[0].url} alt={r.name} className="aspect-[3/2] w-full object-cover" />
-              ) : (
-                <div className="flex h-40 items-center justify-center bg-muted">
-                  <BookOpen className="h-12 w-12 text-primary" />
-                </div>
-              )}
-              <div className="p-4">
-                <Tag variant="primary">{r.type}</Tag>
-                <h3 className="mt-2 text-h2">{r.name}</h3>
-                {r.description && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{r.description}</p>}
-                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-3 text-sm text-muted-foreground">
-                  <span>{r.portions} portions</span>
-                  <span>{r.ingredients.length} ingrédients</span>
-                  <span>Coût HT {fmt(cost)}</span>
-                  {r.pricing?.chosenPrice?.surPlace > 0 && <span>PV TVAC {fmt(r.pricing.chosenPrice.surPlace)}</span>}
-                </div>
+      {view === "gallery" ? (
+        <>
+          <div className="mt-2 md:hidden">
+            <Table<Recipe>
+              rows={paginatedItems}
+              rowKey={(r) => r.recipeId}
+              rowHref={(r) => `/recipes/${r.recipeId}`}
+              empty={empty}
+              columns={[
+                { key: "name", label: "Nom", render: nameCell },
+                { key: "type", label: "Format", render: (r) => r.type },
+                { key: "portions", label: "Portions", render: (r) => `${r.portions} portions` },
+              ]}
+            />
+          </div>
+          <div className="mt-4 hidden md:block">
+            {paginatedItems.length === 0 ? empty : (
+              <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-4">
+                {paginatedItems.map((r) => (
+                  <button
+                    key={r.recipeId}
+                    type="button"
+                    onClick={() => navigate(`/recipes/${r.recipeId}`)}
+                    className="overflow-hidden rounded-lg text-left shadow-card transition-colors hover:bg-hover focus-visible:outline-none focus-visible:shadow-ring"
+                  >
+                    {r.photos?.[0]?.url ? (
+                      <img src={r.photos[0].url} alt="" className="aspect-[3/2] w-full object-cover" />
+                    ) : (
+                      <div className="flex aspect-[3/2] w-full items-center justify-center bg-muted text-[32px] leading-none" aria-hidden="true">{PAGE_ICONS.recette}</div>
+                    )}
+                    <div className="p-2.5">
+                      <div className="flex items-center gap-1.5 text-sm font-medium">
+                        {duplicateNames.has(r.nameLower) && <AlertTriangle className="h-4 w-4 shrink-0 text-tag-orange-fg" aria-label="Doublon probable" />}
+                        <span className="truncate">{r.name}</span>
+                      </div>
+                      <div className="mt-1 flex items-center gap-1.5 text-caption text-muted-foreground">
+                        <Tag colour="gray">{r.type}</Tag>
+                        <span>{r.portions} p · {fmt(calcRecipeCost(r, ingredients) / (r.portions || 1))} / port.</span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
               </div>
-            </button>
-          );
-        })}
-        {paginatedItems.length === 0 && <p className="col-span-full py-8 text-center text-base text-muted-foreground">Aucune recette.</p>}
-      </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="mt-2">
+          <Table<Recipe>
+            rows={paginatedItems}
+            rowKey={(r) => r.recipeId}
+            rowHref={(r) => `/recipes/${r.recipeId}`}
+            empty={empty}
+            columns={[
+              { key: "name", label: "Nom", render: nameCell },
+              { key: "type", label: "Format", width: "130px", render: (r) => <Tag colour="gray">{r.type}</Tag> },
+              { key: "portions", label: "Portions", width: "100px", align: "right", render: (r) => `${r.portions}` },
+              { key: "cost", label: "Coût / port.", width: "120px", align: "right", render: (r) => fmt(calcRecipeCost(r, ingredients) / (r.portions || 1)) },
+              { key: "weight", label: "Poids", width: "90px", align: "right", render: (r) => `${r.portionWeight} g` },
+            ]}
+          />
+        </div>
+      )}
 
       <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} onPrev={prev} onNext={next} />
 
-      {showImport && (
-        <Modal onClose={() => setShowImport(false)}>
-          <RecipeImport
-            existingNames={recipes.map((r) => r.nameLower)}
-            onImport={async (rows) => {
-              try {
-                const result = await api.recipes.import(rows);
-                setShowImport(false);
-                load();
-                let msg = `${result.created} créées, ${result.skipped} ignorées`;
-                if (result.unmatchedIngredients?.length > 0) {
-                  msg += `, ${result.unmatchedIngredients.length} ingrédients non trouvés`;
-                }
-                toast({ title: `Import terminé : ${msg}` });
-              } catch (e) {
-                toast({ title: (e as Error).message || "Erreur lors de l'import", variant: "destructive" });
+      <Dialog open={showImport} onClose={() => setShowImport(false)} title="Importer des recettes" size="lg">
+        <RecipeImport
+          existingNames={recipes.map((r) => r.nameLower)}
+          onImport={async (rows) => {
+            try {
+              const result = await api.recipes.import(rows);
+              setShowImport(false);
+              load();
+              let msg = `${result.created} créées, ${result.skipped} ignorées`;
+              if (result.unmatchedIngredients?.length > 0) {
+                msg += `, ${result.unmatchedIngredients.length} ingrédients non trouvés`;
               }
-            }}
-            onCancel={() => setShowImport(false)}
-          />
-        </Modal>
-      )}
+              toast({ title: `Import terminé : ${msg}` });
+            } catch (e) {
+              toast({ title: (e as Error).message || "Erreur lors de l'import", variant: "destructive" });
+            }
+          }}
+          onCancel={() => setShowImport(false)}
+        />
+      </Dialog>
     </div>
   );
 }
 
-function Thumb({ recipe }: { recipe: Recipe }) {
+function Thumb({ recipe, className = "" }: { recipe: Recipe; className?: string }) {
   const url = recipe.photos?.[0]?.url;
-  if (url) return <img src={url} alt="" className="h-16 w-16 rounded-lg object-cover" />;
+  if (url) return <img src={url} alt="" className={`h-10 w-10 shrink-0 rounded object-cover ${className}`} />;
   return (
-    <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-muted">
-      <BookOpen className="h-7 w-7 text-primary" />
-    </div>
-  );
-}
-
-function ChipBtn({ children, active, onClick }: { children: React.ReactNode; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-sm border px-4 text-sm font-medium transition-colors ${active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:bg-hover"}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-card rounded-2xl p-7 max-w-2xl w-[94%] max-h-[90vh] overflow-auto shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
-        {children}
-      </div>
-    </div>
+    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded bg-muted text-base leading-none ${className}`} aria-hidden="true">
+      {PAGE_ICONS.recette}
+    </span>
   );
 }
 
@@ -346,44 +432,43 @@ function RecipeImport({ existingNames, onImport, onCancel }: {
 
   return (
     <div>
-      <h2 className="text-h2 mb-1">Importer des recettes</h2>
-      <p className="text-base text-muted-foreground mb-5">Formats acceptés : CSV ou JSON. Les recettes existantes sont ignorées.</p>
+      <p className="mb-4 text-sm text-muted-foreground">Formats acceptés : CSV ou JSON. Les recettes existantes sont ignorées.</p>
 
       {step === "upload" && (
         <>
           <FieldLabel htmlFor="recipe-import-file">Fichier</FieldLabel>
-          <div className="flex flex-col items-center justify-center gap-2 p-10 border-2 border-dashed rounded-xl cursor-pointer text-muted-foreground hover:border-primary/40 transition-colors" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }} onClick={() => fileRef.current?.click()}>
+          <div className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg bg-surface p-10 text-muted-foreground hover:bg-hover" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }} onClick={() => fileRef.current?.click()}>
             <Upload className="h-8 w-8" />
             <span className="text-base font-medium">Glisser-déposer votre fichier CSV ou JSON</span>
             <span className="text-sm">ou cliquer pour parcourir</span>
           </div>
           <input id="recipe-import-file" ref={fileRef} type="file" accept=".csv,.tsv,.txt,.json" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
-          <div className="flex justify-between mt-5">
-            <button onClick={downloadTemplate} className={BTN_OUTLINE}><Download className="h-4 w-4" /> Modèle CSV</button>
-            <button onClick={onCancel} className={BTN_OUTLINE}>Annuler</button>
+          <div className="mt-5 flex justify-between">
+            <Button variant="default" size="md" icon={<Download />} onClick={downloadTemplate}>Modèle CSV</Button>
+            <Button variant="default" size="md" onClick={onCancel}>Annuler</Button>
           </div>
         </>
       )}
 
       {step === "preview" && (
         <>
-          <div className="flex justify-between items-center gap-3 px-4 py-2.5 bg-muted rounded-lg mb-4">
-            <span className="truncate font-semibold text-base">{fileName}</span>
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-lg bg-surface px-4 py-2.5">
+            <span className="truncate text-sm font-medium">{fileName}</span>
             <div className="flex shrink-0 gap-2">
-              <Tag variant="success">{newCount} nouvelles</Tag>
-              {dupCount > 0 && <Tag variant="warning">{dupCount} existantes</Tag>}
+              <Tag colour="green">{newCount} nouvelles</Tag>
+              {dupCount > 0 && <Tag colour="yellow">{dupCount} existantes</Tag>}
             </div>
           </div>
           {unmapped.length > 0 && (
-            <div className="flex gap-2 items-start p-3 bg-warning-soft rounded-lg mb-4 text-sm text-warning">
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-              <span>Colonnes non reconnues : {unmapped.map((c) => <code key={c} className="rounded bg-card px-1 mx-0.5">{c}</code>)}</span>
+            <div className="mb-4 flex items-start gap-2 rounded-lg bg-warning-soft p-3 text-sm text-warning">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>Colonnes non reconnues : {unmapped.map((c) => <code key={c} className="mx-0.5 rounded-sm bg-background px-1">{c}</code>)}</span>
             </div>
           )}
-          <div className="max-h-[340px] overflow-y-auto border rounded-xl">
+          <div className="max-h-[340px] overflow-y-auto">
             <table className="table">
-              <thead className="sticky top-0 bg-card z-10">
-                <tr className="border-b-2 border-border text-muted-foreground">
+              <thead className="sticky top-0 bg-background">
+                <tr>
                   <th>Recette</th>
                   <th>Type</th>
                   <th className="text-right">Portions</th>
@@ -394,8 +479,8 @@ function RecipeImport({ existingNames, onImport, onCancel }: {
               </thead>
               <tbody>
                 {preview.map((r, i) => (
-                  <tr key={i} className={`border-b border-border/30 ${r.isDup ? "opacity-50" : ""}`}>
-                    <td className="font-semibold">{r.name}</td>
+                  <tr key={i} className={r.isDup ? "opacity-50" : ""}>
+                    <td className="font-medium">{r.name}</td>
                     <td className="text-muted-foreground">{r.type}</td>
                     <td className="text-right">{r.portions}</td>
                     <td className="text-right">{r.portionWeight} g</td>
@@ -406,14 +491,13 @@ function RecipeImport({ existingNames, onImport, onCancel }: {
               </tbody>
             </table>
           </div>
-          <div className="flex justify-between flex-wrap gap-2 mt-5">
-            <button onClick={() => setStep("upload")} disabled={importing} className={BTN_OUTLINE}>Changer de fichier</button>
+          <div className="mt-5 flex flex-wrap justify-between gap-2">
+            <Button variant="default" size="md" onClick={() => setStep("upload")} disabled={importing}>Changer de fichier</Button>
             <div className="flex gap-2">
-              <button onClick={onCancel} disabled={importing} className={BTN_OUTLINE}>Annuler</button>
-              <button onClick={async () => { setImporting(true); await onImport(apiPayload); setImporting(false); }} disabled={newCount === 0 || importing} className={BTN_PRIMARY}>
-                <Check className="h-4 w-4" />
+              <Button variant="default" size="md" onClick={onCancel} disabled={importing}>Annuler</Button>
+              <Button variant="primary" size="md" icon={<Check />} onClick={async () => { setImporting(true); await onImport(apiPayload); setImporting(false); }} disabled={newCount === 0 || importing}>
                 {importing ? "Import en cours…" : `Importer ${newCount} recette${newCount > 1 ? "s" : ""}`}
-              </button>
+              </Button>
             </div>
           </div>
         </>

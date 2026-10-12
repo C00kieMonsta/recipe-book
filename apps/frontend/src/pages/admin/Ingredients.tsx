@@ -1,30 +1,57 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Link } from "react-router-dom";
-import { Search, Plus, Upload, ArrowUpDown, Check, FileSpreadsheet, ChevronRight, Copy } from "lucide-react";
-import type { Ingredient } from "@packages/types";
+import { useNavigate } from "react-router-dom";
+import { Search, Plus, Upload, Check, FileSpreadsheet, Copy, ArrowUpDown, X } from "lucide-react";
+import type { Ingredient, Recipe } from "@packages/types";
 import { DEFAULT_SUPPLIERS } from "@packages/types";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { fmt, supplierColor } from "@/lib/recipe-helpers";
+import { fmt } from "@/lib/recipe-helpers";
 import { usePagination } from "@/hooks/use-pagination";
-import { PageHeader, Tag, ListRow, ActionMenu, Pagination, IngredientFormModal, SupplierTag } from "@/components/ui";
+import {
+  PageHeader,
+  Tag,
+  ActionMenu,
+  Pagination,
+  IngredientFormModal,
+  SupplierTag,
+  Button,
+  IconButton,
+  Toolbar,
+  ViewTabs,
+  FilterButton,
+  FilterGroup,
+  FilterChip,
+  Table,
+  EmptyState,
+  Dialog,
+  Callout,
+  Menu,
+  MenuRadio,
+  useMenu,
+} from "@/components/ui";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 
-type SortKey = "name" | "price" | "supplier";
+type SortKey = "name" | "price";
+type View = "all" | "supplier";
 
 export default function Ingredients() {
+  const navigate = useNavigate();
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [supplierNames, setSupplierNames] = useState<string[]>(DEFAULT_SUPPLIERS.map((s) => s.name));
   const [loading, setLoading] = useState(true);
   const [duplicateCount, setDuplicateCount] = useState(0);
   const [search, setSearch] = useState("");
-  const [filterSupplier, setFilterSupplier] = useState("all");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [view, setView] = useState<View>("all");
+  const [filterSupplier, setFilterSupplier] = useState("");
+  const [noPrice, setNoPrice] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortKey>("name");
-  const [sortDir, setSortDir] = useState<1 | -1>(1);
   const [editing, setEditing] = useState<Partial<Ingredient> | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const sortMenu = useMenu();
   const { toast } = useToast();
 
   const load = async () => {
@@ -36,31 +63,32 @@ export default function Ingredients() {
     catch { toast({ title: "Erreur de chargement", variant: "destructive" }); }
     finally { setLoading(false); }
     api.ingredients.duplicates().then((r) => setDuplicateCount(r.groups.length)).catch(() => setDuplicateCount(0));
+    api.recipes.list().then(setRecipes).catch(() => setRecipes([]));
   };
 
   useEffect(() => { load(); }, []);
 
-  const suppliers = useMemo(() => [...new Set(ingredients.map((i) => i.supplier).filter(Boolean))], [ingredients]);
+  const suppliers = useMemo(() => [...new Set(ingredients.map((i) => i.supplier).filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr")), [ingredients]);
+  const recipeCount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of recipes) for (const id of new Set(r.ingredients.map((l) => l.ingredientId))) m.set(id, (m.get(id) ?? 0) + 1);
+    return m;
+  }, [recipes]);
 
   const sorted = useMemo(() => {
     let arr = [...ingredients];
     if (search) arr = arr.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()));
-    if (filterSupplier !== "all") arr = arr.filter((i) => i.supplier === filterSupplier);
+    if (filterSupplier) arr = arr.filter((i) => i.supplier === filterSupplier);
+    if (noPrice.includes("1")) arr = arr.filter((i) => !i.price);
     arr.sort((a, b) => {
-      if (sortBy === "name") return a.name.localeCompare(b.name) * sortDir;
-      if (sortBy === "price") return (a.price - b.price) * sortDir;
-      if (sortBy === "supplier") return (a.supplier || "").localeCompare(b.supplier || "") * sortDir;
-      return 0;
+      if (sortBy === "price") return a.price - b.price;
+      return a.name.localeCompare(b.name);
     });
+    if (view === "supplier") arr.sort((a, b) => (a.supplier || "zzz").localeCompare(b.supplier || "zzz", "fr"));
     return arr;
-  }, [ingredients, search, sortBy, sortDir, filterSupplier]);
+  }, [ingredients, search, sortBy, filterSupplier, noPrice, view]);
 
   const { page, totalPages, paginatedItems, setPage, next, prev, total } = usePagination(sorted, 25);
-
-  const toggleSort = (col: SortKey) => {
-    if (sortBy === col) setSortDir((d) => (d === 1 ? -1 : 1));
-    else { setSortBy(col); setSortDir(1); }
-  };
 
   const saveIngredient = async (data: Partial<Ingredient>) => {
     try {
@@ -95,92 +123,124 @@ export default function Ingredients() {
   };
 
   const newIngredient = () => setEditing({ name: "", price: 0, unit: "€/kg", supplier: supplierNames[0] || "", comment: "" });
-  const updatedLabel = (ing: Ingredient) => (ing.updatedAt ? new Date(ing.updatedAt).toLocaleDateString("fr-BE") : "");
 
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
 
+  const filterCount = (filterSupplier ? 1 : 0) + noPrice.length;
+  const clearFilters = () => { setFilterSupplier(""); setNoPrice([]); setPage(1); };
+
+  const searchField = (
+    <input
+      className="input-field input-compact w-[220px] touch:w-full"
+      placeholder="Rechercher un ingrédient…"
+      value={search}
+      autoFocus
+      onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+      onKeyDown={(e) => { if (e.key === "Escape") { setSearch(""); setSearchOpen(false); } }}
+      onBlur={() => { if (!search) setSearchOpen(false); }}
+    />
+  );
+
+  const filters = (
+    <FilterButton count={filterCount} onClear={clearFilters}>
+      <FilterGroup
+        label="Fournisseur"
+        name="supplier"
+        kind="radio"
+        value={filterSupplier}
+        onChange={(v) => { setFilterSupplier(v); setPage(1); }}
+        options={[{ value: "", label: "Tous les fournisseurs" }, ...suppliers.map((s) => ({ value: s, label: s }))]}
+        renderOption={(o) => (o.value ? <SupplierTag name={o.value} /> : o.label)}
+      />
+      <FilterGroup name="noprice" kind="check" value={noPrice} onChange={(v) => { setNoPrice(v); setPage(1); }} options={[{ value: "1", label: "Sans prix" }]} />
+    </FilterButton>
+  );
+
+  const more = (
+    <ActionMenu
+      title="Ingrédients"
+      items={[
+        { label: duplicateCount ? `Doublons (${duplicateCount})` : "Doublons", icon: <Copy />, onClick: () => navigate("/ingredients/doublons") },
+        { label: "Importer CSV", icon: <Upload />, onClick: () => setShowImport(true) },
+        { label: "Exporter Excel", icon: <FileSpreadsheet />, onClick: exportExcel },
+      ]}
+    />
+  );
+
   return (
-    <div className="max-w-wide mx-auto">
+    <div className="mx-auto max-w-wide">
       <PageHeader
+        iconKey="ingredients"
         title="Ingrédients"
-        meta={`${ingredients.length} ingrédients référencés`}
+        meta={`${ingredients.length} ingrédient${ingredients.length > 1 ? "s" : ""}`}
         actions={
-          <>
-            <button onClick={newIngredient} className="inline-flex items-center gap-1.5 min-h-11 px-4 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm hover:opacity-90 transition-opacity">
-              <Plus className="h-4 w-4" /> Nouvel ingrédient
-            </button>
-            <ActionMenu items={[
-              { label: "Exporter Excel", icon: <FileSpreadsheet className="h-4 w-4" />, onClick: exportExcel },
-              { label: "Importer CSV", icon: <Upload className="h-4 w-4" />, onClick: () => setShowImport(true) },
-            ]} />
-          </>
+          <Button variant="primary" size="lg" icon={<Plus />} onClick={newIngredient}>
+            <span className="hidden sm:inline">Nouvel ingrédient</span><span className="sm:hidden">Nouveau</span>
+          </Button>
         }
       />
 
-      {duplicateCount > 0 && (
-        <Link to="/ingredients/doublons" className="mb-6 flex items-center gap-3 rounded-lg bg-warning-soft px-4 py-3 text-base text-foreground hover:opacity-90">
-          <Copy className="h-5 w-5 text-warning shrink-0" />
-          <span className="flex-1">
-            {duplicateCount} doublon{duplicateCount > 1 ? "s" : ""} probable{duplicateCount > 1 ? "s" : ""} · <span className="font-medium underline">Fusionner</span>
-          </span>
-          <ChevronRight className="h-5 w-5 text-muted-foreground" />
-        </Link>
+      <Toolbar
+        left={<ViewTabs items={[{ key: "all", label: "Tous" }, { key: "supplier", label: "Par fournisseur" }]} value={view} onChange={(k) => setView(k as View)} aria-label="Vue" />}
+        right={
+          <>
+            {searchOpen ? searchField : <IconButton size="sm" aria-label="Rechercher" icon={<Search />} onClick={() => setSearchOpen(true)} />}
+            {filters}
+            <div ref={sortMenu.ref} className="relative inline-flex">
+              <Button variant="subtle" size="sm" icon={<ArrowUpDown />} onClick={sortMenu.toggle} aria-haspopup="menu" aria-expanded={sortMenu.open}>Trier</Button>
+              <Menu {...sortMenu.props} align="right" title="Trier">
+                <MenuRadio checked={sortBy === "name"} onSelect={() => setSortBy("name")}>Nom</MenuRadio>
+                <MenuRadio checked={sortBy === "price"} onSelect={() => setSortBy("price")}>Prix</MenuRadio>
+              </Menu>
+            </div>
+            {more}
+          </>
+        }
+        rightTouch={
+          <>
+            <IconButton size="sm" aria-label="Rechercher" icon={<Search />} onClick={() => setSearchOpen((o) => !o)} className={searchOpen ? "bg-active" : ""} />
+            {filters}
+            {more}
+          </>
+        }
+        filters={filterCount > 0 ? (
+          <>
+            {filterSupplier && <FilterChip onRemove={() => setFilterSupplier("")}>{filterSupplier}</FilterChip>}
+            {noPrice.length > 0 && <FilterChip onRemove={() => setNoPrice([])}>Sans prix</FilterChip>}
+          </>
+        ) : undefined}
+      />
+      {searchOpen && (
+        <div className="hidden items-center gap-1 py-2 touch:flex">
+          {searchField}
+          <IconButton size="sm" aria-label="Fermer la recherche" icon={<X />} onClick={() => { setSearch(""); setSearchOpen(false); }} />
+        </div>
       )}
 
-      <div className="flex gap-4 mb-6 flex-wrap items-center">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input className="input-field pl-9" placeholder="Rechercher un ingrédient…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+      {duplicateCount > 0 && (
+        <div className="mt-3">
+          <Callout emoji="🧅" tone="warning" title={`${duplicateCount} doublon${duplicateCount > 1 ? "s" : ""} probable${duplicateCount > 1 ? "s" : ""}`}>
+            <Button variant="link" size="sm" className="-mx-2" onClick={() => navigate("/ingredients/doublons")}>Fusionner</Button>
+          </Callout>
         </div>
-        <div className="flex gap-1.5 flex-wrap">
-          <FilterChip active={filterSupplier === "all"} onClick={() => { setFilterSupplier("all"); setPage(1); }}>Tous</FilterChip>
-          {suppliers.map((s) => (
-            <FilterChip key={s} active={filterSupplier === s} onClick={() => { setFilterSupplier(s); setPage(1); }} color={supplierColor(s)}>{s}</FilterChip>
-          ))}
-        </div>
-      </div>
+      )}
 
-      <div className="hidden md:block overflow-x-auto">
-        <table className="table">
-          <thead>
-            <tr className="border-b border-border">
-              <Th onClick={() => toggleSort("name")} active={sortBy === "name"} dir={sortDir}>Ingrédient</Th>
-              <Th onClick={() => toggleSort("price")} active={sortBy === "price"} dir={sortDir} className="text-right">Prix HTVA</Th>
-              <th className="text-sm font-medium text-muted-foreground">Unité</th>
-              <Th onClick={() => toggleSort("supplier")} active={sortBy === "supplier"} dir={sortDir}>Fournisseur</Th>
-              <th className="text-sm font-medium text-muted-foreground">Commentaire</th>
-              <th className="text-sm font-medium text-muted-foreground">Maj</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paginatedItems.map((ing) => (
-              <tr key={ing.ingredientId} onClick={() => setEditing(ing)} className="border-b border-border/50 hover:bg-hover cursor-pointer transition-colors">
-                <td className="text-base font-medium">{ing.name}</td>
-                <td className="text-right">{fmt(ing.price)}</td>
-                <td>{ing.unit}</td>
-                <td><SupplierTag name={ing.supplier} /></td>
-                <td className="text-muted-foreground">{ing.comment}</td>
-                <td className="text-muted-foreground whitespace-nowrap">{updatedLabel(ing)}</td>
-              </tr>
-            ))}
-            {paginatedItems.length === 0 && (
-              <tr><td colSpan={6} className="text-muted-foreground">Aucun ingrédient.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="md:hidden divide-y divide-border/50">
-        {paginatedItems.map((ing) => (
-          <ListRow
-            key={ing.ingredientId}
-            title={ing.name}
-            subtitle={`${fmt(ing.price)} · ${ing.unit} · ${ing.supplier || "Sans fournisseur"}`}
-            trailing={<ChevronRight className="h-5 w-5 text-muted-foreground" />}
-            onClick={() => setEditing(ing)}
-          />
-        ))}
-        {paginatedItems.length === 0 && <p className="py-3 text-muted-foreground">Aucun ingrédient.</p>}
+      <div className="mt-2">
+        <Table<Ingredient>
+          rows={paginatedItems}
+          rowKey={(i) => i.ingredientId}
+          onRowClick={(i) => setEditing(i)}
+          groupBy={view === "supplier" ? (i) => i.supplier || "Sans fournisseur" : undefined}
+          empty={<EmptyState message="Aucun ingrédient." action={{ label: "+ Nouvel ingrédient", onClick: newIngredient }} />}
+          columns={[
+            { key: "name", label: "Nom", render: (i) => <span className="font-medium">{i.name}</span> },
+            { key: "unit", label: "Unité", width: "90px", render: (i) => i.unit.replace("€/", "") },
+            { key: "price", label: "Prix", width: "100px", align: "right", render: (i) => fmt(i.price) },
+            { key: "supplier", label: "Fournisseur", width: "180px", render: (i) => <SupplierTag name={i.supplier} /> },
+            { key: "comment", label: "Commentaire", render: (i) => <span className="text-muted-foreground">{i.comment ?? ""}</span> },
+            { key: "recipes", label: "Recettes", width: "90px", align: "right", trailing: true, render: (i) => `${recipeCount.get(i.ingredientId) ?? 0}` },
+          ]}
+        />
       </div>
 
       <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} onPrev={prev} onNext={next} />
@@ -198,55 +258,27 @@ export default function Ingredients() {
         />
       )}
 
-      {deleteConfirm && (
-        <Modal onClose={() => setDeleteConfirm(null)}>
-          <div className="text-center py-2">
-            <h3 className="text-h3 mb-2">Confirmer la suppression</h3>
-            <p className="text-muted-foreground text-base mb-6">Cette action est irréversible.</p>
-            <div className="flex gap-3 justify-center">
-              <button onClick={() => setDeleteConfirm(null)} className="min-h-11 px-4 border rounded-lg text-sm font-medium">Annuler</button>
-              <button onClick={() => deleteIngredient(deleteConfirm)} className="min-h-11 px-4 bg-destructive text-destructive-foreground rounded-lg text-sm font-medium">Supprimer</button>
-            </div>
-          </div>
-        </Modal>
-      )}
+      <Dialog
+        open={Boolean(deleteConfirm)}
+        onClose={() => setDeleteConfirm(null)}
+        title="Confirmer la suppression"
+        size="sm"
+        footer={
+          <>
+            <Button variant="default" size="md" onClick={() => setDeleteConfirm(null)}>Annuler</Button>
+            <Button variant="danger" size="md" onClick={() => { if (deleteConfirm) deleteIngredient(deleteConfirm); }}>Supprimer</Button>
+          </>
+        }
+      >
+        <p className="text-muted-foreground">Cette action est irréversible.</p>
+      </Dialog>
 
-      {showImport && (
-        <Modal onClose={() => setShowImport(false)}>
-          <CsvImport existingIngredients={ingredients} onImport={async (rows) => {
-            try { const result = await api.ingredients.import(rows); setShowImport(false); load(); toast({ title: `Import terminé · ${result.created} créés, ${result.updated} mis à jour` }); }
-            catch (e) { toast({ title: (e as Error).message || "Erreur lors de l'import", variant: "destructive" }); }
-          }} onCancel={() => setShowImport(false)} />
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-function FilterChip({ active, onClick, color, children }: { active: boolean; onClick: () => void; color?: string; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`min-h-10 px-3 rounded-sm text-sm font-medium border transition-colors ${active ? "bg-active font-medium text-foreground border-foreground" : "bg-card hover:bg-hover"}`}
-      style={!active && color ? { borderLeftColor: color, borderLeftWidth: 3 } : undefined}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Th({ children, onClick, active, dir, className = "" }: { children: React.ReactNode; onClick: () => void; active: boolean; dir: number; className?: string }) {
-  return (
-    <th onClick={onClick} aria-sort={active ? (dir === 1 ? "ascending" : "descending") : "none"} className={`text-sm font-medium text-muted-foreground cursor-pointer select-none hover:text-foreground ${className}`}>
-      <span className="inline-flex items-center gap-1">{children}{active && <ArrowUpDown className="h-3.5 w-3.5" />}</span>
-    </th>
-  );
-}
-
-function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-card rounded-2xl p-7 max-w-lg w-[92%] max-h-[90vh] overflow-auto shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>{children}</div>
+      <Dialog open={showImport} onClose={() => setShowImport(false)} title="Importer des ingrédients" size="lg">
+        <CsvImport existingIngredients={ingredients} onImport={async (rows) => {
+          try { const result = await api.ingredients.import(rows); setShowImport(false); load(); toast({ title: `Import terminé · ${result.created} créés, ${result.updated} mis à jour` }); }
+          catch (e) { toast({ title: (e as Error).message || "Erreur lors de l'import", variant: "destructive" }); }
+        }} onCancel={() => setShowImport(false)} />
+      </Dialog>
     </div>
   );
 }
@@ -290,41 +322,40 @@ function CsvImport({ existingIngredients, onImport, onCancel }: { existingIngred
   const updateCount = parsed.filter((r) => r._status === "update").length;
 
   return (
-    <div className="sm:min-w-[480px]">
-      <h2 className="text-h2 mb-1">Importer des ingrédients</h2>
-      <p className="text-sm text-muted-foreground mb-5">Format CSV : <code className="bg-muted px-1.5 py-0.5 rounded text-caption">nom ; prix_htva ; unite ; fournisseur ; commentaire</code></p>
+    <div>
+      <p className="mb-4 text-sm text-muted-foreground">Format CSV : <code className="rounded-sm bg-muted px-1.5 py-0.5 text-caption">nom ; prix_htva ; unite ; fournisseur ; commentaire</code></p>
       {step === "upload" && (
         <>
-          <div className="flex flex-col items-center justify-center gap-2 p-10 border-2 border-dashed rounded-xl cursor-pointer text-muted-foreground hover:border-primary/40 transition-colors" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }} onClick={() => fileRef.current?.click()}>
+          <div className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg bg-surface p-10 text-muted-foreground hover:bg-hover" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }} onClick={() => fileRef.current?.click()}>
             <Upload className="h-8 w-8" /><span className="text-base font-medium">Glisser-déposer votre fichier CSV</span><span className="text-sm">ou cliquer pour parcourir</span>
           </div>
           <input ref={fileRef} type="file" accept=".csv,.tsv,.txt" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
-          <div className="flex justify-end mt-5"><button onClick={onCancel} className="min-h-11 px-4 border rounded-lg text-sm font-medium">Annuler</button></div>
+          <div className="mt-5 flex justify-end"><Button variant="default" size="md" onClick={onCancel}>Annuler</Button></div>
         </>
       )}
       {step === "preview" && (
         <>
-          <div className="flex justify-between items-center gap-2 flex-wrap px-4 py-2.5 bg-muted rounded-lg mb-4">
-            <span className="font-medium text-sm">{fileName}</span>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface px-4 py-2.5">
+            <span className="text-sm font-medium">{fileName}</span>
             <div className="flex gap-2">
-              <Tag variant="success">{newCount} nouveaux</Tag>
-              <Tag variant="info">{updateCount} mises à jour</Tag>
+              <Tag colour="green">{newCount} nouveaux</Tag>
+              <Tag colour="blue">{updateCount} mises à jour</Tag>
             </div>
           </div>
-          <div className="max-h-[300px] overflow-y-auto border rounded-lg">
+          <div className="max-h-[300px] overflow-y-auto">
             <table className="table">
               <thead>
-                <tr className="border-b">
-                  <th className="text-sm font-medium text-muted-foreground">Statut</th>
-                  <th className="text-sm font-medium text-muted-foreground">Nom</th>
-                  <th className="text-sm font-medium text-muted-foreground text-right">Prix</th>
-                  <th className="text-sm font-medium text-muted-foreground">Fournisseur</th>
+                <tr>
+                  <th>Statut</th>
+                  <th>Nom</th>
+                  <th className="text-right">Prix</th>
+                  <th>Fournisseur</th>
                 </tr>
               </thead>
               <tbody>
                 {parsed.slice(0, 50).map((row, i) => (
-                  <tr key={i} className="border-b border-border/30">
-                    <td><Tag variant={row._status === "new" ? "success" : "info"}>{row._status === "new" ? "Nouveau" : "Maj"}</Tag></td>
+                  <tr key={i}>
+                    <td><Tag colour={row._status === "new" ? "green" : "blue"}>{row._status === "new" ? "Nouveau" : "Maj"}</Tag></td>
                     <td className="font-medium">{row.nom as string}</td>
                     <td className="text-right">{fmt(row.prix_htva as number)}</td>
                     <td>{row.fournisseur as string}</td>
@@ -333,13 +364,13 @@ function CsvImport({ existingIngredients, onImport, onCancel }: { existingIngred
               </tbody>
             </table>
           </div>
-          <div className="flex justify-between mt-5 gap-2 flex-wrap">
-            <button onClick={() => setStep("upload")} className="min-h-11 px-4 border rounded-lg text-sm font-medium">Changer de fichier</button>
+          <div className="mt-5 flex flex-wrap justify-between gap-2">
+            <Button variant="default" size="md" onClick={() => setStep("upload")}>Changer de fichier</Button>
             <div className="flex gap-2">
-              <button onClick={onCancel} disabled={importing} className="min-h-11 px-4 border rounded-lg text-sm font-medium disabled:opacity-50">Annuler</button>
-              <button onClick={async () => { setImporting(true); await onImport(parsed); setImporting(false); }} disabled={importing} className="inline-flex items-center gap-2 min-h-11 px-4 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm disabled:opacity-60">
-                <Check className="h-4 w-4" />{importing ? "Import en cours…" : `Importer ${parsed.length} ingrédients`}
-              </button>
+              <Button variant="default" size="md" onClick={onCancel} disabled={importing}>Annuler</Button>
+              <Button variant="primary" size="md" icon={<Check />} onClick={async () => { setImporting(true); await onImport(parsed); setImporting(false); }} disabled={importing}>
+                {importing ? "Import en cours…" : `Importer ${parsed.length} ingrédients`}
+              </Button>
             </div>
           </div>
         </>

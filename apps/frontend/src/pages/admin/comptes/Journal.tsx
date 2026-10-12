@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Download, FileText, Lock, LockOpen, Plus, X } from "lucide-react";
+import { ChevronDown, Download, FileText, Lock, LockOpen, MoreHorizontal, Plus } from "lucide-react";
 import type { CreateLedgerEntryRequest, LedgerBook, LedgerEntry, MpSource, PatchLedgerEntryRequest, PaymentMethod } from "@packages/types";
 import { clientLabel, fmtEur, isCommissionEntry, prefillForClientMonth, rawMaterialOfMonth, sumMoney } from "@packages/types";
 import { api } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { useReportInputs } from "@/lib/use-report-inputs";
+import { useTouchScreen } from "@/hooks/use-touch-screen";
 import {
   MP_SOURCE_LABEL,
   PAYMENT_METHOD_LABEL,
@@ -24,11 +25,37 @@ import {
   prestationLabel,
   purchaseTotals,
   salesTotals,
-  ymOptions,
   type JournalFilter,
 } from "@/lib/accounting";
 import { downloadMonthCsv, exportLedgerXlsx } from "@/lib/ledger-export";
-import { Tag } from "@/components/ui";
+import {
+  Button,
+  Callout,
+  Checkbox,
+  DateNav,
+  Dialog,
+  EmptyState,
+  FieldLabel,
+  FilterChip,
+  IconButton,
+  ListRow,
+  MENU_ITEM,
+  MENU_ITEM_TOUCH,
+  Menu,
+  MenuItem,
+  MenuRadio,
+  MenuSection,
+  MenuSeparator,
+  SectionToggle,
+  SelectPill,
+  Table,
+  Tag,
+  Toolbar,
+  ViewTabs,
+  useMenu,
+  useMenuContext,
+  type TableColumn,
+} from "@/components/ui";
 import LedgerEntryForm from "@/components/comptes/LedgerEntryForm";
 
 const NOT_CONFIGURED = "Comptabilité non configurée : la table ta-ledger n'existe pas encore";
@@ -38,38 +65,35 @@ function money(n: number): string {
   return n === 0 ? "" : fmtEur(n);
 }
 
-// Full-screen sheet on phones, centred dialog on larger screens.
-function Sheet({ children, onClose, wide }: { children: ReactNode; onClose: () => void; wide?: boolean }) {
-  return (
-    <div className="fixed inset-0 z-50 bg-card md:flex md:items-center md:justify-center md:bg-overlay md:" onClick={onClose}>
-      <div
-        className={`h-full w-full overflow-auto p-4 md:h-auto md:max-h-[90vh] md:rounded-2xl md:bg-card md:p-7 md:shadow-xl ${wide ? "md:w-[92%] md:max-w-3xl" : "md:w-[92%] md:max-w-lg"}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {children}
-      </div>
-    </div>
-  );
+function shiftYm(ym: string, delta: number): string {
+  const y = Number(ym.slice(0, 4));
+  const m = Number(ym.slice(5, 7)) - 1 + delta;
+  const d = new Date(Date.UTC(y, m, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-// Two-field "Réglé" popover shared with the event page and À facturer; the trigger defaults to the journal tag.
-export function PaidPopover({ entry, onSaved, trigger, align = "left", className = "" }: { entry: LedgerEntry; onSaved: () => void; trigger?: ReactNode; align?: "left" | "right"; className?: string }) {
-  const [open, setOpen] = useState(false);
+function PaidTag({ paid }: { paid: boolean }) {
+  return <Tag colour={paid ? "green" : "red"}>{paid ? "Réglée" : "Non réglée"}</Tag>;
+}
+
+// Body of the "Réglé" menu: two choices, the payment fields once "Réglée" is picked.
+function PaidMenuBody({ entry, onSaved, onClose }: { entry: LedgerEntry; onSaved: () => void; onClose: () => void }) {
+  const { touch } = useMenuContext();
   const [paid, setPaid] = useState(entry.paid);
   const [method, setMethod] = useState<string>(entry.paymentMethod ?? "");
-  const [paidAt, setPaidAt] = useState(entry.paidAt ?? "");
+  const [paidAt, setPaidAt] = useState(entry.paidAt ?? (entry.paid ? "" : todayIso()));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const save = async () => {
+  const save = async (next: boolean) => {
     setBusy(true);
     setError(null);
-    const body: PatchLedgerEntryRequest = { paid };
-    if (paid && method) body.paymentMethod = method as PaymentMethod;
-    if (paid && paidAt) body.paidAt = paidAt;
+    const body: PatchLedgerEntryRequest = { paid: next };
+    if (next && method) body.paymentMethod = method as PaymentMethod;
+    if (next && paidAt) body.paidAt = paidAt;
     try {
       await api.ledger.patch(entry.entryId, body);
-      setOpen(false);
+      onClose();
       onSaved();
     } catch (e) {
       setError(ledgerErrorMessage(e));
@@ -78,32 +102,34 @@ export function PaidPopover({ entry, onSaved, trigger, align = "left", className
     }
   };
 
+  const item = `${MENU_ITEM} ${touch ? MENU_ITEM_TOUCH : ""}`;
   return (
-    <div className={`relative ${className}`} onClick={(e) => e.stopPropagation()}>
-      <button type="button" className="inline-flex min-h-11 w-full items-center" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="dialog">
-        {trigger ?? <Tag variant={entry.paid ? "success" : "warning"}>{entry.paid ? "Réglé" : "Non réglé"}</Tag>}
+    <div className="w-[260px] max-w-full touch:w-full">
+      <button type="button" role="menuitemradio" aria-checked={!paid} className={item} onClick={() => { if (entry.paid) void save(false); else { setPaid(false); onClose(); } }}>
+        <span className="flex-1"><PaidTag paid={false} /></span>
       </button>
-      {open && (
-        <div className={`absolute top-full z-30 mt-1 w-64 rounded-xl border border-border bg-card p-3 text-left shadow-lg ${align === "right" ? "right-0" : "left-0"}`}>
-          <label className="flex min-h-11 items-center gap-2 text-base">
-            <input type="checkbox" className="h-5 w-5" checked={paid} onChange={(e) => { setPaid(e.target.checked); if (e.target.checked && !paidAt) setPaidAt(todayIso()); }} />
-            Réglé
-          </label>
-          {paid && (
-            <>
-              <select className="input-field mt-2" value={method} onChange={(e) => setMethod(e.target.value)} aria-label="Mode">
-                <option value="">Mode non précisé</option>
-                {PAYMENT_METHODS.map((m) => (
-                  <option key={m} value={m}>{PAYMENT_METHOD_LABEL[m]}</option>
-                ))}
-              </select>
-              <input type="date" className="input-field mt-2" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} aria-label="Encaissé le" />
-            </>
-          )}
-          {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
-          <div className="mt-3 flex gap-2">
-            <button type="button" disabled={busy} className="min-h-11 flex-1 rounded-lg bg-primary px-3 text-base text-primary-foreground disabled:opacity-50" onClick={() => void save()}>Enregistrer</button>
-            <button type="button" className="min-h-11 rounded-lg px-3 text-base text-muted-foreground" onClick={() => setOpen(false)}>Fermer</button>
+      <button type="button" role="menuitemradio" aria-checked={paid} className={item} onClick={() => setPaid(true)}>
+        <span className="flex-1"><PaidTag paid /></span>
+      </button>
+      {paid && (
+        <div className={`flex flex-col gap-2 pt-2 ${touch ? "px-4" : "px-3"}`}>
+          <div>
+            <FieldLabel htmlFor={`paid-method-${entry.entryId}`}>Mode</FieldLabel>
+            <select id={`paid-method-${entry.entryId}`} className="input-field" value={method} onChange={(e) => setMethod(e.target.value)}>
+              <option value="">Non précisé</option>
+              {PAYMENT_METHODS.map((m) => (
+                <option key={m} value={m}>{PAYMENT_METHOD_LABEL[m]}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <FieldLabel htmlFor={`paid-at-${entry.entryId}`}>Encaissé le</FieldLabel>
+            <input id={`paid-at-${entry.entryId}`} type="date" className="input-field" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
+          </div>
+          {error && <p className="text-sm text-danger">{error}</p>}
+          <div className="flex justify-end gap-2 pb-1">
+            <Button variant="subtle" size="sm" onClick={onClose}>Annuler</Button>
+            <Button variant="primary" size="sm" disabled={busy} onClick={() => void save(true)}>Enregistrer</Button>
           </div>
         </div>
       )}
@@ -111,12 +137,34 @@ export function PaidPopover({ entry, onSaved, trigger, align = "left", className
   );
 }
 
-function RailTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+// "Réglé" pill shared with the event page and À facturer; opens a Menu (a Sheet on touch) with the payment fields.
+export function PaidPopover({ entry, onSaved, trigger, align = "left", className = "" }: { entry: LedgerEntry; onSaved: () => void; trigger?: ReactNode; align?: "left" | "right"; className?: string }) {
+  const menu = useMenu();
   return (
-    <div className="card-elevated p-4">
-      <div className="text-sm text-muted-foreground">{label}</div>
-      <div className="mt-1 text-h3 tabular-nums">{value}</div>
-      {sub && <div className="mt-1 text-sm text-muted-foreground">{sub}</div>}
+    <div ref={menu.ref} className={`relative inline-flex ${className}`} onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        className="group -mx-1 inline-flex h-7 items-center gap-1 rounded px-1 hover:bg-hover touch:h-11"
+        onClick={menu.toggle}
+        aria-expanded={menu.open}
+        aria-haspopup="menu"
+        aria-label="Réglé"
+      >
+        {trigger ?? <PaidTag paid={entry.paid} />}
+        {!trigger && <ChevronDown className="h-3 w-3 text-icon reveal" aria-hidden="true" />}
+      </button>
+      <Menu {...menu.props} align={align} title="Réglé" aria-label="Réglé">
+        {menu.open && <PaidMenuBody entry={entry} onSaved={onSaved} onClose={menu.close} />}
+      </Menu>
+    </div>
+  );
+}
+
+function StatRowLine({ label, value }: { label: ReactNode; value: ReactNode }) {
+  return (
+    <div className="flex h-8 items-center justify-between gap-3 border-b border-border text-sm last:border-b-0 touch:h-11">
+      <span className="min-w-0 truncate text-muted-foreground">{label}</span>
+      <span className="shrink-0 tabular-nums">{value}</span>
     </div>
   );
 }
@@ -129,6 +177,7 @@ interface FormOpen {
 
 export default function Journal() {
   const [params, setParams] = useSearchParams();
+  const touch = useTouchScreen();
   const today = todayIso();
   const ym = /^\d{4}-\d{2}$/.test(params.get("ym") ?? "") ? (params.get("ym") as string) : today.slice(0, 7);
   const year = ym.slice(0, 4);
@@ -148,6 +197,7 @@ export default function Journal() {
   const [unlockOpen, setUnlockOpen] = useState(false);
   const [askLock, setAskLock] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const more = useMenu();
 
   const setParam = (changes: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
@@ -236,347 +286,272 @@ export default function Journal() {
   };
 
   if (notConfigured) {
-    return <p className="max-w-doc rounded-lg bg-surface px-4 py-3 text-base">{NOT_CONFIGURED}</p>;
+    return <Callout emoji="💶">{NOT_CONFIGURED}</Callout>;
   }
 
+  const typeOf = (e: LedgerEntry) => prestationLabel(settings, e.prestationType);
+  const filterOptions = chips.map((c) => ({ value: c.key, label: c.label }));
+  const filterLabel = chips.find((c) => c.key === filter)?.label ?? "Tous";
+
   const toolbar = (
-    <div className="no-print flex flex-wrap items-center gap-2">
-      <select className="input-field w-auto min-h-11" value={year} aria-label="Année" onChange={(e) => setParam({ ym: `${e.target.value}${ym.slice(4)}` })}>
-        {Array.from({ length: 5 }, (_, i) => String(Number(today.slice(0, 4)) + 1 - i)).map((y) => (
-          <option key={y} value={y}>{y}</option>
-        ))}
-      </select>
-      <select className="input-field w-auto min-h-11" value={ym} aria-label="Mois" onChange={(e) => setParam({ ym: e.target.value })}>
-        {ymOptions(year).map((o) => (
-          <option key={o.ym} value={o.ym}>{o.label}</option>
-        ))}
-      </select>
-      <div className="flex rounded-lg border border-border p-0.5" role="tablist" aria-label="Livre">
-        {(["ventes", "achats"] as LedgerBook[]).map((b) => (
-          <button
-            key={b}
-            type="button"
-            role="tab"
-            aria-selected={book === b}
-            className={`min-h-10 rounded-md px-4 text-base ${book === b ? "bg-selected font-medium" : "text-muted-foreground hover:text-foreground"}`}
-            onClick={() => setParam({ book: b, filtre: null, kind: null, type: null })}
-          >
-            {b === "ventes" ? "Ventes" : "Achats"}
-          </button>
+    <Toolbar
+      left={
+        <ViewTabs
+          aria-label="Livre"
+          value={book}
+          items={[{ key: "ventes", label: "Ventes" }, { key: "achats", label: "Achats" }]}
+          onChange={(b) => setParam({ book: b, filtre: null, kind: null, type: null })}
+        />
+      }
+      center={
+        <DateNav
+          label={monthLabel(ym)}
+          value={ym}
+          pickerType="month"
+          onPrev={() => setParam({ ym: shiftYm(ym, -1) })}
+          onNext={() => setParam({ ym: shiftYm(ym, 1) })}
+          onPick={(v) => setParam({ ym: v })}
+          isToday={ym === today.slice(0, 7)}
+          onToday={() => setParam({ ym: today.slice(0, 7) })}
+        />
+      }
+      right={
+        <>
+          <span className="ml-1 inline-flex items-center gap-1 touch:hidden">
+            <span className="text-sm text-muted-foreground">Filtrer :</span>
+            <SelectPill
+              value={filter}
+              options={filterOptions}
+              colour="gray"
+              align="right"
+              aria-label="Filtrer"
+              onChange={(k) => setParam({ filtre: k === "tous" ? null : k, kind: null })}
+            />
+          </span>
+          <div ref={more.ref} className="relative inline-flex">
+            <IconButton size="sm" aria-label="Plus d'actions" aria-haspopup="menu" aria-expanded={more.open} onClick={more.toggle} icon={<MoreHorizontal />} />
+            <Menu {...more.props} align="right" title="Actions" aria-label="Plus d'actions">
+              {touch && (
+                <>
+                  <MenuSection label="Filtrer">
+                    {chips.map((c) => (
+                      <MenuRadio key={c.key} checked={filter === c.key} onSelect={() => setParam({ filtre: c.key === "tous" ? null : c.key, kind: null })}>{c.label}</MenuRadio>
+                    ))}
+                  </MenuSection>
+                  <MenuSeparator />
+                </>
+              )}
+              <MenuItem icon={<Download />} disabled={!inputs} onSelect={onExport}>Exporter {year} (xlsx)</MenuItem>
+              <MenuItem icon={<FileText />} disabled={!settings} onSelect={() => settings && downloadMonthCsv(ym, entries, settings)}>CSV du mois</MenuItem>
+              <MenuSeparator />
+              {locked ? (
+                <MenuItem icon={<LockOpen />} onSelect={() => setUnlockOpen(true)}>Déverrouiller</MenuItem>
+              ) : (
+                <MenuItem icon={<Lock />} danger disabled={!inputs} onSelect={() => setLockOpen(true)}>Verrouiller le mois</MenuItem>
+              )}
+            </Menu>
+          </div>
+          <Button variant="primary" size="sm" icon={<Plus />} onClick={openNew}>Nouvelle ligne</Button>
+        </>
+      }
+      filters={
+        typeParam !== null || (touch && filter !== "tous") ? (
+          <>
+            {typeParam !== null && (
+              <FilterChip onRemove={() => setParam({ type: null })}>Type : {typeParam ? prestationLabel(settings, typeParam) : "Sans type"}</FilterChip>
+            )}
+            {touch && filter !== "tous" && (
+              <FilterChip onRemove={() => setParam({ filtre: null, kind: null })}>{filterLabel}</FilterChip>
+            )}
+          </>
+        ) : undefined
+      }
+    />
+  );
+
+  const statLine = (
+    <p className="mt-3 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm text-muted-foreground tabular-nums">
+      <span>Acomptes <span className="text-foreground">{fmtEur(sumMoney(acomptes.map((e) => e.totalTvac)))}</span></span>
+      <span aria-hidden="true">·</span>
+      <span>Commissions <span className="text-foreground">{fmtEur(sumMoney(commissions.map((e) => e.htva)))}</span> (hors CA)</span>
+      <span aria-hidden="true">·</span>
+      <span>À encaisser <span className="text-foreground">{fmtEur(encaisser.total)}</span></span>
+      <span aria-hidden="true">·</span>
+      <span>{encaisser.count} non réglée{encaisser.count > 1 ? "s" : ""}</span>
+      {locked && monthClose?.lockedAt && <Tag colour="yellow" className="ml-1">Verrouillé le {fmtDateFr(monthClose.lockedAt.slice(0, 10))}</Tag>}
+      {monthClose && !locked && monthClose.unlockedAt && <Tag colour="gray" className="ml-1">Déverrouillé le {fmtDateFr(monthClose.unlockedAt.slice(0, 10))}</Tag>}
+    </p>
+  );
+
+  const salesColumns: TableColumn<LedgerEntry>[] = [
+    { key: "number", label: "N°", width: "6rem", render: (e) => e.number ?? "" },
+    { key: "date", label: "Date", width: "7rem", render: (e) => fmtDateFr(e.date) },
+    { key: "label", label: "Intitulé", render: (e) => <>{e.label}{e.kind !== "facture" && <span className="ml-2 text-muted-foreground">{kindLabel(e)}</span>}</> },
+    { key: "type", label: "Type", render: (e) => (typeOf(e) ? <Tag colour="gray">{typeOf(e)}</Tag> : "") },
+    { key: "tvac", label: "Total TVAC", align: "right", render: (e) => fmtEur(e.totalTvac) },
+    { key: "htva", label: "HTVA", align: "right", render: (e) => fmtEur(e.htva) },
+    { key: "vat", label: "TVA %", align: "right", width: "5rem", render: (e) => `${e.vatRate} %` },
+    { key: "paid", label: "Réglé", width: "8rem", render: (e) => <PaidPopover entry={e} onSaved={reload} /> },
+  ];
+
+  const purchaseColumns: TableColumn<LedgerEntry>[] = [
+    { key: "date", label: "Date", width: "7rem", render: (e) => fmtDateFr(e.date) },
+    { key: "label", label: "Intitulé", render: (e) => e.label },
+    { key: "type", label: "Type", render: (e) => <Tag colour="gray">{kindLabel(e)}</Tag> },
+    { key: "who", label: "Fournisseur ou Personne", render: (e) => e.personName ?? e.supplier ?? "" },
+    { key: "hours", label: "Heures", align: "right", render: (e) => (e.kind === "personnel" && entryHours(e) ? String(entryHours(e)) : "") },
+    { key: "rate", label: "Taux", align: "right", render: (e) => (e.hourlyRate !== undefined ? fmtEur(e.hourlyRate) : "") },
+    { key: "htva", label: "HTVA", align: "right", render: (e) => fmtEur(e.htva) },
+    { key: "vat", label: "TVA", align: "right", render: (e) => fmtEur(e.vatAmount) },
+    { key: "tvac", label: "TVAC", align: "right", render: (e) => fmtEur(e.totalTvac) },
+    { key: "number", label: "Réf.", render: (e) => e.number ?? "" },
+    { key: "paid", label: "Réglé", width: "8rem", render: (e) => <PaidPopover entry={e} onSaved={reload} /> },
+  ];
+
+  const emptyText = book === "ventes" ? `Aucune ligne pour ${monthLabel(ym)}.` : `Aucun achat pour ${monthLabel(ym)}.`;
+
+  const table = (
+    <Table
+      columns={book === "ventes" ? salesColumns : purchaseColumns}
+      rows={shown}
+      rowKey={(e) => e.entryId}
+      onRowClick={(e) => setForm({ entry: e })}
+      empty={<EmptyState message={emptyText} />}
+      footer={
+        book === "ventes"
+          ? { label: "Total", tvac: fmtEur(sales.tvac), htva: fmtEur(sales.htva) }
+          : { label: "Total", hours: purchases.hours ? String(purchases.hours) : "", htva: fmtEur(purchases.htva), vat: fmtEur(purchases.vat), tvac: fmtEur(purchases.tvac) }
+      }
+    />
+  );
+
+  const phoneList = (
+    <div>
+      <div className="divide-y divide-border">
+        {shown.map((e) => (
+          <ListRow
+            key={e.entryId}
+            title={e.label}
+            subtitle={[e.number ? `N° ${e.number}` : "", fmtDateFr(e.date), book === "ventes" ? typeOf(e) : kindLabel(e)].filter(Boolean).join(" · ")}
+            trailing={<><span className="text-foreground">{fmtEur(e.totalTvac)}</span><PaidTag paid={e.paid} /></>}
+            onClick={() => setForm({ entry: e })}
+          />
         ))}
       </div>
-    </div>
-  );
-
-  const actions = (
-    <div className="no-print flex flex-wrap items-center gap-2">
-      <button type="button" className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 text-base font-medium text-primary-foreground hover:opacity-90" onClick={openNew}>
-        <Plus className="h-4 w-4" /> Nouvelle ligne
-      </button>
-      <button type="button" disabled={!inputs} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border px-4 text-base hover:bg-hover disabled:opacity-50" onClick={onExport}>
-        <Download className="h-4 w-4" /> Exporter {year} (xlsx)
-      </button>
-      <button type="button" disabled={!settings} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border px-4 text-base hover:bg-hover disabled:opacity-50" onClick={() => settings && downloadMonthCsv(ym, entries, settings)}>
-        <FileText className="h-4 w-4" /> CSV du mois
-      </button>
-      {locked ? (
-        <button type="button" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border px-4 text-base hover:bg-hover" onClick={() => setUnlockOpen(true)}>
-          <LockOpen className="h-4 w-4" /> Déverrouiller
-        </button>
-      ) : (
-        <button type="button" disabled={!inputs} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border px-4 text-base hover:bg-hover disabled:opacity-50" onClick={() => setLockOpen(true)}>
-          <Lock className="h-4 w-4" /> Verrouiller le mois
-        </button>
-      )}
-    </div>
-  );
-
-  const typeOf = (e: LedgerEntry) => prestationLabel(settings, e.prestationType);
-
-  const salesTable = (
-    <div className="overflow-x-auto">
-      <table className="table">
-        <thead>
-          <tr className="text-muted-foreground">
-            <th>N°</th>
-            <th>Date</th>
-            <th>Intitulé</th>
-            <th>Type</th>
-            <th className="text-right">Total TVAC</th>
-            <th className="text-right">HTVA</th>
-            <th className="text-right">TVA 6 %</th>
-            <th className="text-right">TVA 12 %</th>
-            <th className="text-right">TVA 21 %</th>
-            <th>Réglé</th>
-            <th>Mode</th>
-            <th>Encaissé le</th>
-            <th>Description</th>
-            <th className="text-right">KM</th>
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map((e) => (
-            <tr key={e.entryId} className="cursor-pointer border-t border-border hover:bg-hover" onClick={() => setForm({ entry: e })}>
-              <td className="whitespace-nowrap">{e.number ?? ""}</td>
-              <td className="whitespace-nowrap">{fmtDateFr(e.date)}</td>
-              <td>
-                <span className="font-medium">{e.label}</span>
-                {e.kind !== "facture" && <span className="ml-2 text-muted-foreground">{kindLabel(e)}</span>}
-              </td>
-              <td className="whitespace-nowrap">{typeOf(e)}</td>
-              <td className="text-right">{fmtEur(e.totalTvac)}</td>
-              <td className="text-right">{fmtEur(e.htva)}</td>
-              <td className="text-right">{e.vatRate === 6 ? fmtEur(e.vatAmount) : ""}</td>
-              <td className="text-right">{e.vatRate === 12 ? fmtEur(e.vatAmount) : ""}</td>
-              <td className="text-right">{e.vatRate === 21 ? fmtEur(e.vatAmount) : ""}</td>
-              <td><PaidPopover entry={e} onSaved={reload} /></td>
-              <td className="whitespace-nowrap">{e.paymentMethod ? PAYMENT_METHOD_LABEL[e.paymentMethod] : ""}</td>
-              <td className="whitespace-nowrap">{fmtDateFr(e.paidAt)}</td>
-              <td className="max-w-[16rem] truncate" title={e.description}>{e.description ?? ""}</td>
-              <td className="text-right">{e.km ?? ""}</td>
-            </tr>
-          ))}
-          {shown.length === 0 && (
-            <tr><td colSpan={14} className="text-muted-foreground">Aucune ligne pour {monthLabel(ym)}.</td></tr>
-          )}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td colSpan={4}>Total</td>
-            <td className="text-right">{fmtEur(sales.tvac)}</td>
-            <td className="text-right">{fmtEur(sales.htva)}</td>
-            <td className="text-right">{money(sales.vat6)}</td>
-            <td className="text-right">{money(sales.vat12)}</td>
-            <td className="text-right">{money(sales.vat21)}</td>
-            <td colSpan={5} />
-          </tr>
-          <tr>
-            <td colSpan={4}>Total CA {mmYyyy(ym)}</td>
-            <td />
-            <td className="text-right">{fmtEur(sales.totalCa)}</td>
-            <td colSpan={8} />
-          </tr>
-          {sales.byType.filter((t) => t.amount !== 0).map((t) => (
-            <tr key={t.label} className="font-normal text-muted-foreground">
-              <td colSpan={4} className="!font-normal !border-t-0 pl-6">{t.label}</td>
-              <td className="!border-t-0" />
-              <td className="text-right !font-normal !border-t-0">{money(t.amount)}</td>
-              <td colSpan={8} className="!border-t-0" />
-            </tr>
-          ))}
-          <tr>
-            <td colSpan={4}>Commissions (hors CA)</td>
-            <td />
-            <td className="text-right">{money(sales.commissions)}</td>
-            <td colSpan={8} />
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-  );
-
-  const purchaseTable = (
-    <div className="overflow-x-auto">
-      <table className="table">
-        <thead>
-          <tr className="text-muted-foreground">
-            <th>Date</th>
-            <th>Intitulé</th>
-            <th>Type</th>
-            <th>Fournisseur ou Personne</th>
-            <th className="text-right">Heures</th>
-            <th className="text-right">Taux</th>
-            <th className="text-right">HTVA</th>
-            <th className="text-right">TVA</th>
-            <th className="text-right">TVAC</th>
-            <th>Réf.</th>
-            <th>Réglé</th>
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map((e) => (
-            <tr key={e.entryId} className="cursor-pointer border-t border-border hover:bg-hover" onClick={() => setForm({ entry: e })}>
-              <td className="whitespace-nowrap">{fmtDateFr(e.date)}</td>
-              <td className="font-medium">{e.label}</td>
-              <td>{kindLabel(e)}</td>
-              <td>{e.personName ?? e.supplier ?? ""}</td>
-              <td className="text-right">{e.kind === "personnel" && entryHours(e) ? entryHours(e) : ""}</td>
-              <td className="text-right">{e.hourlyRate !== undefined ? fmtEur(e.hourlyRate) : ""}</td>
-              <td className="text-right">{fmtEur(e.htva)}</td>
-              <td className="text-right">{fmtEur(e.vatAmount)}</td>
-              <td className="text-right">{fmtEur(e.totalTvac)}</td>
-              <td className="whitespace-nowrap">{e.number ?? ""}</td>
-              <td><PaidPopover entry={e} onSaved={reload} /></td>
-            </tr>
-          ))}
-          {shown.length === 0 && (
-            <tr><td colSpan={11} className="text-muted-foreground">Aucun achat pour {monthLabel(ym)}.</td></tr>
-          )}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td colSpan={4}>Total</td>
-            <td className="text-right">{purchases.hours || ""}</td>
-            <td />
-            <td className="text-right">{fmtEur(purchases.htva)}</td>
-            <td className="text-right">{fmtEur(purchases.vat)}</td>
-            <td className="text-right">{fmtEur(purchases.tvac)}</td>
-            <td colSpan={2} />
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-  );
-
-  const cards = (
-    <div className="flex flex-col gap-2">
-      {shown.map((e) => (
-        <button key={e.entryId} type="button" className="card-elevated flex w-full items-start justify-between gap-3 p-4 text-left hover:bg-hover" onClick={() => setForm({ entry: e })}>
-          <div className="min-w-0">
-            <div className="truncate text-base font-semibold">{e.label}</div>
-            <div className="text-sm text-muted-foreground">
-              {fmtDateFr(e.date)}{e.number ? ` · N° ${e.number}` : ""}{book === "ventes" ? (typeOf(e) ? ` · ${typeOf(e)}` : "") : ` · ${kindLabel(e)}`}
-            </div>
-            <div className="mt-2"><Tag variant={e.paid ? "success" : "warning"}>{e.paid ? "Réglé" : "Non réglé"}</Tag></div>
-          </div>
-          <div className="shrink-0 text-right tabular-nums">
-            <div className="text-base font-semibold">{fmtEur(e.totalTvac)}</div>
-            <div className="text-sm text-muted-foreground">{fmtEur(e.htva)} HTVA</div>
-          </div>
-        </button>
-      ))}
-      {shown.length === 0 && <p className="text-base text-muted-foreground">Aucune ligne pour {monthLabel(ym)}.</p>}
-      <div className="sticky bottom-0 -mx-4 mt-2 border-t border-border bg-card px-4 py-3 text-base tabular-nums">
+      {shown.length === 0 && <EmptyState message={emptyText} />}
+      <div className="sticky bottom-0 -mx-4 mt-2 border-t border-divider bg-background px-4 py-2 text-sm tabular-nums">
         {book === "ventes" ? (
           <>
-            <div className="flex justify-between"><span>Σ TVAC</span><span className="font-semibold">{fmtEur(sales.tvac)}</span></div>
-            <div className="flex justify-between"><span>Σ HTVA</span><span className="font-semibold">{fmtEur(sales.htva)}</span></div>
-            <div className="flex justify-between"><span>Total CA {mmYyyy(ym)}</span><span className="font-semibold">{fmtEur(sales.totalCa)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Σ TVAC</span><span className="font-semibold">{fmtEur(sales.tvac)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Σ HTVA</span><span className="font-semibold">{fmtEur(sales.htva)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Total CA {mmYyyy(ym)}</span><span className="font-semibold">{fmtEur(sales.totalCa)}</span></div>
           </>
         ) : (
           <>
-            <div className="flex justify-between"><span>Σ HTVA</span><span className="font-semibold">{fmtEur(purchases.htva)}</span></div>
-            <div className="flex justify-between"><span>Σ TVAC</span><span className="font-semibold">{fmtEur(purchases.tvac)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Σ HTVA</span><span className="font-semibold">{fmtEur(purchases.htva)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Σ TVAC</span><span className="font-semibold">{fmtEur(purchases.tvac)}</span></div>
           </>
         )}
       </div>
     </div>
   );
 
-  const rail = (
-    <aside className="grid grid-cols-1 gap-3 sm:grid-cols-3 2xl:flex 2xl:w-72 2xl:shrink-0 2xl:flex-col">
-      <RailTile label="Acomptes du mois" value={fmtEur(sumMoney(acomptes.map((e) => e.totalTvac)))} sub={`${acomptes.length} acompte${acomptes.length > 1 ? "s" : ""}`} />
-      <RailTile label="Commissions" value={fmtEur(sumMoney(commissions.map((e) => e.htva)))} sub="hors CA" />
-      <RailTile label="À encaisser" value={fmtEur(encaisser.total)} sub={`${encaisser.count} ligne${encaisser.count > 1 ? "s" : ""} non réglée${encaisser.count > 1 ? "s" : ""}`} />
-      {book === "achats" && persons.map((p) => (
-        <div key={p.personName} className="card-elevated p-4">
-          <div className="text-sm text-muted-foreground">Résumé facture</div>
-          <div className="mt-1 text-base font-semibold">{p.personName}</div>
-          <div className="mt-1 text-sm text-muted-foreground">{p.dates.map(fmtDateFr).join(", ") || "Aucune date"}</div>
-          <div className="mt-2 text-base tabular-nums">
-            {p.hours} h{p.hourlyRate !== undefined ? ` × ${fmtEur(p.hourlyRate)}` : ""} = <span className="font-semibold">{fmtEur(p.amount)}</span>
-          </div>
-        </div>
-      ))}
-    </aside>
+  const salesDetail = (
+    <SectionToggle title={`Détail du CA par type · ${fmtEur(sales.totalCa)}`} storageKey="journal-ca-type">
+      <div>
+        <StatRowLine label={`Total CA ${mmYyyy(ym)}`} value={<span className="font-medium">{fmtEur(sales.totalCa)}</span>} />
+        {sales.byType.filter((t) => t.amount !== 0).map((t) => (
+          <StatRowLine key={t.label} label={t.label} value={money(t.amount)} />
+        ))}
+        <StatRowLine label="Commissions (hors CA)" value={money(sales.commissions)} />
+        {sales.vat6 !== 0 && <StatRowLine label="TVA 6 %" value={money(sales.vat6)} />}
+        {sales.vat12 !== 0 && <StatRowLine label="TVA 12 %" value={money(sales.vat12)} />}
+        {sales.vat21 !== 0 && <StatRowLine label="TVA 21 %" value={money(sales.vat21)} />}
+      </div>
+    </SectionToggle>
+  );
+
+  const personBlock = book === "achats" && persons.length > 0 && (
+    <SectionToggle title="Résumé par personne" storageKey="journal-persons" defaultOpen>
+      <div>
+        {persons.map((p) => (
+          <StatRowLine
+            key={p.personName}
+            label={`${p.personName} · ${p.dates.map(fmtDateFr).join(", ") || "Aucune date"}`}
+            value={<>{p.hours} h{p.hourlyRate !== undefined ? ` × ${fmtEur(p.hourlyRate)}` : ""} = <span className="font-medium">{fmtEur(p.amount)}</span></>}
+          />
+        ))}
+      </div>
+    </SectionToggle>
   );
 
   return (
     <div>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        {toolbar}
-        {actions}
-      </div>
+      {toolbar}
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <h2 className="text-h3 capitalize">{monthLabel(ym)}</h2>
-        {locked && monthClose?.lockedAt && <Tag variant="warning">Verrouillé le {fmtDateFr(monthClose.lockedAt.slice(0, 10))}</Tag>}
-        {monthClose && !locked && monthClose.unlockedAt && <Tag variant="neutral">Déverrouillé le {fmtDateFr(monthClose.unlockedAt.slice(0, 10))}</Tag>}
-      </div>
-
-      <div className="no-print mt-3 flex flex-wrap gap-2">
-        {chips.map((c) => (
-          <button
-            key={c.key}
-            type="button"
-            aria-pressed={filter === c.key}
-            className={`min-h-11 rounded-sm border px-4 text-base ${filter === c.key ? "border-primary bg-selected font-medium" : "border-border hover:bg-hover"}`}
-            onClick={() => setParam({ filtre: c.key === "tous" ? null : c.key, kind: null })}
-          >
-            {c.label}
-          </button>
-        ))}
-        {typeParam !== null && (
-          <button
-            type="button"
-            aria-pressed="true"
-            className="inline-flex min-h-11 items-center gap-2 rounded-sm border border-primary bg-selected px-4 text-base font-medium"
-            onClick={() => setParam({ type: null })}
-          >
-            Type : {typeParam ? prestationLabel(settings, typeParam) : "Sans type"}
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
-        )}
-      </div>
-
-      {error && <p className="mt-4 rounded-lg bg-destructive-soft px-3 py-2 text-base text-destructive">{error}</p>}
+      {error && <div className="mt-3"><Callout tone="danger">{error}</Callout></div>}
       {notice && (
-        <p className="mt-4 flex items-center justify-between rounded-lg bg-surface px-3 py-2 text-base">
-          <span>{notice}</span>
-          <button type="button" className="min-h-11 px-2 text-muted-foreground" onClick={() => setNotice(null)}>Fermer</button>
-        </p>
+        <div className="mt-3">
+          <Callout>
+            <div className="flex items-center justify-between gap-3">
+              <span>{notice}</span>
+              <Button variant="subtle" size="sm" onClick={() => setNotice(null)}>Fermer</Button>
+            </div>
+          </Callout>
+        </div>
       )}
       {askLock && (
-        <p className="mt-4 flex flex-wrap items-center gap-3 rounded-lg bg-surface px-3 py-2 text-base">
-          <span>Export téléchargé. Verrouiller {monthLabel(ym)} ?</span>
-          <button type="button" className="min-h-11 rounded-lg bg-primary px-4 text-primary-foreground" onClick={() => { setAskLock(false); setLockOpen(true); }}>Oui</button>
-          <button type="button" className="min-h-11 rounded-lg px-3 text-muted-foreground" onClick={() => setAskLock(false)}>Plus tard</button>
-        </p>
-      )}
-
-      {loading ? (
-        <p className="mt-6 text-base text-muted-foreground">Chargement…</p>
-      ) : (
-        <div className="mt-4 flex flex-col gap-6 2xl:flex-row">
-          <div className="min-w-0 flex-1">
-            <div className="hidden md:block">{book === "ventes" ? salesTable : purchaseTable}</div>
-            <div className="md:hidden">{cards}</div>
-          </div>
-          {rail}
+        <div className="mt-3">
+          <Callout emoji="📦">
+            <div className="flex flex-wrap items-center gap-3">
+              <span>Export téléchargé. Verrouiller {monthLabel(ym)} ?</span>
+              <Button variant="default" size="sm" onClick={() => { setAskLock(false); setLockOpen(true); }}>Oui</Button>
+              <Button variant="subtle" size="sm" onClick={() => setAskLock(false)}>Plus tard</Button>
+            </div>
+          </Callout>
         </div>
       )}
 
+      {loading ? (
+        <p className="mt-6 text-sm text-muted-foreground">Chargement…</p>
+      ) : (
+        <>
+          {statLine}
+          <div className="mt-3 hidden md:block">{table}</div>
+          <div className="mt-3 md:hidden">{phoneList}</div>
+          {book === "ventes" && salesDetail}
+          {personBlock}
+        </>
+      )}
+
       {form && (
-        <Sheet onClose={() => setForm(null)} wide>
-          <LedgerEntryForm
-            entry={form.entry}
-            initial={form.initial}
-            locked={form.entry ? locked || form.entry.locked : false}
-            eventOptions={eventOptions}
-            clientOptions={clientOptions}
-            prestationTypes={settings?.prestationTypes}
-            refOptions={refOptions}
-            above={form.above}
-            onSaved={(_saved, next) => { reload(); if (!next?.keepOpen) setForm(null); }}
-            onCancel={() => setForm(null)}
-            onDeleted={() => { reload(); setForm(null); }}
-          />
-        </Sheet>
+        <LedgerEntryForm
+          layout="dialog"
+          entry={form.entry}
+          initial={form.initial}
+          locked={form.entry ? locked || form.entry.locked : false}
+          eventOptions={eventOptions}
+          clientOptions={clientOptions}
+          prestationTypes={settings?.prestationTypes}
+          refOptions={refOptions}
+          above={form.above}
+          onSaved={(_saved, next) => { reload(); if (!next?.keepOpen) setForm(null); }}
+          onCancel={() => setForm(null)}
+          onDeleted={() => { reload(); setForm(null); }}
+        />
       )}
 
       {lockOpen && inputs && (
-        <Sheet onClose={() => setLockOpen(false)}>
-          <LockDialog ym={ym} inputs={inputs} monthClose={monthClose} onDone={() => { setLockOpen(false); reload(); }} onCancel={() => setLockOpen(false)} />
-        </Sheet>
+        <LockDialog ym={ym} inputs={inputs} monthClose={monthClose} onDone={() => { setLockOpen(false); reload(); }} onCancel={() => setLockOpen(false)} />
       )}
       {unlockOpen && (
-        <Sheet onClose={() => setUnlockOpen(false)}>
-          <UnlockDialog ym={ym} onDone={() => { setUnlockOpen(false); reload(); }} onCancel={() => setUnlockOpen(false)} />
-        </Sheet>
+        <UnlockDialog ym={ym} onDone={() => { setUnlockOpen(false); reload(); }} onCancel={() => setUnlockOpen(false)} />
       )}
     </div>
   );
 }
+
+const OPTION_ROW = "mx-0 flex h-8 w-full items-center gap-2 rounded px-2 text-sm hover:bg-hover touch:h-11 touch:text-base";
 
 function LockDialog({
   ym,
@@ -625,40 +600,47 @@ function LockDialog({
   ];
 
   return (
-    <div className="flex flex-col gap-4">
-      <h2 className="text-h2">Verrouiller {monthLabel(ym)}</h2>
-      <p className="text-base text-muted-foreground">Coût matières premières retenu pour le mois. Les montants, dates, numéros et types deviennent en lecture seule.</p>
-      <div className="flex flex-col gap-1">
-        {options.map((o) => (
-          <label key={o.key} className={`flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 ${source === o.key ? "border-primary bg-selected" : "border-border"}`}>
-            <span className="flex items-center gap-3 text-base">
-              <input type="radio" name="mp-source" className="h-5 w-5" checked={source === o.key} onChange={() => setSource(o.key)} />
-              {o.label}
-            </span>
-            <span className="tabular-nums">{o.value !== undefined ? fmtEur(o.value) : "–"}</span>
-          </label>
-        ))}
-      </div>
-      {mp.nonTermines ? <p className="text-sm text-muted-foreground">{mp.nonTermines} événement{mp.nonTermines > 1 ? "s" : ""} non terminé{mp.nonTermines > 1 ? "s" : ""} ce mois.</p> : null}
-      {source === "saisi" && (
-        <div>
-          <label htmlFor="lock-saisi" className="mb-1 block text-base font-medium">Montant saisi (HTVA)</label>
-          <input id="lock-saisi" inputMode="decimal" className="input-field text-right tabular-nums" value={saisi} onChange={(e) => setSaisi(e.target.value)} />
+    <Dialog
+      open
+      onClose={onCancel}
+      title={`Verrouiller ${monthLabel(ym)}`}
+      size="md"
+      footer={
+        <>
+          <Button variant="default" size="md" onClick={onCancel}>Annuler</Button>
+          <Button variant="primary" size="md" icon={<Lock />} disabled={busy} onClick={() => void submit()}>Verrouiller</Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-muted-foreground">Coût matières premières retenu pour le mois. Les montants, dates, numéros et types deviennent en lecture seule.</p>
+        <div className="-mx-2 flex flex-col">
+          {options.map((o) => (
+            <Checkbox
+              key={o.key}
+              shape="circle"
+              checked={source === o.key}
+              onChange={() => setSource(o.key)}
+              label={`${o.label} · ${o.value !== undefined ? fmtEur(o.value) : "–"}`}
+              className={OPTION_ROW}
+            />
+          ))}
         </div>
-      )}
-      <div>
-        <label htmlFor="lock-note" className="mb-1 block text-base font-medium">Note</label>
-        <textarea id="lock-note" className="input-field" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+        {mp.nonTermines ? <p className="text-sm text-muted-foreground">{mp.nonTermines} événement{mp.nonTermines > 1 ? "s" : ""} non terminé{mp.nonTermines > 1 ? "s" : ""} ce mois.</p> : null}
+        {source === "saisi" && (
+          <div>
+            <FieldLabel htmlFor="lock-saisi">Montant saisi (HTVA)</FieldLabel>
+            <input id="lock-saisi" inputMode="decimal" className="input-field text-right tabular-nums" value={saisi} onChange={(e) => setSaisi(e.target.value)} />
+          </div>
+        )}
+        <div>
+          <FieldLabel htmlFor="lock-note">Note</FieldLabel>
+          <textarea id="lock-note" className="input-field" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+        </div>
+        <p className="text-sm text-muted-foreground">Source actuelle : {MP_SOURCE_LABEL[mp.source]}.</p>
+        {error && <Callout tone="danger">{error}</Callout>}
       </div>
-      <p className="text-sm text-muted-foreground">Source actuelle : {MP_SOURCE_LABEL[mp.source]}.</p>
-      {error && <p className="rounded-lg bg-destructive-soft px-3 py-2 text-base text-destructive">{error}</p>}
-      <div className="flex gap-2">
-        <button type="button" disabled={busy} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-5 text-base font-medium text-primary-foreground disabled:opacity-50" onClick={() => void submit()}>
-          <Lock className="h-4 w-4" /> Verrouiller
-        </button>
-        <button type="button" className="min-h-11 rounded-lg px-4 text-base text-muted-foreground hover:bg-hover" onClick={onCancel}>Annuler</button>
-      </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -682,19 +664,25 @@ function UnlockDialog({ ym, onDone, onCancel }: { ym: string; onDone: () => void
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <h2 className="text-h2">Déverrouiller {monthLabel(ym)}</h2>
-      <div>
-        <label htmlFor="unlock-reason" className="mb-1 block text-base font-medium">Raison</label>
-        <textarea id="unlock-reason" className="input-field" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
+    <Dialog
+      open
+      onClose={onCancel}
+      title={`Déverrouiller ${monthLabel(ym)}`}
+      size="md"
+      footer={
+        <>
+          <Button variant="default" size="md" onClick={onCancel}>Annuler</Button>
+          <Button variant="primary" size="md" icon={<LockOpen />} disabled={busy} onClick={() => void submit()}>Déverrouiller</Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <div>
+          <FieldLabel htmlFor="unlock-reason">Raison</FieldLabel>
+          <textarea id="unlock-reason" className="input-field" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
+        </div>
+        {error && <Callout tone="danger">{error}</Callout>}
       </div>
-      {error && <p className="rounded-lg bg-destructive-soft px-3 py-2 text-base text-destructive">{error}</p>}
-      <div className="flex gap-2">
-        <button type="button" disabled={busy} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-5 text-base font-medium text-primary-foreground disabled:opacity-50" onClick={() => void submit()}>
-          <LockOpen className="h-4 w-4" /> Déverrouiller
-        </button>
-        <button type="button" className="min-h-11 rounded-lg px-4 text-base text-muted-foreground hover:bg-hover" onClick={onCancel}>Annuler</button>
-      </div>
-    </div>
+    </Dialog>
   );
 }

@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronRight, ChevronUp } from "lucide-react";
 import type { ChecklistItem, GroceryList, PrestationTypeSetting } from "@packages/types";
 import { checklistCount, parseYmd, rangeLabel } from "@packages/types";
 import { fmtEur0, plural } from "@/lib/use-planning-data";
-import { Dot } from "./StatusDot";
+import { Button, Callout, Checkbox, SelectPill } from "@/components/ui";
 
 export interface WeekChecklistProps {
   items: ChecklistItem[];
@@ -24,14 +23,18 @@ export interface WeekChecklistProps {
   onCloseEvent: (eventId: string) => Promise<void>;
 }
 
-const ACTION = "ml-auto inline-flex min-h-10 shrink-0 items-center gap-1 rounded-lg px-2 text-base font-medium text-primary hover:bg-hover disabled:opacity-50 touch:min-h-11";
-const ROW = "flex min-h-10 items-center gap-2 text-base";
+const ROW = "flex min-h-7 items-center gap-2 text-sm touch:min-h-11";
+const TEXT = "min-w-0 flex-1";
 
 const monthName = new Intl.DateTimeFormat("fr-BE", { month: "long", timeZone: "UTC" });
 const shortDate = new Intl.DateTimeFormat("fr-BE", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
 
 function ymLabel(ym: string): string {
   return monthName.format(parseYmd(`${ym}-01`));
+}
+
+function Bullet() {
+  return <Checkbox shape="circle" checked={false} readOnly aria-label="À faire" className="pointer-events-none -ml-1.5 shrink-0" />;
 }
 
 export default function WeekChecklist(props: WeekChecklistProps) {
@@ -44,60 +47,44 @@ export default function WeekChecklist(props: WeekChecklistProps) {
   const notConfiguredRow = notConfigured && notConfigured.kind === "not_configured" && (
     <li className={`${ROW} text-muted-foreground`}>
       <span className="h-4 w-4 shrink-0" aria-hidden="true" />
-      <span className="min-w-0">
+      <span className={TEXT}>
         {notConfigured.clients && notConfigured.ledger
           ? "Clients et comptabilité non configurés"
           : notConfigured.clients ? "Clients non configurés" : "Comptabilité non configurée"}
       </span>
-      <Link to="/settings#apropos" state={state} className={ACTION}>Paramètres <ChevronRight className="h-4 w-4" aria-hidden="true" /></Link>
+      <Button variant="link" size="sm" as={Link} to="/settings#apropos" state={state}>Paramètres</Button>
     </li>
   );
 
   if (count === 0) {
     return (
-      <section aria-live="polite" aria-label="À faire avant la semaine" className="card-elevated p-3">
-        <p className="flex min-h-11 items-center rounded-lg bg-success-soft px-3 text-base">Semaine prête, rien à faire avant lundi</p>
-        {notConfiguredRow && <ul className="mt-1">{notConfiguredRow}</ul>}
-      </section>
-    );
-  }
-
-  if (!open) {
-    return (
-      <section aria-live="polite" className="card-elevated">
-        <button type="button" onClick={onToggle} aria-expanded={false} className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl px-3 text-left hover:bg-hover">
-          <span className="text-h3">À faire avant la semaine · {count}</span>
-          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-        </button>
-      </section>
+      <div aria-live="polite">
+        <Callout tone="success" emoji="✅" title="Semaine prête, rien à faire avant lundi">
+          {notConfiguredRow && <ul className="text-foreground">{notConfiguredRow}</ul>}
+        </Callout>
+      </div>
     );
   }
 
   return (
-    <section aria-live="polite" className="card-elevated p-3">
-      <div className="flex min-h-9 items-center justify-between gap-2 px-1">
-        <h2 className="text-h3">À faire avant la semaine · {count}</h2>
-        <button type="button" onClick={onToggle} aria-expanded className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-base text-muted-foreground hover:bg-hover touch:min-h-11">
-          Réduire <ChevronUp className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </div>
-      <ul className="grid gap-x-6 xl:grid-cols-2">
-        {items.map((item, i) => {
-          if (item.kind === "not_configured") return null;
-          return <ChecklistRow key={i} item={item} {...props} state={state} retour={retour} />;
-        })}
-        {coveringList && !items.some((i) => i.kind === "groceries") && (
-          <li className={`${ROW} text-muted-foreground`}>
-            <span className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <Link to={`/grocery-list?id=${coveringList.listId}`} state={state} className="inline-flex min-h-10 items-center gap-1 rounded-lg hover:bg-hover">
-              Courses · liste{coveringList.range ? ` du ${rangeLabel(coveringList.range.from, coveringList.range.to)}` : ""}
-              <ChevronRight className="h-4 w-4" aria-hidden="true" />
-            </Link>
-          </li>
-        )}
-        {notConfiguredRow}
-      </ul>
-    </section>
+    <div aria-live="polite">
+      <Callout emoji="✅" title="À faire avant la semaine" count={count} collapsible open={open} onToggle={onToggle}>
+        <ul className="grid gap-x-8 xl:grid-cols-2">
+          {items.map((item, i) => {
+            if (item.kind === "not_configured") return null;
+            return <ChecklistRow key={i} item={item} {...props} state={state} retour={retour} />;
+          })}
+          {coveringList && !items.some((i) => i.kind === "groceries") && (
+            <li className={`${ROW} text-muted-foreground`}>
+              <span className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className={TEXT}>Courses · liste{coveringList.range ? ` du ${rangeLabel(coveringList.range.from, coveringList.range.to)}` : ""}</span>
+              <Button variant="link" size="sm" as={Link} to={`/grocery-list?id=${coveringList.listId}`} state={state}>Voir</Button>
+            </li>
+          )}
+          {notConfiguredRow}
+        </ul>
+      </Callout>
+    </div>
   );
 }
 
@@ -105,94 +92,93 @@ type RowProps = WeekChecklistProps & { item: ChecklistItem; state: { from: strin
 
 function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCreateClientWeek, onSetType, onAssign, onCreateGroceries, onCloseEvent }: RowProps) {
   const [closing, setClosing] = useState<string | null>(null);
-  const dot = <Dot status="todo" />;
 
   switch (item.kind) {
     case "client_week":
       return (
         <li className={ROW}>
-          {dot}
-          <span className="min-w-0">{item.clientName} : {plural(item.missingDays, "jour")} sans événement</span>
-          <button type="button" disabled={busy} onClick={() => onCreateClientWeek(item.clientId, item.guestCount)} className={ACTION}>Créer la semaine</button>
+          <Bullet />
+          <span className={TEXT}>{item.clientName} : {plural(item.missingDays, "jour")} sans événement</span>
+          <Button variant="link" size="sm" disabled={busy} onClick={() => onCreateClientWeek(item.clientId, item.guestCount)}>Créer la semaine</Button>
         </li>
       );
     case "no_menu":
       return (
         <li className={ROW}>
-          {dot}
-          <span className="min-w-0">{item.name} : aucune recette au menu</span>
-          <Link to={`/events/${item.eventId}?ajouter=1#menu`} state={state} className={ACTION}>Ajouter</Link>
+          <Bullet />
+          <span className={TEXT}>{item.name} : aucune recette au menu</span>
+          <Button variant="link" size="sm" as={Link} to={`/events/${item.eventId}?ajouter=1#menu`} state={state}>Ajouter</Button>
         </li>
       );
     case "no_price":
       return (
         <li className={ROW}>
-          {dot}
-          <span className="min-w-0">{item.name} : prix non fixé</span>
-          <Link to={`/events/${item.eventId}?focus=prix`} state={state} className={ACTION}>Fixer</Link>
+          <Bullet />
+          <span className={TEXT}>{item.name} : prix non fixé</span>
+          <Button variant="link" size="sm" as={Link} to={`/events/${item.eventId}?focus=prix`} state={state}>Fixer</Button>
         </li>
       );
     case "no_type":
       return (
         <li className={ROW}>
-          {dot}
-          <span className="min-w-0">{item.name} : type de prestation manquant</span>
-          <select
-            aria-label={`Type de prestation de ${item.name}`}
+          <Bullet />
+          <span className={TEXT}>{item.name} : type de prestation manquant</span>
+          <SelectPill
             value=""
-            disabled={busy}
-            onChange={(e) => {
-              const type = prestationTypes.find((t) => t.key === e.target.value);
-              if (type) void onSetType(item.eventId, type);
+            placeholder="Choisir"
+            align="right"
+            colour="gray"
+            aria-label={`Type de prestation de ${item.name}`}
+            title="Type de prestation"
+            options={prestationTypes.map((t) => ({ value: t.key, label: t.label }))}
+            onChange={(key) => {
+              const type = prestationTypes.find((t) => t.key === key);
+              if (type && !busy) void onSetType(item.eventId, type);
             }}
-            className="ml-auto min-h-10 shrink-0 rounded-lg border border-input bg-card px-2 text-base font-medium text-primary touch:min-h-11"
-          >
-            <option value="">Choisir</option>
-            {prestationTypes.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-          </select>
+          />
         </li>
       );
     case "unassigned":
       return (
         <li className={ROW}>
-          {dot}
-          <span className="min-w-0">{plural(item.lineCount, "ligne")} sans personne ({plural(item.eventCount, "événement")})</span>
-          <button type="button" onClick={onAssign} className={ACTION}>Assigner</button>
+          <Bullet />
+          <span className={TEXT}>{plural(item.lineCount, "ligne")} sans personne ({plural(item.eventCount, "événement")})</span>
+          <Button variant="link" size="sm" onClick={onAssign}>Assigner</Button>
         </li>
       );
     case "groceries":
       return (
         <li className={ROW}>
-          {dot}
-          <span className="min-w-0">
+          <Bullet />
+          <span className={TEXT}>
             {item.partial
               ? `Courses : ${plural(item.uncoveredEventIds.length, "événement")} sans liste`
               : `Courses non créées (${item.uncoveredEventIds.length} évén.)`}
           </span>
-          <button type="button" disabled={busy} onClick={() => onCreateGroceries(item.uncoveredEventIds)} className={ACTION}>Créer</button>
+          <Button variant="link" size="sm" disabled={busy} onClick={() => onCreateGroceries(item.uncoveredEventIds)}>Créer</Button>
         </li>
       );
     case "to_close":
       return (
         <li className="xl:col-span-2">
           <div className={ROW}>
-            {dot}
-            <span className="min-w-0">{plural(item.events.length, "événement passé", "événements passés")} à terminer</span>
+            <Bullet />
+            <span className={TEXT}>{plural(item.events.length, "événement passé", "événements passés")} à terminer</span>
           </div>
           <ul className="pl-6">
             {item.events.map((ev) => (
               <li key={ev.eventId} className={ROW}>
-                <Link to={`/events/${ev.eventId}`} state={state} className="min-w-0 truncate rounded hover:underline underline-offset-4">
+                <Link to={`/events/${ev.eventId}`} state={state} className={`${TEXT} truncate rounded hover:underline underline-offset-4`}>
                   {ev.name} · {shortDate.format(parseYmd(ev.date.slice(0, 10)))}
                 </Link>
-                <button
-                  type="button"
+                <Button
+                  variant="link"
+                  size="sm"
                   disabled={busy || closing === ev.eventId}
                   onClick={() => { setClosing(ev.eventId); onCloseEvent(ev.eventId).finally(() => setClosing(null)); }}
-                  className={ACTION}
                 >
                   Terminer
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -201,43 +187,43 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
     case "to_invoice":
       return (
         <li className={ROW}>
-          {dot}
-          <span className="min-w-0">{item.name} · {fmtEur0(item.htva)}</span>
-          <Link to={`/events/${item.eventId}?facturer=1#facturation`} state={state} className={ACTION}>Facturer</Link>
+          <Bullet />
+          <span className={TEXT}>{item.name} · {fmtEur0(item.htva)}</span>
+          <Button variant="link" size="sm" as={Link} to={`/events/${item.eventId}?facturer=1#facturation`} state={state}>Facturer</Button>
         </li>
       );
     case "to_invoice_many":
       return (
         <li className={ROW}>
-          {dot}
-          <span className="min-w-0">{item.count} événements terminés à facturer · {fmtEur0(item.htva)}</span>
-          <Link to="/comptes/a-facturer" state={state} className={ACTION}>Voir</Link>
+          <Bullet />
+          <span className={TEXT}>{item.count} événements terminés à facturer · {fmtEur0(item.htva)}</span>
+          <Button variant="link" size="sm" as={Link} to="/comptes/a-facturer" state={state}>Voir</Button>
         </li>
       );
     case "to_invoice_month":
       return (
         <li className={ROW}>
-          {dot}
-          <span className="min-w-0">{item.clientName} : {ymLabel(item.ym)} à facturer · {plural(item.eventIds.length, "événement")} · {fmtEur0(item.htva)}</span>
-          <Link to={`/comptes/journal?client=${item.clientId}&prefill=month&ym=${item.ym}`} state={state} className={ACTION}>Facturer le mois</Link>
+          <Bullet />
+          <span className={TEXT}>{item.clientName} : {ymLabel(item.ym)} à facturer · {plural(item.eventIds.length, "événement")} · {fmtEur0(item.htva)}</span>
+          <Button variant="link" size="sm" as={Link} to={`/comptes/journal?client=${item.clientId}&prefill=month&ym=${item.ym}`} state={state}>Facturer le mois</Button>
         </li>
       );
     case "unpaid":
       return (
         <li className={ROW}>
-          {dot}
-          <span className="min-w-0">
+          <Bullet />
+          <span className={TEXT}>
             {plural(item.count, "facture impayée", "factures impayées")} · {fmtEur0(item.totalTvac)} · la plus ancienne du {shortDate.format(parseYmd(item.oldestDate.slice(0, 10)))}
           </span>
-          <Link to="/comptes/a-facturer#impayes" state={state} className={ACTION}>Voir</Link>
+          <Button variant="link" size="sm" as={Link} to="/comptes/a-facturer#impayes" state={state}>Voir</Button>
         </li>
       );
     case "empty_week":
       return (
         <li className={ROW}>
-          {dot}
-          <span className="min-w-0">Aucun événement cette semaine</span>
-          <Link to={`/events/new?date=${monday}&retour=${retour}`} state={state} className={ACTION}>+ Ajouter</Link>
+          <Bullet />
+          <span className={TEXT}>Aucun événement cette semaine</span>
+          <Button variant="link" size="sm" as={Link} to={`/events/new?date=${monday}&retour=${retour}`} state={state}>+ Ajouter</Button>
         </li>
       );
     default:
