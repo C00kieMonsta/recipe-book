@@ -1,27 +1,21 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { Plus, X, Copy, FileDown, FileSpreadsheet, GripVertical, Check, Pencil, ShoppingCart, Trash2, ArrowLeft, Eye, EyeOff } from "lucide-react";
 import type { GroceryList, GroceryListItem, Ingredient } from "@packages/types";
-import { UNITS_QTY, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS } from "@packages/types";
+import { UNITS_QTY, PRICE_TO_QTY_UNIT } from "@packages/types";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
-import NumericInput from "@/components/ui/NumericInput";
-import SearchSelect from "@/components/ui/SearchSelect";
-import IngredientFormModal from "@/components/ui/IngredientFormModal";
-import { fmt, supplierColor } from "@/lib/recipe-helpers";
+import { useFullBleed } from "@/components/admin/AdminLayout";
+import { ListRow, SupplierTag, ActionMenu, NumericInput, SearchSelect, IngredientFormModal } from "@/components/ui";
+import { fmt } from "@/lib/recipe-helpers";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
-interface PendingGroceryData {
-  title: string;
-  items: Omit<GroceryListItem, "checked">[];
-  allIngredients: Ingredient[];
-}
-
-const PENDING_KEY = "recipe-book:grocery-list-pending";
+const itemKey = (g: GroceryListItem) => `${g.ingredientId}:${g.unit}`;
+const qty = (n: number) => String(Number(n.toFixed(2)));
 
 export default function GroceryListPage() {
-  const navigate = useNavigate();
+  useFullBleed(true);
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
 
@@ -30,6 +24,7 @@ export default function GroceryListPage() {
   const [items, setItems] = useState<GroceryListItem[]>([]);
   const [allIngredients, setAllIngredients] = useState<Ingredient[]>([]);
   const [savedLists, setSavedLists] = useState<GroceryList[]>([]);
+  const [settingsSuppliers, setSettingsSuppliers] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -42,8 +37,8 @@ export default function GroceryListPage() {
   const [mobileShowList, setMobileShowList] = useState(false);
   const [editing, setEditing] = useState(false);
   const [hideChecked, setHideChecked] = useState(false);
+  const [openRows, setOpenRows] = useState<Set<string>>(new Set());
   const [creatingIngredient, setCreatingIngredient] = useState<string | null>(null);
-  const [supplierNames] = useState(() => DEFAULT_SUPPLIERS.map((s) => s.name));
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
   const initialized = useRef(false);
   const savingRef = useRef(false);
@@ -89,28 +84,19 @@ export default function GroceryListPage() {
 
   useEffect(() => {
     const init = async () => {
-      const [lists, ings] = await Promise.all([
+      const [lists, ings, settings] = await Promise.all([
         api.groceryLists.list().catch(() => [] as GroceryList[]),
         api.ingredients.list().catch(() => [] as Ingredient[]),
+        api.settings.get().catch(() => null),
       ]);
       setSavedLists(lists);
       setAllIngredients(ings);
+      setSettingsSuppliers((settings?.suppliers ?? []).map((s) => s.name));
 
       const idParam = searchParams.get("id");
       if (idParam) {
         const found = lists.find((l) => l.listId === idParam);
         if (found) { setList(found); setTitle(found.title); setItems(found.items); setEditing(true); }
-      } else {
-        const pendingRaw = localStorage.getItem(PENDING_KEY);
-        if (pendingRaw) {
-          try {
-            const pending: PendingGroceryData = JSON.parse(pendingRaw);
-            setTitle(pending.title);
-            setItems(pending.items.map((i) => ({ ...i, checked: false })));
-            localStorage.removeItem(PENDING_KEY);
-            setEditing(true);
-          } catch { /* ignore */ }
-        }
       }
       setLoading(false);
       setTimeout(() => { initialized.current = true; }, 100);
@@ -126,6 +112,10 @@ export default function GroceryListPage() {
     visibleItems.forEach((g) => { map[g.supplier]?.push(g); });
     return map;
   }, [visibleItems, suppliers]);
+  const moveTargets = useMemo(
+    () => [...new Set([...settingsSuppliers, ...items.map((g) => g.supplier)])].filter(Boolean).sort(),
+    [settingsSuppliers, items],
+  );
 
   const usedIngIds = new Set(items.map((g) => g.ingredientId));
   const availableIngs = allIngredients.filter((i) => !usedIngIds.has(i.ingredientId));
@@ -141,6 +131,14 @@ export default function GroceryListPage() {
 
   const removeItem = (idx: number) => setItems(items.filter((_, i) => i !== idx));
 
+  const toggleRow = (key: string) => {
+    setOpenRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
   const handleDrop = (targetSupplier: string) => {
     if (dragIdx === null) return;
     patchItem(dragIdx, { supplier: targetSupplier });
@@ -148,11 +146,11 @@ export default function GroceryListPage() {
     setDropSupplier(null);
   };
 
-  const addItemFromIngredient = (ing: Ingredient, qty: number, unit: string) => {
+  const addItemFromIngredient = (ing: Ingredient, q: number, unit: string) => {
     setItems((prev) => [...prev, {
       ingredientId: ing.ingredientId,
       name: ing.name,
-      totalQty: qty,
+      totalQty: q,
       unit,
       supplier: ing.supplier || "Autre",
       pricePerUnit: ing.price,
@@ -185,30 +183,27 @@ export default function GroceryListPage() {
   const selectList = (l: GroceryList) => {
     setList(l); setTitle(l.title); setItems(l.items);
     setSearchParams({ id: l.listId }, { replace: true });
-    setEditing(true); setMobileShowList(false);
+    setEditing(true); setMobileShowList(false); setOpenRows(new Set());
   };
 
   const startNewList = () => {
     setList(null); setTitle("Nouvelle liste"); setItems([]);
     setSearchParams({}, { replace: true });
-    setEditing(true); setMobileShowList(false);
+    setEditing(true); setMobileShowList(false); setOpenRows(new Set());
   };
 
-  const deleteSaved = async (id: string, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    const target = savedLists.find((l) => l.listId === id);
-    if (!confirm(`Supprimer « ${target?.title ?? "cette liste"} » ?`)) return;
-    // Cancel any pending autosave and stop the editor from re-saving so the
-    // debounced PATCH/create can't resurrect or re-create the deleted list.
+  const deleteCurrent = async () => {
+    if (!list) return;
+    const id = list.listId;
+    if (!confirm(`Supprimer « ${list.title} » ?`)) return;
+    // Cancel the pending autosave so it cannot resurrect the deleted list.
     clearTimeout(autoSaveTimer.current);
-    if (list?.listId === id) {
-      setEditing(false);
-      setList(null);
-      setItems([]);
-      setTitle("Liste de courses");
-      setSearchParams({}, { replace: true });
-      setMobileShowList(true);
-    }
+    setEditing(false);
+    setList(null);
+    setItems([]);
+    setTitle("Liste de courses");
+    setSearchParams({}, { replace: true });
+    setMobileShowList(true);
     try {
       await api.groceryLists.delete(id);
       setSavedLists((prev) => prev.filter((l) => l.listId !== id));
@@ -249,9 +244,9 @@ export default function GroceryListPage() {
         body: supplierItems.map((g) => [
           g.checked ? "✓" : "",
           g.name,
-          `${Number(g.totalQty.toFixed(2))} ${g.unit}`,
-          g.haveQty != null ? `${Number(g.haveQty.toFixed(2))} ${g.unit}` : "—",
-          `${Number(needQty(g).toFixed(2))} ${g.unit}`,
+          `${qty(g.totalQty)} ${g.unit}`,
+          g.haveQty != null ? `${qty(g.haveQty)} ${g.unit}` : "-",
+          `${qty(needQty(g))} ${g.unit}`,
           `${fmt(g.pricePerUnit)} ${g.priceUnit}`,
         ]),
         margin: { left: m },
@@ -288,7 +283,7 @@ export default function GroceryListPage() {
       g.unit, g.supplier, g.pricePerUnit, g.priceUnit,
     ].join(sep));
     const csv = [header, ...rows].join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -302,45 +297,32 @@ export default function GroceryListPage() {
   const uncheckedCount = items.filter((g) => !g.checked).length;
 
   const sidebar = (
-    <div className="flex flex-col h-full">
-      <div className="p-3 border-b">
+    <div className="flex h-full flex-col">
+      <div className="border-b p-3">
         <button
+          type="button"
           onClick={startNewList}
-          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 transition-opacity"
+          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 text-base font-medium text-primary-foreground hover:opacity-90"
         >
-          <Plus className="h-3.5 w-3.5" /> Nouvelle liste
+          <Plus className="h-5 w-5" /> Nouvelle liste
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto p-2">
         {savedLists.length === 0 ? (
-          <div className="p-4 text-center text-xs text-muted-foreground">
-            Aucune liste sauvegardée
-          </div>
+          <p className="p-4 text-center text-sm text-muted-foreground">Aucune liste sauvegardée</p>
         ) : (
           savedLists.map((l) => {
             const isActive = list?.listId === l.listId;
             const checkedCount = l.items.filter((i) => i.checked).length;
+            const date = new Date(l.updatedAt).toLocaleDateString("fr-BE", { day: "numeric", month: "short" });
             return (
-              <div
+              <ListRow
                 key={l.listId}
                 onClick={() => selectList(l)}
-                className={`w-full text-left px-3 py-2.5 border-b border-border/20 transition-colors group cursor-pointer ${isActive ? "bg-primary/8 border-l-2 border-l-primary" : "hover:bg-muted/50"}`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className={`text-sm truncate ${isActive ? "font-semibold" : "font-medium"}`}>{l.title}</span>
-                  <button
-                    onClick={(e) => deleteSaved(l.listId, e)}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-destructive transition-all shrink-0"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
-                  <span>{l.items.length} ingr.</span>
-                  {checkedCount > 0 && <span>· {checkedCount} cochés</span>}
-                  <span className="ml-auto">{new Date(l.updatedAt).toLocaleDateString("fr-BE", { day: "numeric", month: "short" })}</span>
-                </div>
-              </div>
+                title={l.title}
+                subtitle={[`${l.items.length} ingr.`, checkedCount > 0 ? `${checkedCount} cochés` : null, date].filter(Boolean).join(" · ")}
+                className={isActive ? "bg-primary-soft hover:bg-primary-soft" : ""}
+              />
             );
           })
         )}
@@ -348,19 +330,29 @@ export default function GroceryListPage() {
     </div>
   );
 
+  const menuItems = [
+    { label: "Exporter en PDF", icon: <FileDown className="h-4 w-4" />, onClick: exportPdf },
+    { label: "Exporter en CSV", icon: <FileSpreadsheet className="h-4 w-4" />, onClick: exportCsv },
+    { label: "Copier la liste", icon: <Copy className="h-4 w-4" />, onClick: copyList },
+    ...(list ? [{ label: "Supprimer la liste", icon: <Trash2 className="h-4 w-4" />, onClick: deleteCurrent, variant: "danger" as const }] : []),
+  ];
+
   const detail = (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Detail header */}
-      <div className="shrink-0 px-4 py-3 border-b bg-background">
-        <div className="flex items-center gap-3 mb-1">
-          {/* Mobile back button */}
-          <button onClick={() => setMobileShowList(true)} className="md:hidden p-1 -ml-1 text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-4 w-4" />
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="shrink-0 border-b bg-background px-4 py-3">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setMobileShowList(true)}
+            aria-label="Retour aux listes"
+            className="-ml-2 flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground md:hidden"
+          >
+            <ArrowLeft className="h-5 w-5" />
           </button>
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0 flex-1">
             {editingTitle ? (
               <input
-                className="text-lg font-bold tracking-tight bg-transparent border-b-2 border-primary outline-none w-full"
+                className="w-full border-b-2 border-primary bg-transparent text-h3 outline-none"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 onBlur={() => setEditingTitle(false)}
@@ -368,230 +360,202 @@ export default function GroceryListPage() {
                 autoFocus
               />
             ) : (
-              <h2 className="text-lg font-bold tracking-tight flex items-center gap-2 cursor-pointer group" onClick={() => setEditingTitle(true)}>
-                <span className="truncate">{title}</span>
-                <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-              </h2>
+              <button type="button" onClick={() => setEditingTitle(true)} className="group flex min-h-11 max-w-full items-center gap-2 text-left">
+                <h2 className="truncate text-h3">{title}</h2>
+                <Pencil className="reveal h-4 w-4 shrink-0 text-muted-foreground" />
+              </button>
             )}
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               {uncheckedCount} à acheter · {items.length - uncheckedCount} cochés · {suppliers.length} fournisseur{suppliers.length > 1 ? "s" : ""}
+              {saving && <span className="ml-2 text-caption">Sauvegarde…</span>}
             </p>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className={`text-[10px] text-muted-foreground tabular-nums transition-opacity ${saving ? "opacity-100" : "opacity-0"}`}>
-              Sauvegarde…
-            </span>
+          <div className="flex shrink-0 items-center gap-2">
             <button
+              type="button"
               onClick={() => setHideChecked((v) => !v)}
-              className={`p-1.5 border rounded-lg text-xs transition-colors ${hideChecked ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"}`}
-              title={hideChecked ? "Afficher les ingrédients cochés" : "Masquer les ingrédients cochés"}
+              aria-pressed={hideChecked}
+              className={`flex min-h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors ${hideChecked ? "border-primary bg-primary text-primary-foreground" : "hover:bg-hover"}`}
             >
-              {hideChecked ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              {hideChecked ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              <span className="hidden sm:inline">{hideChecked ? "Afficher cochés" : "Masquer cochés"}</span>
             </button>
-            <button onClick={exportPdf} className="p-1.5 border rounded-lg text-xs hover:bg-muted transition-colors" title="PDF">
-              <FileDown className="h-3.5 w-3.5" />
-            </button>
-            <button onClick={exportCsv} className="p-1.5 border rounded-lg text-xs hover:bg-muted transition-colors" title="CSV">
-              <FileSpreadsheet className="h-3.5 w-3.5" />
-            </button>
-            <button onClick={copyList} className="p-1.5 border rounded-lg text-xs hover:bg-muted transition-colors" title="Copier">
-              <Copy className="h-3.5 w-3.5" />
-            </button>
+            <ActionMenu items={menuItems} />
           </div>
         </div>
       </div>
 
-      {/* Detail body */}
       <div className="flex-1 overflow-y-auto p-4">
-        {/* Add ingredient */}
-        {addingIng ? (
-          <div className="mb-3 flex items-center gap-2 flex-wrap border rounded-lg p-3 bg-muted/20">
-            <SearchSelect
-              options={availableIngs.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))}
-              value={newIngId}
-              onChange={(v) => {
-                setNewIngId(v);
-                const ing = allIngredients.find((i) => i.ingredientId === v);
-                if (ing) setNewIngUnit(PRICE_TO_QTY_UNIT[ing.unit] || "g");
-              }}
-              placeholder="Rechercher un ingrédient…"
-              className="flex-1 min-w-[160px]"
-              onCreateNew={(name) => setCreatingIngredient(name)}
-            />
-            <NumericInput className="w-20 text-right px-2 py-1 border rounded-md bg-background text-xs tabular-nums focus:border-primary outline-none" value={newIngQty} onChange={setNewIngQty} placeholder="Qté" />
-            <select className="border rounded-md px-1 py-1 text-xs bg-background focus:border-primary outline-none" value={newIngUnit} onChange={(e) => setNewIngUnit(e.target.value)}>
-              {UNITS_QTY.map((u) => <option key={u}>{u}</option>)}
-            </select>
-            <button onClick={addItem} disabled={!newIngId || newIngQty <= 0} className="px-3 py-1 bg-primary text-primary-foreground rounded-md text-xs font-medium disabled:opacity-50">Ajouter</button>
-            <button onClick={() => setAddingIng(false)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
-          </div>
-        ) : (
-          <button onClick={() => setAddingIng(true)} className="mb-3 flex items-center gap-1.5 px-3 py-1.5 border border-dashed rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors w-full justify-center">
-            <Plus className="h-3.5 w-3.5" /> Ajouter un ingrédient
-          </button>
-        )}
-
-        {items.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground">
-            <ShoppingCart className="h-8 w-8 mx-auto mb-3 opacity-30" />
-            <p className="font-medium text-sm">Aucun ingrédient</p>
-            <p className="text-xs mt-1">Générez une liste depuis les événements ou ajoutez manuellement</p>
-          </div>
-        )}
-
-        {items.length > 0 && (
-          <p className="text-xs text-muted-foreground mb-2">
-            Glissez un ingrédient vers un fournisseur pour le déplacer
-          </p>
-        )}
-
-        {suppliers.map((supplier) => (
-          <div
-            key={supplier}
-            className={`mb-3 rounded-lg border transition-colors ${dropSupplier === supplier ? "border-primary bg-primary/5" : "border-border/40"}`}
-            onDragOver={(e) => { e.preventDefault(); setDropSupplier(supplier); }}
-            onDragLeave={() => setDropSupplier(null)}
-            onDrop={(e) => { e.preventDefault(); handleDrop(supplier); }}
-          >
-            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/30">
-              <span className="inline-block w-2 h-2 rounded-full" style={{ background: supplierColor(supplier) }} />
-              <span className="text-xs font-bold">{supplier}</span>
-              <span className="text-[10px] text-muted-foreground">({grouped[supplier]?.length || 0})</span>
+        <div className="mx-auto max-w-doc">
+          {addingIng ? (
+            <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-surface p-3">
+              <SearchSelect
+                options={availableIngs.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))}
+                value={newIngId}
+                onChange={(v) => {
+                  setNewIngId(v);
+                  const ing = allIngredients.find((i) => i.ingredientId === v);
+                  if (ing) setNewIngUnit(PRICE_TO_QTY_UNIT[ing.unit] || "g");
+                }}
+                placeholder="Rechercher un ingrédient…"
+                className="min-w-[160px] flex-1"
+                onCreateNew={(name) => setCreatingIngredient(name)}
+              />
+              <NumericInput className="input-field w-24 text-right tabular-nums" value={newIngQty} onChange={setNewIngQty} placeholder="Qté" />
+              <select className="input-field w-auto" value={newIngUnit} onChange={(e) => setNewIngUnit(e.target.value)}>
+                {UNITS_QTY.map((u) => <option key={u}>{u}</option>)}
+              </select>
+              <button type="button" onClick={addItem} disabled={!newIngId || newIngQty <= 0} className="min-h-11 rounded-lg bg-primary px-4 text-base font-medium text-primary-foreground disabled:opacity-50">Ajouter</button>
+              <button type="button" onClick={() => setAddingIng(false)} aria-label="Annuler" className="flex min-h-11 min-w-11 items-center justify-center text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
             </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAddingIng(true)}
+              className="mb-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-dashed text-base font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+            >
+              <Plus className="h-5 w-5" /> Ajouter un ingrédient
+            </button>
+          )}
 
-            {/* Desktop table */}
-            <table className="w-full text-sm hidden lg:table">
-              <thead>
-                <tr className="border-b border-border/20 text-xs text-muted-foreground">
-                  <th className="w-5 pl-2 py-1" />
-                  <th className="w-7 py-1" />
-                  <th className="px-2 py-1 text-left">Ingrédient</th>
-                  <th className="px-2 py-1 text-right">Besoin</th>
-                  <th className="px-2 py-1 text-right w-32">En stock</th>
-                  <th className="px-2 py-1 text-right font-semibold">À acheter</th>
-                  <th className="px-2 py-1 text-right text-muted-foreground">Prix/u</th>
-                  <th className="w-7 pr-2 py-1" />
-                </tr>
-              </thead>
-              <tbody>
+          {items.length === 0 && (
+            <div className="py-12 text-center text-muted-foreground">
+              <ShoppingCart className="mx-auto mb-3 h-8 w-8 opacity-30" />
+              <p className="text-base font-medium">Aucun ingrédient</p>
+              <p className="mt-1 text-sm">Générez une liste depuis la semaine ou le jour, ou ajoutez manuellement</p>
+            </div>
+          )}
+
+          {items.length > 0 && (
+            <p className="pointer:block mb-3 hidden text-sm text-muted-foreground">
+              Glissez un ingrédient vers un fournisseur pour le déplacer
+            </p>
+          )}
+
+          {suppliers.map((supplier) => (
+            <section
+              key={supplier}
+              className={`mb-4 rounded-lg border transition-colors ${dropSupplier === supplier ? "border-primary bg-primary-soft/40" : "border-border/60"}`}
+              onDragOver={(e) => { e.preventDefault(); setDropSupplier(supplier); }}
+              onDragLeave={() => setDropSupplier(null)}
+              onDrop={(e) => { e.preventDefault(); handleDrop(supplier); }}
+            >
+              <header className="flex min-h-11 items-center gap-2 border-b border-border/40 px-3">
+                <SupplierTag name={supplier} />
+                <span className="text-sm text-muted-foreground">{grouped[supplier]?.length || 0}</span>
+              </header>
+
+              <div className="divide-y divide-border/40">
                 {(grouped[supplier] || []).map((g) => {
                   const gIdx = getIdx(g);
+                  const key = itemKey(g);
                   const need = needQty(g);
+                  const open = openRows.has(key);
                   return (
-                    <tr
-                      key={`${g.ingredientId}:${g.unit}`}
+                    <div
+                      key={key}
                       draggable
                       onDragStart={() => setDragIdx(gIdx)}
                       onDragEnd={() => { setDragIdx(null); setDropSupplier(null); }}
-                      className={`border-b border-border/20 last:border-0 hover:bg-muted/30 transition-colors ${dragIdx === gIdx ? "opacity-40" : ""} ${g.checked ? "opacity-50" : ""}`}
+                      className={`${dragIdx === gIdx ? "opacity-40" : ""} ${g.checked ? "opacity-60" : ""}`}
                     >
-                      <td className="pl-2 py-1.5 w-5 text-muted-foreground/40 cursor-grab"><GripVertical className="h-3 w-3" /></td>
-                      <td className="py-1.5 w-7">
+                      <div className="flex min-h-12 items-center gap-2 pr-2">
+                        <span className="pointer:flex hidden w-6 shrink-0 cursor-grab items-center justify-center self-stretch text-muted-foreground/50" aria-hidden="true">
+                          <GripVertical className="h-4 w-4" />
+                        </span>
                         <button
+                          type="button"
                           onClick={() => patchItem(gIdx, { checked: !g.checked })}
-                          className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${g.checked ? "bg-primary border-primary text-primary-foreground" : "border-border hover:border-primary"}`}
+                          aria-pressed={g.checked}
+                          className="flex min-h-12 min-w-0 flex-1 items-center gap-3 py-1 pl-2 text-left pointer:pl-0 hover:bg-hover"
                         >
-                          {g.checked && <Check className="h-3 w-3" />}
+                          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded border-2 ${g.checked ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}>
+                            {g.checked && <Check className="h-4 w-4" />}
+                          </span>
+                          <span className={`min-w-0 flex-1 truncate text-base ${g.checked ? "line-through text-muted-foreground" : ""}`}>{g.name}</span>
+                          <span className={`shrink-0 text-base font-bold tabular-nums ${need > 0 ? "" : "text-success"}`}>
+                            {need > 0 ? `${qty(need)} ${g.unit}` : "✓"}
+                          </span>
                         </button>
-                      </td>
-                      <td className={`px-2 py-1.5 text-xs font-medium ${g.checked ? "line-through text-muted-foreground" : ""}`}>{g.name}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground text-xs whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1">
-                          <NumericInput className="w-14 text-right px-1 py-0.5 border rounded bg-background text-xs tabular-nums focus:border-primary outline-none" value={g.totalQty} onChange={(v) => patchItem(gIdx, { totalQty: v })} />
-                          <span className="w-6 text-left text-[10px]">{g.unit}</span>
+                        <button
+                          type="button"
+                          onClick={() => toggleRow(key)}
+                          aria-expanded={open}
+                          className={`min-h-11 shrink-0 rounded-lg border px-3 text-sm font-medium transition-colors ${open ? "border-primary bg-primary-soft" : "hover:bg-hover"}`}
+                        >
+                          Stock
+                        </button>
+                      </div>
+
+                      {open && (
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/40 bg-surface px-3 py-2">
+                          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                            Besoin
+                            <NumericInput className="input-field input-compact w-20 text-right tabular-nums" value={g.totalQty} onChange={(v) => patchItem(gIdx, { totalQty: v })} />
+                            <span>{g.unit}</span>
+                          </label>
+                          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                            En stock
+                            <NumericInput className="input-field input-compact w-20 text-right tabular-nums" value={g.haveQty ?? 0} onChange={(v) => patchItem(gIdx, { haveQty: v > 0 ? v : undefined })} placeholder="0" autoFocus />
+                            <span>{g.unit}</span>
+                          </label>
+                          <span className="text-sm text-muted-foreground tabular-nums">{fmt(g.pricePerUnit)} {g.priceUnit}</span>
+                          <label className="pointer:hidden flex items-center gap-2 text-sm text-muted-foreground">
+                            Déplacer vers
+                            <select
+                              className="input-field input-compact w-auto"
+                              value={g.supplier}
+                              onChange={(e) => patchItem(gIdx, { supplier: e.target.value })}
+                            >
+                              {moveTargets.map((s) => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => removeItem(gIdx)}
+                            className="ml-auto flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-destructive hover:bg-destructive-soft"
+                          >
+                            <X className="h-4 w-4" /> Retirer
+                          </button>
                         </div>
-                      </td>
-                      <td className="px-2 py-1.5 w-32">
-                        <div className="flex items-center justify-end gap-1">
-                          <NumericInput className="w-14 text-right px-1 py-0.5 border rounded bg-background text-xs tabular-nums focus:border-primary outline-none" value={g.haveQty ?? 0} onChange={(v) => patchItem(gIdx, { haveQty: v > 0 ? v : undefined })} placeholder="0" />
-                          <span className="w-6 text-left text-[10px] text-muted-foreground">{g.unit}</span>
-                        </div>
-                      </td>
-                      <td className={`px-2 py-1.5 text-right tabular-nums font-semibold whitespace-nowrap text-xs ${need > 0 ? "" : "text-green-600"}`}>
-                        {need > 0 ? `${Number(need.toFixed(2))} ${g.unit}` : "✓"}
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground text-[10px] whitespace-nowrap">{fmt(g.pricePerUnit)} {g.priceUnit}</td>
-                      <td className="pr-2 py-1.5 w-7">
-                        <button onClick={() => removeItem(gIdx)} className="p-0.5 text-muted-foreground hover:text-destructive transition-colors"><X className="h-3 w-3" /></button>
-                      </td>
-                    </tr>
+                      )}
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
-
-            {/* Mobile / tablet cards */}
-            <div className="lg:hidden divide-y divide-border/20">
-              {(grouped[supplier] || []).map((g) => {
-                const gIdx = getIdx(g);
-                const need = needQty(g);
-                return (
-                  <div key={`${g.ingredientId}:${g.unit}`} className={`px-3 py-2 ${g.checked ? "opacity-50" : ""}`}>
-                    <div className="flex items-center gap-2.5">
-                      <button
-                        onClick={() => patchItem(gIdx, { checked: !g.checked })}
-                        className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${g.checked ? "bg-primary border-primary text-primary-foreground" : "border-border hover:border-primary"}`}
-                      >
-                        {g.checked && <Check className="h-3 w-3" />}
-                      </button>
-                      <span className={`text-sm font-medium flex-1 min-w-0 truncate ${g.checked ? "line-through text-muted-foreground" : ""}`}>{g.name}</span>
-                      <span className={`text-xs font-semibold tabular-nums shrink-0 ${need > 0 ? "" : "text-green-600"}`}>
-                        {need > 0 ? `${Number(need.toFixed(2))} ${g.unit}` : "✓"}
-                      </span>
-                      <button onClick={() => removeItem(gIdx)} className="p-0.5 text-muted-foreground hover:text-destructive transition-colors shrink-0"><X className="h-3.5 w-3.5" /></button>
-                    </div>
-                    <div className="flex items-center gap-3 ml-[30px] mt-1 text-[11px] text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <span>Besoin:</span>
-                        <NumericInput className="w-12 text-right px-1 py-0.5 border rounded bg-background tabular-nums focus:border-primary outline-none" value={g.totalQty} onChange={(v) => patchItem(gIdx, { totalQty: v })} />
-                        <span>{g.unit}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span>Stock:</span>
-                        <NumericInput className="w-12 text-right px-1 py-0.5 border rounded bg-background tabular-nums focus:border-primary outline-none" value={g.haveQty ?? 0} onChange={(v) => patchItem(gIdx, { haveQty: v > 0 ? v : undefined })} placeholder="0" />
-                        <span>{g.unit}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+              </div>
+            </section>
+          ))}
+        </div>
       </div>
     </div>
   );
 
   const emptyState = (
-    <div className="flex-1 flex items-center justify-center text-muted-foreground">
+    <div className="flex flex-1 items-center justify-center text-muted-foreground">
       <div className="text-center">
-        <ShoppingCart className="h-10 w-10 mx-auto mb-3 opacity-20" />
-        <p className="font-medium text-sm">Sélectionnez une liste</p>
-        <p className="text-xs mt-1">ou créez-en une nouvelle</p>
+        <ShoppingCart className="mx-auto mb-3 h-10 w-10 opacity-20" />
+        <p className="text-base font-medium">Sélectionnez une liste</p>
+        <p className="mt-1 text-sm">ou créez-en une nouvelle</p>
       </div>
     </div>
   );
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col -m-6">
-      {/* Desktop: side-by-side */}
-      <div className="hidden md:flex flex-1 min-h-0">
-        {/* Left sidebar */}
-        <div className="w-64 xl:w-72 border-r bg-muted/20 shrink-0 flex flex-col overflow-hidden">
+    <div className="flex h-[calc(100dvh-68px)] flex-col md:h-[100dvh]">
+      <div className="hidden min-h-0 flex-1 md:flex">
+        <div className="flex w-72 shrink-0 flex-col overflow-hidden border-r bg-surface">
           {sidebar}
         </div>
-        {/* Right detail */}
-        <div className="flex-1 min-w-0 flex flex-col">
+        <div className="flex min-w-0 flex-1 flex-col">
           {editing ? detail : emptyState}
         </div>
       </div>
 
-      {/* Mobile: toggle between list and detail */}
-      <div className="flex flex-col flex-1 min-h-0 md:hidden">
+      <div className="flex min-h-0 flex-1 flex-col md:hidden">
         {mobileShowList || !editing ? (
-          <div className="flex-1 overflow-hidden flex flex-col">
-            <div className="px-4 py-3 border-b">
-              <h1 className="text-lg font-bold">Listes de courses</h1>
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="border-b px-4 py-3">
+              <h1 className="font-serif text-h2">Listes de courses</h1>
             </div>
             {sidebar}
           </div>
@@ -602,8 +566,8 @@ export default function GroceryListPage() {
 
       {creatingIngredient !== null && (
         <IngredientFormModal
-          ingredient={{ name: creatingIngredient, price: 0, unit: "€/kg", supplier: supplierNames[0] || "" }}
-          supplierNames={supplierNames}
+          ingredient={{ name: creatingIngredient, price: 0, unit: "€/kg", supplier: settingsSuppliers[0] || "" }}
+          supplierNames={settingsSuppliers}
           onSave={handleCreateIngredient}
           onCancel={() => setCreatingIngredient(null)}
         />

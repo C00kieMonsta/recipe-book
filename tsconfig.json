@@ -14,11 +14,7 @@
     "jsx": "react-jsx",
     "incremental": true,
     "target": "ES2017",
-    "baseUrl": ".",
-    "paths": {
-      "@packages/utils/*": ["packages/utils/src/*"],
-      "@packages/utils": ["packages/utils/src"]
-    }
+    "baseUrl": "."
   },
   "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["node_modules", "**/node_modules", "**/.next", "**/dist"],

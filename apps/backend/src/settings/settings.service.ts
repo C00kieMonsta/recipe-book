@@ -1,9 +1,34 @@
 import { Injectable } from "@nestjs/common";
 import type { AppSettings } from "@packages/types";
-import { DEFAULT_RECIPE_CATEGORIES, DEFAULT_SUPPLIERS } from "@packages/types";
+import {
+  DEFAULT_COURSES,
+  DEFAULT_PRESTATION_TYPES,
+  DEFAULT_RECIPE_CATEGORIES,
+  DEFAULT_SUPPLIERS,
+} from "@packages/types";
 import { DdbService } from "../shared/ddb.service";
 
 const GLOBAL_ID = "global";
+
+export type SettingsUpdate = Partial<Omit<AppSettings, "settingsId" | "updatedAt">>;
+
+// company and ledgerStartYm have no default and stay absent until set.
+function withDefaults(stored: Partial<AppSettings>): AppSettings {
+  return {
+    ...stored,
+    settingsId: GLOBAL_ID,
+    recipeCategories: stored.recipeCategories ?? DEFAULT_RECIPE_CATEGORIES,
+    suppliers: stored.suppliers ?? DEFAULT_SUPPLIERS,
+    courses: stored.courses ?? DEFAULT_COURSES,
+    prestationTypes: stored.prestationTypes ?? DEFAULT_PRESTATION_TYPES,
+    fixedCharges: stored.fixedCharges ?? [],
+    objectives: stored.objectives ?? {},
+    yearActuals: stored.yearActuals ?? {},
+    monthCloses: stored.monthCloses ?? {},
+    ignoredDuplicateGroups: stored.ignoredDuplicateGroups ?? [],
+    updatedAt: stored.updatedAt ?? new Date().toISOString(),
+  };
+}
 
 @Injectable()
 export class SettingsService {
@@ -13,24 +38,16 @@ export class SettingsService {
 
   async get(): Promise<AppSettings> {
     const item = await this.ddb.get(this.table, { settingsId: GLOBAL_ID });
-    if (item) {
-      const settings = item as unknown as AppSettings;
-      if (!settings.suppliers) settings.suppliers = DEFAULT_SUPPLIERS;
-      return settings;
-    }
-    return {
-      settingsId: GLOBAL_ID,
-      recipeCategories: DEFAULT_RECIPE_CATEGORIES,
-      suppliers: DEFAULT_SUPPLIERS,
-      updatedAt: new Date().toISOString(),
-    };
+    return withDefaults((item ?? {}) as Partial<AppSettings>);
   }
 
-  async update(fields: Partial<Pick<AppSettings, "recipeCategories" | "suppliers">>): Promise<AppSettings> {
+  // Shallow merge: a record such as objectives is replaced whole by what the client sends.
+  async update(fields: SettingsUpdate): Promise<AppSettings> {
     const current = await this.get();
+    const given = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
     const updated: AppSettings = {
       ...current,
-      ...fields,
+      ...given,
       settingsId: GLOBAL_ID,
       updatedAt: new Date().toISOString(),
     };

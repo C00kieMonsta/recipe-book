@@ -113,10 +113,3 @@ jobs:
           name: frontend-build
           path: apps/frontend/.next/standalone/
           retention-days: 30
-
-      - name: Upload Utils Build
-        uses: actions/upload-artifact@v4
-        with:
-          name: utils-build
-          path: packages/utils/dist/
-          retention-days: 30

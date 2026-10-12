@@ -59,6 +59,8 @@ if [[ "${1:-}" == "--file" ]]; then
   settings_table=$(get_json_field "$json" "SETTINGS_TABLE")
   events_table=$(get_json_field "$json" "EVENTS_TABLE")
   grocery_lists_table=$(get_json_field "$json" "GROCERY_LISTS_TABLE")
+  clients_table=$(get_json_field "$json" "CLIENTS_TABLE")
+  ledger_table=$(get_json_field "$json" "LEDGER_TABLE")
   s3_bucket=$(get_json_field "$json" "S3_BUCKET")
   admin_credentials=$(get_json_field "$json" "ADMIN_CREDENTIALS" | jq -c .)
   jwt_secret=$(get_json_field "$json" "JWT_SECRET")
@@ -78,6 +80,12 @@ else
   read -rp "GROCERY_LISTS_TABLE [ta-grocery-lists-prod]: " grocery_lists_table
   grocery_lists_table="${grocery_lists_table:-ta-grocery-lists-prod}"
 
+  read -rp "CLIENTS_TABLE [ta-clients-prod]: " clients_table
+  clients_table="${clients_table:-ta-clients-prod}"
+
+  read -rp "LEDGER_TABLE [ta-ledger-prod]: " ledger_table
+  ledger_table="${ledger_table:-ta-ledger-prod}"
+
   read -rp "S3_BUCKET [la-table-amelie-uploads-prod]: " s3_bucket
   s3_bucket="${s3_bucket:-la-table-amelie-uploads-prod}"
 
@@ -95,6 +103,8 @@ put_param "RECIPES_TABLE"       "$recipes_table"       "String"
 put_param "SETTINGS_TABLE"      "$settings_table"      "String"
 put_param "EVENTS_TABLE"        "$events_table"        "String"
 put_param "GROCERY_LISTS_TABLE" "$grocery_lists_table" "String"
+put_param "CLIENTS_TABLE"       "$clients_table"       "String"
+put_param "LEDGER_TABLE"        "$ledger_table"        "String"
 put_param "S3_BUCKET"           "$s3_bucket"           "String"
 put_param "ADMIN_CREDENTIALS"   "$admin_credentials"
 put_param "JWT_SECRET"          "$jwt_secret"

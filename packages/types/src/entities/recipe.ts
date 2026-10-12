@@ -27,6 +27,7 @@ export interface Recipe {
   type: string;
   portions: number;
   portionWeight: number;
+  defaultCourse?: string;
   description?: string;
   techniques: string[];
   ingredients: RecipeIngredient[];

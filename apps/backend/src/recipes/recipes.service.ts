@@ -1,9 +1,9 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "crypto";
-import type { Recipe, RecipeIngredient, Ingredient } from "@packages/types";
+import type { Recipe, RecipeIngredient } from "@packages/types";
 import { DdbService } from "../shared/ddb.service";
 import { S3Service } from "../shared/s3.service";
-import { IngredientsService } from "../ingredients/ingredients.service";
+import { IngredientLookup, IngredientsService } from "../ingredients/ingredients.service";
 
 @Injectable()
 export class RecipesService {
@@ -73,10 +73,7 @@ export class RecipesService {
     const existing = await this.getAll();
     const existingByName = new Set(existing.map((r) => r.nameLower));
 
-    const allIngredients = await this.ingredientsService.getAll();
-    const ingByName = new Map<string, Ingredient>(
-      allIngredients.map((i) => [i.nameLower, i]),
-    );
+    const ingByName = new IngredientLookup(await this.ingredientsService.getAll());
 
     const now = new Date().toISOString();
     let created = 0;
@@ -91,7 +88,7 @@ export class RecipesService {
 
       const recipeIngredients: RecipeIngredient[] = [];
       for (const ri of row.ingredients || []) {
-        const match = ingByName.get(ri.name.trim().toLowerCase());
+        const match = ingByName.find(ri.name);
         if (!match) { unmatchedSet.add(ri.name.trim()); continue; }
         recipeIngredients.push({
           ingredientId: match.ingredientId,

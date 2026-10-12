@@ -9,6 +9,8 @@ const schema = z.object({
   SETTINGS_TABLE: z.string().min(1),
   EVENTS_TABLE: z.string().min(1),
   GROCERY_LISTS_TABLE: z.string().min(1),
+  CLIENTS_TABLE: z.string().min(1).optional(),
+  LEDGER_TABLE: z.string().min(1).optional(),
   DDB_ENDPOINT: z.string().url().optional(),
   S3_BUCKET: z.string().min(1),
   ADMIN_CREDENTIALS: z.string().min(1),
@@ -16,6 +18,16 @@ const schema = z.object({
 });
 
 export type Env = z.infer<typeof schema>;
+
+export type Tables = {
+  ingredients: string;
+  recipes: string;
+  settings: string;
+  events: string;
+  groceryLists: string;
+  clients?: string;
+  ledger?: string;
+};
 
 @Injectable()
 export class ConfigService {
@@ -29,13 +41,15 @@ export class ConfigService {
     return this.env[key];
   }
 
-  get tables() {
+  get tables(): Tables {
     return {
       ingredients: this.env.INGREDIENTS_TABLE,
       recipes: this.env.RECIPES_TABLE,
       settings: this.env.SETTINGS_TABLE,
       events: this.env.EVENTS_TABLE,
       groceryLists: this.env.GROCERY_LISTS_TABLE,
+      clients: this.env.CLIENTS_TABLE,
+      ledger: this.env.LEDGER_TABLE,
     };
   }
 }

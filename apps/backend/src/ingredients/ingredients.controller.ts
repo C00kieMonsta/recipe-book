@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, BadRequestException, UseGuards } from "@nestjs/common";
 import { AdminGuard } from "../auth/admin.guard";
-import { createIngredientRequestSchema, updateIngredientRequestSchema } from "@packages/types";
+import { createIngredientRequestSchema, mergeIngredientsSchema, updateIngredientRequestSchema } from "@packages/types";
 import { IngredientsService } from "./ingredients.service";
 
 @UseGuards(AdminGuard)
@@ -11,6 +11,11 @@ export class IngredientsController {
   @Get()
   async list() {
     return this.ingredients.getAll();
+  }
+
+  @Get("duplicates")
+  async duplicates() {
+    return this.ingredients.duplicates();
   }
 
   @Get(":id")
@@ -46,10 +51,12 @@ export class IngredientsController {
     return result;
   }
 
-  @Post("deduplicate")
-  async deduplicate() {
-    const result = await this.ingredients.deduplicate();
-    console.log(JSON.stringify({ action: "deduplicateIngredients", ...result }));
+  @Post("merge")
+  async merge(@Body() body: unknown) {
+    const parsed = mergeIngredientsSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const result = await this.ingredients.merge(parsed.data.survivorId, parsed.data.mergedIds);
+    console.log(JSON.stringify({ action: "mergeIngredients", survivorId: parsed.data.survivorId, ...result }));
     return result;
   }
 }

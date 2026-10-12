@@ -1,27 +1,80 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { BarChart3, BookOpen, ClipboardList, Calendar, ShoppingCart, Settings, LogOut, Menu, X, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  CalendarDays,
+  Calendar,
+  BookOpen,
+  ClipboardList,
+  ShoppingCart,
+  Users,
+  Landmark,
+  Settings,
+  LogOut,
+  Menu,
+  X,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useLocalStorage } from "@/hooks/use-local-storage";
 
-const menuItems = [
-  { path: "/", icon: BarChart3, label: "Tableau de bord", exact: true },
-  { path: "/recipes", icon: BookOpen, label: "Recettes" },
-  { path: "/ingredients", icon: ClipboardList, label: "Ingrédients" },
-  { path: "/events", icon: Calendar, label: "Événements" },
-  { path: "/grocery-list", icon: ShoppingCart, label: "Listes de courses" },
-  { path: "/settings", icon: Settings, label: "Paramètres" },
+interface MenuItem {
+  path: string;
+  icon: typeof CalendarDays;
+  label: string;
+  isActive: (pathname: string) => boolean;
+}
+
+const startsWith = (...prefixes: string[]) => (pathname: string) =>
+  prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+
+const isPrepSheet = (pathname: string) => /^\/events\/[^/]+\/lines(\/|$)/.test(pathname);
+
+const menuItems: MenuItem[] = [
+  { path: "/semaine", icon: CalendarDays, label: "Semaine", isActive: (p) => startsWith("/semaine", "/jour")(p) || isPrepSheet(p) },
+  { path: "/events", icon: Calendar, label: "Événements", isActive: (p) => startsWith("/events")(p) && !isPrepSheet(p) },
+  { path: "/recipes", icon: BookOpen, label: "Recettes", isActive: startsWith("/recipes") },
+  { path: "/ingredients", icon: ClipboardList, label: "Ingrédients", isActive: startsWith("/ingredients") },
+  { path: "/grocery-list", icon: ShoppingCart, label: "Courses", isActive: startsWith("/grocery-list") },
+  { path: "/clients", icon: Users, label: "Clients", isActive: startsWith("/clients") },
+  { path: "/comptes/journal", icon: Landmark, label: "Comptabilité", isActive: startsWith("/comptes") },
+  { path: "/settings", icon: Settings, label: "Paramètres", isActive: startsWith("/settings") },
 ];
 
-export default function AdminSidebar() {
+const COLLAPSE_BELOW = "(max-width: 1535.98px)";
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
+  useEffect(() => {
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(mql.matches);
+    onChange();
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
+}
+
+export interface AdminSidebarProps {
+  hidden?: boolean;
+}
+
+export default function AdminSidebar({ hidden = false }: AdminSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  // null means no choice yet, so the week page decides from the viewport.
+  const [collapsedPref, setCollapsedPref] = useLocalStorage<boolean | null>("recipe-book:sidebar-collapsed", null);
+  const narrow = useMediaQuery(COLLAPSE_BELOW);
+  const onWeek = location.pathname.startsWith("/semaine");
+  const collapsed = collapsedPref ?? (onWeek && narrow);
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
   const handleLogout = () => { logout(); navigate("/login"); };
+
+  if (hidden) return null;
 
   const sidebarContent = (isCollapsed: boolean) => (
     <>
@@ -31,13 +84,13 @@ export default function AdminSidebar() {
             <span className="font-serif text-lg font-bold text-white">A</span>
           </div>
           {!isCollapsed && (
-            <h1 className="text-sm font-serif font-semibold leading-tight opacity-95 truncate">La Table d'Amélie</h1>
+            <h1 className="text-sm font-serif font-semibold leading-tight truncate">La Table d'Amélie</h1>
           )}
         </div>
         {!isCollapsed && (
           <button
-            onClick={() => setCollapsed(true)}
-            className="p-1.5 rounded-lg hover:bg-sidebar-accent/50 transition-colors shrink-0 text-sidebar-foreground/50 hover:text-sidebar-foreground"
+            onClick={() => setCollapsedPref(true)}
+            className="hidden md:block p-1.5 rounded-lg hover:bg-sidebar-accent transition-colors shrink-0 text-muted-foreground hover:text-sidebar-foreground"
             title="Réduire"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -48,8 +101,8 @@ export default function AdminSidebar() {
       {isCollapsed && (
         <div className="flex justify-center pb-2">
           <button
-            onClick={() => setCollapsed(false)}
-            className="p-1.5 rounded-lg hover:bg-sidebar-accent/50 transition-colors text-sidebar-foreground/50 hover:text-sidebar-foreground"
+            onClick={() => setCollapsedPref(false)}
+            className="p-1.5 rounded-lg hover:bg-sidebar-accent transition-colors text-muted-foreground hover:text-sidebar-foreground"
             title="Agrandir"
           >
             <ChevronRight className="h-4 w-4" />
@@ -59,20 +112,19 @@ export default function AdminSidebar() {
 
       <nav className={`flex-1 space-y-1 ${isCollapsed ? "px-2" : "px-3"}`}>
         {menuItems.map((item) => {
-          const isActive = item.exact
-            ? location.pathname === item.path
-            : location.pathname.startsWith(item.path);
+          const isActive = item.isActive(location.pathname);
           return (
             <Link
               key={item.path}
               to={item.path}
               title={isCollapsed ? item.label : undefined}
+              aria-current={isActive ? "page" : undefined}
               className={`flex items-center rounded-lg text-sm font-medium transition-colors ${
                 isCollapsed ? "justify-center px-2 py-2.5" : "gap-3 px-4 py-2.5"
               } ${
                 isActive
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                  : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
               }`}
             >
               <item.icon className="h-5 w-5 shrink-0" />
@@ -83,11 +135,10 @@ export default function AdminSidebar() {
       </nav>
 
       <div className={`p-3 border-t border-sidebar-border ${isCollapsed ? "flex flex-col items-center gap-1" : ""}`}>
-        {!isCollapsed && <div className="text-[11px] text-sidebar-foreground/40 mb-2 px-3">admin · v1.0</div>}
         <button
           onClick={handleLogout}
           title={isCollapsed ? "Déconnexion" : undefined}
-          className={`flex items-center rounded-lg text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors ${
+          className={`flex items-center rounded-lg text-sm font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors ${
             isCollapsed ? "justify-center p-2" : "gap-3 px-3 py-2 w-full"
           }`}
         >
@@ -102,7 +153,7 @@ export default function AdminSidebar() {
     <>
       {/* Desktop sidebar */}
       <aside
-        className={`hidden md:flex shrink-0 h-screen sticky top-0 bg-sidebar text-sidebar-foreground flex-col transition-all duration-300 ${
+        className={`hidden md:flex shrink-0 h-screen sticky top-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex-col transition-all duration-300 ${
           collapsed ? "w-16" : "w-60"
         }`}
       >
@@ -110,14 +161,14 @@ export default function AdminSidebar() {
       </aside>
 
       {/* Mobile top bar */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-sidebar text-sidebar-foreground">
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-sidebar text-sidebar-foreground border-b border-sidebar-border">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shrink-0">
             <span className="font-serif text-sm font-bold text-white">A</span>
           </div>
-          <span className="font-serif text-sm font-semibold opacity-95">La Table d'Amélie</span>
+          <span className="font-serif text-sm font-semibold">La Table d'Amélie</span>
         </div>
-        <button onClick={() => setMobileOpen(!mobileOpen)} className="p-2 -mr-2 rounded-lg hover:bg-sidebar-accent/50 transition-colors">
+        <button onClick={() => setMobileOpen(!mobileOpen)} className="p-2 -mr-2 rounded-lg hover:bg-sidebar-accent transition-colors" aria-label="Menu">
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
       </div>

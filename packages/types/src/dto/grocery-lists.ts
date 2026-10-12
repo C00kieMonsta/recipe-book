@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isoDate } from "./primitives";
 
 const groceryListItemSchema = z.object({
   ingredientId: z.string().min(1),
@@ -12,14 +13,20 @@ const groceryListItemSchema = z.object({
   haveQty: z.preprocess((v) => (v === null ? undefined : v), z.number().nonnegative().optional()),
 });
 
+const groceryListRangeSchema = z.object({ from: isoDate, to: isoDate }).strict();
+
 export const createGroceryListSchema = z.object({
   title: z.string().min(1).trim(),
   items: z.array(groceryListItemSchema).default([]),
+  eventIds: z.array(z.string().min(1)).optional(),
+  range: groceryListRangeSchema.optional(),
 });
 export type CreateGroceryListRequest = z.infer<typeof createGroceryListSchema>;
 
 export const updateGroceryListSchema = z.object({
   title: z.string().min(1).trim().optional(),
   items: z.array(groceryListItemSchema).optional(),
+  eventIds: z.array(z.string().min(1)).optional(),
+  range: groceryListRangeSchema.optional(),
 });
 export type UpdateGroceryListRequest = z.infer<typeof updateGroceryListSchema>;

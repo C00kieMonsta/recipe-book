@@ -1,0 +1,211 @@
+import {
+  DEFAULT_COURSES,
+  DEFAULT_PRESTATION_TYPES,
+  DEFAULT_RECIPE_CATEGORIES,
+  DEFAULT_SUPPLIERS,
+} from "@packages/types";
+import type { AppSettings } from "@packages/types";
+import type { Tables } from "../config/config.service";
+import type { DdbService, UpdateOptions } from "../shared/ddb.service";
+import { SettingsService } from "./settings.service";
+
+type Item = Record<string, unknown>;
+
+// In-memory stand-in for DdbService: one Map per table, rows keyed by the table's key attributes.
+class FakeDdb {
+  readonly tables: Tables = {
+    ingredients: "ingredients",
+    recipes: "recipes",
+    settings: "settings",
+    events: "events",
+    groceryLists: "groceryLists",
+    clients: "clients",
+    ledger: "ledger",
+  };
+
+  private readonly keyAttrs: Record<string, string[]> = {
+    ingredients: ["ingredientId"],
+    recipes: ["recipeId"],
+    settings: ["settingsId"],
+    events: ["eventId"],
+    groceryLists: ["listId"],
+    clients: ["clientId"],
+    ledger: ["entryId"],
+  };
+
+  private readonly store = new Map<string, Map<string, Item>>();
+
+  requireTable(name: "clients" | "ledger"): string {
+    const table = this.tables[name];
+    if (!table) throw new Error(`Table ${name} non configurée`);
+    return table;
+  }
+
+  async get(table: string, key: Record<string, string>) {
+    return structuredClone(this.rows(table).get(this.keyOf(table, key)) ?? null);
+  }
+
+  async put(table: string, item: Item) {
+    this.rows(table).set(this.keyOf(table, item), structuredClone(item));
+  }
+
+  async update(table: string, key: Record<string, string>, fields: Item, _options: UpdateOptions = {}) {
+    const rows = this.rows(table);
+    const id = this.keyOf(table, key);
+    const row = rows.get(id);
+    if (!row) throw new Error("ConditionalCheckFailedException");
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === null) delete row[k];
+      else if (v !== undefined) row[k] = structuredClone(v);
+    }
+  }
+
+  async scanAll(table: string) {
+    return [...this.rows(table).values()].map((row) => structuredClone(row));
+  }
+
+  async delete(table: string, key: Record<string, string>) {
+    this.rows(table).delete(this.keyOf(table, key));
+  }
+
+  async batchWrite(table: string, items: Item[]) {
+    for (const item of items) await this.put(table, item);
+  }
+
+  async batchDelete(table: string, keys: Record<string, string>[]) {
+    for (const key of keys) await this.delete(table, key);
+  }
+
+  seed(table: string, item: Item) {
+    this.rows(table).set(this.keyOf(table, item), structuredClone(item));
+  }
+
+  raw(table: string, key: Record<string, string>) {
+    return this.rows(table).get(this.keyOf(table, key));
+  }
+
+  private rows(table: string) {
+    let rows = this.store.get(table);
+    if (!rows) {
+      rows = new Map();
+      this.store.set(table, rows);
+    }
+    return rows;
+  }
+
+  private keyOf(table: string, item: Item) {
+    return (this.keyAttrs[table] ?? Object.keys(item)).map((attr) => String(item[attr])).join("|");
+  }
+}
+
+const GLOBAL_KEY = { settingsId: "global" };
+
+function build() {
+  const ddb = new FakeDdb();
+  const service = new SettingsService(ddb as unknown as DdbService);
+  return { ddb, service };
+}
+
+describe("SettingsService.get", () => {
+  it("returns every default when no item exists yet", async () => {
+    const { service } = build();
+
+    const settings = await service.get();
+
+    expect(settings).toEqual({
+      settingsId: "global",
+      recipeCategories: DEFAULT_RECIPE_CATEGORIES,
+      suppliers: DEFAULT_SUPPLIERS,
+      courses: DEFAULT_COURSES,
+      prestationTypes: DEFAULT_PRESTATION_TYPES,
+      fixedCharges: [],
+      objectives: {},
+      yearActuals: {},
+      monthCloses: {},
+      ignoredDuplicateGroups: [],
+      updatedAt: expect.any(String),
+    });
+    expect(settings).not.toHaveProperty("company");
+    expect(settings).not.toHaveProperty("ledgerStartYm");
+  });
+
+  it("fills only the missing keys on an existing item", async () => {
+    const { ddb, service } = build();
+    ddb.seed("settings", {
+      settingsId: "global",
+      recipeCategories: ["Buffet"],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      courses: ["Plat"],
+      fixedCharges: [{ chargeId: "c1", label: "Loyer", category: "frais", monthlyAmount: 100 }],
+      ledgerStartYm: "2026-01",
+    });
+
+    const settings = await service.get();
+
+    expect(settings.recipeCategories).toEqual(["Buffet"]);
+    expect(settings.courses).toEqual(["Plat"]);
+    expect(settings.fixedCharges).toEqual([{ chargeId: "c1", label: "Loyer", category: "frais", monthlyAmount: 100 }]);
+    expect(settings.ledgerStartYm).toBe("2026-01");
+    expect(settings.updatedAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(settings.suppliers).toEqual(DEFAULT_SUPPLIERS);
+    expect(settings.prestationTypes).toEqual(DEFAULT_PRESTATION_TYPES);
+    expect(settings.objectives).toEqual({});
+    expect(settings.yearActuals).toEqual({});
+    expect(settings.monthCloses).toEqual({});
+    expect(settings.ignoredDuplicateGroups).toEqual([]);
+    expect(settings).not.toHaveProperty("company");
+  });
+});
+
+describe("SettingsService.update", () => {
+  it("keeps the keys it was not given and writes the merged item", async () => {
+    const { ddb, service } = build();
+    ddb.seed("settings", {
+      settingsId: "global",
+      recipeCategories: ["Buffet"],
+      suppliers: [{ name: "Barn" }],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      objectives: { "2026": { annualRevenue: 50000, monthsActive: 10 } },
+      monthCloses: { "2026-09": { mpSource: "achats" } },
+      company: { name: "Table d'Amélie", vatNumber: "BE0123", address: "Rue X" },
+    });
+
+    const result = await service.update({
+      courses: ["Entrée", "Plat"],
+      monthCloses: { "2026-10": { mpSource: "saisi", rawMaterial: 1200 } },
+    });
+
+    expect(result.courses).toEqual(["Entrée", "Plat"]);
+    expect(result.monthCloses).toEqual({ "2026-10": { mpSource: "saisi", rawMaterial: 1200 } });
+    expect(result.recipeCategories).toEqual(["Buffet"]);
+    expect(result.suppliers).toEqual([{ name: "Barn" }]);
+    expect(result.objectives).toEqual({ "2026": { annualRevenue: 50000, monthsActive: 10 } });
+    expect(result.company).toEqual({ name: "Table d'Amélie", vatNumber: "BE0123", address: "Rue X" });
+    expect(result.settingsId).toBe("global");
+    expect(result.updatedAt).not.toBe("2026-01-01T00:00:00.000Z");
+
+    const stored = ddb.raw("settings", GLOBAL_KEY) as unknown as AppSettings;
+    expect(stored).toEqual(result);
+    expect(await service.get()).toEqual(result);
+  });
+
+  it("creates the item from defaults when none exists", async () => {
+    const { ddb, service } = build();
+
+    const result = await service.update({ ledgerStartYm: "2026-03" });
+
+    expect(result.ledgerStartYm).toBe("2026-03");
+    expect(result.courses).toEqual(DEFAULT_COURSES);
+    expect(result.prestationTypes).toEqual(DEFAULT_PRESTATION_TYPES);
+    expect(ddb.raw("settings", GLOBAL_KEY)).toEqual(result);
+  });
+
+  it("ignores keys passed as undefined", async () => {
+    const { service } = build();
+    await service.update({ courses: ["Plat"] });
+
+    const result = await service.update({ courses: undefined, fixedCharges: [] });
+
+    expect(result.courses).toEqual(["Plat"]);
+  });
+});

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint:type-scale": "sh -c '! grep -rnE \"text-xs|text-\\\\[1[01]px\\\\]|uppercase tracking-wider\" src/pages/admin'"
   },
   "dependencies": {
     "@packages/types": "workspace:*",

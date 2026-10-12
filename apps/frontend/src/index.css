@@ -6,52 +6,51 @@
 
 @layer base {
   :root {
-    --background: 30 30% 96%;
-    --foreground: 20 20% 15%;
-    --card: 30 40% 99%;
-    --card-foreground: 20 20% 15%;
-    --popover: 30 40% 99%;
-    --popover-foreground: 20 20% 15%;
-    --primary: 25 50% 58%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 30 25% 90%;
-    --secondary-foreground: 20 25% 25%;
-    --muted: 30 15% 93%;
-    --muted-foreground: 20 10% 45%;
-    --accent: 25 60% 60%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 70% 50%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 30 25% 85%;
-    --input: 30 25% 85%;
-    --ring: 25 50% 58%;
+    --background: 30 30% 97%;   --foreground: 20 20% 13%;
+    --card: 30 40% 99%;         --card-foreground: 20 20% 13%;
+    --popover: 30 40% 99%;      --popover-foreground: 20 20% 13%;
+    --surface: 30 20% 94%;      /* sidebar, tiles; foreground 14.21:1 */
+    --hover: 30 15% 93%;        /* row hover */
+    --muted: 30 15% 93%;        --muted-foreground: 20 10% 38%;   /* 5.85:1 on background, 6.09:1 on card */
+    --primary: 25 55% 41%;      --primary-foreground: 0 0% 100%;  /* 4.98:1 with white; 4.67:1 as text on background, 4.86:1 on card */
+    --primary-soft: 25 60% 93%; /* foreground on it 13.80:1; primary on it only 4.26:1, see rule below */
+    --secondary: 30 25% 90%;    --secondary-foreground: 20 25% 25%;
+    --accent: 25 60% 60%;       --accent-foreground: 20 20% 13%;  /* 6.10:1; accent is a tint, dark text only (white would be 2.64:1); unused today */
+    --success: 150 35% 30%;     --success-soft: 150 30% 92%;      /* 6.19:1 on background, 5.68:1 on its tint */
+    --warning: 35 75% 34%;      --warning-soft: 40 80% 92%;       /* 4.81:1, 4.54:1 on its tint */
+    --info: 210 30% 38%;        --info-soft: 210 40% 93%;         /* 6.04:1, 5.46:1 on its tint */
+    --destructive: 0 60% 42%;   --destructive-foreground: 0 0% 100%; --destructive-soft: 0 70% 94%;  /* 6.33:1, 5.59:1 on its tint */
+    --border: 30 20% 88%;       --input: 30 20% 80%;  --ring: 25 55% 41%;
     --radius: 0.625rem;
-    --sidebar-background: 20 20% 14%;
-    --sidebar-foreground: 30 30% 96%;
-    --sidebar-primary: 25 50% 65%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 25 20% 22%;
-    --sidebar-accent-foreground: 30 30% 96%;
-    --sidebar-border: 20 15% 25%;
-    --sidebar-ring: 25 50% 58%;
+    --sidebar-background: 30 20% 94%;  --sidebar-foreground: 20 20% 13%;
+    --sidebar-primary: 25 55% 41%;     --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 25 60% 90%;      --sidebar-accent-foreground: 20 20% 13%;  /* 12.93:1 */
+    --sidebar-border: 30 20% 86%;      --sidebar-ring: 25 55% 41%;
   }
 }
 
 @layer base {
+  html { font-size: 16px; }
   * { @apply border-border; }
-  body { @apply bg-background text-foreground font-sans antialiased; }
-  h1, h2, h3, h4, h5, h6 { @apply font-serif; }
+  body { @apply bg-background text-foreground font-sans antialiased text-base; }
 }
 
 @layer components {
-  .card-elevated {
-    @apply bg-card rounded-xl shadow-sm border border-border/50;
-  }
-  .input-field {
-    @apply w-full px-3 py-2 border rounded-lg text-sm bg-muted/30 focus:border-primary outline-none transition-colors;
-  }
+  .card-elevated { @apply bg-card rounded-xl border border-border/60; }   /* tiles and gallery cards only */
+  .input-field { @apply w-full px-3 py-2.5 border border-input rounded-lg text-base bg-card focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none; }
+  .input-compact { @apply px-2 py-1.5 text-sm; }
+  .reveal { @apply pointer:opacity-0 pointer:group-hover:opacity-100 touch:opacity-70; }
+  .table { @apply w-full text-sm tabular-nums; }                           /* plain tables, see rules below */
+  .table th, .table td { @apply min-h-11 px-3 py-2.5 text-left align-middle; }
+  .table tfoot td { @apply font-semibold border-t border-border; }
   .animate-fade-up { animation: fadeUp 0.6s ease-out forwards; }
   .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+}
+
+@media print {
+  aside, nav, .no-print { display: none !important; }
+  body { font-size: 12pt; }
+  .print-break { break-before: page; }
 }
 
 @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }

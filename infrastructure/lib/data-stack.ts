@@ -12,6 +12,8 @@ export class DataStack extends cdk.Stack {
   readonly settingsTable: dynamodb.Table;
   readonly eventsTable: dynamodb.Table;
   readonly groceryListsTable: dynamodb.Table;
+  readonly clientsTable: dynamodb.Table;
+  readonly ledgerTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -54,6 +56,22 @@ export class DataStack extends cdk.Stack {
     this.groceryListsTable = new dynamodb.Table(this, "GroceryListsTable", {
       tableName: `ta-grocery-lists-${props.stage}`,
       partitionKey: { name: "listId", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: isProd,
+      removalPolicy: retention,
+    });
+
+    this.clientsTable = new dynamodb.Table(this, "ClientsTable", {
+      tableName: `ta-clients-${props.stage}`,
+      partitionKey: { name: "clientId", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: isProd,
+      removalPolicy: retention,
+    });
+
+    this.ledgerTable = new dynamodb.Table(this, "LedgerTable", {
+      tableName: `ta-ledger-${props.stage}`,
+      partitionKey: { name: "entryId", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       pointInTimeRecovery: isProd,
       removalPolicy: retention,

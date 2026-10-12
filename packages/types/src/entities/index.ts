@@ -3,3 +3,5 @@ export * from "./recipe";
 export * from "./settings";
 export * from "./event";
 export * from "./grocery-list";
+export * from "./client";
+export * from "./ledger";
