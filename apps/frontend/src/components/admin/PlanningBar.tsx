@@ -114,7 +114,8 @@ export default function PlanningBar(props: PlanningBarProps) {
         {right && <div className="ml-auto hidden xl:order-4 xl:block">{right}</div>}
       </div>
       {below && <div className="no-print xl:hidden">{below}</div>}
-      <div className="no-print sticky top-0 z-20 -mx-4 bg-background px-4 py-1.5 md:static md:mx-0 md:px-0">
+      {/* On the laptop week the seven columns are the days, so the strip would repeat every date. */}
+      <div className={`no-print sticky top-0 z-20 -mx-4 bg-background px-4 py-1.5 md:static md:mx-0 md:px-0${isWeek ? " xl:hidden" : ""}`}>
         <DayStrip dates={dates} counts={counts} today={today} selected={isWeek ? undefined : props.date} href={dayHref} state={linkState} />
       </div>
     </>
