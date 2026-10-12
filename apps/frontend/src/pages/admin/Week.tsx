@@ -323,7 +323,7 @@ export default function Week() {
     const base = `${d.events.length} évén. · ${d.guests} conv.`;
     return started && d.linesTotal > 0 ? `${base} · ${d.linesDone}/${d.linesTotal} faites` : base;
   };
-  const dayTitle = (d: WeekDay) => `${d.events.length} événements · ${d.guests} convives${started && d.linesTotal ? ` · ${d.linesDone} lignes faites sur ${d.linesTotal}` : ""}`;
+  const dayTitle = (d: WeekDay) => `${plural(d.events.length, "événement")} · ${plural(d.guests, "convive")}${started && d.linesTotal ? ` · ${d.linesDone} ${d.linesDone === 1 ? "ligne faite" : "lignes faites"} sur ${d.linesTotal}` : ""}`;
   const clientOf = (ev: AppEvent) => (ev.clientId ? clientById.get(ev.clientId) : undefined);
   const recipeName = (id: string) => recipeById.get(id)?.name ?? id;
   const hasPersonLine = (ev: AppEvent) => !selectedPerson || ev.recipes.some((l) => assigneesOf(l, ev).includes(selectedPerson));
@@ -445,12 +445,16 @@ export default function Week() {
         className="no-print"
         meta={(
           <span className="tabular-nums" data-tour="week-stats">
-            <abbr title="Chiffre d'affaires HTVA des événements confirmés" className="no-underline">Signé</abbr> {fmtEur0(weekTotals.signedRevenue)} HTVA · {weekTotals.guests} <span className="hidden md:inline">convives</span><span className="md:hidden">conv.</span>{doneFragment} ·{" "}
-            <Link to={monthLink.to} state={state} className="inline-flex items-center gap-0.5 rounded text-primary hover:bg-hover touch:min-h-11">
-              <span className="hidden md:inline">{monthLink.text}</span>
-              <span className="md:hidden">{monthLink.short}</span>
-              <ChevronRight className="h-4 w-4" aria-hidden="true" />
-            </Link>
+            <abbr title="Chiffre d'affaires HTVA des événements confirmés" className="no-underline">Signé</abbr> {fmtEur0(weekTotals.signedRevenue)} HTVA · {weekTotals.guests} <span className="hidden md:inline">convives</span><span className="md:hidden">conv.</span>{doneFragment}
+            {/* The separator travels with the link so a wrapped line never ends on a lone dot. */}
+            <span className="whitespace-nowrap">
+              {" · "}
+              <Link to={monthLink.to} state={state} className="inline-flex items-center gap-0.5 rounded text-primary hover:bg-hover touch:min-h-11">
+                <span className="hidden md:inline">{monthLink.text}</span>
+                <span className="md:hidden">{monthLink.short}</span>
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </Link>
+            </span>
           </span>
         )}
       />

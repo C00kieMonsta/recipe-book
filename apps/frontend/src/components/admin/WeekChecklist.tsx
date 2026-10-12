@@ -54,12 +54,13 @@ export default function WeekChecklist(props: WeekChecklistProps) {
   const retour = encodeURIComponent(from.split("?")[0]);
 
   if (firstRun) {
-    const steps: { text: string; label: string; to: string }[] = [
-      { text: "1. Ajoutez votre équipe", label: "Paramètres › Équipe", to: "/settings#equipe" },
-      { text: "2. Créez vos ingrédients avec leur prix", label: "Ingrédients", to: "/ingredients" },
-      { text: "3. Créez vos recettes", label: "Recettes", to: "/recipes" },
-      { text: "4. Ajoutez vos clients", label: "Clients", to: "/clients/new" },
-      { text: "5. Planifiez un premier événement", label: "+ Nouvel événement", to: `/events/new?date=${monday}&retour=${retour}` },
+    // `short` is the phone label; the long one would push the step text onto three lines.
+    const steps: { text: string; label: string; short: string; to: string }[] = [
+      { text: "1. Ajoutez votre équipe", label: "Paramètres › Équipe", short: "Équipe", to: "/settings#equipe" },
+      { text: "2. Créez vos ingrédients avec leur prix", label: "Ingrédients", short: "Ingrédients", to: "/ingredients" },
+      { text: "3. Créez vos recettes", label: "Recettes", short: "Recettes", to: "/recipes" },
+      { text: "4. Ajoutez vos clients", label: "Clients", short: "Clients", to: "/clients/new" },
+      { text: "5. Planifiez un premier événement", label: "+ Nouvel événement", short: "+ Événement", to: `/events/new?date=${monday}&retour=${retour}` },
     ];
     return (
       <div aria-live="polite">
@@ -69,7 +70,10 @@ export default function WeekChecklist(props: WeekChecklistProps) {
               <li key={step.to} className={ROW}>
                 <Bullet />
                 <span className={TEXT}>{step.text}</span>
-                <ActionLink to={step.to} state={state}>{step.label}</ActionLink>
+                <ActionLink to={step.to} state={state}>
+                  <span className="md:hidden">{step.short}</span>
+                  <span className="hidden md:inline">{step.label}</span>
+                </ActionLink>
               </li>
             ))}
           </ul>
@@ -243,16 +247,19 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
           <ActionLink to={`/comptes/journal?client=${item.clientId}&prefill=month&ym=${item.ym}`} state={state}>Facturer le mois</ActionLink>
         </li>
       );
-    case "unpaid":
+    case "unpaid": {
+      const oldest = `la plus ancienne du ${shortDate.format(parseYmd(item.oldestDate.slice(0, 10)))}`;
+      // The longest row: full width in the two-column grid, and the date goes to a title on phones.
       return (
-        <li className={ROW}>
+        <li className={`${ROW} xl:col-span-2`}>
           <Bullet />
-          <span className={TEXT}>
-            {plural(item.count, "facture impayée", "factures impayées")} · {fmtEur0(item.totalTvac)} · la plus ancienne du {shortDate.format(parseYmd(item.oldestDate.slice(0, 10)))}
+          <span className={TEXT} title={oldest}>
+            {plural(item.count, "facture impayée", "factures impayées")} · {fmtEur0(item.totalTvac)}<span className="hidden md:inline"> · {oldest}</span>
           </span>
           <ActionLink to="/comptes/a-facturer#impayes" state={state}>Voir les impayés</ActionLink>
         </li>
       );
+    }
     case "empty_week":
       return (
         <li className={ROW}>

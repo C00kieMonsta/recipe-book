@@ -12,6 +12,8 @@ export interface TourProps {
   rect: DOMRect | null;
   anchor: HTMLElement | null;
   phone: boolean;
+  // The workspace has no event yet: steps with a firstRunBody show it.
+  firstRun?: boolean;
   onPrev: () => void;
   onNext: () => void;
   onSkip: () => void;
@@ -79,6 +81,18 @@ export function isFixed(el: HTMLElement): boolean {
   return false;
 }
 
+// Bottom edge of the sticky strips pinned under the top bar, measured after a scroll.
+function pinnedBottom(anchor: HTMLElement, topbar: number): number {
+  let bottom = topbar;
+  for (const el of Array.from(document.body.querySelectorAll<HTMLElement>("*"))) {
+    if (el === anchor || el.contains(anchor) || anchor.contains(el)) continue;
+    if (getComputedStyle(el).position !== "sticky") continue;
+    const r = el.getBoundingClientRect();
+    if (r.height > 0 && r.width > 0 && r.top <= bottom + 1 && r.bottom > bottom) bottom = r.bottom;
+  }
+  return bottom;
+}
+
 const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), Math.max(min, max));
 
 // Below the anchor, else above, else to the right at the top, else null (centred).
@@ -92,7 +106,7 @@ function placeDesktop(rect: DOMRect, h: number): { top: number; left: number } |
   return null;
 }
 
-export default function Tour({ step, index, total, phase, rect, anchor, phone, onPrev, onNext, onSkip }: TourProps) {
+export default function Tour({ step, index, total, phase, rect, anchor, phone, firstRun = false, onPrev, onNext, onSkip }: TourProps) {
   const { hideChrome } = useChrome();
   const panelRef = useRef<HTMLDivElement>(null);
   const scrolledFor = useRef<HTMLElement | null>(null);
@@ -100,7 +114,7 @@ export default function Tour({ step, index, total, phase, rect, anchor, phone, o
   const last = index === total - 1;
   const anchored = phase === "anchored" && rect !== null;
   const title = phone && step.phone?.title ? step.phone.title : step.title;
-  const phoneBody = phone && step.phone?.body ? step.phone.body : step.body;
+  const phoneBody = firstRun && step.firstRunBody ? step.firstRunBody : phone && step.phone?.body ? step.phone.body : step.body;
   const body = phase === "centred" ? (step.fallbackBody ?? phoneBody) : phoneBody;
   const topbar = !hideChrome && window.innerWidth < 768 ? TOPBAR : 0;
 
@@ -146,13 +160,17 @@ export default function Tour({ step, index, total, phase, rect, anchor, phone, o
       if (el.scrollWidth > el.clientWidth + 1 && /(auto|scroll)/.test(getComputedStyle(el).overflowX)) el.scrollLeft = 0;
     }
     if (isFixed(anchor)) return;
-    const r = anchor.getBoundingClientRect();
-    const bandTop = topbar + GAP;
     const bandBottom = window.innerHeight - h - MARGIN;
-    let dy = 0;
-    if (r.top < bandTop) dy = r.top - bandTop;
-    else if (r.bottom > bandBottom) dy = Math.min(r.bottom - bandBottom, r.top - bandTop);
-    if (dy !== 0) window.scrollBy({ top: dy, behavior: "instant" });
+    const settle = (bandTop: number) => {
+      const r = anchor.getBoundingClientRect();
+      let dy = 0;
+      if (r.top < bandTop) dy = r.top - bandTop;
+      else if (r.bottom > bandBottom) dy = Math.min(r.bottom - bandBottom, r.top - bandTop);
+      if (dy !== 0) window.scrollBy({ top: dy, behavior: "instant" });
+    };
+    settle(topbar + GAP);
+    // A sticky strip pins under the top bar once the page has scrolled, so measure it and scroll again.
+    settle(pinnedBottom(anchor, topbar) + GAP);
   }, [phone, anchored, anchor, h, topbar]);
 
   useEffect(() => {

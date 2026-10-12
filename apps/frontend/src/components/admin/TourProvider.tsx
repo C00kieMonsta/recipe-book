@@ -82,6 +82,7 @@ export function TourProvider({ children }: { children: ReactNode }): JSX.Element
   const [phase, setPhase] = useState<Phase>("loading");
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [rect, setRect] = useState<DOMRect | null>(null);
+  const [firstRun, setFirstRun] = useState(false);
 
   const runId = useRef(0);
   const indexRef = useRef(0);
@@ -126,11 +127,16 @@ export function TourProvider({ children }: { children: ReactNode }): JSX.Element
     setPhase("loading");
     setAnchorEl(null);
     setRect(null);
+    const ctx: TourContext = { events: () => api.events.list(), today: todayIso() };
+    if (step.firstRunBody) {
+      const events = await withTimeout(ctx.events(), ROUTE_TIMEOUT, null);
+      if (runId.current !== id) return;
+      setFirstRun(events !== null && events.length === 0);
+    }
     let route: string | null;
     if (typeof step.route === "string") {
       route = step.route;
     } else {
-      const ctx: TourContext = { events: () => api.events.list(), today: todayIso() };
       route = await withTimeout(step.route(ctx), ROUTE_TIMEOUT, null);
       if (runId.current !== id) return;
     }
@@ -264,6 +270,7 @@ export function TourProvider({ children }: { children: ReactNode }): JSX.Element
           rect={rect}
           anchor={anchorEl}
           phone={phone}
+          firstRun={firstRun}
           onPrev={prev}
           onNext={next}
           onSkip={markSeen}

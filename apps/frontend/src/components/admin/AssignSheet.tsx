@@ -80,10 +80,13 @@ export default function AssignSheet({ days, people, clientById, recipeById, cour
                     const own = Boolean(line.assignedTo?.length);
                     const effective = assigneesOf(line, ev);
                     return (
-                      <li key={line.lineId} className="flex min-h-8 items-center gap-2 text-sm touch:min-h-11 touch:text-base">
+                      <li key={line.lineId} className="flex min-h-8 flex-wrap items-center gap-2 text-sm touch:min-h-11 touch:text-base">
                         <span className="min-w-0 flex-1 truncate">{recipeById.get(line.recipeId)?.name ?? line.recipeId}</span>
                         {own && (
-                          <Button variant="subtle" size="sm" onClick={() => onLine(ev.eventId, line.lineId, [])}>Comme l'événement</Button>
+                          // On touch the button drops under the name so the recipe keeps its width.
+                          <span className="touch:order-last touch:-mt-1 touch:basis-full">
+                            <Button variant="subtle" size="sm" onClick={() => onLine(ev.eventId, line.lineId, [])}>Comme l'événement</Button>
+                          </span>
                         )}
                         <div className="flex shrink-0 gap-0.5">
                           {active.map((p) => {

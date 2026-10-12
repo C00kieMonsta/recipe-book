@@ -7,6 +7,7 @@ export interface ViewTabItem {
   label: ReactNode;
   to?: string;
   count?: number;
+  title?: string;
 }
 
 export interface ViewTabsProps {
@@ -33,13 +34,13 @@ export default function ViewTabs({ items, value, onChange, className, "aria-labe
         );
         if (item.to) {
           return (
-            <Link key={item.key} to={item.to} aria-current={active ? "page" : undefined} className={cn(TAB, active && ACTIVE)} onClick={() => onChange?.(item.key)}>
+            <Link key={item.key} to={item.to} title={item.title} aria-current={active ? "page" : undefined} className={cn(TAB, active && ACTIVE)} onClick={() => onChange?.(item.key)}>
               {content}
             </Link>
           );
         }
         return (
-          <button key={item.key} type="button" aria-pressed={active} className={cn(TAB, active && ACTIVE)} onClick={() => onChange?.(item.key)}>
+          <button key={item.key} type="button" title={item.title} aria-pressed={active} className={cn(TAB, active && ACTIVE)} onClick={() => onChange?.(item.key)}>
             {content}
           </button>
         );

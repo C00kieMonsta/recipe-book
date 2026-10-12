@@ -221,7 +221,12 @@ export default function Day() {
       });
     }
     if (mode === "personne") {
-      return groupByPerson(allLines, people).map((g) => ({
+      // Every active person gets a heading, even with no line that day.
+      const byPerson = groupByPerson(allLines, people);
+      const found = new Map(byPerson.map((g) => [g.personId, g]));
+      const base = activePeople.map((p) => found.get(p.personId) ?? { personId: p.personId, name: p.name, lines: [] as PrepLine[] });
+      const rest = byPerson.filter((g) => !activePeople.some((p) => p.personId === g.personId));
+      return [...base, ...rest].map((g) => ({
         key: g.personId ?? "sans-personne",
         title: g.name,
         count: `${plural(g.lines.length, "ligne")} · ${doneLabel(g.lines)}`,
@@ -241,7 +246,7 @@ export default function Day() {
         total: g.total,
       };
     });
-  }, [mode, visible, dayEvents, allLines, clientById, recipeById, settings, people]);
+  }, [mode, visible, dayEvents, allLines, clientById, recipeById, settings, people, activePeople]);
 
   // "Par personne" keeps empty groups so each person sees their own heading.
   const shownGroups = mode === "personne" ? groups : groups.filter((g) => g.lines.length > 0);

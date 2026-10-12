@@ -11,6 +11,8 @@ export interface TourStep {
   body: string;
   // Shown on the centred card when the anchor is missing or the route resolved to null.
   fallbackBody?: string;
+  // Replaces body while the workspace has no event.
+  firstRunBody?: string;
   // Overrides on phones. Resolution order on a phone: phone.anchor, then anchor, then centred.
   phone?: { anchor?: string; title?: string; body?: string };
   // Fired after navigation and before the anchor wait, for pages that must open something (the checklist).
@@ -42,6 +44,7 @@ export const TOUR_STEPS: TourStep[] = [
     anchor: "week-checklist",
     title: "À faire avant la semaine",
     body: "Le dimanche, cette liste dit ce qui manque : personnes à attribuer, courses, prix, factures impayées. Le lien bleu à droite corrige chaque point. Chaque clic est enregistré tout de suite.",
+    firstRunBody: "Tant que le carnet est vide, cette case liste les cinq étapes pour démarrer. Ensuite, chaque semaine, elle dit ce qui manque : personnes à attribuer, courses, prix, factures impayées. Le lien bleu à droite corrige chaque point.",
     before: () => window.dispatchEvent(new CustomEvent(OPEN_CHECKLIST_EVENT)),
   },
   {
