@@ -2,11 +2,11 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Plus, Upload, Check, Download, AlertTriangle, FileSpreadsheet, Copy, ArrowUpDown, X, LayoutGrid, List } from "lucide-react";
 import type { Recipe, Ingredient } from "@packages/types";
-import { DEFAULT_RECIPE_CATEGORIES } from "@packages/types";
+import { DEFAULT_RECIPE_CATEGORIES, fmtEur } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useLocalStorage } from "@/hooks/use-local-storage";
-import { calcRecipeCost, fmt } from "@/lib/recipe-helpers";
+import { calcRecipeCost } from "@/lib/recipe-helpers";
 import { usePagination } from "@/hooks/use-pagination";
 import { PAGE_ICONS } from "@/lib/page-icons";
 import {
@@ -289,7 +289,7 @@ export default function Recipes() {
                       </div>
                       <div className="mt-1 flex items-center gap-1.5 text-caption text-muted-foreground">
                         <Tag colour="gray">{r.type}</Tag>
-                        <span>{r.portions} p · {fmt(calcRecipeCost(r, ingredients) / (r.portions || 1))} / port.</span>
+                        <span className="truncate">{r.portions} p · {fmtEur(calcRecipeCost(r, ingredients) / (r.portions || 1))}</span>
                       </div>
                     </div>
                   </button>
@@ -309,7 +309,7 @@ export default function Recipes() {
               { key: "name", label: "Nom", render: nameCell },
               { key: "type", label: "Format", width: "130px", render: (r) => <Tag colour="gray">{r.type}</Tag> },
               { key: "portions", label: "Portions", width: "100px", align: "right", render: (r) => `${r.portions}` },
-              { key: "cost", label: "Coût / port.", width: "120px", align: "right", render: (r) => fmt(calcRecipeCost(r, ingredients) / (r.portions || 1)) },
+              { key: "cost", label: "Coût / port.", width: "120px", align: "right", render: (r) => fmtEur(calcRecipeCost(r, ingredients) / (r.portions || 1)) },
               { key: "weight", label: "Poids", width: "90px", align: "right", render: (r) => `${r.portionWeight} g` },
             ]}
           />

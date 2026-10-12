@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ChevronRight, MoreHorizontal, Plus, Printer, Share2, ShoppingCart, X } from "lucide-react";
+import { ChevronRight, MoreHorizontal, Plus, Printer, Share2, ShoppingCart } from "lucide-react";
 import type { AppEvent, Client, EventRecipeLine, Person, PrepStatus, PrestationTypeSetting, WeekDay } from "@packages/types";
 import {
   addDays,
@@ -15,6 +15,7 @@ import {
   monthSignedRevenue,
   objectifMensuel,
   parseIsoWeek,
+  parseYmd,
   personName,
   shortEventName,
   sortEventLines,
@@ -31,20 +32,19 @@ import { buildGroceryItems, groceryTitleFor } from "@/lib/grocery";
 import { fmtEur0, NEXT_STATUS, plural, usePlanningData } from "@/lib/use-planning-data";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { useToast } from "@/hooks/use-toast";
-import { useFullBleed } from "@/components/admin/AdminLayout";
-import { StatusDot, StatusDots } from "@/components/admin/StatusDot";
-import PersonChips from "@/components/admin/PersonChips";
+import { useTouchScreen } from "@/hooks/use-touch-screen";
+import { useFullBleed, useTopTitle } from "@/components/admin/AdminLayout";
+import { StatusDot } from "@/components/admin/StatusDot";
+import PersonChips, { PersonChip } from "@/components/admin/PersonChips";
 import PersonPicker from "@/components/admin/PersonPicker";
 import WeekChecklist from "@/components/admin/WeekChecklist";
 import AssignSheet from "@/components/admin/AssignSheet";
 import PlanningBar from "@/components/admin/PlanningBar";
-import { ActionMenu } from "@/components/ui";
+import {
+  Button, Dialog, FieldLabel, FilterButton, FilterChip, FilterGroup, IconButton,
+  Menu, MenuCheck, MenuItem, MenuRadio, MenuSection, MenuSeparator, PageHeader, useMenu,
+} from "@/components/ui";
 
-const ICON_BTN = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-foreground hover:bg-hover";
-const TEXT_BTN = "inline-flex min-h-11 items-center gap-2 rounded-lg border border-input bg-card px-3 text-base font-medium hover:bg-hover disabled:opacity-50";
-// PersonChips has no 16px size; shrink its sm circles for the 171px columns.
-const CHIP_16 = "[&_.rounded-full]:h-4 [&_.rounded-full]:w-4 [&_.rounded-full]:text-[9px]";
-const SELECT = "min-h-11 rounded-lg border border-input bg-card px-2 text-base";
 const SWIPE_PX = 60;
 const LAST_WEEK_KEY = "recipe-book:last-week";
 
@@ -52,6 +52,15 @@ type WeekView = "lines" | "events";
 type PrintMode = "week" | "person";
 
 const num0 = new Intl.NumberFormat("fr-BE", { maximumFractionDigits: 0 });
+const dayMonthShort = new Intl.DateTimeFormat("fr-BE", { day: "numeric", month: "short", timeZone: "UTC" });
+
+// "19 au 25 oct.", "28 sept. au 4 oct."
+function shortRange(from: string, to: string): string {
+  const a = parseYmd(from);
+  const b = parseYmd(to);
+  if (a.getUTCMonth() !== b.getUTCMonth()) return `${dayMonthShort.format(a)} au ${dayMonthShort.format(b)}`;
+  return `${a.getUTCDate()} au ${dayMonthShort.format(b)}`;
+}
 
 function isTypingTarget(e: KeyboardEvent): boolean {
   const t = e.target as HTMLElement | null;
@@ -65,17 +74,6 @@ function lineStatus(line: EventRecipeLine): PrepStatus {
 
 function doneCount(ev: AppEvent): number {
   return ev.recipes.filter((l) => l.prepStatus === "done").length;
-}
-
-function useHoverPointer(): boolean {
-  const [hover, setHover] = useState(() => typeof window !== "undefined" && window.matchMedia("(hover: hover)").matches);
-  useEffect(() => {
-    const mql = window.matchMedia("(hover: hover)");
-    const onChange = () => setHover(mql.matches);
-    mql.addEventListener("change", onChange);
-    return () => mql.removeEventListener("change", onChange);
-  }, []);
-  return hover;
 }
 
 export default function Week() {
@@ -102,6 +100,7 @@ export default function Week() {
   const todayInWeek = dates.includes(today);
   const from = location.pathname + location.search;
   const search = location.search;
+  useTopTitle(`Semaine ${weekNo}`);
 
   const data = usePlanningData(year, { withLists: true });
   const {
@@ -116,16 +115,22 @@ export default function Week() {
     if (value) next.set(key, value); else next.delete(key);
     setSearchParams(next, { replace: true });
   };
+  const clearFilters = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("client");
+    next.delete("personne");
+    setSearchParams(next, { replace: true });
+  };
 
   const [view, setView] = useLocalStorage<WeekView>("recipe-book:week-view", "lines");
   const [checklistOpen, setChecklistOpen] = useLocalStorage<boolean>("recipe-book:checklist-open", typeof window !== "undefined" && window.innerWidth >= 1280);
   const [sheet, setSheet] = useState<{ client: Client; guestCount: number } | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [printMode, setPrintMode] = useState<PrintMode>("week");
   const [printTick, setPrintTick] = useState(0);
-  const hoverPointer = useHoverPointer();
+  const touch = useTouchScreen();
+  const menu = useMenu();
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const dayRefs = useRef<Record<string, HTMLElement | null>>({});
 
@@ -170,8 +175,9 @@ export default function Week() {
   const dayUrl = (date: string) => `/jour/${date}${personQuery}`;
   const prepUrl = (eventId: string, lineId: string) => `/events/${eventId}/lines/${lineId}${personQuery}`;
   const state = { from };
+  const anchorDay = todayInWeek ? today : monday;
 
-  const modalOpen = Boolean(sheet) || assignOpen || menuOpen;
+  const modalOpen = Boolean(sheet) || assignOpen || menu.open;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e) || modalOpen) return;
@@ -216,11 +222,6 @@ export default function Week() {
 
   const cycle = useCallback(async (ev: AppEvent, line: EventRecipeLine) => {
     try { await patchLine(ev.eventId, line.lineId, { prepStatus: NEXT_STATUS[lineStatus(line)] }); }
-    catch { fail("Erreur lors de la mise à jour du statut"); }
-  }, [patchLine]);
-
-  const setStatus = useCallback(async (ev: AppEvent, line: EventRecipeLine, status: PrepStatus) => {
-    try { await patchLine(ev.eventId, line.lineId, { prepStatus: status }); }
     catch { fail("Erreur lors de la mise à jour du statut"); }
   }, [patchLine]);
 
@@ -290,7 +291,7 @@ export default function Week() {
   };
 
   const share = async (person: Person) => {
-    const date = todayInWeek ? today : monday;
+    const date = anchorDay;
     const url = `${window.location.origin}/jour/${date}?personne=${encodeURIComponent(person.personId)}`;
     const title = `${longDayLabel(date)} · ${person.name}`;
     try {
@@ -308,21 +309,18 @@ export default function Week() {
 
   const dayMeta = (d: WeekDay, short = false) => {
     if (d.events.length === 0) return short ? "aucun" : "aucun événement";
-    const base = `${d.events.length} évén. · ${d.guests} conv.`;
+    const base = short ? `${d.events.length} · ${d.guests} conv.` : `${d.events.length} évén. · ${d.guests} conv.`;
     return started && d.linesTotal > 0 ? `${base} · ${d.linesDone}/${d.linesTotal}` : base;
   };
   const clientOf = (ev: AppEvent) => (ev.clientId ? clientById.get(ev.clientId) : undefined);
   const recipeName = (id: string) => recipeById.get(id)?.name ?? id;
   const hasPersonLine = (ev: AppEvent) => !selectedPerson || ev.recipes.some((l) => assigneesOf(l, ev).includes(selectedPerson));
   const isOtherPerson = (ev: AppEvent, line: EventRecipeLine) => Boolean(selectedPerson) && !assigneesOf(line, ev).includes(selectedPerson);
-  const canAssign = hoverPointer && activePeople.length > 0;
+  const canAssign = !touch && activePeople.length > 0;
   const counts = Object.fromEntries(plan.days.map((d) => [d.date, d.events.length]));
-
-  const menuItems = [
-    { label: "Imprimer", icon: <Printer className="h-5 w-5" />, onClick: () => print("week") },
-    { label: "Imprimer par personne", icon: <Printer className="h-5 w-5" />, onClick: () => print("person") },
-    ...activePeople.map((p) => ({ label: `Partager avec ${p.name}`, icon: <Share2 className="h-5 w-5" />, onClick: () => share(p) })),
-  ];
+  const filterCount = (selectedClient ? 1 : 0) + (selectedPerson ? 1 : 0);
+  const showClientFilter = clientsConfigured && clientsThisWeek.length > 0;
+  const showPersonFilter = activePeople.length > 0;
 
   const doneFragment = started && weekTotals.linesTotal > 0
     ? ` · ${weekTotals.linesDone} / ${plural(weekTotals.linesTotal, "ligne")} ${weekTotals.linesTotal === 1 ? "faite" : "faites"}`
@@ -331,86 +329,151 @@ export default function Week() {
     ? { to: `/comptes/apercu?year=${year}`, text: `Mois ${fmtEur0(monthSigned)} / ${fmtEur0(objective)}`, short: `Mois ${num0.format(monthSigned)} / ${fmtEur0(objective)}` }
     : { to: "/settings#objectifs", text: `Mois ${fmtEur0(monthSigned)} · Définir l'objectif`, short: `Mois ${fmtEur0(monthSigned)} · Définir l'objectif` };
 
-  const clientSelect = clientsConfigured && (
-    <select aria-label="Client" value={selectedClient} onChange={(e) => setParam("client", e.target.value)} className={SELECT}>
-      <option value="">Tous les clients</option>
-      {clientsThisWeek.map((c) => <option key={c.clientId} value={c.clientId}>{c.name}</option>)}
-    </select>
-  );
-  const personSelect = activePeople.length > 0 && (
-    <select aria-label="Personne" value={selectedPerson} onChange={(e) => setParam("personne", e.target.value)} className={SELECT}>
-      <option value="">Toutes les personnes</option>
-      {activePeople.map((p) => <option key={p.personId} value={p.personId}>{p.name}</option>)}
-    </select>
+  const filterGroups = (
+    <>
+      {showClientFilter && (
+        <FilterGroup
+          label="Client"
+          name="client"
+          kind="radio"
+          value={selectedClient}
+          onChange={(v) => setParam("client", v)}
+          options={[{ value: "", label: "Tous les clients" }, ...clientsThisWeek.map((c) => ({ value: c.clientId, label: c.name }))]}
+        />
+      )}
+      {showPersonFilter && (
+        <FilterGroup
+          label="Personne"
+          name="personne"
+          kind="radio"
+          value={selectedPerson}
+          onChange={(v) => setParam("personne", v)}
+          options={[{ value: "", label: "Toutes les personnes" }, ...activePeople.map((p) => ({ value: p.personId, label: p.name }))]}
+          renderOption={(o) => o.value ? <span className="inline-flex items-center gap-2"><PersonChip personId={o.value} people={people} size="sm" />{o.label}</span> : o.label}
+        />
+      )}
+    </>
   );
 
+  const actionItems = (
+    <>
+      <MenuSection label="Afficher">
+        <MenuCheck checked={view === "lines"} onChange={() => setView("lines")}>Afficher les lignes</MenuCheck>
+        <MenuCheck checked={view === "events"} onChange={() => setView("events")}>Afficher les événements</MenuCheck>
+      </MenuSection>
+      <MenuSeparator />
+      <MenuItem icon={<ShoppingCart />} disabled={busy || loading} onSelect={() => createGrocery(filteredEvents)}>Courses de la semaine</MenuItem>
+      <MenuItem icon={<Printer />} onSelect={() => print("week")}>Imprimer</MenuItem>
+      <MenuItem icon={<Printer />} onSelect={() => print("person")}>Imprimer par personne</MenuItem>
+      {activePeople.map((p) => (
+        <MenuItem key={p.personId} icon={<Share2 />} onSelect={() => share(p)}>Partager avec {p.name}</MenuItem>
+      ))}
+    </>
+  );
+
+  // On touch the ⋯ sheet also carries the two filters.
+  const touchFilterItems = (showClientFilter || showPersonFilter) && (
+    <>
+      {showClientFilter && (
+        <MenuSection label="Client">
+          <MenuRadio checked={!selectedClient} onSelect={() => setParam("client", "")}>Tous les clients</MenuRadio>
+          {clientsThisWeek.map((c) => (
+            <MenuRadio key={c.clientId} checked={selectedClient === c.clientId} onSelect={() => setParam("client", c.clientId)}>{c.name}</MenuRadio>
+          ))}
+        </MenuSection>
+      )}
+      {showPersonFilter && (
+        <MenuSection label="Personne">
+          <MenuRadio checked={!selectedPerson} onSelect={() => setParam("personne", "")}>Toutes les personnes</MenuRadio>
+          {activePeople.map((p) => (
+            <MenuRadio key={p.personId} checked={selectedPerson === p.personId} onSelect={() => setParam("personne", p.personId)}>{p.name}</MenuRadio>
+          ))}
+        </MenuSection>
+      )}
+      <MenuSeparator />
+    </>
+  );
+
+  const moreMenu = (
+    <div ref={menu.ref} className="relative inline-flex">
+      <IconButton size="sm" aria-label="Plus d'actions" aria-haspopup="menu" aria-expanded={menu.open} onClick={menu.toggle} icon={<MoreHorizontal />} />
+      <Menu {...menu.props} align="right" title={`Semaine ${weekNo}`} aria-label="Plus d'actions">
+        {touch && touchFilterItems}
+        {actionItems}
+      </Menu>
+    </div>
+  );
+
+  const newButton = (
+    <Button variant="primary" size="sm" as={Link} to={newEventUrl(anchorDay)} icon={<Plus />}>Nouveau</Button>
+  );
+  // The 44px tabs leave no room for the label on a phone.
+  const newButtonTouch = (
+    <IconButton variant="primary" size="sm" as={Link} to={newEventUrl(anchorDay)} aria-label="Nouvel événement" icon={<Plus />} />
+  );
+
+  const filterChips = filterCount > 0 ? (
+    <>
+      {selectedClient && <FilterChip onRemove={() => setParam("client", "")}>{clientById.get(selectedClient)?.name ?? selectedClient}</FilterChip>}
+      {selectedPerson && <FilterChip onRemove={() => setParam("personne", "")}>{personName(people, selectedPerson)}</FilterChip>}
+    </>
+  ) : undefined;
+
   return (
-    <div className="h-[calc(100dvh-68px)] overflow-y-auto px-4 py-1 md:h-dvh xl:px-6 xl:py-4 print:h-auto print:overflow-visible">
-      {/* Navigation and strip, shared with the day page; swipe changes the week on the phone */}
-      <PlanningBar
-        view="week"
-        dates={dates}
-        counts={counts}
-        today={today}
-        weekNo={weekNo}
-        dayHref={dayUrl}
-        linkState={state}
-        prevHref={weekUrl(prevWeek)}
-        nextHref={weekUrl(nextWeek)}
-        todayHref={safeWeek !== todayWeek ? weekUrl(todayWeek) : undefined}
-        range={{ from: dates[0], to: dates[6], value: thursday, onChange: (d) => navigate(weekUrl(isoWeekOf(d))) }}
-        dayViewHref={`/jour/${todayInWeek ? today : monday}${search}`}
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-        right={(
-          <div className="text-right text-sm">
-            <div className="font-semibold tabular-nums">Signé {fmtEur0(weekTotals.signedRevenue)} · {weekTotals.guests} conv.{doneFragment}</div>
-            <Link to={monthLink.to} state={state} className="inline-flex items-center gap-0.5 tabular-nums text-muted-foreground hover:underline underline-offset-4">
-              {monthLink.text} <ChevronRight className="h-4 w-4" aria-hidden="true" />
+    <div className="mx-auto max-w-wide print:max-w-none">
+      <PageHeader
+        iconKey="semaine"
+        title={`Semaine ${weekNo}`}
+        className="no-print"
+        meta={(
+          <span className="tabular-nums">
+            Signé {fmtEur0(weekTotals.signedRevenue)} · {weekTotals.guests} conv.{doneFragment} ·{" "}
+            <Link to={monthLink.to} state={state} className="inline-flex items-center gap-0.5 rounded hover:bg-hover hover:text-foreground touch:min-h-11">
+              <span className="hidden md:inline">{monthLink.text}</span>
+              <span className="md:hidden">{monthLink.short}</span>
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </Link>
-          </div>
-        )}
-        phoneTrailing={(
-          <button type="button" onClick={() => setMenuOpen(true)} aria-label="Actions" aria-haspopup="dialog" className={ICON_BTN}>
-            <MoreHorizontal className="h-5 w-5" />
-          </button>
-        )}
-        below={(
-          <div className="min-h-7 overflow-x-auto whitespace-nowrap text-sm tabular-nums">
-            <span className="font-semibold">Signé {fmtEur0(weekTotals.signedRevenue)} · {weekTotals.guests} conv.{doneFragment}</span>
-            <span className="text-muted-foreground"> · </span>
-            <Link to={monthLink.to} state={state} className="text-muted-foreground">{monthLink.short} ›</Link>
-          </div>
+          </span>
         )}
       />
 
-      {/* Controls row */}
-      <div className="no-print hidden min-h-11 flex-wrap items-center justify-end gap-2 xl:flex">
-        {clientSelect}
-        {personSelect}
-        <div role="group" aria-label="Affichage" className="inline-flex rounded-lg border border-border bg-card p-0.5">
-          {(["lines", "events"] as WeekView[]).map((v) => (
-            <button
-              key={v}
-              type="button"
-              aria-pressed={view === v}
-              onClick={() => setView(v)}
-              className={`min-h-10 rounded-md px-3 text-base font-medium ${view === v ? "bg-active font-medium text-foreground" : "text-muted-foreground hover:bg-hover"}`}
-            >
-              {v === "lines" ? "Lignes" : "Événements"}
-            </button>
-          ))}
-        </div>
-        <button type="button" onClick={() => createGrocery(filteredEvents)} disabled={busy || loading} className={TEXT_BTN}>
-          <ShoppingCart className="h-5 w-5" /> Courses de la semaine
-        </button>
-        <ActionMenu items={menuItems} />
-      </div>
-      {error && <p className="no-print mt-2 text-base text-destructive">{error}</p>}
+      {/* Navigation and strip, shared with the day page; swipe changes the week on the phone */}
+      <PlanningBar
+        view="week"
+        weekHref={weekUrl(safeWeek)}
+        dayHref={`/jour/${anchorDay}${personQuery}`}
+        personHref={activePeople.length > 0 ? `/jour/${anchorDay}?mode=personne` : undefined}
+        dateLabel={<><span className="hidden md:inline">Semaine {weekNo} · </span>{shortRange(dates[0], dates[6])}</>}
+        onPrev={() => navigate(weekUrl(prevWeek))}
+        onNext={() => navigate(weekUrl(nextWeek))}
+        onPick={(d) => navigate(weekUrl(isoWeekOf(d)))}
+        pickValue={thursday}
+        isToday={safeWeek === todayWeek}
+        onToday={() => navigate(weekUrl(todayWeek))}
+        right={(
+          <>
+            {(showClientFilter || showPersonFilter) && (
+              <FilterButton count={filterCount} onClear={clearFilters}>{filterGroups}</FilterButton>
+            )}
+            {moreMenu}
+            {newButton}
+          </>
+        )}
+        rightTouch={<>{moreMenu}{newButtonTouch}</>}
+        filters={filterChips}
+        dates={dates}
+        counts={counts}
+        today={today}
+        stripHref={dayUrl}
+        linkState={state}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+      />
+      {error && <p className="no-print mt-3 text-sm text-danger">{error}</p>}
 
       {/* Checklist */}
       {!loading && (
-        <div className="no-print mt-1 xl:mt-3">
+        <div className="no-print mt-3">
           <WeekChecklist
             items={checklist}
             open={checklistOpen}
@@ -429,26 +492,31 @@ export default function Week() {
         </div>
       )}
 
-      {loading && <p className="mt-6 text-base text-muted-foreground">Chargement…</p>}
+      {loading && <p className="mt-6 text-sm text-muted-foreground">Chargement…</p>}
 
       {/* Laptop: seven columns */}
       {!loading && (
-        <div className="mt-3 hidden grid-cols-[repeat(7,minmax(0,1fr))] gap-2 xl:grid print:hidden">
+        <div className="mt-4 hidden grid-cols-[repeat(7,minmax(0,1fr))] gap-2 xl:grid print:hidden">
           {plan.days.map((day) => {
             const isToday = day.date === today;
+            const past = day.date < today;
             const dayPeople = plan.peopleByDay[day.date] ?? [];
+            const [dayName, dayNum] = dayLabel(day.date).split(" ");
             return (
-              <div key={day.date} className="min-w-0 max-h-[calc(100dvh-300px)] overflow-y-auto rounded-lg">
-                <div className={`relative sticky top-0 z-10 min-h-[72px] rounded-lg px-2 py-1.5 ${isToday ? "bg-selected" : "bg-background"}`}>
-                  <Link to={dayUrl(day.date)} state={state} className="block min-w-0 rounded hover:underline underline-offset-4">
-                    <div className="pr-9 text-h3">{dayLabel(day.date)}</div>
-                    <div className={`truncate text-sm ${isToday ? "" : "text-muted-foreground"}`}>{dayMeta(day, true)}</div>
-                  </Link>
-                  <Link to={newEventUrl(day.date)} aria-label={`Nouvel événement le ${longDayLabel(day.date)}`} className={`${ICON_BTN} absolute right-0 top-0 text-muted-foreground`}>
-                    <Plus className="h-5 w-5" />
-                  </Link>
+              <div key={day.date} className={`group min-w-0 ${past ? "opacity-60" : ""}`}>
+                <div className="sticky top-0 z-10 bg-background pb-1">
+                  <div className="flex items-start gap-1">
+                    <Link to={dayUrl(day.date)} state={state} className="min-w-0 flex-1 rounded px-1 hover:bg-hover">
+                      <div className="flex h-7 items-center gap-1 text-sm font-semibold">
+                        <span>{dayName}</span>
+                        <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${isToday ? "bg-danger-solid text-white" : ""}`}>{dayNum}</span>
+                      </div>
+                      <div className="truncate text-caption text-muted-foreground">{dayMeta(day, true)}</div>
+                    </Link>
+                    <IconButton size="sm" as={Link} to={newEventUrl(day.date)} aria-label={`Nouvel événement le ${longDayLabel(day.date)}`} className="reveal mt-1" icon={<Plus />} />
+                  </div>
                   {dayPeople.length > 0 && (
-                    <div className="flex min-h-5 items-center gap-0.5">
+                    <div className="flex h-7 items-center gap-0.5 px-1">
                       {dayPeople.slice(0, 4).map((id) => (
                         <button
                           key={id}
@@ -456,16 +524,16 @@ export default function Week() {
                           aria-pressed={selectedPerson === id}
                           aria-label={personName(people, id)}
                           onClick={() => setParam("personne", selectedPerson === id ? "" : id)}
-                          className={`rounded-full ${selectedPerson === id ? "ring-2 ring-primary" : ""}`}
+                          className={`rounded-full ${selectedPerson === id ? "shadow-[0_0_0_2px_#2383e2]" : ""}`}
                         >
-                          <PersonChips personIds={[id]} people={people} size="sm" />
+                          <PersonChip personId={id} people={people} size="sm" />
                         </button>
                       ))}
                       {dayPeople.length > 4 && <span className="text-caption text-muted-foreground">+{dayPeople.length - 4}</span>}
                     </div>
                   )}
                 </div>
-                <div className="space-y-2 px-0.5 pb-2 pt-1">
+                <div className="space-y-2 px-0.5 pb-2">
                   {day.events.map((ev) => {
                     const client = clientOf(ev);
                     const title = shortEventName(ev, client);
@@ -473,27 +541,27 @@ export default function Week() {
                     const done = doneCount(ev);
                     if (!hasPersonLine(ev)) {
                       return (
-                        <Link key={ev.eventId} to={`/events/${ev.eventId}`} state={state} className="flex min-h-9 items-center rounded-lg px-2 text-sm text-muted-foreground hover:bg-hover">
+                        <Link key={ev.eventId} to={`/events/${ev.eventId}`} state={state} className="flex h-7 items-center rounded px-2 text-sm text-muted-foreground hover:bg-hover">
                           <span className="truncate">{title}</span>
                         </Link>
                       );
                     }
                     return (
                       <div key={ev.eventId}>
-                        <div className="card-elevated flex min-h-16 hover:bg-hover">
-                          <Link to={`/events/${ev.eventId}`} state={state} className="min-w-0 flex-1 p-2.5">
-                            <div className="text-base font-medium line-clamp-2">{title}</div>
-                            <div className="mt-0.5 text-sm text-muted-foreground">
+                        <div className="flex rounded-lg bg-background shadow-card hover:bg-hover">
+                          <Link to={`/events/${ev.eventId}`} state={state} className="min-w-0 flex-1 p-2">
+                            <div className="text-sm font-medium line-clamp-2">{title}</div>
+                            <div className="mt-0.5 text-caption text-muted-foreground">
                               {ev.guestCount} conv. · {plural(total, "ligne")}{view === "events" && total > 0 ? ` · ${plural(done, "faite")}` : ""}
                             </div>
                             {started && total > 0 && (
-                              <div className="mt-2 h-1 w-full rounded-full bg-muted">
+                              <div className="mt-2 h-1 w-full rounded-full bg-divider">
                                 <div className="h-1 rounded-full bg-success" style={{ width: `${Math.round((done / total) * 100)}%` }} />
                               </div>
                             )}
                           </Link>
                           {(ev.assignedTo?.length || canAssign) ? (
-                            <div className="pr-1.5 pt-1.5">
+                            <div className="pr-1 pt-0.5">
                               <AssignChips value={ev.assignedTo ?? []} options={people} enabled={canAssign} onChange={(ids) => assignEvent(ev.eventId, ids)} title={title} />
                             </div>
                           ) : null}
@@ -506,20 +574,15 @@ export default function Week() {
                               const ids = assigneesOf(line, ev);
                               const dim = isOtherPerson(ev, line);
                               return (
-                                <li key={line.lineId} className={`group grid min-h-9 grid-cols-[32px_minmax(0,1fr)_auto_auto] items-center text-sm touch:min-h-11 ${dim ? "opacity-40" : ""}`}>
-                                  <StatusDot value={status} onCycle={() => cycle(ev, line)} className="-ml-1" />
-                                  <Link to={prepUrl(ev.eventId, line.lineId)} state={state} title={recipeName(line.recipeId)} className={`min-w-0 rounded px-0.5 py-1 hover:bg-hover ${status === "done" ? "text-muted-foreground" : ""}`}>
-                                    <span className="line-clamp-2">{recipeName(line.recipeId)}</span>
+                                <li key={line.lineId} className={`flex h-7 items-center gap-0.5 rounded text-sm hover:bg-hover ${dim ? "opacity-40" : ""}`}>
+                                  <StatusDot value={status} onCycle={() => cycle(ev, line)} />
+                                  <Link to={prepUrl(ev.eventId, line.lineId)} state={state} title={recipeName(line.recipeId)} className={`min-w-0 flex-1 truncate rounded px-0.5 ${status === "done" ? "text-muted-foreground" : ""}`}>
+                                    {recipeName(line.recipeId)}
                                   </Link>
-                                  <span className="flex justify-end">
-                                    {ids.length > 0 && (
-                                      <AssignChips value={own ? line.assignedTo ?? [] : ids} options={people} enabled={canAssign} inherited={!own} allowInherit max={2} className={CHIP_16} onChange={(next) => assignLine(ev.eventId, line.lineId, next)} title={recipeName(line.recipeId)} />
-                                    )}
-                                  </span>
-                                  <span className={`pl-1 font-semibold tabular-nums ${status === "done" ? "text-muted-foreground" : ""}`}>{line.portions}</span>
-                                  <div className="col-span-full hidden pl-8 pb-1 pointer:group-hover:block">
-                                    <StatusDots value={status} onChange={(s) => setStatus(ev, line, s)} />
-                                  </div>
+                                  {ids.length > 0 && (
+                                    <AssignChips value={own ? line.assignedTo ?? [] : ids} options={people} enabled={canAssign} inherited={!own} allowInherit max={2} onChange={(next) => assignLine(ev.eventId, line.lineId, next)} title={recipeName(line.recipeId)} />
+                                  )}
+                                  <span className={`pl-0.5 pr-1 tabular-nums ${status === "done" ? "text-muted-foreground" : "text-muted-foreground"}`}>{line.portions}</span>
                                 </li>
                               );
                             })}
@@ -528,6 +591,7 @@ export default function Week() {
                       </div>
                     );
                   })}
+                  <Button variant="ghost" size="sm" as={Link} to={newEventUrl(day.date)} icon={<Plus />} className="reveal w-full justify-start text-muted-foreground">Nouveau</Button>
                 </div>
               </div>
             );
@@ -537,70 +601,67 @@ export default function Week() {
 
       {/* Phone and tablet: every day stacked under the strip of the bar */}
       {!loading && (
-        <div className="xl:hidden print:hidden">
-          <div className="divide-y divide-border">
-            {plan.days.map((day) => {
-              const isToday = day.date === today;
-              const empty = day.events.length === 0;
-              return (
-                <section key={day.date} ref={(el) => { dayRefs.current[day.date] = el; }} className="scroll-mt-14">
-                  <div className={`sticky top-[56px] z-10 -mx-4 flex min-h-12 items-center gap-2 px-4 ${isToday ? "bg-selected" : "bg-background"}`}>
-                    <Link to={dayUrl(day.date)} state={state} className="flex min-h-12 min-w-0 flex-1 items-center gap-2">
-                      <span className="w-16 shrink-0 text-base font-medium">{dayLabel(day.date)}</span>
-                      <span className={`min-w-0 truncate text-sm ${empty ? "text-muted-foreground" : isToday ? "" : "text-muted-foreground"}`}>
-                        {empty ? "aucun événement" : dayMeta(day)}
-                      </span>
-                      {!empty && <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />}
-                    </Link>
-                    {empty && (
-                      <Link to={newEventUrl(day.date)} aria-label={`Nouvel événement le ${longDayLabel(day.date)}`} className={`${ICON_BTN} -mr-2 text-muted-foreground`}>
-                        <Plus className="h-5 w-5" />
-                      </Link>
-                    )}
-                  </div>
-                  {day.events.map((ev) => {
-                    const client = clientOf(ev);
-                    const title = shortEventName(ev, client);
-                    const collapsed = !hasPersonLine(ev);
-                    return (
-                      <div key={ev.eventId}>
-                        <Link to={`/events/${ev.eventId}`} state={state} className={`flex min-h-12 items-center gap-2 rounded-lg px-1 hover:bg-hover ${collapsed ? "text-muted-foreground" : ""}`}>
-                          <span className="min-w-0 flex-1 truncate text-base font-medium">{title}</span>
-                          {!collapsed && <span className="shrink-0 text-sm text-muted-foreground">{ev.guestCount} conv.</span>}
-                          <PersonChips personIds={ev.assignedTo ?? []} people={people} size="sm" />
-                          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                        </Link>
-                        {!collapsed && (
-                          <ul>
-                            {sortEventLines(ev.recipes, courses, recipeById).map((line) => {
-                              const status = lineStatus(line);
-                              const own = Boolean(line.assignedTo?.length);
-                              const ids = assigneesOf(line, ev);
-                              return (
-                                <li key={line.lineId} className={`flex min-h-12 items-center ${isOtherPerson(ev, line) ? "opacity-40" : ""}`}>
-                                  <StatusDot value={status} target="always" onCycle={() => cycle(ev, line)} />
-                                  <Link to={prepUrl(ev.eventId, line.lineId)} state={state} className={`flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-lg px-1 text-base hover:bg-hover ${status === "done" ? "text-muted-foreground" : ""}`}>
-                                    <span className="min-w-0 flex-1 truncate">{recipeName(line.recipeId)}</span>
-                                    <span className="shrink-0 font-semibold tabular-nums">{line.portions}</span>
-                                    <PersonChips personIds={ids} people={people} size="sm" inherited={!own && ids.length > 0} />
-                                  </Link>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {!empty && (
-                    <Link to={newEventUrl(day.date)} className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-base text-muted-foreground hover:bg-hover">
-                      <Plus className="h-5 w-5" aria-hidden="true" /> Nouvel événement
-                    </Link>
+        <div className="mt-2 xl:hidden print:hidden">
+          {plan.days.map((day) => {
+            const isToday = day.date === today;
+            const past = day.date < today;
+            const empty = day.events.length === 0;
+            const [dayName, dayNum] = dayLabel(day.date).split(" ");
+            return (
+              <section key={day.date} ref={(el) => { dayRefs.current[day.date] = el; }} className={`scroll-mt-24 md:scroll-mt-0 ${past ? "opacity-60" : ""}`}>
+                <div className="sticky top-[96px] z-10 -mx-4 flex min-h-11 items-center gap-1 bg-background px-4 md:static md:mx-0 md:px-0">
+                  <Link to={dayUrl(day.date)} state={state} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded hover:bg-hover">
+                    <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold">
+                      {dayName}
+                      <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${isToday ? "bg-danger-solid text-white" : ""}`}>{dayNum}</span>
+                    </span>
+                    <span className="min-w-0 truncate text-sm text-muted-foreground">{empty ? "aucun événement" : dayMeta(day)}</span>
+                    {!empty && <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-icon" aria-hidden="true" />}
+                  </Link>
+                  {empty && (
+                    <IconButton size="sm" as={Link} to={newEventUrl(day.date)} aria-label={`Nouvel événement le ${longDayLabel(day.date)}`} icon={<Plus />} />
                   )}
-                </section>
-              );
-            })}
-          </div>
+                </div>
+                {day.events.map((ev) => {
+                  const client = clientOf(ev);
+                  const title = shortEventName(ev, client);
+                  const collapsed = !hasPersonLine(ev);
+                  return (
+                    <div key={ev.eventId} className="mt-1">
+                      <Link to={`/events/${ev.eventId}`} state={state} className={`flex min-h-11 items-center gap-2 rounded-lg bg-background px-3 shadow-card hover:bg-hover ${collapsed ? "text-muted-foreground" : ""}`}>
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium touch:text-base">{title}</span>
+                        {!collapsed && <span className="shrink-0 text-sm text-muted-foreground">{ev.guestCount} conv.</span>}
+                        <PersonChips personIds={ev.assignedTo ?? []} people={people} size="sm" />
+                      </Link>
+                      {!collapsed && (
+                        <ul className="mt-1">
+                          {sortEventLines(ev.recipes, courses, recipeById).map((line) => {
+                            const status = lineStatus(line);
+                            const own = Boolean(line.assignedTo?.length);
+                            const ids = assigneesOf(line, ev);
+                            return (
+                              <li key={line.lineId} className={`flex min-h-11 items-center ${isOtherPerson(ev, line) ? "opacity-40" : ""}`}>
+                                <StatusDot value={status} onCycle={() => cycle(ev, line)} />
+                                <Link to={prepUrl(ev.eventId, line.lineId)} state={state} className={`flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded px-1 text-sm hover:bg-hover touch:text-base ${status === "done" ? "text-muted-foreground" : ""}`}>
+                                  <span className="min-w-0 flex-1 truncate">{recipeName(line.recipeId)}</span>
+                                  <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{line.portions}</span>
+                                  <PersonChips personIds={ids} people={people} size="sm" inherited={!own && ids.length > 0} />
+                                </Link>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })}
+                {!empty && (
+                  <Button variant="ghost" size="sm" as={Link} to={newEventUrl(day.date)} icon={<Plus />} className="mt-1 w-full justify-start text-muted-foreground">Nouvel événement</Button>
+                )}
+                <div className="my-2 h-px bg-border" aria-hidden="true" />
+              </section>
+            );
+          })}
         </div>
       )}
 
@@ -613,32 +674,6 @@ export default function Week() {
           <PersonPrint days={plan.days} people={activePeople} courses={courses} recipeById={recipeById} clientOf={clientOf} />
         )}
       </div>
-
-      {/* Phone menu sheet */}
-      {menuOpen && (
-        <div className="fixed inset-0 z-50 flex items-end bg-overlay xl:hidden" role="presentation" onClick={() => setMenuOpen(false)}>
-          <div role="dialog" aria-label="Actions" onClick={(e) => e.stopPropagation()} className="w-full rounded-t-2xl bg-card p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-xl animate-fade-up">
-            <div className="flex items-center justify-between px-3 py-1">
-              <span className="text-base font-semibold">Semaine {weekNo}</span>
-              <button type="button" onClick={() => setMenuOpen(false)} aria-label="Fermer" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-hover"><X className="h-5 w-5" /></button>
-            </div>
-            {(clientSelect || personSelect) && (
-              <div className="flex flex-col gap-2 px-3 py-1">
-                {clientSelect}
-                {personSelect}
-              </div>
-            )}
-            <button type="button" disabled={busy} onClick={() => { setMenuOpen(false); createGrocery(filteredEvents); }} className="flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 text-left text-base font-medium hover:bg-hover disabled:opacity-50">
-              <ShoppingCart className="h-5 w-5" /> Courses de la semaine
-            </button>
-            {menuItems.map((item) => (
-              <button key={item.label} type="button" onClick={() => { setMenuOpen(false); item.onClick(); }} className="flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 text-left text-base font-medium hover:bg-hover">
-                {item.icon} {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {assignOpen && (
         <AssignSheet
@@ -653,37 +688,38 @@ export default function Week() {
         />
       )}
 
-      {/* Create week sheet */}
-      {sheet && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-overlay p-4 md:items-center" onClick={() => !busy && setSheet(null)}>
-          <form
-            className="card-elevated w-full max-w-md p-5 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={(e) => { e.preventDefault(); createClientWeek(); }}
-          >
-            <h2 className="text-h3">Créer la semaine {sheet.client.name}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{rangeLabel(dates[0], dates[6])} · un événement par jour de modèle</p>
-            <label className="mt-4 block text-base">
-              Convives
+      {/* Create week dialog */}
+      <Dialog
+        open={Boolean(sheet)}
+        onClose={() => { if (!busy) setSheet(null); }}
+        title={sheet ? `Créer la semaine ${sheet.client.name}` : ""}
+        size="sm"
+        footer={(
+          <>
+            <Button variant="default" size="md" onClick={() => setSheet(null)} disabled={busy}>Annuler</Button>
+            <Button variant="primary" size="md" form="create-week" type="submit" disabled={busy}>Créer la semaine</Button>
+          </>
+        )}
+      >
+        {sheet && (
+          <form id="create-week" onSubmit={(e) => { e.preventDefault(); createClientWeek(); }}>
+            <p className="text-sm text-muted-foreground">{rangeLabel(dates[0], dates[6])} · un événement par jour de modèle</p>
+            <div className="mt-4">
+              <FieldLabel htmlFor="create-week-guests">Convives</FieldLabel>
               <input
+                id="create-week-guests"
                 type="number"
                 inputMode="numeric"
                 min={1}
                 autoFocus
                 value={sheet.guestCount}
                 onChange={(e) => setSheet({ ...sheet, guestCount: Math.max(1, Number(e.target.value) || 1) })}
-                className="input-field mt-1"
+                className="input-field"
               />
-            </label>
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" className={TEXT_BTN} onClick={() => setSheet(null)} disabled={busy}>Annuler</button>
-              <button type="submit" disabled={busy} className="inline-flex min-h-11 items-center rounded-lg bg-primary px-4 text-base font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
-                Créer la semaine
-              </button>
             </div>
           </form>
-        </div>
-      )}
+        )}
+      </Dialog>
     </div>
   );
 }
@@ -700,7 +736,7 @@ interface AssignChipsProps {
   title: string;
 }
 
-// Chips that open the picker in a fixed box, so the scrolling column does not clip it.
+// Chips that open the picker in a fixed box, so the column does not clip it.
 function AssignChips({ value, options, enabled, inherited = false, allowInherit = false, max, className, onChange, title }: AssignChipsProps) {
   const anchor = useRef<HTMLSpanElement>(null);
   const [rect, setRect] = useState<{ top: number; left: number; right: number } | null>(null);
@@ -745,7 +781,7 @@ function WeekPrint({ days, people, courses, recipeById, clientOf, dayMeta }: Pri
     <>
       {days.filter((d) => d.events.length > 0).map((day, i) => (
         <section key={day.date} className={i > 0 ? "print-break" : "mt-6"}>
-          <h2 className="text-h2 font-semibold">{longDayLabel(day.date)}</h2>
+          <h2 className="text-h2">{longDayLabel(day.date)}</h2>
           <p className="text-base text-muted-foreground">{dayMeta(day)}</p>
           {day.events.map((ev) => (
             <div key={ev.eventId} className="mt-4">
@@ -788,7 +824,7 @@ function PersonPrint({ days, people, courses, recipeById, clientOf }: PrintProps
         const byDay = days.filter((d) => mine.some((r) => r.day.date === d.date));
         return (
           <section key={page.key} className={cls}>
-            <h2 className="text-h2 font-semibold">{page.title}</h2>
+            <h2 className="text-h2">{page.title}</h2>
             {byDay.map((day) => (
               <div key={day.date} className="mt-4">
                 <h3 className="text-h3">{longDayLabel(day.date)}</h3>

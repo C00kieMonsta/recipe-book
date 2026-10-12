@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { X } from "lucide-react";
 import type { FixedCharge, FixedChargeCategory, Scenario, YearObjective } from "@packages/types";
 import { DEFAULT_PRESTATION_TYPES, chargeActiveIn, chargeAmount, fmtEur, previsionnel, round2, yearMonths } from "@packages/types";
 import { api } from "@/lib/api";
 import { useReportInputs } from "@/lib/use-report-inputs";
 import { useToast } from "@/hooks/use-toast";
-import { PageHeader, Section, SectionToggle, Tag, MoneyTile, FieldLabel, NumericInput } from "@/components/ui";
+import { Button, Callout, Checkbox, DateNav, FieldLabel, IconButton, MoneyTile, NumericInput, Section, SectionToggle, SelectPill, Tag, Toolbar } from "@/components/ui";
 
 const SCENARIO_KEY = "recipe-book:scenario";
 const NOT_CONFIGURED = "Comptabilité non configurée : la table ta-ledger n'existe pas encore";
@@ -88,14 +89,14 @@ function OptNum({ value, onChange, id, className = "", suffix, placeholder, min,
         id={id}
         type="text"
         inputMode="decimal"
-        className={`input-field min-h-11 tabular-nums ${className}`}
+        className={`input-field tabular-nums ${className}`}
         value={text}
         placeholder={placeholder}
         onChange={(e) => { if (e.target.value === "" || /^-?\d*[.,]?\d*$/.test(e.target.value)) setText(e.target.value); }}
         onBlur={commit}
         onKeyDown={(e) => { if (e.key === "Enter") { commit(); (e.target as HTMLInputElement).blur(); } }}
       />
-      {suffix && <span className="text-base text-muted-foreground">{suffix}</span>}
+      {suffix && <span className="text-sm text-muted-foreground">{suffix}</span>}
     </span>
   );
 }
@@ -180,12 +181,6 @@ export default function Previsionnel() {
   }, [settings]);
 
   const nowYear = new Date().getFullYear();
-  const years = useMemo(() => {
-    const ys = new Set<number>([nowYear - 2, nowYear - 1, nowYear, nowYear + 1, nowYear + 2, year]);
-    for (const k of Object.keys(settings?.objectives ?? {})) ys.add(Number(k));
-    return Array.from(ys).filter((y) => Number.isInteger(y)).sort();
-  }, [settings, year, nowYear]);
-
   const types = settings?.prestationTypes ?? DEFAULT_PRESTATION_TYPES;
   const months = useMemo(() => yearMonths(year), [year]);
 
@@ -265,45 +260,38 @@ export default function Previsionnel() {
   const annuelOf = (c: FixedCharge) => round2(months.filter((ym) => chargeActiveIn(c, ym)).length * chargeAmount(c, scenario));
   const inResultOf = (c: FixedCharge) => c.inResult ?? c.category !== "remboursement";
 
-  const scenarioToggle = (
-    <div role="group" aria-label="Scénario" className="inline-flex overflow-hidden rounded-lg border">
-      {(["avec", "seule"] as Scenario[]).map((s) => (
-        <button key={s} type="button" aria-pressed={scenario === s} onClick={() => pickScenario(s)} className={`min-h-11 px-3 text-base ${scenario === s ? "bg-primary text-primary-foreground" : "hover:bg-hover"}`}>
-          {s === "avec" ? "Avec salarié" : "Seule"}
-        </button>
-      ))}
-    </div>
+  const scenarioPill = (
+    <SelectPill
+      value={scenario}
+      options={[{ value: "avec", label: "Avec salarié" }, { value: "seule", label: "Seule" }]}
+      colour="gray"
+      align="right"
+      aria-label="Scénario"
+      onChange={(v) => pickScenario(v as Scenario)}
+    />
   );
 
-  const btn = "inline-flex min-h-11 items-center rounded-lg border px-3 text-base hover:bg-hover disabled:opacity-50";
-  const btnPrimary = "inline-flex min-h-11 items-center rounded-lg bg-primary px-4 text-base font-medium text-primary-foreground disabled:opacity-50";
-
   return (
-    <div className="max-w-wide mx-auto">
-      <PageHeader
-        breadcrumb={[{ label: "Comptabilité", to: "/comptes" }, { label: "Prévisionnel" }]}
-        title={`Prévisionnel ${year}`}
-        meta="Un objectif par année et une liste de charges fixes; le seuil suit la formule du classeur."
-        actions={
-          <select aria-label="Année" className="input-field min-h-11 w-auto" value={year} onChange={(e) => setYear(Number(e.target.value))}>
-            {years.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
-        }
+    <div>
+      <Toolbar
+        left={<DateNav label={String(year)} onPrev={() => setYear(year - 1)} onNext={() => setYear(year + 1)} isToday={year === nowYear} onToday={() => setYear(nowYear)} todayLabel="Cette année" />}
+        right={<span className="inline-flex items-center gap-1"><span className="text-sm text-muted-foreground">Scénario :</span>{scenarioPill}</span>}
       />
+      <p className="mt-3 text-sm text-muted-foreground">Un objectif par année et une liste de charges fixes; le seuil suit la formule du classeur.</p>
 
-      {notConfigured && <p className="card-elevated mb-6 p-4 text-base text-muted-foreground">{NOT_CONFIGURED}</p>}
-      {error && <p className="mb-6 text-base text-destructive">{error}</p>}
-      {loading && <p className="text-base text-muted-foreground">Chargement…</p>}
+      {notConfigured && <div className="mt-4"><Callout emoji="💶">{NOT_CONFIGURED}</Callout></div>}
+      {error && <div className="mt-4"><Callout tone="danger">{error}</Callout></div>}
+      {loading && <p className="mt-4 text-sm text-muted-foreground">Chargement…</p>}
 
       {settings && (
-        <div className="grid gap-10 lg:grid-cols-[2fr_3fr]">
+        <div className="mt-6 flex flex-col gap-10">
           {/* ── Objectif ── */}
-          <section>
+          <section className="max-w-doc">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-h3">Objectif {year}</h2>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" className={btn} onClick={copyPrevious} disabled={!settings.objectives?.[String(year - 1)]}>Copier l'objectif de {year - 1}</button>
-                <button type="button" className={btnPrimary} onClick={saveObjective} disabled={!objectiveDirty || saving !== null}>Enregistrer</button>
+              <div className="flex flex-wrap gap-1">
+                <Button variant="subtle" size="sm" onClick={copyPrevious} disabled={!settings.objectives?.[String(year - 1)]}>Copier l'objectif de {year - 1}</Button>
+                <Button variant="primary" size="sm" onClick={saveObjective} disabled={!objectiveDirty || saving !== null}>Enregistrer</Button>
               </div>
             </div>
 
@@ -328,10 +316,9 @@ export default function Previsionnel() {
               <div>
                 <FieldLabel htmlFor="obj-isoc">Taux ISoc</FieldLabel>
                 <OptNum id="obj-isoc" value={objective.corporateTaxRate === undefined ? undefined : round2(objective.corporateTaxRate * 100)} min={0} onChange={(v) => patchObjective({ corporateTaxRate: v === undefined ? undefined : Math.min(1, v / 100) })} className="w-24" suffix="%" placeholder="25" />
-                <label className="mt-2 flex min-h-11 cursor-pointer items-center gap-2 text-base">
-                  <input type="checkbox" className="h-5 w-5" checked={Boolean(objective.smeReducedRate)} onChange={(e) => patchObjective({ smeReducedRate: e.target.checked || undefined })} />
-                  Taux réduit PME (20 % sur les premiers 100 000 €)
-                </label>
+                <div className="mt-2 -mx-1">
+                  <Checkbox checked={Boolean(objective.smeReducedRate)} onChange={(on) => patchObjective({ smeReducedRate: on || undefined })} label="Taux réduit PME" className="w-full" />
+                </div>
                 <p className="mt-1 text-sm text-muted-foreground">{ISOC_HELP}</p>
               </div>
               <div>
@@ -383,7 +370,7 @@ export default function Previsionnel() {
                   const row = prestationRow(t.key);
                   return (
                     <div key={t.key} className="grid grid-cols-1 gap-2 py-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
-                      <div className="text-base font-medium">{t.label}</div>
+                      <div className="text-sm font-medium">{t.label}</div>
                       <div>
                         <FieldLabel htmlFor={`p-amt-${t.key}`} className="text-sm">Montant</FieldLabel>
                         <OptNum id={`p-amt-${t.key}`} value={row?.amount || undefined} min={0} onChange={(v) => setPrestation(t.key, { amount: v ?? 0 })} className="w-32" suffix="€" />
@@ -407,15 +394,15 @@ export default function Previsionnel() {
               <div className="divide-y divide-border">
                 {(objective.investments ?? []).map((inv, i) => (
                   <div key={i} className="flex flex-wrap items-center gap-2 py-2">
-                    <input aria-label="Intitulé" className="input-field min-h-11 flex-1" value={inv.label} onChange={(e) => { const list = [...(objective.investments ?? [])]; list[i] = { ...inv, label: e.target.value }; patchObjective({ investments: list }); }} />
-                    <NumericInput value={inv.amount} min={0} onChange={(v) => { const list = [...(objective.investments ?? [])]; list[i] = { ...inv, amount: v }; patchObjective({ investments: list }); }} className="input-field min-h-11 w-32 text-right tabular-nums" suffix="€" />
-                    <button type="button" aria-label="Retirer l'investissement" className={`${btn} min-w-11 justify-center`} onClick={() => patchObjective({ investments: (objective.investments ?? []).filter((_, j) => j !== i) })}>×</button>
+                    <input aria-label="Intitulé" className="input-field flex-1" value={inv.label} onChange={(e) => { const list = [...(objective.investments ?? [])]; list[i] = { ...inv, label: e.target.value }; patchObjective({ investments: list }); }} />
+                    <NumericInput value={inv.amount} min={0} onChange={(v) => { const list = [...(objective.investments ?? [])]; list[i] = { ...inv, amount: v }; patchObjective({ investments: list }); }} className="input-field w-32 text-right tabular-nums" suffix="€" />
+                    <IconButton size="md" aria-label="Retirer l'investissement" icon={<X />} onClick={() => patchObjective({ investments: (objective.investments ?? []).filter((_, j) => j !== i) })} />
                   </div>
                 ))}
               </div>
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                <button type="button" className={btn} onClick={() => patchObjective({ investments: [...(objective.investments ?? []), { label: "", amount: 0 }] })}>+ Investissement</button>
-                <span className="text-base tabular-nums">Total {fmtMoney(pv?.investmentsTotal)}</span>
+                <Button variant="subtle" size="sm" onClick={() => patchObjective({ investments: [...(objective.investments ?? []), { label: "", amount: 0 }] })}>+ Investissement</Button>
+                <span className="text-sm tabular-nums">Total {fmtMoney(pv?.investmentsTotal)}</span>
               </div>
             </SectionToggle>
           </section>
@@ -424,10 +411,9 @@ export default function Previsionnel() {
           <section>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-h3">Charges fixes</h2>
-              <div className="flex flex-wrap items-center gap-2">
-                {scenarioToggle}
-                <button type="button" className={btn} onClick={addCharge}>+ Charge</button>
-                <button type="button" className={btnPrimary} onClick={saveCharges} disabled={!chargesDirty || saving !== null}>Enregistrer les charges</button>
+              <div className="flex flex-wrap items-center gap-1">
+                <Button variant="subtle" size="sm" onClick={addCharge}>+ Charge</Button>
+                <Button variant="default" size="sm" onClick={saveCharges} disabled={!chargesDirty || saving !== null}>Enregistrer les charges</Button>
               </div>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">Budget de caisse pour le seuil. Pour changer un montant à partir d'un mois, fermer la ligne avec « Jusqu'au » et en ajouter une avec « Depuis ».</p>
@@ -435,7 +421,7 @@ export default function Previsionnel() {
             <div className="mt-4 hidden overflow-x-auto md:block">
               <table className="table">
                 <thead>
-                  <tr className="text-muted-foreground">
+                  <tr>
                     <th>Intitulé</th>
                     <th>Catégorie</th>
                     <th className="text-right">Mensuel</th>
@@ -449,23 +435,27 @@ export default function Previsionnel() {
                 </thead>
                 <tbody>
                   {charges.map((c) => (
-                    <tr key={c.chargeId} className="border-t border-border">
+                    <tr key={c.chargeId} className="group">
                       <td>
-                        <input aria-label="Intitulé" className="input-field input-compact min-h-11 w-44" value={c.label} onChange={(e) => patchCharge(c.chargeId, { label: e.target.value })} />
-                        {!inResultOf(c) && <div className="mt-1"><Tag variant="neutral">hors résultat</Tag></div>}
+                        <input aria-label="Intitulé" className="input-field input-compact w-44" value={c.label} onChange={(e) => patchCharge(c.chargeId, { label: e.target.value })} />
+                        {!inResultOf(c) && <Tag colour="gray" className="ml-1">hors résultat</Tag>}
                       </td>
                       <td>
-                        <select aria-label="Catégorie" className="input-field input-compact min-h-11 w-auto" value={c.category} onChange={(e) => patchCharge(c.chargeId, { category: e.target.value as FixedChargeCategory })}>
-                          {CATEGORIES.map((k) => <option key={k} value={k}>{CATEGORY_LABEL[k]}</option>)}
-                        </select>
+                        <SelectPill
+                          value={c.category}
+                          options={CATEGORIES.map((k) => ({ value: k, label: CATEGORY_LABEL[k] }))}
+                          colour="gray"
+                          aria-label="Catégorie"
+                          onChange={(v) => patchCharge(c.chargeId, { category: v as FixedChargeCategory })}
+                        />
                       </td>
-                      <td className="text-right"><NumericInput value={c.monthlyAmount} min={0} onChange={(v) => patchCharge(c.chargeId, { monthlyAmount: v })} className="input-field input-compact min-h-11 w-28 text-right tabular-nums" /></td>
+                      <td className="text-right"><NumericInput value={c.monthlyAmount} min={0} onChange={(v) => patchCharge(c.chargeId, { monthlyAmount: v })} className="input-field input-compact w-28 text-right tabular-nums" /></td>
                       <td className="text-right"><OptNum value={c.monthlyAmountSolo} min={0} onChange={(v) => patchCharge(c.chargeId, { monthlyAmountSolo: v })} className="input-compact w-28 text-right" placeholder={String(c.monthlyAmount)} /></td>
                       <td className="text-right tabular-nums">{fmtEur(annuelOf(c))}</td>
-                      <td><input type="checkbox" aria-label="Dans le résultat" className="h-5 w-5" checked={inResultOf(c)} onChange={(e) => patchCharge(c.chargeId, { inResult: e.target.checked })} /></td>
-                      <td><input type="month" aria-label="Depuis" className="input-field input-compact min-h-11 w-auto" value={c.from ?? ""} onChange={(e) => patchCharge(c.chargeId, { from: e.target.value || undefined })} /></td>
-                      <td><input type="month" aria-label="Jusqu'au" className="input-field input-compact min-h-11 w-auto" value={c.to ?? ""} onChange={(e) => patchCharge(c.chargeId, { to: e.target.value || undefined })} /></td>
-                      <td><button type="button" aria-label="Retirer la charge" className={`${btn} min-w-11 justify-center`} onClick={() => removeCharge(c.chargeId)}>×</button></td>
+                      <td><Checkbox aria-label="Dans le résultat" checked={inResultOf(c)} onChange={(on) => patchCharge(c.chargeId, { inResult: on })} /></td>
+                      <td><input type="month" aria-label="Depuis" className="input-field input-compact w-auto" value={c.from ?? ""} onChange={(e) => patchCharge(c.chargeId, { from: e.target.value || undefined })} /></td>
+                      <td><input type="month" aria-label="Jusqu'au" className="input-field input-compact w-auto" value={c.to ?? ""} onChange={(e) => patchCharge(c.chargeId, { to: e.target.value || undefined })} /></td>
+                      <td><IconButton size="sm" aria-label="Retirer la charge" icon={<X />} className="reveal" onClick={() => removeCharge(c.chargeId)} /></td>
                     </tr>
                   ))}
                 </tbody>
@@ -490,50 +480,53 @@ export default function Previsionnel() {
               </table>
             </div>
 
-            <div className="mt-4 space-y-3 md:hidden">
+            <div className="mt-4 divide-y divide-border md:hidden">
               {charges.map((c) => (
-                <div key={c.chargeId} className="card-elevated space-y-2 p-4">
+                <div key={c.chargeId} className="space-y-2 py-3">
                   <div className="flex items-center gap-2">
-                    <input aria-label="Intitulé" className="input-field min-h-11 flex-1" placeholder="Intitulé" value={c.label} onChange={(e) => patchCharge(c.chargeId, { label: e.target.value })} />
-                    <button type="button" aria-label="Retirer la charge" className={`${btn} min-w-11 justify-center`} onClick={() => removeCharge(c.chargeId)}>×</button>
+                    <input aria-label="Intitulé" className="input-field flex-1" placeholder="Intitulé" value={c.label} onChange={(e) => patchCharge(c.chargeId, { label: e.target.value })} />
+                    <IconButton size="md" aria-label="Retirer la charge" icon={<X />} onClick={() => removeCharge(c.chargeId)} />
                   </div>
-                  {!inResultOf(c) && <Tag variant="neutral">hors résultat</Tag>}
+                  {!inResultOf(c) && <Tag colour="gray">hors résultat</Tag>}
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <FieldLabel className="text-sm">Catégorie</FieldLabel>
-                      <select className="input-field min-h-11" value={c.category} onChange={(e) => patchCharge(c.chargeId, { category: e.target.value as FixedChargeCategory })}>
-                        {CATEGORIES.map((k) => <option key={k} value={k}>{CATEGORY_LABEL[k]}</option>)}
-                      </select>
+                      <FieldLabel>Catégorie</FieldLabel>
+                      <SelectPill
+                        value={c.category}
+                        options={CATEGORIES.map((k) => ({ value: k, label: CATEGORY_LABEL[k] }))}
+                        colour="gray"
+                        aria-label="Catégorie"
+                        onChange={(v) => patchCharge(c.chargeId, { category: v as FixedChargeCategory })}
+                      />
                     </div>
                     <div>
-                      <FieldLabel className="text-sm">Annuel</FieldLabel>
-                      <div className="min-h-11 py-2 text-base tabular-nums">{fmtEur(annuelOf(c))}</div>
+                      <FieldLabel>Annuel</FieldLabel>
+                      <div className="py-2 text-base tabular-nums">{fmtEur(annuelOf(c))}</div>
                     </div>
                     <div>
-                      <FieldLabel className="text-sm">Mensuel</FieldLabel>
-                      <NumericInput value={c.monthlyAmount} min={0} onChange={(v) => patchCharge(c.chargeId, { monthlyAmount: v })} className="input-field min-h-11 text-right tabular-nums" />
+                      <FieldLabel>Mensuel</FieldLabel>
+                      <NumericInput value={c.monthlyAmount} min={0} onChange={(v) => patchCharge(c.chargeId, { monthlyAmount: v })} className="input-field text-right tabular-nums" />
                     </div>
                     <div>
-                      <FieldLabel className="text-sm">Mensuel seule</FieldLabel>
+                      <FieldLabel>Mensuel seule</FieldLabel>
                       <OptNum value={c.monthlyAmountSolo} min={0} onChange={(v) => patchCharge(c.chargeId, { monthlyAmountSolo: v })} className="w-full text-right" placeholder={String(c.monthlyAmount)} />
                     </div>
                     <div>
-                      <FieldLabel className="text-sm">Depuis</FieldLabel>
-                      <input type="month" className="input-field min-h-11" value={c.from ?? ""} onChange={(e) => patchCharge(c.chargeId, { from: e.target.value || undefined })} />
+                      <FieldLabel>Depuis</FieldLabel>
+                      <input type="month" className="input-field" value={c.from ?? ""} onChange={(e) => patchCharge(c.chargeId, { from: e.target.value || undefined })} />
                     </div>
                     <div>
-                      <FieldLabel className="text-sm">Jusqu'au</FieldLabel>
-                      <input type="month" className="input-field min-h-11" value={c.to ?? ""} onChange={(e) => patchCharge(c.chargeId, { to: e.target.value || undefined })} />
+                      <FieldLabel>Jusqu'au</FieldLabel>
+                      <input type="month" className="input-field" value={c.to ?? ""} onChange={(e) => patchCharge(c.chargeId, { to: e.target.value || undefined })} />
                     </div>
                   </div>
-                  <label className="flex min-h-11 cursor-pointer items-center gap-2 text-base">
-                    <input type="checkbox" className="h-5 w-5" checked={inResultOf(c)} onChange={(e) => patchCharge(c.chargeId, { inResult: e.target.checked })} />
-                    Dans le résultat
-                  </label>
+                  <div className="-mx-1">
+                    <Checkbox checked={inResultOf(c)} onChange={(on) => patchCharge(c.chargeId, { inResult: on })} label="Dans le résultat" />
+                  </div>
                 </div>
               ))}
               {pv && (
-                <dl className="card-elevated grid grid-cols-2 gap-2 p-4 text-base tabular-nums">
+                <dl className="grid grid-cols-2 gap-2 rounded-lg bg-surface p-3 text-sm tabular-nums">
                   <dt>Total charges mensuelles</dt><dd className="text-right font-semibold">{fmtEur(pv.totals.mensuelCaisse[scenario])}</dd>
                   <dt className="text-muted-foreground">dont hors résultat</dt><dd className="text-right text-muted-foreground">{fmtEur(pv.totals.horsResultat[scenario])}</dd>
                 </dl>
@@ -545,15 +538,15 @@ export default function Previsionnel() {
 
       {pv && (
         <Section title="Seuil de rentabilité" meta={scenario === "seule" ? "scénario seule" : "scénario avec salarié"}>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <MoneyTile label="Seuil annuel" value={fmtEur(pv.seuilAnnuel)} sub="Charges caisse + épargne + investissements" className="border-primary/60" />
-            <MoneyTile label="Seuil mensuel" value={fmtEur(pv.seuilMensuel)} sub="Seuil annuel ÷ 12" />
-            <MoneyTile label="Seuil par mois actif" value={fmtMoney(pv.seuilParMoisActif)} sub={`Seuil annuel ÷ ${objective.monthsActive || "–"} mois`} />
-            <MoneyTile label="Seuil ajusté matières" value={fmtEur(pv.seuilAjusteMatieres)} sub="Secondaire : seuil annuel ÷ (1 − % MP)" />
-            <MoneyTile label="Besoin de trésorerie" value={fmtEur(pv.besoinTresorerie)} sub={`${objective.treasuryMonths ?? 3} mois de charges`} />
-            <MoneyTile label="Résultat prévu après matières et extras" value={fmtMoney(pv.resultatPrevu)} sub="CA × (1 − % MP) − charges résultat − extras" />
-            <MoneyTile label="ISoc prévu" value={fmtMoney(pv.isocPrevu)} sub={objective.smeReducedRate ? "taux réduit PME" : `taux ${fmtPct(objective.corporateTaxRate ?? 0.25, 0)}`} />
-            <MoneyTile label="Marge nette après ISoc" value={fmtPct(pv.margeNetteApresIsoc)} sub="(résultat − ISoc) ÷ CA" />
+          <div className="grid grid-cols-2 rounded-lg bg-surface md:grid-cols-4">
+            <MoneyTile flat label="Seuil annuel" value={fmtEur(pv.seuilAnnuel)} sub="Charges caisse + épargne + investissements" />
+            <MoneyTile flat label="Seuil mensuel" value={fmtEur(pv.seuilMensuel)} sub="Seuil annuel ÷ 12" />
+            <MoneyTile flat label="Seuil par mois actif" value={fmtMoney(pv.seuilParMoisActif)} sub={`Seuil annuel ÷ ${objective.monthsActive || "–"} mois`} />
+            <MoneyTile flat label="Seuil ajusté matières" value={fmtEur(pv.seuilAjusteMatieres)} sub="Secondaire : seuil annuel ÷ (1 − % MP)" />
+            <MoneyTile flat label="Besoin de trésorerie" value={fmtEur(pv.besoinTresorerie)} sub={`${objective.treasuryMonths ?? 3} mois de charges`} />
+            <MoneyTile flat label="Résultat prévu après matières et extras" value={fmtMoney(pv.resultatPrevu)} sub="CA × (1 − % MP) − charges résultat − extras" />
+            <MoneyTile flat label="ISoc prévu" value={fmtMoney(pv.isocPrevu)} sub={objective.smeReducedRate ? "taux réduit PME" : `taux ${fmtPct(objective.corporateTaxRate ?? 0.25, 0)}`} />
+            <MoneyTile flat label="Marge nette après ISoc" value={fmtPct(pv.margeNetteApresIsoc)} sub="(résultat − ISoc) ÷ CA" />
           </div>
           <p className="mt-3 text-sm text-muted-foreground tabular-nums">Objectif − seuil (formule du classeur) : {fmtMoney(pv.objectifMoinsSeuil)}</p>
           {!objective.annualRevenue && <p className="mt-1 text-sm text-muted-foreground">Saisir le CA annuel pour obtenir le résultat prévu et l'ISoc.</p>}

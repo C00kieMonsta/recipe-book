@@ -1,35 +1,53 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Check, CheckCircle2, ChevronRight, EyeOff, Printer, Share2, ShoppingCart, X } from "lucide-react";
+import { CheckCircle2, EyeOff, MoreHorizontal, Printer, Share2, ShoppingCart, X } from "lucide-react";
 import type { EventCostSnapshot, Ingredient, Person, PrepLine, PrepStatus, Recipe } from "@packages/types";
 import {
   addDays, buildCostSnapshot, calcRecipeCost, datesOfIsoWeek, filterByPerson, fmtQty, groupByPerson, groupByRecipe, isoWeekOf, longDayLabel,
-  parseIsoWeek, personName, prepLinesForDate, shortEventName,
+  parseIsoWeek, parseYmd, personName, prepLinesForDate, shortEventName,
 } from "@packages/types";
 import { api } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { buildGroceryItems, groceryTitleFor } from "@/lib/grocery";
 import { NEXT_STATUS, plural, prestationLabel, usePlanningData } from "@/lib/use-planning-data";
 import { useToast } from "@/hooks/use-toast";
+import { useTouchScreen } from "@/hooks/use-touch-screen";
 import { clearMiseEnPlace } from "@/hooks/use-mise-en-place";
-import { useBackLink, useFullBleed } from "@/components/admin/AdminLayout";
+import { useBackLink, useFullBleed, useTopTitle } from "@/components/admin/AdminLayout";
 import PlanningBar from "@/components/admin/PlanningBar";
-import PersonChips from "@/components/admin/PersonChips";
+import PersonChips, { PersonChip } from "@/components/admin/PersonChips";
 import PersonPicker from "@/components/admin/PersonPicker";
 import { Dot, StatusDot, STATUS_LABEL } from "@/components/admin/StatusDot";
-import { ActionMenu, PageHeader, SectionToggle, StatusControl } from "@/components/ui";
+import {
+  Button, FilterButton, FilterChip, FilterGroup, IconButton, Menu, MenuCheck, MenuItem, MenuRadio, MenuSection, MenuSeparator,
+  PageHeader, SectionToggle, SelectPill, StatusControl, useMenu,
+} from "@/components/ui";
 
 type Mode = "evenement" | "categorie" | "recette" | "personne";
 
-const MODES: { value: Mode; label: string }[] = [
-  { value: "evenement", label: "Par événement" },
-  { value: "categorie", label: "Par catégorie" },
-  { value: "recette", label: "Par recette" },
-  { value: "personne", label: "Par personne" },
+const MODES: Mode[] = ["evenement", "categorie", "recette", "personne"];
+const GROUP_OPTIONS = [
+  { value: "evenement", label: "Événement" },
+  { value: "categorie", label: "Catégorie" },
+  { value: "recette", label: "Recette" },
 ];
 
-const ICON_BTN = "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-foreground hover:bg-hover";
 const SWIPE_PX = 60;
+// Row content sits above the full-row link overlay; an open menu lifts its row above the next ones.
+const ABOVE = "relative z-10 hover:z-30 focus-within:z-30";
+
+const shortDate = new Intl.DateTimeFormat("fr-BE", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+
+// "Sam. 17 oct."
+function navLabel(date: string): string {
+  const s = shortDate.format(parseYmd(date));
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// "Sam 17 oct"
+function crumbLabel(date: string): string {
+  return navLabel(date).replace(/\./g, "");
+}
 
 // A picker or menu is open; Escape belongs to it.
 function overlayOpen(): boolean {
@@ -76,7 +94,7 @@ function doneLabel(lines: PrepLine[]): string {
 }
 
 function isMode(v: string | null): v is Mode {
-  return MODES.some((m) => m.value === v);
+  return MODES.some((m) => m === v);
 }
 
 // Sums the scaled quantity of every ingredient over the underlying lines, per unit.
@@ -121,6 +139,8 @@ export default function Day() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ name: string; next?: PrepLine } | null>(null);
   const [printPending, setPrintPending] = useState(false);
+  const touch = useTouchScreen();
+  const menu = useMenu();
   const touchStart = useRef<{ x: number; y: number } | null>(null);
 
   // The query every link out of the day keeps.
@@ -139,10 +159,17 @@ export default function Day() {
     else sp.delete(key);
     setSearchParams(sp, { replace: true });
   };
+  const setParams = (patch: Record<string, string | null>) => {
+    const sp = new URLSearchParams(searchParams);
+    for (const [k, v] of Object.entries(patch)) { if (v) sp.set(k, v); else sp.delete(k); }
+    setSearchParams(sp, { replace: true });
+  };
 
   const weekNumber = parseIsoWeek(week).week;
   const weekUrl = from ?? `/semaine/${week}${personne ? `?personne=${encodeURIComponent(personne)}` : ""}`;
+  const title = personne ? `${personName(people, personne)} · ${longDayLabel(safeDate)}` : longDayLabel(safeDate);
   useBackLink({ to: weekUrl, label: `Semaine ${weekNumber}` });
+  useTopTitle(title);
   const weekDates = useMemo(() => datesOfIsoWeek(week), [week]);
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -312,9 +339,9 @@ export default function Day() {
 
   const share = async (personId?: string) => {
     const url = `${window.location.origin}/jour/${safeDate}${personId ? `?personne=${encodeURIComponent(personId)}` : ""}`;
-    const title = personId ? `${longDayLabel(safeDate)} · ${personName(people, personId)}` : longDayLabel(safeDate);
+    const shareTitle = personId ? `${longDayLabel(safeDate)} · ${personName(people, personId)}` : longDayLabel(safeDate);
     if (navigator.share) {
-      try { await navigator.share({ title, url }); } catch { /* cancelled */ }
+      try { await navigator.share({ title: shareTitle, url }); } catch { /* cancelled */ }
       return;
     }
     try {
@@ -350,153 +377,186 @@ export default function Day() {
   const meta = personne
     ? `${plural(lines.length, "ligne")} · ${done} ${done === 1 ? "faite" : "faites"}`
     : `${plural(dayEvents.length, "événement")} · ${plural(guests, "convive")} · ${plural(lines.length, "ligne")} · ${done} ${done === 1 ? "faite" : "faites"}`;
-  const title = personne ? `${personName(people, personne)} · ${longDayLabel(safeDate)}` : longDayLabel(safeDate);
-  const modes = MODES.filter((m) => m.value !== "personne" || activePeople.length > 0);
   const personOptions: Person[] = personne && !activePeople.some((p) => p.personId === personne)
     ? [...activePeople, { personId: personne, name: personName(people, personne), active: false }]
     : activePeople;
+  const filterCount = (personne ? 1 : 0) + (hideDone ? 1 : 0);
+  const canFinish = safeDate < today && upcoming.length > 0;
+  const finishLabel = `Terminer ${upcoming.length === 1 ? "l'événement" : `les ${upcoming.length} événements`}`;
+  const personQuery = personne ? `?personne=${encodeURIComponent(personne)}` : "";
 
-  const menuItems = [
-    { label: "Courses du jour", icon: <ShoppingCart className="h-4 w-4" />, onClick: createGrocery },
-    { label: "Imprimer", icon: <Printer className="h-4 w-4" />, onClick: () => window.print() },
-    ...(activePeople.length > 0 && !personne
-      ? [{ label: "Imprimer par personne", icon: <Printer className="h-4 w-4" />, onClick: () => { setParam("mode", "personne"); setPrintPending(true); } }]
-      : []),
-    ...(personne
-      ? [{ label: "Partager…", icon: <Share2 className="h-4 w-4" />, onClick: () => share(personne) }]
-      : activePeople.length > 0
-        ? activePeople.map((p) => ({ label: `Partager · ${p.name}`, icon: <Share2 className="h-4 w-4" />, onClick: () => share(p.personId) }))
-        : [{ label: "Partager…", icon: <Share2 className="h-4 w-4" />, onClick: () => share() }]),
-    {
-      label: "Masquer les lignes faites",
-      icon: hideDone ? <Check className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />,
-      onClick: () => setParam("masquer", hideDone ? null : "faites"),
-    },
-    ...(safeDate < today && upcoming.length > 0
-      ? [{ label: `Terminer ${upcoming.length === 1 ? "l'événement" : `les ${upcoming.length} événements`}`, icon: <CheckCircle2 className="h-4 w-4" />, onClick: finishEvents }]
-      : []),
-  ];
+  const actionItems = (
+    <>
+      <MenuItem icon={<ShoppingCart />} disabled={busy} onSelect={createGrocery}>Courses du jour</MenuItem>
+      <MenuItem icon={<Printer />} onSelect={() => window.print()}>Imprimer</MenuItem>
+      {activePeople.length > 0 && !personne && (
+        <MenuItem icon={<Printer />} onSelect={() => { setParam("mode", "personne"); setPrintPending(true); }}>Imprimer par personne</MenuItem>
+      )}
+      {personne ? (
+        <MenuItem icon={<Share2 />} onSelect={() => share(personne)}>Partager…</MenuItem>
+      ) : activePeople.length > 0 ? (
+        activePeople.map((p) => <MenuItem key={p.personId} icon={<Share2 />} onSelect={() => share(p.personId)}>Partager · {p.name}</MenuItem>)
+      ) : (
+        <MenuItem icon={<Share2 />} onSelect={() => share()}>Partager…</MenuItem>
+      )}
+      {canFinish && (
+        <>
+          <MenuSeparator />
+          <MenuItem icon={<CheckCircle2 />} disabled={busy} onSelect={finishEvents}>{finishLabel}</MenuItem>
+        </>
+      )}
+    </>
+  );
+
+  // On touch the ⋯ sheet also carries the grouping and the filters.
+  const touchFilterItems = (
+    <>
+      {!personne && mode !== "personne" && (
+        <MenuSection label="Grouper">
+          {GROUP_OPTIONS.map((o) => (
+            <MenuRadio key={o.value} checked={mode === o.value} onSelect={() => setParam("mode", o.value === "evenement" ? null : o.value)}>{o.label}</MenuRadio>
+          ))}
+        </MenuSection>
+      )}
+      {personOptions.length > 0 && (
+        <MenuSection label="Personne">
+          <MenuRadio checked={!personne} onSelect={() => setParam("personne", null)}>Toutes les personnes</MenuRadio>
+          {personOptions.map((p) => (
+            <MenuRadio key={p.personId} checked={personne === p.personId} onSelect={() => setParam("personne", p.personId)}>{p.name}</MenuRadio>
+          ))}
+        </MenuSection>
+      )}
+      <MenuCheck icon={<EyeOff />} checked={hideDone} onChange={(v) => setParam("masquer", v ? "faites" : null)}>Masquer les lignes faites</MenuCheck>
+      <MenuSeparator />
+    </>
+  );
+
+  const moreMenu = (
+    <div ref={menu.ref} className="relative inline-flex">
+      <IconButton size="sm" aria-label="Plus d'actions" aria-haspopup="menu" aria-expanded={menu.open} onClick={menu.toggle} icon={<MoreHorizontal />} />
+      <Menu {...menu.props} align="right" title={longDayLabel(safeDate)} aria-label="Plus d'actions">
+        {touch && touchFilterItems}
+        {actionItems}
+      </Menu>
+    </div>
+  );
+
+  const groupPill = !personne && mode !== "personne" && (
+    <span className="inline-flex items-center gap-1 text-sm text-muted-foreground touch:hidden">
+      <span>Grouper :</span>
+      <SelectPill
+        value={mode}
+        options={GROUP_OPTIONS}
+        colour="gray"
+        onChange={(v) => setParam("mode", v === "evenement" ? null : v)}
+        aria-label="Regroupement"
+        title="Grouper par"
+      />
+    </span>
+  );
+
+  const filterChips = filterCount > 0 ? (
+    <>
+      {personne && <FilterChip onRemove={() => setParam("personne", null)}>{personName(people, personne)}</FilterChip>}
+      {hideDone && <FilterChip onRemove={() => setParam("masquer", null)}>Lignes faites masquées</FilterChip>}
+    </>
+  ) : undefined;
 
   const empty = !loading && !error && lines.length === 0;
 
   return (
-    <div
-      className="h-[calc(100dvh-68px)] overflow-y-auto px-4 py-1 pb-24 md:h-dvh xl:px-6 xl:py-4 xl:pb-24 print:h-auto print:overflow-visible"
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
-    >
+    <div className="mx-auto max-w-wide pb-24 print:max-w-none" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      <PageHeader
+        iconKey="semaine"
+        breadcrumb={[{ label: `Semaine ${weekNumber}`, to: weekUrl }, { label: crumbLabel(safeDate) }]}
+        title={title}
+        meta={meta}
+        className="no-print"
+      />
+      <h1 className="hidden text-h1 print:block">{title}</h1>
+
       <PlanningBar
-        view="day"
-        date={safeDate}
+        view={mode === "personne" ? "personne" : "day"}
+        weekHref={weekUrl}
+        dayHref={`/jour/${safeDate}${personQuery}${hideDone ? `${personQuery ? "&" : "?"}masquer=faites` : ""}`}
+        personHref={activePeople.length > 0 && !personne ? `/jour/${safeDate}?mode=personne${hideDone ? "&masquer=faites" : ""}` : undefined}
+        dateLabel={navLabel(safeDate)}
+        onPrev={() => navigate(dayUrl(addDays(safeDate, -1)), { state: location.state })}
+        onNext={() => navigate(dayUrl(addDays(safeDate, 1)), { state: location.state })}
+        onPick={(d) => navigate(dayUrl(d), { state: location.state })}
+        pickValue={safeDate}
+        isToday={safeDate === today}
+        onToday={() => navigate(dayUrl(today), { state: location.state })}
+        after={groupPill}
+        right={(
+          <>
+            <FilterButton count={filterCount} onClear={() => setParams({ personne: null, masquer: null })}>
+              {personOptions.length > 0 && (
+                <FilterGroup
+                  label="Personne"
+                  name="personne"
+                  kind="radio"
+                  value={personne}
+                  onChange={(v) => setParam("personne", v || null)}
+                  options={[{ value: "", label: "Toutes les personnes" }, ...personOptions.map((p) => ({ value: p.personId, label: p.name }))]}
+                  renderOption={(o) => o.value ? <span className="inline-flex items-center gap-2"><PersonChip personId={o.value} people={people} size="sm" />{o.label}</span> : o.label}
+                />
+              )}
+              <FilterGroup
+                name="masquer"
+                kind="check"
+                value={hideDone ? ["faites"] : []}
+                onChange={(v) => setParam("masquer", v.includes("faites") ? "faites" : null)}
+                options={[{ value: "faites", label: "Masquer les lignes faites" }]}
+              />
+            </FilterButton>
+            {moreMenu}
+          </>
+        )}
+        rightTouch={moreMenu}
+        filters={filterChips}
         dates={weekDates}
         counts={counts}
         today={today}
-        weekNo={weekNumber}
-        dayHref={dayUrl}
+        selected={safeDate}
+        stripHref={dayUrl}
         linkState={location.state}
-        weekHref={weekUrl}
-        prevHref={dayUrl(addDays(safeDate, -1))}
-        nextHref={dayUrl(addDays(safeDate, 1))}
-        todayHref={safeDate !== today ? dayUrl(today) : undefined}
-        right={<div className="text-right text-sm text-muted-foreground tabular-nums">{meta}</div>}
       />
-      <div className="mx-auto mt-4 max-w-doc">
-        <PageHeader
-          title={title}
-          meta={<span className="xl:hidden">{meta}</span>}
-          actions={
-            <div className="no-print flex w-full flex-nowrap items-center gap-2 md:w-auto">
-              {!personne && (
-                <>
-                  <div role="group" aria-label="Regroupement" className="hidden shrink-0 rounded-lg border border-border bg-card p-0.5 md:inline-flex">
-                    {modes.map((m) => (
-                      <button
-                        key={m.value}
-                        type="button"
-                        aria-pressed={mode === m.value}
-                        onClick={() => setParam("mode", m.value === "evenement" ? null : m.value)}
-                        className={`min-h-10 whitespace-nowrap rounded-md px-3 text-base font-medium ${mode === m.value ? "bg-active font-medium text-foreground" : "text-muted-foreground hover:bg-hover"}`}
-                      >
-                        {m.label}
-                      </button>
-                    ))}
-                  </div>
-                  <select
-                    aria-label="Regroupement"
-                    value={mode}
-                    onChange={(e) => setParam("mode", e.target.value === "evenement" ? null : e.target.value)}
-                    className="input-field min-h-11 min-w-0 flex-1 md:hidden"
-                  >
-                    {modes.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                  </select>
-                </>
-              )}
-              {personOptions.length > 0 && (
-                <select
-                  aria-label="Personne"
-                  value={personne}
-                  onChange={(e) => setParam("personne", e.target.value || null)}
-                  className="input-field min-h-11 min-w-0 flex-1 md:w-auto md:flex-none"
-                >
-                  <option value="">Toutes les personnes</option>
-                  {personOptions.map((p) => <option key={p.personId} value={p.personId}>{p.name}</option>)}
-                </select>
-              )}
-              <div className="ml-auto shrink-0 md:ml-0">
-                <ActionMenu items={menuItems} />
-              </div>
-            </div>
-          }
-        />
 
-        {error && <p className="mt-4 text-base text-destructive">{error}</p>}
-        {loading && <p className="mt-6 text-base text-muted-foreground">Chargement…</p>}
+      <div className="max-w-doc">
+        {error && <p className="mt-4 text-sm text-danger">{error}</p>}
+        {loading && <p className="mt-6 text-sm text-muted-foreground">Chargement…</p>}
         {empty && !personne && (
-          <p className="mt-6 text-base text-muted-foreground">
+          <p className="mt-6 text-sm text-muted-foreground touch:text-base">
             Aucune ligne à préparer ce jour. <Link to={`/events/new?date=${safeDate}&retour=${encodeURIComponent(here)}`} className="text-primary underline-offset-4 hover:underline">Créer un événement</Link>
           </p>
         )}
         {empty && personne && serviceEvents.length === 0 && (
-          <p className="mt-6 text-base text-muted-foreground">Aucune ligne pour {personName(people, personne)} ce jour.</p>
+          <p className="mt-6 text-sm text-muted-foreground touch:text-base">Aucune ligne pour {personName(people, personne)} ce jour.</p>
         )}
         {!loading && !error && lines.length > 0 && (personne ? personLines.length === 0 : shownGroups.length === 0) && (
-          <p className="mt-6 text-base text-muted-foreground">Tout est fait.</p>
+          <p className="mt-6 text-sm text-muted-foreground touch:text-base">Tout est fait.</p>
         )}
 
         {personne ? (
           <>
             {personLines.length > 0 && (
-              <ul className="mt-4 divide-y divide-border">
-                {personLines.map((line) => {
-                  const isDone = line.prepStatus === "done";
-                  return (
-                    <li key={line.lineId} className={`relative flex min-h-14 items-center gap-2 rounded-lg pointer:hover:bg-hover ${isDone ? "text-muted-foreground" : ""}`}>
-                      <StatusDot className="no-print relative z-10" target="always" value={line.prepStatus} onCycle={() => setStatus(line, NEXT_STATUS[line.prepStatus])} />
-                      <span className="hidden print:inline-block"><Dot status={line.prepStatus} /></span>
-                      <Link to={prepUrl(line)} state={{ from: here }} className="flex min-h-14 min-w-0 flex-1 items-center py-1 before:absolute before:inset-0 before:rounded-lg">
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-lead">{line.recipeName}</span>
-                          <span className="block text-sm text-muted-foreground">{[line.clientName ?? line.eventName, line.course, line.notes].filter(Boolean).join(" · ")}</span>
-                        </span>
-                      </Link>
-                      <span className="shrink-0 text-lead font-semibold tabular-nums">{line.portions}</span>
-                      <ChevronRight className="no-print h-5 w-5 shrink-0 text-muted-foreground" />
-                    </li>
-                  );
-                })}
+              <ul className="mt-4">
+                {personLines.map((line) => (
+                  <LineRow key={line.lineId} line={line} people={people} to={prepUrl(line)} from={here} onStatus={(s) => setStatus(line, s)} onCycle={() => setStatus(line, NEXT_STATUS[line.prepStatus])} second={[line.clientName ?? line.eventName, line.course, line.notes].filter(Boolean).join(" · ")} />
+                ))}
               </ul>
             )}
             {serviceEvents.length > 0 && (
               <section className="mt-6">
                 <h2 className="text-h3">Service</h2>
-                <ul className="mt-2 divide-y divide-border">
+                <ul className="mt-2">
                   {serviceEvents.map((ev) => (
                     <li key={ev.eventId}>
-                      <Link to={`/events/${ev.eventId}`} state={{ from: here }} className="flex min-h-14 items-center gap-3 rounded-lg px-2 text-base hover:bg-hover">
+                      <Link to={`/events/${ev.eventId}`} state={{ from: here }} className="flex min-h-9 items-center gap-3 rounded px-2 text-sm hover:bg-hover touch:min-h-11 touch:text-base">
                         <span className="min-w-0 flex-1">
                           {[shortEventName(ev, ev.clientId ? clientById.get(ev.clientId) : undefined), plural(ev.guestCount, "convive"), prestationLabel(settings, ev.prestationType)].filter(Boolean).join(" · ")}
                         </span>
-                        <ChevronRight className="no-print h-5 w-5 shrink-0 text-muted-foreground" />
                       </Link>
                     </li>
                   ))}
@@ -504,22 +564,21 @@ export default function Day() {
               </section>
             )}
             <p className="no-print mt-6">
-              <Link to={`/jour/${safeDate}${hideDone ? "?masquer=faites" : ""}`} className="inline-flex min-h-11 items-center text-base text-primary underline-offset-4 hover:underline">
-                Toutes les personnes
-              </Link>
+              <Button variant="link" size="sm" as={Link} to={`/jour/${safeDate}${hideDone ? "?masquer=faites" : ""}`}>Toutes les personnes</Button>
             </p>
           </>
         ) : (
           shownGroups.map((group, i) => (
             <section key={group.key} className={i > 0 ? "mt-6 print-break" : "mt-4"}>
-              <header className="sticky top-14 z-[15] bg-background py-2 md:top-0">
-                <div className={`flex items-center justify-between gap-3 ${mode === "personne" ? "min-h-11" : ""}`}>
-                  <h2 className="text-h3 min-w-0">{group.title}</h2>
-                  <span className="shrink-0 text-base text-muted-foreground tabular-nums">{group.count}</span>
+              <header className="sticky top-[96px] z-[15] bg-background py-2 md:top-0">
+                <div className="flex min-h-7 items-center justify-between gap-3">
+                  <h2 className="flex min-w-0 items-center gap-2 text-h3">
+                    {mode === "personne" && group.personId && <PersonChip personId={group.personId} people={people} size="md" />}
+                    <span className="min-w-0 truncate">{group.title}</span>
+                  </h2>
+                  <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{group.count}</span>
                   {mode === "personne" && group.personId && (
-                    <button type="button" onClick={() => share(group.personId ?? undefined)} aria-label={`Partager la liste de ${group.title}`} className={`${ICON_BTN} no-print`}>
-                      <Share2 className="h-5 w-5" />
-                    </button>
+                    <IconButton size="sm" aria-label={`Partager la liste de ${group.title}`} className="no-print" onClick={() => share(group.personId ?? undefined)} icon={<Share2 />} />
                   )}
                   {mode === "personne" && group.personId === null && (
                     <GroupAssign people={activePeople} onChange={(next) => assignAll(group.lines, next)} />
@@ -529,31 +588,22 @@ export default function Day() {
               </header>
 
               {mode !== "recette" ? (
-                <ul className="divide-y divide-border">
-                  {group.lines.map((line) => {
-                    const isDone = line.prepStatus === "done";
-                    const second = mode === "evenement"
-                      ? [line.course, line.notes].filter(Boolean).join(" · ")
-                      : [line.clientName ?? line.eventName, line.course, line.notes].filter(Boolean).join(" · ");
-                    return (
-                      <li key={line.lineId} className={`relative flex min-h-14 items-center gap-2 rounded-lg pointer:hover:bg-hover ${isDone ? "text-muted-foreground" : ""}`}>
-                        <div className="no-print relative z-10 hidden w-60 shrink-0 md:block">
-                          <StatusControl value={line.prepStatus} onChange={(s) => setStatus(line, s)} />
-                        </div>
-                        <StatusDot className="no-print relative z-10 md:hidden" target="always" value={line.prepStatus} onCycle={() => setStatus(line, NEXT_STATUS[line.prepStatus])} />
-                        <span className="hidden print:inline-block"><Dot status={line.prepStatus} /></span>
-                        <Link to={prepUrl(line)} state={{ from: here }} className="flex min-h-14 min-w-0 flex-1 items-center py-1 pl-2 before:absolute before:inset-0 before:rounded-lg">
-                          <span className="min-w-0 flex-1">
-                            <span className="block text-lead">{line.recipeName}</span>
-                            {second && <span className="block text-sm text-muted-foreground">{second}</span>}
-                          </span>
-                        </Link>
-                        {activePeople.length > 0 && <LineAssign line={line} people={people} onChange={(next) => assignLine(line, next)} />}
-                        <span className="shrink-0 text-lead font-semibold tabular-nums">{line.portions}</span>
-                        <ChevronRight className="no-print h-5 w-5 shrink-0 text-muted-foreground" />
-                      </li>
-                    );
-                  })}
+                <ul>
+                  {group.lines.map((line) => (
+                    <LineRow
+                      key={line.lineId}
+                      line={line}
+                      people={people}
+                      to={prepUrl(line)}
+                      from={here}
+                      onStatus={(s) => setStatus(line, s)}
+                      onCycle={() => setStatus(line, NEXT_STATUS[line.prepStatus])}
+                      onAssign={activePeople.length > 0 ? (next) => assignLine(line, next) : undefined}
+                      second={mode === "evenement"
+                        ? [line.course, line.notes].filter(Boolean).join(" · ")
+                        : [line.clientName ?? line.eventName, line.course, line.notes].filter(Boolean).join(" · ")}
+                    />
+                  ))}
                 </ul>
               ) : (
                 <RecipeGroupBody group={group} people={people} ingredientById={ingredientById} prepUrl={prepUrl} from={here} onStatus={(s) => setAllStatus(group.lines, s)} />
@@ -564,20 +614,55 @@ export default function Day() {
       </div>
 
       {notice && (
-        <div role="status" className="no-print fixed bottom-4 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 card-elevated px-4 py-3 shadow-xl">
-          <span className="min-w-0 flex-1 text-base font-medium">Fait : {notice.name}</span>
+        <div role="status" className="no-print fixed bottom-4 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 rounded-lg bg-background px-4 py-3 shadow-dialog">
+          <span className="min-w-0 flex-1 text-sm font-medium touch:text-base">Fait : {notice.name}</span>
           {notice.next ? (
-            <Link to={prepUrl(notice.next)} state={{ from: here }} className="inline-flex min-h-11 items-center rounded-lg bg-primary px-4 text-base font-medium text-primary-foreground hover:opacity-90">
-              Suivante
-            </Link>
+            <Button variant="primary" size="md" as={Link} to={prepUrl(notice.next)}>Suivante</Button>
           ) : (
-            <span className="text-base text-muted-foreground">Tout est fait</span>
+            <span className="text-sm text-muted-foreground">Tout est fait</span>
           )}
-          <button type="button" onClick={() => setNotice(null)} aria-label="Fermer" className={ICON_BTN}><X className="h-5 w-5" /></button>
+          <IconButton size="sm" aria-label="Fermer" onClick={() => setNotice(null)} icon={<X />} />
         </div>
       )}
       {busy && <span className="sr-only" aria-live="polite">Enregistrement…</span>}
     </div>
+  );
+}
+
+interface LineRowProps {
+  line: PrepLine;
+  people: Person[];
+  to: string;
+  from: string;
+  second: string;
+  onStatus: (s: PrepStatus) => void;
+  onCycle: () => void;
+  onAssign?: (next: string[]) => void;
+}
+
+// One prep line: the pill on pointer screens, the dot on touch; the whole row links to the fiche.
+function LineRow({ line, people, to, from, second, onStatus, onCycle, onAssign }: LineRowProps) {
+  const isDone = line.prepStatus === "done";
+  return (
+    <li className={`relative flex min-h-9 items-center gap-2 rounded px-2 hover:bg-hover touch:min-h-11 ${isDone ? "text-muted-foreground" : ""}`}>
+      <div className={`no-print ${ABOVE} hidden w-[108px] shrink-0 pointer:block`}>
+        <StatusControl value={line.prepStatus} onChange={onStatus} />
+      </div>
+      <StatusDot className={`no-print ${ABOVE} -ml-2 pointer:hidden`} value={line.prepStatus} onCycle={onCycle} />
+      <span className="hidden print:inline-block"><Dot status={line.prepStatus} /></span>
+      <Link to={to} state={{ from }} className="flex min-h-9 min-w-0 flex-1 items-center py-1 before:absolute before:inset-0 before:rounded touch:min-h-11">
+        <span className="min-w-0 flex-1">
+          <span className="block text-base">{line.recipeName}</span>
+          {second && <span className="block text-sm text-muted-foreground">{second}</span>}
+        </span>
+      </Link>
+      {onAssign ? (
+        <LineAssign line={line} people={people} onChange={onAssign} />
+      ) : (
+        <PersonChips personIds={line.assignedTo} people={people} size="sm" inherited={!line.ownAssignment} className={ABOVE} />
+      )}
+      <span className={`${ABOVE} shrink-0 text-sm tabular-nums`}>{line.portions}</span>
+    </li>
   );
 }
 
@@ -592,8 +677,8 @@ function LineAssign({ line, people, onChange }: LineAssignProps) {
   const [open, setOpen] = useState(false);
   return (
     <span className={`relative inline-flex shrink-0 text-foreground ${open ? "z-20" : "z-10"}`}>
-      <PersonChips personIds={line.assignedTo} people={people} size="md" inherited={!line.ownAssignment} onClick={() => setOpen(true)} className="no-print" />
-      <span className="hidden print:inline"><PersonChips personIds={line.assignedTo} people={people} size="md" /></span>
+      <PersonChips personIds={line.assignedTo} people={people} size="sm" inherited={!line.ownAssignment} onClick={() => setOpen(true)} className="no-print" />
+      <span className="hidden print:inline"><PersonChips personIds={line.assignedTo} people={people} size="sm" /></span>
       {open && (
         <PersonPicker
           value={line.ownAssignment ? line.assignedTo : []}
@@ -609,20 +694,13 @@ function LineAssign({ line, people, onChange }: LineAssignProps) {
   );
 }
 
-// "Attribuer…" on the Sans personne heading; every toggle writes the whole group.
+// "Assigner tout" on the Sans personne heading; every toggle writes the whole group.
 function GroupAssign({ people, onChange }: { people: Person[]; onChange: (next: string[]) => void }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState<string[]>([]);
   return (
     <span className={`no-print relative inline-flex shrink-0 ${open ? "z-20" : ""}`}>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-haspopup="dialog"
-        className="inline-flex min-h-11 items-center rounded-lg px-3 text-base font-medium text-primary hover:bg-hover"
-      >
-        Attribuer…
-      </button>
+      <Button variant="link" size="sm" aria-haspopup="dialog" onClick={() => setOpen(true)}>Assigner tout</Button>
       {open && (
         <PersonPicker
           value={value}
@@ -654,22 +732,22 @@ function RecipeGroupBody({ group, people, ingredientById, prepUrl, from, onStatu
 
   return (
     <div className={isDone ? "text-muted-foreground" : ""}>
-      <div className="no-print mt-2 w-full md:w-60">
+      <div className="no-print mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+        <span>Statut</span>
         <StatusControl value={merged} onChange={onStatus} />
       </div>
-      <ul className="mt-2 divide-y divide-border">
+      <ul className="mt-2">
         {group.lines.map((line) => (
           <li key={line.lineId}>
-            <Link to={prepUrl(line)} state={{ from }} className="flex min-h-12 items-center gap-3 rounded-lg px-2 text-base hover:bg-hover">
+            <Link to={prepUrl(line)} state={{ from }} className="flex min-h-9 items-center gap-2 rounded px-2 text-sm hover:bg-hover touch:min-h-11 touch:text-base">
               <Dot status={line.prepStatus} />
               <span className="min-w-0 flex-1">
                 {line.clientName ?? line.eventName}
                 <span className="text-muted-foreground"> · {STATUS_LABEL[line.prepStatus]}</span>
                 {line.notes && <span className="block text-sm text-muted-foreground">{line.notes}</span>}
               </span>
-              <PersonChips personIds={line.assignedTo} people={people} size="md" inherited={!line.ownAssignment} />
-              <span className="shrink-0 font-semibold tabular-nums">{line.portions}</span>
-              <ChevronRight className="no-print h-5 w-5 shrink-0 text-muted-foreground" />
+              <PersonChips personIds={line.assignedTo} people={people} size="sm" inherited={!line.ownAssignment} />
+              <span className="shrink-0 tabular-nums">{line.portions}</span>
             </Link>
           </li>
         ))}
@@ -677,7 +755,7 @@ function RecipeGroupBody({ group, people, ingredientById, prepUrl, from, onStatu
       {group.recipe && (
         <>
           <div className="no-print">
-            <SectionToggle title={`Ingrédients pour ${total}`} className="!mt-4">
+            <SectionToggle title={`Ingrédients pour ${total}`} className="!mt-3">
               <IngredientList items={scaled} />
             </SectionToggle>
           </div>
@@ -692,15 +770,15 @@ function RecipeGroupBody({ group, people, ingredientById, prepUrl, from, onStatu
 }
 
 function IngredientList({ items }: { items: ScaledIngredient[] }) {
-  if (items.length === 0) return <p className="text-base text-muted-foreground">Aucun ingrédient.</p>;
+  if (items.length === 0) return <p className="text-sm text-muted-foreground">Aucun ingrédient.</p>;
   return (
-    <ul className="divide-y divide-border text-base">
+    <ul className="text-base">
       {items.map((it, i) => {
         const q = fmtQty(it.qty, it.unit);
         return (
-          <li key={`${it.name}-${it.unit}-${i}`} className="flex min-h-11 items-center justify-between gap-4 py-1">
+          <li key={`${it.name}-${it.unit}-${i}`} className="flex min-h-8 items-center justify-between gap-4 touch:min-h-11">
             <span className="min-w-0">{it.name}</span>
-            <span className="shrink-0 font-semibold tabular-nums">
+            <span className="shrink-0 font-medium tabular-nums">
               {q.value} <span className="font-normal text-muted-foreground">{q.unit}</span>
             </span>
           </li>

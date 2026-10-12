@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Link2, Plus, Save, X } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { ArrowDown, ArrowUp, GripVertical, Link2, Plus, Save, Trash2, X } from "lucide-react";
 import type {
   AppEvent,
   AppSettings,
@@ -28,7 +29,29 @@ import {
 import { api, type HealthResponse } from "@/lib/api";
 import { supplierColor } from "@/lib/recipe-helpers";
 import { useToast } from "@/hooks/use-toast";
-import { EditableInlineText, FieldLabel, PageHeader, Section, Tag } from "@/components/ui";
+import { useTopTitle } from "@/components/admin/AdminLayout";
+import {
+  ActionMenu,
+  Button,
+  Checkbox,
+  Dialog,
+  EditableInlineText,
+  EditableText,
+  FieldLabel,
+  IconButton,
+  ListRow,
+  PageHeader,
+  Property,
+  PropertyList,
+  Section,
+  SectionToggle,
+  SelectPill,
+  Sheet,
+  Tag,
+  Toolbar,
+  ViewTabs,
+  type ActionMenuItem,
+} from "@/components/ui";
 import { PersonChip } from "@/components/admin/PersonChips";
 
 // ── Local types and constants ────────────────────────────────────────────────
@@ -67,10 +90,24 @@ const DEFAULT_TAX_RATE = 0.25;
 const DEFAULT_TREASURY_MONTHS = 3;
 const DEFAULT_MONTHS_ACTIVE = 10;
 
-const btnSecondary = "inline-flex items-center gap-1.5 min-h-11 px-3 rounded-lg border border-border bg-card text-base font-medium hover:bg-hover disabled:opacity-40";
-const btnPrimary = "inline-flex items-center gap-2 min-h-11 px-4 rounded-lg bg-primary text-primary-foreground text-base font-medium shadow-sm disabled:opacity-50";
-const btnIcon = "inline-flex items-center justify-center min-h-11 min-w-11 rounded-lg text-muted-foreground hover:bg-hover hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent";
-const btnIconDanger = "inline-flex items-center justify-center min-h-11 min-w-11 rounded-lg text-muted-foreground hover:bg-destructive-soft hover:text-destructive";
+type Tab = "general" | "catalogue" | "equipe" | "finances" | "societe";
+const TABS: { key: Tab; label: string }[] = [
+  { key: "general", label: "Général" },
+  { key: "catalogue", label: "Catalogue" },
+  { key: "equipe", label: "Équipe" },
+  { key: "finances", label: "Finances" },
+  { key: "societe", label: "Société" },
+];
+
+// Old anchors land on their new tab.
+function tabFromHash(hash: string): Tab {
+  const h = hash.replace(/^#/, "");
+  if (h === "objectifs") return "finances";
+  if (h === "apropos") return "societe";
+  return TABS.some((t) => t.key === h) ? (h as Tab) : "general";
+}
+
+const VAT_OPTIONS = VAT_RATES.map((r) => ({ value: String(r), label: `${r} %` }));
 
 function newId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -173,6 +210,18 @@ function parsePastedCharges(text: string): FixedCharge[] {
   return rows;
 }
 
+function moveItem<T>(list: T[], from: number, to: number): T[] {
+  if (to < 0 || to >= list.length) return list;
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
+function fmtMonth(ym: string): string {
+  return /^\d{4}-\d{2}$/.test(ym) ? `${ym.slice(5, 7)}/${ym.slice(0, 4)}` : ym;
+}
+
 // ── Small inputs ─────────────────────────────────────────────────────────────
 
 interface NumInputProps {
@@ -186,6 +235,7 @@ interface NumInputProps {
   ariaLabel?: string;
 }
 
+// Compact bordered-looking number input for the monthly grids.
 function NumInput({ id, value, onChange, step = "any", min, placeholder, className = "", ariaLabel }: NumInputProps) {
   return (
     <input
@@ -195,7 +245,7 @@ function NumInput({ id, value, onChange, step = "any", min, placeholder, classNa
       step={step}
       min={min}
       aria-label={ariaLabel}
-      className={`input-field tabular-nums ${className}`}
+      className={`input-field input-compact tabular-nums ${className}`}
       value={value ?? ""}
       placeholder={placeholder}
       onChange={(e) => {
@@ -208,40 +258,143 @@ function NumInput({ id, value, onChange, step = "any", min, placeholder, classNa
   );
 }
 
-function MoveButtons({ index, length, onMove }: { index: number; length: number; onMove: (from: number, to: number) => void }) {
+const INLINE_EDIT = "-mx-1 rounded bg-input-bg px-1 shadow-ring outline-none";
+
+// Inline optional number: click to edit, empty commits undefined.
+function OptNumValue({ value, onChange, placeholder = "Vide", suffix, min, step, ariaLabel, className = "" }: {
+  value: number | undefined;
+  onChange: (v: number | undefined) => void;
+  placeholder?: string;
+  suffix?: string;
+  min?: number;
+  step?: number;
+  ariaLabel?: string;
+  className?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(value === undefined ? "" : String(value));
+  useEffect(() => { if (!editing) setText(value === undefined ? "" : String(value)); }, [value, editing]);
+  const commit = () => {
+    setEditing(false);
+    const cleaned = text.trim().replace(/\s/g, "").replace(",", ".");
+    if (cleaned === "") { if (value !== undefined) onChange(undefined); return; }
+    const parsed = parseFloat(cleaned);
+    if (Number.isNaN(parsed)) return;
+    let v = min !== undefined ? Math.max(min, parsed) : parsed;
+    if (step === 1) v = Math.round(v);
+    if (v !== value) onChange(v);
+  };
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <input
+          className={`${INLINE_EDIT} w-24 text-right tabular-nums ${className}`}
+          inputMode="decimal"
+          aria-label={ariaLabel}
+          value={text}
+          autoFocus
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commit(); }
+            if (e.key === "Escape") { e.preventDefault(); setText(value === undefined ? "" : String(value)); setEditing(false); }
+          }}
+        />
+        {suffix && <span className="text-muted-foreground">{suffix}</span>}
+      </span>
+    );
+  }
   return (
-    <>
-      <button type="button" aria-label="Monter" className={btnIcon} disabled={index === 0} onClick={() => onMove(index, index - 1)}>
-        <ChevronUp className="h-5 w-5" />
-      </button>
-      <button type="button" aria-label="Descendre" className={btnIcon} disabled={index >= length - 1} onClick={() => onMove(index, index + 1)}>
-        <ChevronDown className="h-5 w-5" />
-      </button>
-    </>
+    <span
+      role="button"
+      tabIndex={0}
+      aria-label={ariaLabel}
+      className={`prop-value inline-flex min-h-6 items-center tabular-nums ${className}`}
+      onClick={() => setEditing(true)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditing(true); } }}
+    >
+      {value === undefined ? <span className="text-placeholder">{placeholder}</span> : <>{value.toLocaleString("fr-BE")}{suffix && <span className="text-muted-foreground">{"\u00a0"}{suffix}</span>}</>}
+    </span>
   );
 }
 
-function YearSelect({ id, value, years, onChange }: { id: string; value: string; years: string[]; onChange: (y: string) => void }) {
+// Inline month: click opens the native month picker; × clears.
+function MonthValue({ value, onChange, placeholder = "Vide", ariaLabel }: { value: string | undefined; onChange: (v: string | undefined) => void; placeholder?: string; ariaLabel?: string }) {
+  const input = useRef<HTMLInputElement>(null);
+  const open = () => {
+    const el = input.current;
+    if (!el) return;
+    try { if (typeof el.showPicker === "function") el.showPicker(); else el.focus(); } catch { el.focus(); }
+  };
   return (
-    <select id={id} className="input-field w-auto min-h-11" value={value} onChange={(e) => onChange(e.target.value)}>
-      {years.map((y) => (
-        <option key={y} value={y}>{y}</option>
-      ))}
-    </select>
+    <span className="group/month relative inline-flex items-center gap-0.5">
+      <span
+        role="button"
+        tabIndex={0}
+        aria-label={ariaLabel}
+        className="prop-value inline-flex min-h-6 items-center tabular-nums"
+        onClick={open}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}
+      >
+        {value ? fmtMonth(value) : <span className="text-placeholder">{placeholder}</span>}
+      </span>
+      {value && <IconButton size="sm" aria-label="Effacer" icon={<X />} className="reveal h-6 w-6" onClick={() => onChange(undefined)} />}
+      <input
+        ref={input}
+        type="month"
+        value={value ?? ""}
+        tabIndex={-1}
+        aria-hidden="true"
+        className="sr-only absolute bottom-0 left-0"
+        onChange={(e) => onChange(e.target.value || undefined)}
+      />
+    </span>
   );
 }
 
-function moveItem<T>(list: T[], from: number, to: number): T[] {
-  if (to < 0 || to >= list.length) return list;
-  const next = [...list];
-  const [item] = next.splice(from, 1);
-  next.splice(to, 0, item);
-  return next;
+function YearPill({ value, years, onChange, label }: { value: string; years: string[]; onChange: (y: string) => void; label: string }) {
+  return <SelectPill value={value} options={years.map((y) => ({ value: y, label: y }))} colour="gray" align="right" aria-label={label} onChange={onChange} />;
+}
+
+const ROW = "group flex min-h-8 items-center gap-2 rounded px-2 hover:bg-hover touch:min-h-11";
+const ROW_TEXT = "min-w-0 flex-1 text-sm touch:text-base";
+const TH = "flex items-center gap-2 border-b border-divider px-2 text-sm text-muted-foreground h-9";
+
+// One reorderable name row of the Général lists.
+function NameRow({ value, placeholder, onSave, index, length, onMove, onDelete, deleteDisabled, ariaLabel }: {
+  value: string;
+  placeholder: string;
+  onSave: (v: string) => void;
+  index: number;
+  length: number;
+  onMove: (from: number, to: number) => void;
+  onDelete: () => void;
+  deleteDisabled?: boolean;
+  ariaLabel: string;
+}) {
+  const items: ActionMenuItem[] = [
+    { label: "Monter", icon: <ArrowUp />, onClick: () => onMove(index, index - 1), disabled: index === 0 },
+    { label: "Descendre", icon: <ArrowDown />, onClick: () => onMove(index, index + 1), disabled: index >= length - 1 },
+    { kind: "separator" },
+    { label: "Supprimer", icon: <Trash2 />, onClick: onDelete, variant: "danger", disabled: deleteDisabled },
+  ];
+  return (
+    <div className={ROW}>
+      <GripVertical className="h-4 w-4 shrink-0 text-icon" aria-hidden="true" />
+      <EditableText value={value} placeholder={placeholder} onSave={onSave} className={ROW_TEXT} />
+      <ActionMenu items={items} className="reveal" aria-label={ariaLabel} />
+    </div>
+  );
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Settings() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  useTopTitle("Paramètres");
+  const tab = tabFromHash(location.hash);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -258,6 +411,7 @@ export default function Settings() {
   const [actYear, setActYear] = useState(String(Number(currentYear) - 1));
   const courseFocusName = useRef<string>("");
   const [newPersonName, setNewPersonName] = useState<string | null>(null);
+  const [chargeSheet, setChargeSheet] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthResponse | null | undefined>(undefined);
   const { toast } = useToast();
 
@@ -269,11 +423,7 @@ export default function Settings() {
     api.health.get().then(setHealth).catch(() => setHealth(null));
   }, []);
 
-  // Scrolls to #objectifs or #apropos once the sections exist.
-  useEffect(() => {
-    if (loading || !window.location.hash) return;
-    document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
-  }, [loading]);
+  const setTab = (key: string) => navigate({ pathname: location.pathname, hash: `#${key}` }, { replace: true });
 
   const patch = (fn: (d: Draft) => Draft) => {
     setDraft((d) => (d ? fn(d) : d));
@@ -432,12 +582,12 @@ export default function Settings() {
     }
   };
 
-  if (loading) return <div className="p-8 text-base text-muted-foreground">Chargement…</div>;
+  if (loading) return <div className="text-sm text-muted-foreground">Chargement…</div>;
   if (!draft) {
     return (
-      <div className="flex flex-wrap items-center gap-3 p-8 text-base text-destructive">
+      <div className="flex flex-wrap items-center gap-3 text-sm text-danger">
         {loadError ?? "Paramètres indisponibles"}
-        <button type="button" className={btnSecondary} onClick={() => window.location.reload()}>Recharger</button>
+        <Button variant="default" size="md" onClick={() => window.location.reload()}>Recharger</Button>
       </div>
     );
   }
@@ -447,7 +597,6 @@ export default function Settings() {
   const setObj = (p: Partial<YearObjective>) =>
     patch((d) => ({ ...d, objectives: { ...d.objectives, [objYear]: { ...(d.objectives[objYear] ?? {}), ...p } } }));
   const prevObj = draft.objectives[String(Number(objYear) - 1)];
-
   const act: YearActuals = draft.yearActuals[actYear] ?? {};
   const setAct = (p: Partial<YearActuals>) =>
     patch((d) => ({ ...d, yearActuals: { ...d.yearActuals, [actYear]: { ...(d.yearActuals[actYear] ?? {}), ...p } } }));
@@ -511,358 +660,338 @@ export default function Settings() {
     setObj({ byPrestation: next });
   };
 
-  return (
-    <div className="mx-auto max-w-doc">
-      <PageHeader
-        title="Paramètres"
-        meta="Configuration de l'application"
-        actions={
-          dirty ? (
-            <button type="button" onClick={handleSave} disabled={saving} className={btnPrimary}>
-              <Save className="h-5 w-5" /> {saving ? "Enregistrement…" : "Enregistrer"}
-            </button>
-          ) : undefined
-        }
-      />
+  const setCharge = (id: string, p: Partial<FixedCharge>) =>
+    patch((d) => ({ ...d, fixedCharges: d.fixedCharges.map((row) => (row.chargeId === id ? { ...row, ...p } : row)) }));
+  const askDeleteCharge = (c: FixedCharge) =>
+    setConfirm({
+      message: `Supprimer la charge « ${c.label || "sans nom"} » ?`,
+      onConfirm: () => { setChargeSheet(null); patch((d) => ({ ...d, fixedCharges: d.fixedCharges.filter((row) => row.chargeId !== c.chargeId) })); },
+    });
+  const addCharge = () =>
+    patch((d) => ({ ...d, fixedCharges: [...d.fixedCharges, { chargeId: newId(), label: "", category: "autre", monthlyAmount: 0, inResult: true }] }));
 
-      {/* ── Formats de recette ── */}
-      <Section
-        title="Formats de recette"
-        action={
-          <button type="button" className={btnSecondary} onClick={() => patch((d) => ({ ...d, recipeCategories: [...d.recipeCategories, ""] }))}>
-            <Plus className="h-5 w-5" /> Ajouter
-          </button>
-        }
-      >
-        <div className="space-y-1">
+  const addAction = (label: string, onClick: () => void) => (
+    <Button variant="subtle" size="sm" icon={<Plus />} onClick={onClick}>{label}</Button>
+  );
+
+  const saveButton = (size: "md" | "lg", className?: string) => (
+    <Button variant="primary" size={size} icon={<Save />} disabled={saving} onClick={handleSave} className={className}>
+      {saving ? "Enregistrement…" : "Enregistrer"}
+    </Button>
+  );
+
+  const categoryOptions = CHARGE_CATEGORIES.map((c) => ({ value: c.value, label: c.label }));
+  const chargeOpen = chargeSheet ? draft.fixedCharges.find((c) => c.chargeId === chargeSheet) : undefined;
+
+  // ── Tabs ──
+  const general = (
+    <>
+      <Section title="Formats de recette" action={addAction("Ajouter", () => patch((d) => ({ ...d, recipeCategories: [...d.recipeCategories, ""] })))}>
+        <div>
           {draft.recipeCategories.map((cat, i) => (
-            <div key={i} className="flex items-center gap-1 min-h-11">
-              <input
-                aria-label={`Format ${i + 1}`}
-                className="input-field flex-1"
-                value={cat}
-                placeholder="Nom du format…"
-                onChange={(e) => patch((d) => ({ ...d, recipeCategories: d.recipeCategories.map((c, j) => (j === i ? e.target.value : c)) }))}
-              />
-              <MoveButtons index={i} length={draft.recipeCategories.length} onMove={(from, to) => patch((d) => ({ ...d, recipeCategories: moveItem(d.recipeCategories, from, to) }))} />
-              <button
-                type="button"
-                aria-label="Supprimer"
-                className={btnIconDanger}
-                disabled={draft.recipeCategories.length <= 1}
-                onClick={() =>
-                  setConfirm({
-                    message: `Supprimer le format « ${cat || "sans nom"} » ?`,
-                    onConfirm: () => patch((d) => ({ ...d, recipeCategories: d.recipeCategories.filter((_, j) => j !== i) })),
-                  })
-                }
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+            <NameRow
+              key={i}
+              value={cat}
+              placeholder="Nom du format…"
+              ariaLabel={`Actions du format ${cat || i + 1}`}
+              index={i}
+              length={draft.recipeCategories.length}
+              onSave={(v) => patch((d) => ({ ...d, recipeCategories: d.recipeCategories.map((c, j) => (j === i ? v : c)) }))}
+              onMove={(from, to) => patch((d) => ({ ...d, recipeCategories: moveItem(d.recipeCategories, from, to) }))}
+              deleteDisabled={draft.recipeCategories.length <= 1}
+              onDelete={() =>
+                setConfirm({
+                  message: `Supprimer le format « ${cat || "sans nom"} » ?`,
+                  onConfirm: () => patch((d) => ({ ...d, recipeCategories: d.recipeCategories.filter((_, j) => j !== i) })),
+                })
+              }
+            />
           ))}
         </div>
       </Section>
 
-      {/* ── Catégories du menu ── */}
-      <Section
-        title="Catégories du menu"
-        action={
-          <button type="button" className={btnSecondary} onClick={() => patch((d) => ({ ...d, courses: [...d.courses, ""] }))}>
-            <Plus className="h-5 w-5" /> Ajouter
-          </button>
-        }
-      >
-        <p className="mb-3 text-base text-muted-foreground">Ordre des services sur les menus et les fiches de préparation.</p>
-        <div className="space-y-1">
+      <Section title="Catégories du menu" action={addAction("Ajouter", () => patch((d) => ({ ...d, courses: [...d.courses, ""] })))}>
+        <p className="mb-2 text-sm text-muted-foreground">Ordre des services sur les menus et les fiches de préparation.</p>
+        <div>
           {draft.courses.map((course, i) => (
-            <div key={i} className="flex items-center gap-1 min-h-11">
-              <input
-                aria-label={`Catégorie ${i + 1}`}
-                className="input-field flex-1"
-                value={course}
-                placeholder="Nom de la catégorie…"
-                onFocus={() => { courseFocusName.current = course.trim(); }}
-                onBlur={(e) => queueCourseRename(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
-                onChange={(e) => patch((d) => ({ ...d, courses: d.courses.map((c, j) => (j === i ? e.target.value : c)) }))}
-              />
-              <MoveButtons index={i} length={draft.courses.length} onMove={(from, to) => patch((d) => ({ ...d, courses: moveItem(d.courses, from, to) }))} />
-              <button
-                type="button"
-                aria-label="Supprimer"
-                className={btnIconDanger}
-                disabled={draft.courses.length <= 1}
-                onClick={() =>
-                  setConfirm({
-                    message: `Supprimer la catégorie « ${course || "sans nom"} » ? Les lignes d'événement qui l'utilisent gardent leur valeur.`,
-                    onConfirm: () => patch((d) => ({ ...d, courses: d.courses.filter((_, j) => j !== i) })),
-                  })
-                }
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+            <NameRow
+              key={i}
+              value={course}
+              placeholder="Nom de la catégorie…"
+              ariaLabel={`Actions de la catégorie ${course || i + 1}`}
+              index={i}
+              length={draft.courses.length}
+              onSave={(v) => {
+                courseFocusName.current = course.trim();
+                queueCourseRename(v);
+                patch((d) => ({ ...d, courses: d.courses.map((c, j) => (j === i ? v : c)) }));
+              }}
+              onMove={(from, to) => patch((d) => ({ ...d, courses: moveItem(d.courses, from, to) }))}
+              deleteDisabled={draft.courses.length <= 1}
+              onDelete={() =>
+                setConfirm({
+                  message: `Supprimer la catégorie « ${course || "sans nom"} » ? Les lignes d'événement qui l'utilisent gardent leur valeur.`,
+                  onConfirm: () => patch((d) => ({ ...d, courses: d.courses.filter((_, j) => j !== i) })),
+                })
+              }
+            />
           ))}
         </div>
       </Section>
+    </>
+  );
 
-      {/* ── Types de prestation ── */}
+  const catalogue = (
+    <>
       <Section
         title="Types de prestation"
-        action={
-          <button
-            type="button"
-            className={btnSecondary}
-            onClick={() => patch((d) => ({ ...d, prestationTypes: [...d.prestationTypes, { key: "", label: "", defaultVatRate: 12, isNew: true }] }))}
-          >
-            <Plus className="h-5 w-5" /> Ajouter
-          </button>
-        }
+        action={addAction("Ajouter", () => patch((d) => ({ ...d, prestationTypes: [...d.prestationTypes, { key: "", label: "", defaultVatRate: 12, isNew: true }] })))}
       >
-        <p className="mb-3 text-base text-muted-foreground">La clé est générée depuis le libellé et ne change plus une fois enregistrée.</p>
-        <div className="space-y-2">
+        <p className="mb-2 text-sm text-muted-foreground">La clé est générée depuis le libellé et ne change plus une fois enregistrée.</p>
+        <div className={TH}>
+          <span className="flex-1">Nom</span>
+          <span className="hidden w-44 sm:block">Clé</span>
+          <span className="w-16">TVA</span>
+          <span className="w-7" />
+        </div>
+        <div>
           {draft.prestationTypes.map((t, i) => (
-            <div key={i} className="flex flex-wrap items-center gap-2 min-h-11">
-              <input
-                aria-label="Libellé"
-                className="input-field flex-1 min-w-[12rem]"
+            <div key={i} className={ROW}>
+              <EditableText
                 value={t.label}
                 placeholder="Libellé…"
-                onChange={(e) =>
+                className={ROW_TEXT}
+                onSave={(v) =>
                   patch((d) => ({
                     ...d,
-                    prestationTypes: d.prestationTypes.map((row, j) =>
-                      j === i ? { ...row, label: e.target.value, key: row.isNew ? snakeKey(e.target.value) : row.key } : row,
-                    ),
+                    prestationTypes: d.prestationTypes.map((row, j) => (j === i ? { ...row, label: v, key: row.isNew ? snakeKey(v) : row.key } : row)),
                   }))
                 }
               />
-              <Tag variant="neutral" className="font-mono">{t.key || "clé"}</Tag>
-              <label className="flex items-center gap-2 text-base">
-                <span className="text-muted-foreground">TVA</span>
-                <select
+              <span className="hidden w-44 truncate font-mono text-sm text-muted-foreground sm:block">{t.key || "clé"}</span>
+              <span className="w-16">
+                <SelectPill
+                  value={String(t.defaultVatRate)}
+                  options={VAT_OPTIONS}
+                  colour="gray"
+                  align="right"
                   aria-label="TVA par défaut"
-                  className="input-field w-auto"
-                  value={t.defaultVatRate}
-                  onChange={(e) =>
+                  onChange={(v) =>
                     patch((d) => ({
                       ...d,
-                      prestationTypes: d.prestationTypes.map((row, j) => (j === i ? { ...row, defaultVatRate: Number(e.target.value) as VatRate } : row)),
+                      prestationTypes: d.prestationTypes.map((row, j) => (j === i ? { ...row, defaultVatRate: Number(v) as VatRate } : row)),
                     }))
                   }
-                >
-                  {VAT_RATES.map((r) => (
-                    <option key={r} value={r}>{r} %</option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                aria-label="Supprimer"
-                className={btnIconDanger}
-                onClick={() =>
-                  setConfirm({
-                    message: `Supprimer le type « ${t.label || t.key || "sans nom"} » ? Les événements qui l'utilisent gardent leur valeur.`,
-                    onConfirm: () => patch((d) => ({ ...d, prestationTypes: d.prestationTypes.filter((_, j) => j !== i) })),
-                  })
-                }
-              >
-                <X className="h-5 w-5" />
-              </button>
+                />
+              </span>
+              <ActionMenu
+                className="reveal"
+                aria-label={`Actions du type ${t.label || i + 1}`}
+                items={[
+                  {
+                    label: "Supprimer",
+                    icon: <Trash2 />,
+                    variant: "danger",
+                    onClick: () =>
+                      setConfirm({
+                        message: `Supprimer le type « ${t.label || t.key || "sans nom"} » ? Les événements qui l'utilisent gardent leur valeur.`,
+                        onConfirm: () => patch((d) => ({ ...d, prestationTypes: d.prestationTypes.filter((_, j) => j !== i) })),
+                      }),
+                  },
+                ]}
+              />
             </div>
           ))}
-          {draft.prestationTypes.length === 0 && <p className="text-base text-muted-foreground">Aucun type de prestation</p>}
+          {draft.prestationTypes.length === 0 && <p className="px-2 py-2 text-sm text-muted-foreground">Aucun type de prestation</p>}
         </div>
       </Section>
 
-      {/* ── Fournisseurs ── */}
-      <Section
-        title="Fournisseurs"
-        action={
-          <button type="button" className={btnSecondary} onClick={() => patch((d) => ({ ...d, suppliers: [...d.suppliers, { name: "" }] }))}>
-            <Plus className="h-5 w-5" /> Ajouter
-          </button>
-        }
-      >
-        <div className="space-y-2">
+      <Section title="Fournisseurs" action={addAction("Ajouter", () => patch((d) => ({ ...d, suppliers: [...d.suppliers, { name: "" }] })))}>
+        <div>
           {draft.suppliers.map((s, i) => {
             const set = (field: keyof SettingsSupplier, value: string) =>
               patch((d) => ({ ...d, suppliers: d.suppliers.map((row, j) => (j === i ? { ...row, [field]: value } : row)) }));
             return (
-              <div key={i} className="flex flex-wrap items-center gap-2 min-h-11">
-                <span aria-hidden="true" className="inline-block h-5 w-5 shrink-0 rounded-full" style={{ backgroundColor: supplierColor(s.name) }} />
-                <input aria-label="Nom" className="input-field flex-1 min-w-[10rem]" value={s.name} placeholder="Nom…" onChange={(e) => set("name", e.target.value)} />
-                <input aria-label="Adresse" className="input-field flex-1 min-w-[10rem]" value={s.address ?? ""} placeholder="Adresse…" onChange={(e) => set("address", e.target.value)} />
-                <input aria-label="Téléphone" className="input-field w-40" value={s.phone ?? ""} placeholder="Téléphone…" onChange={(e) => set("phone", e.target.value)} />
-                <button
-                  type="button"
-                  aria-label="Supprimer"
-                  className={btnIconDanger}
-                  onClick={() =>
-                    setConfirm({
-                      message: `Supprimer le fournisseur « ${s.name || "sans nom"} » ?`,
-                      onConfirm: () => patch((d) => ({ ...d, suppliers: d.suppliers.filter((_, j) => j !== i) })),
-                    })
-                  }
-                >
-                  <X className="h-5 w-5" />
-                </button>
+              <div key={i} className={`${ROW} flex-wrap sm:flex-nowrap`}>
+                <span aria-hidden="true" className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: supplierColor(s.name) }} />
+                <EditableText value={s.name} placeholder="Nom…" onSave={(v) => set("name", v)} className="min-w-0 w-40 text-sm font-medium touch:text-base" />
+                <EditableText value={s.address ?? ""} placeholder="Adresse…" onSave={(v) => set("address", v)} className={ROW_TEXT} />
+                <EditableText value={s.phone ?? ""} placeholder="Téléphone…" onSave={(v) => set("phone", v)} className="w-36 text-sm tabular-nums touch:text-base" />
+                <ActionMenu
+                  className="reveal"
+                  aria-label={`Actions du fournisseur ${s.name || i + 1}`}
+                  items={[
+                    {
+                      label: "Supprimer",
+                      icon: <Trash2 />,
+                      variant: "danger",
+                      onClick: () =>
+                        setConfirm({
+                          message: `Supprimer le fournisseur « ${s.name || "sans nom"} » ?`,
+                          onConfirm: () => patch((d) => ({ ...d, suppliers: d.suppliers.filter((_, j) => j !== i) })),
+                        }),
+                    },
+                  ]}
+                />
               </div>
             );
           })}
-          {draft.suppliers.length === 0 && <p className="text-base text-muted-foreground">Aucun fournisseur</p>}
+          {draft.suppliers.length === 0 && <p className="px-2 py-2 text-sm text-muted-foreground">Aucun fournisseur</p>}
         </div>
       </Section>
 
-      {/* ── Équipe ── */}
-      <Section
-        title="Équipe"
-        action={
-          <button type="button" className={btnSecondary} onClick={() => setNewPersonName((v) => (v === null ? "" : v))}>
-            <Plus className="h-5 w-5" /> Ajouter une personne
-          </button>
-        }
-      >
-        <p className="mb-3 text-base text-muted-foreground">Les personnes à qui les événements et les lignes sont assignés. Le lien du jour ouvre leur liste sur leur téléphone.</p>
-        <div className="space-y-1">
-          {draft.people.map((p, i) => {
-            const duplicate = p.active && (activeInitialCounts.get(personInitials(p).toUpperCase()) ?? 0) > 1;
-            return (
-              <div key={p.personId} className={`flex flex-wrap items-center gap-2 min-h-11 ${p.active ? "" : "text-muted-foreground"}`}>
-                <PersonChip personId={p.personId} people={draft.people} size="md" />
-                <span className="min-w-[8rem] flex-1 text-base">
-                  <EditableInlineText value={p.name} placeholder="Nom" onSave={(v) => { if (v.trim()) setPerson(i, { name: v.trim() }); }} />
-                </span>
-                <input
-                  aria-label={`Initiales de ${p.name}`}
-                  aria-invalid={duplicate || undefined}
-                  className={`input-field w-20 text-center ${duplicate ? "border-destructive" : ""}`}
+      <Section title="Doublons ignorés">
+        {draft.ignoredDuplicateGroups.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Aucun doublon ignoré</p>
+        ) : (
+          <div>
+            {draft.ignoredDuplicateGroups.map((key) => (
+              <div key={key} className={ROW}>
+                <span className={`${ROW_TEXT} truncate`}>{key}</span>
+                <ActionMenu
+                  className="reveal"
+                  aria-label={`Actions du doublon ${key}`}
+                  items={[{ label: "Rétablir", onClick: () => patch((d) => ({ ...d, ignoredDuplicateGroups: d.ignoredDuplicateGroups.filter((k) => k !== key) })) }]}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+    </>
+  );
+
+  const equipe = (
+    <Section title="Équipe" action={addAction("Ajouter une personne", () => setNewPersonName((v) => (v === null ? "" : v)))}>
+      <p className="mb-2 text-sm text-muted-foreground">Les personnes à qui les événements et les lignes sont assignés. Le lien du jour ouvre leur liste sur leur téléphone.</p>
+      <div>
+        {draft.people.map((p, i) => {
+          const duplicate = p.active && (activeInitialCounts.get(personInitials(p).toUpperCase()) ?? 0) > 1;
+          return (
+            <div key={p.personId} className={`${ROW} ${p.active ? "" : "text-muted-foreground"}`}>
+              <PersonChip personId={p.personId} people={draft.people} size="sm" />
+              <span className={ROW_TEXT}>
+                <EditableInlineText value={p.name} placeholder="Nom" onSave={(v) => { if (v.trim()) setPerson(i, { name: v.trim() }); }} />
+              </span>
+              <span className="flex w-20 items-center gap-1 text-sm uppercase tabular-nums touch:text-base">
+                <EditableInlineText
                   value={p.initials ?? ""}
                   placeholder={personInitials(p)}
-                  maxLength={3}
-                  onChange={(e) => setPerson(i, { initials: e.target.value.replace(/[^a-zA-ZÀ-ÿ]/g, "").toUpperCase().slice(0, 3) || undefined })}
+                  onSave={(v) => setPerson(i, { initials: v.replace(/[^a-zA-ZÀ-ÿ]/g, "").toUpperCase().slice(0, 3) || undefined })}
                 />
-                <label className="flex min-h-11 items-center gap-2 text-base">
-                  <input type="checkbox" className="h-5 w-5" checked={p.active} onChange={(e) => setPerson(i, { active: e.target.checked })} />
-                  Actif
-                </label>
-                <button type="button" className={btnSecondary} onClick={() => void copyDayLink(p)}>
-                  <Link2 className="h-5 w-5" /> Lien du jour
-                </button>
-                <MoveButtons index={i} length={draft.people.length} onMove={(from, to) => patch((d) => ({ ...d, people: moveItem(d.people, from, to) }))} />
-                <button type="button" className={btnSecondary} onClick={() => setPerson(i, { active: !p.active })}>
-                  {p.active ? "Désactiver" : "Réactiver"}
-                </button>
-              </div>
-            );
-          })}
-          {draft.people.length === 0 && newPersonName === null && <p className="text-base text-muted-foreground">Aucune personne</p>}
-          {newPersonName !== null && (
-            <div className="flex flex-wrap items-center gap-2 min-h-11">
-              <input
-                autoFocus
-                aria-label="Nom de la personne"
-                className="input-field flex-1 min-w-[10rem]"
-                value={newPersonName}
-                placeholder="Prénom…"
-                onChange={(e) => setNewPersonName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addPerson(); } if (e.key === "Escape") setNewPersonName(null); }}
+                {duplicate && <Tag colour="red">doublon</Tag>}
+              </span>
+              <Checkbox checked={p.active} onChange={(on) => setPerson(i, { active: on })} label="Actif" aria-label={`${p.name} actif`} />
+              <ActionMenu
+                className="reveal"
+                aria-label={`Actions de ${p.name}`}
+                items={[
+                  { label: "Lien du jour", icon: <Link2 />, onClick: () => void copyDayLink(p) },
+                  { label: "Monter", icon: <ArrowUp />, disabled: i === 0, onClick: () => patch((d) => ({ ...d, people: moveItem(d.people, i, i - 1) })) },
+                  { label: "Descendre", icon: <ArrowDown />, disabled: i >= draft.people.length - 1, onClick: () => patch((d) => ({ ...d, people: moveItem(d.people, i, i + 1) })) },
+                  { kind: "separator" },
+                  { label: p.active ? "Désactiver" : "Réactiver", onClick: () => setPerson(i, { active: !p.active }), variant: p.active ? "danger" : "default" },
+                ]}
               />
-              <button type="button" className={btnPrimary} disabled={!newPersonName.trim()} onClick={addPerson}>Ajouter</button>
-              <button type="button" className={btnSecondary} onClick={() => setNewPersonName(null)}>Annuler</button>
             </div>
-          )}
-        </div>
-      </Section>
+          );
+        })}
+        {draft.people.length === 0 && newPersonName === null && <p className="px-2 py-2 text-sm text-muted-foreground">Aucune personne</p>}
+        {newPersonName !== null && (
+          <div className={ROW}>
+            <input
+              autoFocus
+              aria-label="Nom de la personne"
+              className={`${INLINE_EDIT} min-w-0 flex-1 text-sm touch:text-base`}
+              value={newPersonName}
+              placeholder="Prénom…"
+              onChange={(e) => setNewPersonName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addPerson(); } if (e.key === "Escape") setNewPersonName(null); }}
+            />
+            <Button variant="default" size="sm" disabled={!newPersonName.trim()} onClick={addPerson}>Ajouter</Button>
+            <Button variant="subtle" size="sm" onClick={() => setNewPersonName(null)}>Annuler</Button>
+          </div>
+        )}
+      </div>
+    </Section>
+  );
 
-      {/* ── Charges fixes ── */}
-      <Section
-        title="Charges fixes"
-        action={
-          <button
-            type="button"
-            className={btnSecondary}
-            onClick={() =>
-              patch((d) => ({
-                ...d,
-                fixedCharges: [...d.fixedCharges, { chargeId: newId(), label: "", category: "autre", monthlyAmount: 0, inResult: true }],
-              }))
-            }
-          >
-            <Plus className="h-5 w-5" /> Ajouter
-          </button>
-        }
-      >
-        <p className="mb-3 text-base text-muted-foreground">Montants mensuels HTVA. Depuis et Jusqu'au sont facultatifs et bornent la période où la charge compte.</p>
-        <div className="space-y-3">
-          {draft.fixedCharges.map((c, i) => {
-            const set = (p: Partial<FixedCharge>) =>
-              patch((d) => ({ ...d, fixedCharges: d.fixedCharges.map((row, j) => (j === i ? { ...row, ...p } : row)) }));
-            const inResult = chargeInResult(c);
-            return (
-              <div key={c.chargeId} className="rounded-lg border border-border p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <input aria-label="Intitulé" className="input-field flex-1 min-w-[12rem]" value={c.label} placeholder="Intitulé…" onChange={(e) => set({ label: e.target.value })} />
-                  <select aria-label="Catégorie" className="input-field w-auto" value={c.category} onChange={(e) => set({ category: e.target.value as FixedChargeCategory })}>
-                    {CHARGE_CATEGORIES.map((cat) => (
-                      <option key={cat.value} value={cat.value}>{cat.label}</option>
-                    ))}
-                  </select>
-                  {!inResult && <Tag variant="warning">hors résultat</Tag>}
-                  <button
-                    type="button"
-                    aria-label="Supprimer"
-                    className={btnIconDanger}
-                    onClick={() =>
-                      setConfirm({
-                        message: `Supprimer la charge « ${c.label || "sans nom"} » ?`,
-                        onConfirm: () => patch((d) => ({ ...d, fixedCharges: d.fixedCharges.filter((_, j) => j !== i) })),
-                      })
-                    }
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-                <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
-                  <div>
-                    <FieldLabel htmlFor={`ch-${c.chargeId}-m`}>Mensuel</FieldLabel>
-                    <NumInput id={`ch-${c.chargeId}-m`} value={c.monthlyAmount} min={0} onChange={(v) => set({ monthlyAmount: v ?? 0 })} />
-                  </div>
-                  <div>
-                    <FieldLabel htmlFor={`ch-${c.chargeId}-s`}>Mensuel seule</FieldLabel>
-                    <NumInput id={`ch-${c.chargeId}-s`} value={c.monthlyAmountSolo} min={0} placeholder="idem" onChange={(v) => set({ monthlyAmountSolo: v })} />
-                  </div>
-                  <div>
-                    <FieldLabel htmlFor={`ch-${c.chargeId}-f`}>Depuis</FieldLabel>
-                    <input id={`ch-${c.chargeId}-f`} type="month" className="input-field" value={c.from ?? ""} onChange={(e) => set({ from: e.target.value || undefined })} />
-                  </div>
-                  <div>
-                    <FieldLabel htmlFor={`ch-${c.chargeId}-t`}>Jusqu'au</FieldLabel>
-                    <input id={`ch-${c.chargeId}-t`} type="month" className="input-field" value={c.to ?? ""} onChange={(e) => set({ to: e.target.value || undefined })} />
-                  </div>
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <label className="flex min-h-11 items-center gap-2 text-base">
-                    <input type="checkbox" className="h-5 w-5" checked={inResult} onChange={(e) => set({ inResult: e.target.checked })} />
-                    Dans le résultat
-                  </label>
-                  <input aria-label="Note" className="input-field flex-1 min-w-[10rem]" value={c.note ?? ""} placeholder="Note…" onChange={(e) => set({ note: e.target.value })} />
-                </div>
-              </div>
-            );
-          })}
-          {draft.fixedCharges.length === 0 && <p className="text-base text-muted-foreground">Aucune charge fixe</p>}
+  const chargeCell = (c: FixedCharge) => ({
+    label: <EditableText value={c.label} placeholder="Intitulé…" onSave={(v) => setCharge(c.chargeId, { label: v })} className="text-sm font-medium touch:text-base" />,
+    category: <SelectPill value={c.category} options={categoryOptions} colour="gray" aria-label="Type" onChange={(v) => setCharge(c.chargeId, { category: v as FixedChargeCategory })} />,
+    monthly: <OptNumValue value={c.monthlyAmount} min={0} placeholder="0" suffix="€" ariaLabel="Mensuel" onChange={(v) => setCharge(c.chargeId, { monthlyAmount: v ?? 0 })} />,
+    solo: <OptNumValue value={c.monthlyAmountSolo} min={0} suffix="€" ariaLabel="Mensuel seule" onChange={(v) => setCharge(c.chargeId, { monthlyAmountSolo: v })} />,
+    from: <MonthValue value={c.from} ariaLabel="Depuis" onChange={(v) => setCharge(c.chargeId, { from: v })} />,
+    to: <MonthValue value={c.to} ariaLabel="Jusqu'au" onChange={(v) => setCharge(c.chargeId, { to: v })} />,
+    inResult: <Checkbox checked={chargeInResult(c)} aria-label="Dans le résultat" onChange={(on) => setCharge(c.chargeId, { inResult: on })} />,
+    note: <EditableText value={c.note ?? ""} placeholder="Vide" onSave={(v) => setCharge(c.chargeId, { note: v })} className="text-sm text-muted-foreground touch:text-base" />,
+  });
+
+  const finances = (
+    <>
+      <Section title="Charges fixes" action={addAction("Ajouter", addCharge)}>
+        <p className="mb-2 text-sm text-muted-foreground">Montants mensuels HTVA. Depuis et Jusqu'au sont facultatifs et bornent la période où la charge compte.</p>
+        <div className="hidden md:block">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Nom</th>
+                <th>Type</th>
+                <th className="text-right">Mensuel</th>
+                <th className="text-right">Seule</th>
+                <th>Depuis</th>
+                <th>Jusqu'au</th>
+                <th>Résultat</th>
+                <th>Note</th>
+                <th><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {draft.fixedCharges.map((c) => {
+                const cell = chargeCell(c);
+                return (
+                  <tr key={c.chargeId} className="group">
+                    <td className="w-48">{cell.label}</td>
+                    <td>{cell.category}</td>
+                    <td className="text-right">{cell.monthly}</td>
+                    <td className="text-right">{cell.solo}</td>
+                    <td>{cell.from}</td>
+                    <td>{cell.to}</td>
+                    <td>{cell.inResult}</td>
+                    <td className="max-w-[12rem]">{cell.note}</td>
+                    <td className="w-9 text-right">
+                      <ActionMenu className="reveal" aria-label={`Actions de la charge ${c.label || "sans nom"}`} items={[{ label: "Supprimer", icon: <Trash2 />, variant: "danger", onClick: () => askDeleteCharge(c) }]} />
+                    </td>
+                  </tr>
+                );
+              })}
+              {draft.fixedCharges.length === 0 && (
+                <tr><td colSpan={9} className="text-muted-foreground">Aucune charge fixe</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="divide-y divide-border md:hidden">
+          {draft.fixedCharges.map((c) => (
+            <ListRow
+              key={c.chargeId}
+              title={c.label || <span className="text-placeholder">Sans nom</span>}
+              subtitle={`${CHARGE_CATEGORIES.find((k) => k.value === c.category)?.label ?? c.category} · ${fmtEur(c.monthlyAmount || 0)} par mois`}
+              trailing={chargeInResult(c) ? undefined : <Tag colour="gray">hors résultat</Tag>}
+              onClick={() => setChargeSheet(c.chargeId)}
+            />
+          ))}
+          {draft.fixedCharges.length === 0 && <p className="px-2 py-2 text-sm text-muted-foreground">Aucune charge fixe</p>}
         </div>
 
-        <dl className="mt-4 space-y-1 text-base tabular-nums">
-          <div className="flex min-h-11 items-center justify-between gap-3 border-t border-border">
+        <dl className="mt-3 text-sm tabular-nums">
+          <div className="flex h-8 items-center justify-between gap-3 border-t border-divider">
             <dt className="font-medium">Total charges mensuelles</dt>
             <dd className="text-right">
               {fmtEur(totalWithStaff)} <span className="text-muted-foreground">avec salarié</span> · {fmtEur(totalSolo)} <span className="text-muted-foreground">seule</span>
             </dd>
           </div>
-          <div className="flex min-h-11 items-center justify-between gap-3">
+          <div className="flex h-8 items-center justify-between gap-3">
             <dt className="text-muted-foreground">dont hors résultat</dt>
             <dd className="text-right">
               {fmtEur(outWithStaff)} <span className="text-muted-foreground">avec salarié</span> · {fmtEur(outSolo)} <span className="text-muted-foreground">seule</span>
@@ -870,19 +999,21 @@ export default function Settings() {
           </div>
         </dl>
 
-        <div className="mt-4">
-          <FieldLabel htmlFor="paste-charges">Coller une liste</FieldLabel>
-          <p className="mb-1 text-base text-muted-foreground">Une ligne par charge, « Intitulé;montant » ou séparée par une tabulation. Catégorie Autre, dans le résultat.</p>
+        <SectionToggle title="Coller une liste" storageKey="settings-paste-charges">
+          <p className="mb-2 text-sm text-muted-foreground">Une ligne par charge, « Intitulé;montant » ou séparée par une tabulation. Catégorie Autre, dans le résultat.</p>
           <textarea
             id="paste-charges"
+            aria-label="Liste à coller"
             className="input-field min-h-24"
             value={pasteText}
             placeholder={"Loyer;850\nAssurance RC\t45,50"}
             onChange={(e) => setPasteText(e.target.value)}
           />
-          <button
-            type="button"
-            className={`${btnSecondary} mt-2`}
+          <Button
+            variant="default"
+            size="md"
+            icon={<Plus />}
+            className="mt-2"
             disabled={!pasteText.trim()}
             onClick={() => {
               const rows = parsePastedCharges(pasteText);
@@ -892,200 +1023,157 @@ export default function Settings() {
               toast({ title: `${rows.length} charge${rows.length > 1 ? "s" : ""} ajoutée${rows.length > 1 ? "s" : ""}` });
             }}
           >
-            <Plus className="h-5 w-5" /> Ajouter les lignes
-          </button>
-        </div>
+            Ajouter les lignes
+          </Button>
+        </SectionToggle>
       </Section>
 
-      {/* ── Objectifs par année ── */}
-      <div id="objectifs" className="scroll-mt-20">
       <Section
         title="Objectifs par année"
         action={
           <>
-            <YearSelect id="obj-year" value={objYear} years={objYears} onChange={setObjYear} />
-            <button type="button" className={btnSecondary} disabled={!prevObj} onClick={copyPrevObjective}>
-              Copier l'objectif de {Number(objYear) - 1}
-            </button>
+            <Button variant="subtle" size="sm" disabled={!prevObj} onClick={copyPrevObjective}>Copier l'objectif de {Number(objYear) - 1}</Button>
+            <YearPill value={objYear} years={objYears} onChange={setObjYear} label="Année de l'objectif" />
           </>
         }
       >
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <FieldLabel htmlFor="obj-revenue">CA annuel HTVA</FieldLabel>
-            <NumInput id="obj-revenue" value={obj.annualRevenue} min={0} placeholder="0" onChange={(v) => setObj({ annualRevenue: v })} />
-          </div>
-          <div>
-            <FieldLabel htmlFor="obj-months">Mois actifs</FieldLabel>
-            <NumInput id="obj-months" value={obj.monthsActive} min={1} step={1} placeholder={String(DEFAULT_MONTHS_ACTIVE)} onChange={(v) => setObj({ monthsActive: v })} />
-          </div>
-        </div>
-
-        <h3 className="mt-5 text-base font-medium">Objectif par mois</h3>
-        <p className="mb-2 text-base text-muted-foreground">Laisser vide pour répartir le CA annuel sur les mois actifs.</p>
-        <div className="grid grid-cols-3 gap-2 md:grid-cols-6">
-          {MONTH_KEYS.map((m, i) => {
-            const ym = `${objYear}-${m}`;
-            return (
-              <div key={ym}>
-                <FieldLabel htmlFor={`obj-mo-${ym}`}>{MONTHS[i]}</FieldLabel>
-                <NumInput
-                  id={`obj-mo-${ym}`}
-                  value={obj.monthlyOverrides?.[ym]}
-                  min={0}
-                  onChange={(v) => {
-                    const next = { ...(obj.monthlyOverrides ?? {}) };
-                    if (v === undefined) delete next[ym]; else next[ym] = v;
-                    setObj({ monthlyOverrides: next });
-                  }}
-                />
-              </div>
-            );
-          })}
-        </div>
-
-        <h3 className="mt-5 text-base font-medium">Objectif par prestation</h3>
-        <div className="mt-2 space-y-2">
-          {draft.prestationTypes.filter((t) => t.key).map((t) => {
-            const row = obj.byPrestation?.find((r) => r.type === t.key);
-            return (
-              <div key={t.key} className="grid grid-cols-1 items-end gap-2 md:grid-cols-[1fr_8rem_8rem_8rem]">
-                <div className="min-h-11 flex items-center text-base">{t.label}</div>
-                <div>
-                  <FieldLabel htmlFor={`obj-bp-${t.key}-a`}>Montant</FieldLabel>
-                  <NumInput id={`obj-bp-${t.key}-a`} value={row?.amount} min={0} onChange={(v) => setByPrestation(t.key, { amount: v ?? 0 })} />
-                </div>
-                <div>
-                  <FieldLabel htmlFor={`obj-bp-${t.key}-e`}>Événements</FieldLabel>
-                  <NumInput id={`obj-bp-${t.key}-e`} value={row?.eventsNeeded} min={0} step={1} onChange={(v) => setByPrestation(t.key, { eventsNeeded: v })} />
-                </div>
-                <div>
-                  <FieldLabel htmlFor={`obj-bp-${t.key}-g`}>Convives / évén.</FieldLabel>
-                  <NumInput id={`obj-bp-${t.key}-g`} value={row?.guestsPerEvent} min={0} onChange={(v) => setByPrestation(t.key, { guestsPerEvent: v })} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <h3 className="mt-5 text-base font-medium">Heures disponibles</h3>
-        <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <FieldLabel htmlFor="obj-hours">Heures disponibles par mois</FieldLabel>
-            <NumInput id="obj-hours" value={obj.hoursAvailablePerMonth} min={0} onChange={(v) => setObj({ hoursAvailablePerMonth: v })} />
-          </div>
-        </div>
-        <p className="mb-2 mt-3 text-base text-muted-foreground">Dérogations par mois, facultatives.</p>
-        <div className="grid grid-cols-3 gap-2 md:grid-cols-6">
-          {MONTH_KEYS.map((m, i) => {
-            const ym = `${objYear}-${m}`;
-            return (
-              <div key={ym}>
-                <FieldLabel htmlFor={`obj-h-${ym}`}>{MONTHS[i]}</FieldLabel>
-                <NumInput
-                  id={`obj-h-${ym}`}
-                  value={obj.hoursAvailableOverrides?.[ym]}
-                  min={0}
-                  onChange={(v) => {
-                    const next = { ...(obj.hoursAvailableOverrides ?? {}) };
-                    if (v === undefined) delete next[ym]; else next[ym] = v;
-                    setObj({ hoursAvailableOverrides: next });
-                  }}
-                />
-              </div>
-            );
-          })}
-        </div>
-
-        <h3 className="mt-5 text-base font-medium">Hypothèses</h3>
-        <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <FieldLabel htmlFor="obj-mp">% matières premières</FieldLabel>
-            <NumInput
-              id="obj-mp"
+        <PropertyList className="mt-0">
+          <Property label="CA annuel HTVA" kind="custom"><OptNumValue value={obj.annualRevenue} min={0} placeholder="0" suffix="€" ariaLabel="CA annuel HTVA" onChange={(v) => setObj({ annualRevenue: v })} /></Property>
+          <Property label="Mois actifs" kind="custom"><OptNumValue value={obj.monthsActive} min={1} step={1} placeholder={String(DEFAULT_MONTHS_ACTIVE)} ariaLabel="Mois actifs" onChange={(v) => setObj({ monthsActive: v })} /></Property>
+          <Property label="Heures disponibles par mois" kind="custom"><OptNumValue value={obj.hoursAvailablePerMonth} min={0} suffix="h" ariaLabel="Heures disponibles par mois" onChange={(v) => setObj({ hoursAvailablePerMonth: v })} /></Property>
+          <Property label="% matières premières" kind="custom">
+            <OptNumValue
               value={obj.rawMaterialPct === undefined ? undefined : round2(obj.rawMaterialPct * 100)}
               placeholder={String(round2(DEFAULT_RAW_MATERIAL_PCT * 100))}
               min={0}
+              suffix="%"
+              ariaLabel="% matières premières"
               onChange={(v) => setObj({ rawMaterialPct: v === undefined ? undefined : Math.round(v * 100) / 10000 })}
             />
-          </div>
-          <div>
-            <FieldLabel htmlFor="obj-isoc">Taux ISoc %</FieldLabel>
-            <NumInput
-              id="obj-isoc"
+          </Property>
+          <Property label="Taux ISoc" kind="custom">
+            <OptNumValue
               value={obj.corporateTaxRate === undefined ? undefined : round2(obj.corporateTaxRate * 100)}
               placeholder={String(round2(DEFAULT_TAX_RATE * 100))}
               min={0}
+              suffix="%"
+              ariaLabel="Taux ISoc"
               onChange={(v) => setObj({ corporateTaxRate: v === undefined ? undefined : Math.round(v * 100) / 10000 })}
             />
-          </div>
-          <label className="flex min-h-11 items-center gap-2 text-base md:col-span-2">
-            <input type="checkbox" className="h-5 w-5" checked={obj.smeReducedRate ?? false} onChange={(e) => setObj({ smeReducedRate: e.target.checked })} />
-            Taux réduit PME (20 % sur les premiers 100 000 €)
-          </label>
-          <p className="text-base text-muted-foreground md:col-span-2">
-            25 % par défaut. Le taux réduit de 20 % sur les premiers 100 000 € suppose une rémunération de dirigeant d'au moins 45 000 € (ou au moins égale au résultat imposable) et d'autres conditions PME; à confirmer avec le comptable. Le classeur utilisait 15 %, qui n'existe plus.
-          </p>
-          <div>
-            <FieldLabel htmlFor="obj-isoc-actual">ISoc réel (comptable)</FieldLabel>
-            <NumInput id="obj-isoc-actual" value={obj.corporateTaxActual} min={0} onChange={(v) => setObj({ corporateTaxActual: v })} />
-          </div>
-          <div>
-            <FieldLabel htmlFor="obj-extras">Budget extras</FieldLabel>
-            <NumInput id="obj-extras" value={obj.extrasBudget} min={0} onChange={(v) => setObj({ extrasBudget: v })} />
-          </div>
-          <div>
-            <FieldLabel htmlFor="obj-treasury">Mois de trésorerie</FieldLabel>
-            <NumInput id="obj-treasury" value={obj.treasuryMonths} placeholder={String(DEFAULT_TREASURY_MONTHS)} min={0} onChange={(v) => setObj({ treasuryMonths: v })} />
-          </div>
-          <div>
-            <FieldLabel htmlFor="obj-saving">Épargne mensuelle</FieldLabel>
-            <NumInput id="obj-saving" value={obj.treasurySavingPerMonth} placeholder="0" min={0} onChange={(v) => setObj({ treasurySavingPerMonth: v })} />
-          </div>
-        </div>
+          </Property>
+          <Property label="Taux réduit PME" kind="custom" sub="20 % sur les premiers 100 000 €">
+            <Checkbox checked={obj.smeReducedRate ?? false} onChange={(on) => setObj({ smeReducedRate: on })} label={obj.smeReducedRate ? "Activé" : "Désactivé"} className="-mx-1" />
+          </Property>
+          <Property label="ISoc réel (comptable)" kind="custom"><OptNumValue value={obj.corporateTaxActual} min={0} suffix="€" ariaLabel="ISoc réel" onChange={(v) => setObj({ corporateTaxActual: v })} /></Property>
+          <Property label="Budget extras" kind="custom"><OptNumValue value={obj.extrasBudget} min={0} suffix="€" ariaLabel="Budget extras" onChange={(v) => setObj({ extrasBudget: v })} /></Property>
+          <Property label="Mois de trésorerie" kind="custom"><OptNumValue value={obj.treasuryMonths} placeholder={String(DEFAULT_TREASURY_MONTHS)} min={0} ariaLabel="Mois de trésorerie" onChange={(v) => setObj({ treasuryMonths: v })} /></Property>
+          <Property label="Épargne mensuelle" kind="custom"><OptNumValue value={obj.treasurySavingPerMonth} placeholder="0" min={0} suffix="€" ariaLabel="Épargne mensuelle" onChange={(v) => setObj({ treasurySavingPerMonth: v })} /></Property>
+        </PropertyList>
+        <p className="mt-2 text-sm text-muted-foreground">
+          25 % par défaut. Le taux réduit de 20 % sur les premiers 100 000 € suppose une rémunération de dirigeant d'au moins 45 000 € (ou au moins égale au résultat imposable) et d'autres conditions PME; à confirmer avec le comptable. Le classeur utilisait 15 %, qui n'existe plus.
+        </p>
 
-        <div className="mt-5 flex items-center justify-between">
-          <h3 className="text-base font-medium">Investissements</h3>
-          <button type="button" className={btnSecondary} onClick={() => setObj({ investments: [...(obj.investments ?? []), { label: "", amount: 0 }] })}>
-            <Plus className="h-5 w-5" /> Ajouter
-          </button>
-        </div>
-        <div className="mt-2 space-y-2">
-          {(obj.investments ?? []).map((inv, i) => (
-            <div key={i} className="flex items-center gap-2 min-h-11">
-              <input
-                aria-label="Intitulé"
-                className="input-field flex-1"
-                value={inv.label}
-                placeholder="Intitulé…"
-                onChange={(e) => setObj({ investments: (obj.investments ?? []).map((r, j) => (j === i ? { ...r, label: e.target.value } : r)) })}
-              />
-              <NumInput
-                ariaLabel="Montant"
-                className="w-36"
-                value={inv.amount}
-                min={0}
-                onChange={(v) => setObj({ investments: (obj.investments ?? []).map((r, j) => (j === i ? { ...r, amount: v ?? 0 } : r)) })}
-              />
-              <button type="button" aria-label="Supprimer" className={btnIconDanger} onClick={() => setObj({ investments: (obj.investments ?? []).filter((_, j) => j !== i) })}>
-                <X className="h-5 w-5" />
-              </button>
+        <SectionToggle title="Objectif par mois" storageKey="settings-obj-months">
+          <p className="mb-2 text-sm text-muted-foreground">Laisser vide pour répartir le CA annuel sur les mois actifs.</p>
+          <div className="grid grid-cols-3 gap-2 md:grid-cols-6">
+            {MONTH_KEYS.map((m, i) => {
+              const ym = `${objYear}-${m}`;
+              return (
+                <div key={ym}>
+                  <FieldLabel htmlFor={`obj-mo-${ym}`}>{MONTHS[i]}</FieldLabel>
+                  <NumInput
+                    id={`obj-mo-${ym}`}
+                    value={obj.monthlyOverrides?.[ym]}
+                    min={0}
+                    onChange={(v) => {
+                      const next = { ...(obj.monthlyOverrides ?? {}) };
+                      if (v === undefined) delete next[ym]; else next[ym] = v;
+                      setObj({ monthlyOverrides: next });
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </SectionToggle>
+
+        <SectionToggle title="Objectif par prestation" storageKey="settings-obj-prestations">
+          <div className="hidden grid-cols-[1fr_8rem_8rem_8rem] gap-2 border-b border-divider pb-1 text-sm text-muted-foreground md:grid">
+            <span>Type</span><span>Montant</span><span>Événements</span><span>Convives / évén.</span>
+          </div>
+          <div className="divide-y divide-border">
+            {draft.prestationTypes.filter((t) => t.key).map((t) => {
+              const row = obj.byPrestation?.find((r) => r.type === t.key);
+              return (
+                <div key={t.key} className="grid grid-cols-1 items-center gap-2 py-2 md:grid-cols-[1fr_8rem_8rem_8rem] md:py-1">
+                  <div className="text-sm font-medium">{t.label}</div>
+                  <NumInput ariaLabel={`Montant ${t.label}`} placeholder="Montant" value={row?.amount} min={0} onChange={(v) => setByPrestation(t.key, { amount: v ?? 0 })} />
+                  <NumInput ariaLabel={`Événements ${t.label}`} placeholder="Événements" value={row?.eventsNeeded} min={0} step={1} onChange={(v) => setByPrestation(t.key, { eventsNeeded: v })} />
+                  <NumInput ariaLabel={`Convives par événement ${t.label}`} placeholder="Convives" value={row?.guestsPerEvent} min={0} onChange={(v) => setByPrestation(t.key, { guestsPerEvent: v })} />
+                </div>
+              );
+            })}
+          </div>
+        </SectionToggle>
+
+        <SectionToggle title="Heures disponibles par mois" storageKey="settings-obj-hours">
+          <p className="mb-2 text-sm text-muted-foreground">Dérogations par mois, facultatives.</p>
+          <div className="grid grid-cols-3 gap-2 md:grid-cols-6">
+            {MONTH_KEYS.map((m, i) => {
+              const ym = `${objYear}-${m}`;
+              return (
+                <div key={ym}>
+                  <FieldLabel htmlFor={`obj-h-${ym}`}>{MONTHS[i]}</FieldLabel>
+                  <NumInput
+                    id={`obj-h-${ym}`}
+                    value={obj.hoursAvailableOverrides?.[ym]}
+                    min={0}
+                    onChange={(v) => {
+                      const next = { ...(obj.hoursAvailableOverrides ?? {}) };
+                      if (v === undefined) delete next[ym]; else next[ym] = v;
+                      setObj({ hoursAvailableOverrides: next });
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </SectionToggle>
+
+        <SectionToggle title="Investissements" storageKey="settings-obj-invest">
+          <div>
+            {(obj.investments ?? []).map((inv, i) => (
+              <div key={i} className={ROW}>
+                <EditableText
+                  value={inv.label}
+                  placeholder="Intitulé…"
+                  className={ROW_TEXT}
+                  onSave={(v) => setObj({ investments: (obj.investments ?? []).map((r, j) => (j === i ? { ...r, label: v } : r)) })}
+                />
+                <OptNumValue
+                  ariaLabel="Montant"
+                  value={inv.amount}
+                  min={0}
+                  placeholder="0"
+                  suffix="€"
+                  onChange={(v) => setObj({ investments: (obj.investments ?? []).map((r, j) => (j === i ? { ...r, amount: v ?? 0 } : r)) })}
+                />
+                <IconButton size="sm" aria-label="Supprimer" icon={<X />} className="reveal" onClick={() => setObj({ investments: (obj.investments ?? []).filter((_, j) => j !== i) })} />
+              </div>
+            ))}
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <Button variant="subtle" size="sm" icon={<Plus />} onClick={() => setObj({ investments: [...(obj.investments ?? []), { label: "", amount: 0 }] })}>Ajouter</Button>
+              <span className="text-sm tabular-nums"><span className="text-muted-foreground">Total</span> {fmtEur(investTotal)}</span>
             </div>
-          ))}
-          <div className="flex min-h-11 items-center justify-between border-t border-border text-base tabular-nums">
-            <span className="font-medium">Total investissements</span>
-            <span>{fmtEur(investTotal)}</span>
           </div>
-        </div>
+        </SectionToggle>
       </Section>
-      </div>
 
-      {/* ── Années précédentes ── */}
-      <Section title="Années précédentes" action={<YearSelect id="act-year" value={actYear} years={actYears} onChange={setActYear} />}>
-        <p className="mb-3 text-base text-muted-foreground">
+      <Section title="Années précédentes" action={<YearPill value={actYear} years={actYears} onChange={setActYear} label="Année de référence" />}>
+        <p className="mb-2 text-sm text-muted-foreground">
           Valeurs de référence saisies à la main pour les comparaisons. Elles ne sont jamais des écritures du journal et n'entrent pas dans l'export.
         </p>
-        <h3 className="text-base font-medium">CA HTVA par mois</h3>
+        <h3 className="text-base font-semibold">CA HTVA par mois</h3>
         <div className="mt-2 grid grid-cols-3 gap-2 md:grid-cols-6">
           {MONTH_KEYS.map((m, i) => (
             <div key={m}>
@@ -1103,22 +1191,22 @@ export default function Settings() {
             </div>
           ))}
         </div>
-        <div className="mt-2 flex min-h-11 items-center justify-between border-t border-border text-base tabular-nums">
+        <div className="mt-2 flex h-8 items-center justify-between border-t border-divider text-sm tabular-nums">
           <span className="font-medium">Total {actYear}</span>
           <span>{fmtEur(sumMoney(Object.values(act.monthly ?? {})))}</span>
         </div>
 
-        <h3 className="mt-5 text-base font-medium">CA HTVA par type de prestation</h3>
-        <div className="mt-2 space-y-2">
+        <h3 className="mt-5 text-base font-semibold">CA HTVA par type de prestation</h3>
+        <div className="mt-1">
           {draft.prestationTypes.filter((t) => t.key).map((t) => (
-            <div key={t.key} className="flex items-center gap-2 min-h-11">
-              <span className="flex-1 text-base">{t.label}</span>
-              <NumInput
+            <div key={t.key} className={ROW}>
+              <span className={ROW_TEXT}>{t.label}</span>
+              <OptNumValue
                 ariaLabel={`CA ${t.label}`}
-                className="w-40"
                 value={act.byPrestation?.[t.key]}
                 min={0}
                 placeholder="inconnu"
+                suffix="€"
                 onChange={(v) => {
                   const next = { ...(act.byPrestation ?? {}) };
                   if (v === undefined) delete next[t.key]; else next[t.key] = v;
@@ -1130,149 +1218,156 @@ export default function Settings() {
         </div>
 
         <div className="mt-5 flex items-center justify-between">
-          <h3 className="text-base font-medium">Périodes</h3>
-          <button type="button" className={btnSecondary} onClick={() => setAct({ byPeriod: [...(act.byPeriod ?? []), { from: "01-01", to: "04-30", amount: 0 }] })}>
-            <Plus className="h-5 w-5" /> Ajouter
-          </button>
+          <h3 className="text-base font-semibold">Périodes</h3>
+          <Button variant="subtle" size="sm" icon={<Plus />} onClick={() => setAct({ byPeriod: [...(act.byPeriod ?? []), { from: "01-01", to: "04-30", amount: 0 }] })}>Ajouter</Button>
         </div>
-        <p className="mb-2 text-base text-muted-foreground">Dates au format MM-JJ, par exemple 01-01 au 04-30.</p>
-        <div className="space-y-2">
+        <p className="mb-1 text-sm text-muted-foreground">Dates au format MM-JJ, par exemple 01-01 au 04-30.</p>
+        <div>
           {(act.byPeriod ?? []).map((p, i) => {
             const set = (patchRow: Partial<{ from: string; to: string; amount: number }>) =>
               setAct({ byPeriod: (act.byPeriod ?? []).map((r, j) => (j === i ? { ...r, ...patchRow } : r)) });
             return (
-              <div key={i} className="flex flex-wrap items-center gap-2 min-h-11">
-                <FieldLabel htmlFor={`act-p-${i}-f`} className="mb-0">Du</FieldLabel>
-                <input id={`act-p-${i}-f`} className="input-field w-24 tabular-nums" value={p.from} placeholder="MM-JJ" onChange={(e) => set({ from: e.target.value })} />
-                <FieldLabel htmlFor={`act-p-${i}-t`} className="mb-0">au</FieldLabel>
-                <input id={`act-p-${i}-t`} className="input-field w-24 tabular-nums" value={p.to} placeholder="MM-JJ" onChange={(e) => set({ to: e.target.value })} />
-                <NumInput ariaLabel="Montant" className="w-36" value={p.amount} min={0} onChange={(v) => set({ amount: v ?? 0 })} />
-                <button type="button" aria-label="Supprimer" className={btnIconDanger} onClick={() => setAct({ byPeriod: (act.byPeriod ?? []).filter((_, j) => j !== i) })}>
-                  <X className="h-5 w-5" />
-                </button>
+              <div key={i} className={`${ROW} flex-wrap text-sm touch:text-base`}>
+                <span className="text-muted-foreground">Du</span>
+                <EditableInlineText value={p.from} placeholder="MM-JJ" onSave={(v) => set({ from: v })} />
+                <span className="text-muted-foreground">au</span>
+                <EditableInlineText value={p.to} placeholder="MM-JJ" onSave={(v) => set({ to: v })} />
+                <span className="ml-auto">
+                  <OptNumValue ariaLabel="Montant" value={p.amount} min={0} placeholder="0" suffix="€" onChange={(v) => set({ amount: v ?? 0 })} />
+                </span>
+                <IconButton size="sm" aria-label="Supprimer" icon={<X />} className="reveal" onClick={() => setAct({ byPeriod: (act.byPeriod ?? []).filter((_, j) => j !== i) })} />
               </div>
             );
           })}
         </div>
 
-        <div className="mt-5">
-          <FieldLabel htmlFor="act-note">Note</FieldLabel>
-          <textarea id="act-note" className="input-field min-h-20" value={act.note ?? ""} placeholder="Source des chiffres…" onChange={(e) => setAct({ note: e.target.value })} />
-        </div>
+        <PropertyList>
+          <Property label="Note" kind="multiline" value={act.note ?? ""} placeholder="Source des chiffres…" onSave={(v) => setAct({ note: v })} />
+        </PropertyList>
       </Section>
+    </>
+  );
 
-      {/* ── Société ── */}
+  const societe = (
+    <>
       <Section title="Société">
-        <p className="mb-3 text-base text-muted-foreground">Repris dans l'en-tête des exports comptables.</p>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <FieldLabel htmlFor="co-name">Nom</FieldLabel>
-            <input id="co-name" className="input-field" value={draft.company.name} onChange={(e) => patch((d) => ({ ...d, company: { ...d.company, name: e.target.value } }))} />
-          </div>
-          <div>
-            <FieldLabel htmlFor="co-vat">Numéro de TVA</FieldLabel>
-            <input id="co-vat" className="input-field" value={draft.company.vatNumber} placeholder="BE 0123.456.789" onChange={(e) => patch((d) => ({ ...d, company: { ...d.company, vatNumber: e.target.value } }))} />
-          </div>
-          <div className="md:col-span-2">
-            <FieldLabel htmlFor="co-address">Adresse</FieldLabel>
-            <input id="co-address" className="input-field" value={draft.company.address} onChange={(e) => patch((d) => ({ ...d, company: { ...d.company, address: e.target.value } }))} />
-          </div>
-          <div>
-            <FieldLabel htmlFor="co-date">Date de constitution</FieldLabel>
-            <input id="co-date" type="date" className="input-field" value={draft.company.constitutedOn ?? ""} onChange={(e) => patch((d) => ({ ...d, company: { ...d.company, constitutedOn: e.target.value || undefined } }))} />
-          </div>
-          <div>
-            <FieldLabel htmlFor="co-ledger-start">Début du journal</FieldLabel>
-            <input id="co-ledger-start" type="month" className="input-field" value={draft.ledgerStartYm ?? ""} onChange={(e) => patch((d) => ({ ...d, ledgerStartYm: e.target.value || undefined }))} />
-            <p className="mt-1 text-sm text-muted-foreground">Les mois avant cette date lisent les Années précédentes.</p>
-          </div>
-        </div>
+        <p className="text-sm text-muted-foreground">Repris dans l'en-tête des exports comptables.</p>
+        <PropertyList>
+          <Property label="Nom" kind="text" value={draft.company.name} onSave={(v) => patch((d) => ({ ...d, company: { ...d.company, name: v } }))} />
+          <Property label="Numéro de TVA" kind="text" value={draft.company.vatNumber} placeholder="BE 0123.456.789" onSave={(v) => patch((d) => ({ ...d, company: { ...d.company, vatNumber: v } }))} />
+          <Property label="Adresse" kind="text" value={draft.company.address} onSave={(v) => patch((d) => ({ ...d, company: { ...d.company, address: v } }))} />
+          <Property label="Date de constitution" kind="date" value={draft.company.constitutedOn ?? ""} onSave={(v) => patch((d) => ({ ...d, company: { ...d.company, constitutedOn: v || undefined } }))} />
+          <Property label="Début du journal" kind="custom" sub="Les mois avant cette date lisent les Années précédentes.">
+            <MonthValue value={draft.ledgerStartYm} ariaLabel="Début du journal" onChange={(v) => patch((d) => ({ ...d, ledgerStartYm: v }))} />
+          </Property>
+        </PropertyList>
       </Section>
 
-      {/* ── Doublons ignorés ── */}
-      <Section title="Doublons ignorés">
-        {draft.ignoredDuplicateGroups.length === 0 ? (
-          <p className="text-base text-muted-foreground">Aucun doublon ignoré</p>
-        ) : (
-          <div className="space-y-1">
-            {draft.ignoredDuplicateGroups.map((key) => (
-              <div key={key} className="flex items-center justify-between gap-3 min-h-11">
-                <span className="truncate text-base">{key}</span>
-                <button type="button" className={btnSecondary} onClick={() => patch((d) => ({ ...d, ignoredDuplicateGroups: d.ignoredDuplicateGroups.filter((k) => k !== key) }))}>
-                  Reprendre
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      {/* ── À propos ── */}
-      <div id="apropos" className="scroll-mt-20">
       <Section title="À propos">
-        <p className="text-base text-muted-foreground">admin · v1.0</p>
-        <dl className="mt-3 space-y-1 text-base">
+        <p className="text-sm text-muted-foreground">admin · v1.0</p>
+        <dl className="mt-2 text-sm">
           {([["ta-clients", health?.tables.clients], ["ta-ledger", health?.tables.ledger]] as const).map(([table, present]) => (
-            <div key={table} className="flex min-h-11 items-center gap-3">
+            <div key={table} className="flex h-8 items-center gap-3">
               <dt className="w-28 font-mono">{table}</dt>
               <dd>
                 {health === undefined ? (
                   <span className="text-muted-foreground">Vérification…</span>
                 ) : health === null ? (
-                  <Tag variant="neutral">État inconnu</Tag>
+                  <Tag colour="gray">État inconnu</Tag>
                 ) : present ? (
-                  <Tag variant="success">Table présente</Tag>
+                  <Tag colour="green">Table présente</Tag>
                 ) : (
-                  <Tag variant="warning">Table absente</Tag>
+                  <Tag colour="red">Table absente</Tag>
                 )}
               </dd>
             </div>
           ))}
         </dl>
         {health && ([["clients", "ta-clients"], ["ledger", "ta-ledger"]] as const).filter(([key]) => !health.tables[key]).map(([key, table]) => (
-          <p key={key} className="mt-2 text-base text-muted-foreground">
+          <p key={key} className="mt-2 text-sm text-muted-foreground">
             Créer la table {table}-&lt;stage&gt; puis renseigner le paramètre SSM (README, étape 4)
           </p>
         ))}
       </Section>
-      </div>
+    </>
+  );
 
-      {/* ── Dialogs ── */}
-      {confirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay" onClick={() => setConfirm(null)}>
-          <div className="w-[92%] max-w-sm rounded-2xl bg-card p-7 text-center shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
-            <h3 className="mb-2 text-h3">Confirmer la suppression</h3>
-            <p className="mb-6 text-base text-muted-foreground">{confirm.message}</p>
-            <div className="flex justify-center gap-3">
-              <button type="button" onClick={() => setConfirm(null)} className={btnSecondary}>Annuler</button>
-              <button
-                type="button"
-                onClick={() => { confirm.onConfirm(); setConfirm(null); }}
-                className="inline-flex min-h-11 items-center rounded-lg bg-destructive px-4 text-base font-medium text-destructive-foreground"
-              >
-                Supprimer
-              </button>
-            </div>
-          </div>
+  return (
+    <div className={`mx-auto max-w-doc ${dirty ? "pb-20 md:pb-0" : ""}`}>
+      <PageHeader iconKey="parametres" title="Paramètres" className="mb-2" actions={dirty ? <span className="hidden md:inline-flex">{saveButton("md")}</span> : undefined} />
+      <Toolbar left={<ViewTabs aria-label="Paramètres" items={TABS} value={tab} onChange={setTab} />} />
+
+      {tab === "general" && general}
+      {tab === "catalogue" && catalogue}
+      {tab === "equipe" && equipe}
+      {tab === "finances" && finances}
+      {tab === "societe" && societe}
+
+      {dirty && (
+        <div className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-background p-3 md:hidden">
+          {saveButton("lg", "w-full")}
         </div>
       )}
 
-      {rename && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay" onClick={skipRename}>
-          <div className="w-[92%] max-w-sm rounded-2xl bg-card p-7 text-center shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
-            <h3 className="mb-2 text-h3">Renommer aussi sur {rename.count} ligne{rename.count > 1 ? "s" : ""} d'événement ?</h3>
-            <p className="mb-6 text-base text-muted-foreground">
-              « {rename.from} » devient « {rename.to} » sur {rename.events.length} événement{rename.events.length > 1 ? "s" : ""}. Les événements sont mis à jour tout de suite.
-            </p>
-            <div className="flex justify-center gap-3">
-              <button type="button" disabled={renaming} onClick={skipRename} className={btnSecondary}>Non</button>
-              <button type="button" disabled={renaming} onClick={() => void applyRename()} className={btnPrimary}>
-                {renaming ? "Mise à jour…" : "Renommer"}
-              </button>
+      {/* ── Charge sheet (phones) ── */}
+      {chargeOpen && (
+        <Sheet open onClose={() => setChargeSheet(null)} title={chargeOpen.label || "Charge"}>
+          <div className="px-4 pb-3">
+            <PropertyList className="mt-0">
+              <Property label="Nom" kind="custom">{chargeCell(chargeOpen).label}</Property>
+              <Property label="Type" kind="custom">{chargeCell(chargeOpen).category}</Property>
+              <Property label="Mensuel" kind="custom">{chargeCell(chargeOpen).monthly}</Property>
+              <Property label="Seule" kind="custom">{chargeCell(chargeOpen).solo}</Property>
+              <Property label="Depuis" kind="custom">{chargeCell(chargeOpen).from}</Property>
+              <Property label="Jusqu'au" kind="custom">{chargeCell(chargeOpen).to}</Property>
+              <Property label="Résultat" kind="custom">{chargeCell(chargeOpen).inResult}</Property>
+              <Property label="Note" kind="custom">{chargeCell(chargeOpen).note}</Property>
+            </PropertyList>
+            <div className="mt-3 flex justify-between gap-2">
+              <Button variant="danger" size="md" icon={<Trash2 />} onClick={() => askDeleteCharge(chargeOpen)}>Supprimer</Button>
+              <Button variant="primary" size="md" onClick={() => setChargeSheet(null)}>Terminé</Button>
             </div>
           </div>
-        </div>
+        </Sheet>
+      )}
+
+      {/* ── Dialogs ── */}
+      {confirm && (
+        <Dialog
+          open
+          onClose={() => setConfirm(null)}
+          title="Confirmer la suppression"
+          size="sm"
+          footer={
+            <>
+              <Button variant="default" size="md" onClick={() => setConfirm(null)}>Annuler</Button>
+              <Button variant="danger" size="md" onClick={() => { confirm.onConfirm(); setConfirm(null); }}>Supprimer</Button>
+            </>
+          }
+        >
+          <p className="text-sm text-muted-foreground">{confirm.message}</p>
+        </Dialog>
+      )}
+
+      {rename && (
+        <Dialog
+          open
+          onClose={skipRename}
+          title={`Renommer aussi sur ${rename.count} ligne${rename.count > 1 ? "s" : ""} d'événement ?`}
+          size="sm"
+          footer={
+            <>
+              <Button variant="default" size="md" disabled={renaming} onClick={skipRename}>Non</Button>
+              <Button variant="primary" size="md" disabled={renaming} onClick={() => void applyRename()}>{renaming ? "Mise à jour…" : "Renommer"}</Button>
+            </>
+          }
+        >
+          <p className="text-sm text-muted-foreground">
+            « {rename.from} » devient « {rename.to} » sur {rename.events.length} événement{rename.events.length > 1 ? "s" : ""}. Les événements sont mis à jour tout de suite.
+          </p>
+        </Dialog>
       )}
     </div>
   );
 }
+

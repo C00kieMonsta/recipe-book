@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import type { ChecklistItem, GroceryList, PrestationTypeSetting } from "@packages/types";
 import { checklistCount, parseYmd, rangeLabel } from "@packages/types";
 import { fmtEur0, plural } from "@/lib/use-planning-data";
-import { Button, Callout, Checkbox, SelectPill } from "@/components/ui";
+import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
+import { Button, BUTTON_BASE, BUTTON_SIZE, BUTTON_VARIANT, Callout, Checkbox, SelectPill } from "@/components/ui";
 
 export interface WeekChecklistProps {
   items: ChecklistItem[];
@@ -33,6 +35,11 @@ function ymLabel(ym: string): string {
   return monthName.format(parseYmd(`${ym}-01`));
 }
 
+// A link styled as the small link button; Button cannot carry router state.
+function ActionLink({ to, state, children }: { to: string; state: unknown; children: ReactNode }) {
+  return <Link to={to} state={state} className={cn(BUTTON_BASE, BUTTON_SIZE.sm, BUTTON_VARIANT.link)}>{children}</Link>;
+}
+
 function Bullet() {
   return <Checkbox shape="circle" checked={false} readOnly aria-label="À faire" className="pointer-events-none -ml-1.5 shrink-0" />;
 }
@@ -52,7 +59,7 @@ export default function WeekChecklist(props: WeekChecklistProps) {
           ? "Clients et comptabilité non configurés"
           : notConfigured.clients ? "Clients non configurés" : "Comptabilité non configurée"}
       </span>
-      <Button variant="link" size="sm" as={Link} to="/settings#apropos" state={state}>Paramètres</Button>
+      <ActionLink to="/settings#apropos" state={state}>Paramètres</ActionLink>
     </li>
   );
 
@@ -78,7 +85,7 @@ export default function WeekChecklist(props: WeekChecklistProps) {
             <li className={`${ROW} text-muted-foreground`}>
               <span className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span className={TEXT}>Courses · liste{coveringList.range ? ` du ${rangeLabel(coveringList.range.from, coveringList.range.to)}` : ""}</span>
-              <Button variant="link" size="sm" as={Link} to={`/grocery-list?id=${coveringList.listId}`} state={state}>Voir</Button>
+              <ActionLink to={`/grocery-list?id=${coveringList.listId}`} state={state}>Voir</ActionLink>
             </li>
           )}
           {notConfiguredRow}
@@ -107,7 +114,7 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
         <li className={ROW}>
           <Bullet />
           <span className={TEXT}>{item.name} : aucune recette au menu</span>
-          <Button variant="link" size="sm" as={Link} to={`/events/${item.eventId}?ajouter=1#menu`} state={state}>Ajouter</Button>
+          <ActionLink to={`/events/${item.eventId}?ajouter=1#menu`} state={state}>Ajouter</ActionLink>
         </li>
       );
     case "no_price":
@@ -115,7 +122,7 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
         <li className={ROW}>
           <Bullet />
           <span className={TEXT}>{item.name} : prix non fixé</span>
-          <Button variant="link" size="sm" as={Link} to={`/events/${item.eventId}?focus=prix`} state={state}>Fixer</Button>
+          <ActionLink to={`/events/${item.eventId}?focus=prix`} state={state}>Fixer</ActionLink>
         </li>
       );
     case "no_type":
@@ -189,7 +196,7 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
         <li className={ROW}>
           <Bullet />
           <span className={TEXT}>{item.name} · {fmtEur0(item.htva)}</span>
-          <Button variant="link" size="sm" as={Link} to={`/events/${item.eventId}?facturer=1#facturation`} state={state}>Facturer</Button>
+          <ActionLink to={`/events/${item.eventId}?facturer=1#facturation`} state={state}>Facturer</ActionLink>
         </li>
       );
     case "to_invoice_many":
@@ -197,7 +204,7 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
         <li className={ROW}>
           <Bullet />
           <span className={TEXT}>{item.count} événements terminés à facturer · {fmtEur0(item.htva)}</span>
-          <Button variant="link" size="sm" as={Link} to="/comptes/a-facturer" state={state}>Voir</Button>
+          <ActionLink to="/comptes/a-facturer" state={state}>Voir</ActionLink>
         </li>
       );
     case "to_invoice_month":
@@ -205,7 +212,7 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
         <li className={ROW}>
           <Bullet />
           <span className={TEXT}>{item.clientName} : {ymLabel(item.ym)} à facturer · {plural(item.eventIds.length, "événement")} · {fmtEur0(item.htva)}</span>
-          <Button variant="link" size="sm" as={Link} to={`/comptes/journal?client=${item.clientId}&prefill=month&ym=${item.ym}`} state={state}>Facturer le mois</Button>
+          <ActionLink to={`/comptes/journal?client=${item.clientId}&prefill=month&ym=${item.ym}`} state={state}>Facturer le mois</ActionLink>
         </li>
       );
     case "unpaid":
@@ -215,7 +222,7 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
           <span className={TEXT}>
             {plural(item.count, "facture impayée", "factures impayées")} · {fmtEur0(item.totalTvac)} · la plus ancienne du {shortDate.format(parseYmd(item.oldestDate.slice(0, 10)))}
           </span>
-          <Button variant="link" size="sm" as={Link} to="/comptes/a-facturer#impayes" state={state}>Voir</Button>
+          <ActionLink to="/comptes/a-facturer#impayes" state={state}>Voir</ActionLink>
         </li>
       );
     case "empty_week":
@@ -223,7 +230,7 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
         <li className={ROW}>
           <Bullet />
           <span className={TEXT}>Aucun événement cette semaine</span>
-          <Button variant="link" size="sm" as={Link} to={`/events/new?date=${monday}&retour=${retour}`} state={state}>+ Ajouter</Button>
+          <ActionLink to={`/events/new?date=${monday}&retour=${retour}`} state={state}>+ Ajouter</ActionLink>
         </li>
       );
     default:

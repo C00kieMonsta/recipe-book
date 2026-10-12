@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Archive, ArchiveRestore, ChevronDown, ChevronUp, Plus, Search, Trash2, X } from "lucide-react";
+import { Archive, ArchiveRestore, Trash2, Plus, X, User, Phone, Mail, MapPin, Hash, Receipt, Percent, Euro, Users, FileText, Search } from "lucide-react";
 import type {
   AppEvent,
   AppSettings,
@@ -21,10 +21,26 @@ import type {
 } from "@packages/types";
 import { DEFAULT_COURSES, DEFAULT_PRESTATION_TYPES, VAT_RATES, fmtEur, isWeekdayLabel, round2 } from "@packages/types";
 import { ApiError, api } from "@/lib/api";
-import { dayMonthLabel, longDayLabel, todayIso, ymOf } from "@/lib/dates";
+import { longDayLabel, dayMonthShortLabel, dayMonthLabel, todayIso, ymOf } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
-import { ActionMenu, FieldLabel, ListRow, PageHeader, SearchSelect, Section, StatusTag, Tag } from "@/components/ui";
-import { EditableText } from "@/components/ui/editable";
+import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
+import {
+  ActionMenu,
+  ListRow,
+  PageHeader,
+  SearchSelect,
+  Section,
+  StatusTag,
+  Tag,
+  Button,
+  IconButton,
+  Dialog,
+  PropertyList,
+  Property,
+  SelectPill,
+  EmptyState,
+  EditableInlineNum,
+} from "@/components/ui";
 import { PersonAssign } from "@/components/admin/PersonPicker";
 
 const WEEKDAYS: { value: Weekday; label: string }[] = [
@@ -37,15 +53,15 @@ const WEEKDAYS: { value: Weekday; label: string }[] = [
   { value: 7, label: "Dimanche" },
 ];
 
-const KIND_LABEL: Record<NonNullable<Client["kind"]>, string> = {
-  entreprise: "Entreprise",
-  particulier: "Particulier",
-};
+const KIND_OPTIONS = [
+  { value: "entreprise", label: "Entreprise", colour: "blue" as const },
+  { value: "particulier", label: "Particulier", colour: "purple" as const },
+];
 
-const INVOICING_LABEL: Record<NonNullable<Client["invoicing"]>, string> = {
-  par_evenement: "Facturation par événement",
-  mensuelle: "Facturation mensuelle",
-};
+const INVOICING_OPTIONS = [
+  { value: "par_evenement", label: "Par événement" },
+  { value: "mensuelle", label: "Mensuelle" },
+];
 
 const EXTRA_KINDS: { value: ExtraCostKind; label: string }[] = [
   { value: "matiere", label: "Matière" },
@@ -54,6 +70,8 @@ const EXTRA_KINDS: { value: ExtraCostKind; label: string }[] = [
   { value: "transport", label: "Transport" },
   { value: "autre", label: "Autre" },
 ];
+
+const NONE = "__none__";
 
 type ClientForm = Omit<CreateClientRequest, "templates" | "active">;
 
@@ -97,11 +115,6 @@ function parseVat(v: string): VatRate | undefined {
   return (VAT_RATES as readonly number[]).includes(n) ? (n as VatRate) : undefined;
 }
 
-function parseNum(v: string): number | undefined {
-  const n = parseFloat(v.replace(",", "."));
-  return Number.isFinite(n) && n > 0 ? n : undefined;
-}
-
 function templateFromEvent(ev: AppEvent, weekday: Weekday, existing?: ClientTemplate): ClientTemplate {
   return {
     templateId: existing?.templateId ?? "",
@@ -142,6 +155,8 @@ function toTemplatePayload(t: ClientTemplate): ClientTemplateRequest {
   };
 }
 
+const ROW = "group flex min-h-9 items-center gap-3 rounded px-2 hover:bg-hover touch:min-h-11";
+
 export default function ClientDetail() {
   const { id } = useParams<{ id: string }>();
   const isNew = !id;
@@ -168,8 +183,10 @@ export default function ClientDetail() {
   const prestationTypes = settings?.prestationTypes?.length ? settings.prestationTypes : DEFAULT_PRESTATION_TYPES;
   const courses = settings?.courses?.length ? settings.courses : DEFAULT_COURSES;
   const people: Person[] = settings?.people ?? [];
-  const prestationLabel = (key?: string) => (key ? prestationTypes.find((p) => p.key === key)?.label ?? key : undefined);
   const recipeById = useMemo(() => new Map(recipes.map((r) => [r.recipeId, r])), [recipes]);
+
+  useBackLink({ to: "/clients", label: "Clients" });
+  useTopTitle(isNew ? "Nouveau client" : form.name);
 
   const loadEvents = useCallback(() => api.events.list().then(setEvents), []);
 
@@ -341,336 +358,277 @@ export default function ClientDetail() {
     [ledger, id],
   );
 
-  if (loading) return <p className="text-base text-muted-foreground">Chargement…</p>;
-  if (!isNew && !client) return <p className="text-base text-muted-foreground">Client introuvable.</p>;
-
-  const meta = [
-    form.kind ? KIND_LABEL[form.kind] : undefined,
-    form.contactName?.trim() || undefined,
-    form.invoicing ? INVOICING_LABEL[form.invoicing] : undefined,
-    client && client.active === false ? "Archivé" : undefined,
-  ].filter(Boolean).join(" · ");
+  if (loading) return <p className="p-8 text-muted-foreground">Chargement…</p>;
+  if (!isNew && !client) return <p className="p-8 text-muted-foreground">Client introuvable.</p>;
 
   const saveLabel = saveState === "saving" ? "Enregistrement…" : saveState === "saved" ? "Enregistré" : saveState === "error" ? "Non enregistré" : "";
+  const prestationLabel = (key?: string) => (key ? prestationTypes.find((p) => p.key === key)?.label ?? key : undefined);
+  const facturerMois = () => navigate(`/comptes/journal?client=${id}&prefill=month&ym=${ymOf(todayIso())}`);
+  const canLink = Boolean(form.email?.trim() || form.contactName?.trim());
+
+  const properties = (
+    <PropertyList>
+      <Property icon="🏷" label="Type" kind="select" value={form.kind ?? ""} options={[...KIND_OPTIONS, { value: NONE, label: "Non précisé" }]} onSave={(v) => update({ kind: (v === NONE ? undefined : v) as ClientForm["kind"] })} />
+      <Property icon={User} label="Contact" kind="text" value={form.contactName ?? ""} placeholder="Ajouter un contact" onSave={(v) => update({ contactName: v })} />
+      <Property icon={Phone} label="Téléphone" kind="text" value={form.phone ?? ""} placeholder="Ajouter un téléphone" onSave={(v) => update({ phone: v })} />
+      <Property icon={Mail} label="Email" kind="text" value={form.email ?? ""} placeholder="Ajouter un e-mail" onSave={(v) => update({ email: v })} />
+      <Property icon={MapPin} label="Adresse" kind="text" value={form.address ?? ""} onSave={(v) => update({ address: v })} />
+      <Property icon={Hash} label="Numéro de TVA" kind="text" value={form.vatNumber ?? ""} onSave={(v) => update({ vatNumber: v })} />
+      <Property icon={Receipt} label="Facturation" kind="select" value={form.invoicing ?? ""} options={[...INVOICING_OPTIONS, { value: NONE, label: "Non précisé" }]} colour="gray" onSave={(v) => update({ invoicing: (v === NONE ? undefined : v) as ClientForm["invoicing"] })} />
+      <Property
+        icon="🍽"
+        label="Prestation par défaut"
+        kind="select"
+        value={form.defaultPrestationType ?? ""}
+        options={[...prestationTypes.map((p) => ({ value: p.key, label: p.label })), { value: NONE, label: "Non précisé" }]}
+        colour="gray"
+        onSave={(v) => {
+          const key = v === NONE ? undefined : v;
+          const vat = prestationTypes.find((p) => p.key === key)?.defaultVatRate;
+          update({ defaultPrestationType: key, ...(vat !== undefined && form.defaultVatRate === undefined ? { defaultVatRate: vat } : {}) });
+        }}
+      />
+      <Property icon={Percent} label="TVA par défaut" kind="select" value={form.defaultVatRate === undefined ? "" : String(form.defaultVatRate)} options={[...VAT_RATES.map((r) => ({ value: String(r), label: `${r} %` })), { value: NONE, label: "Non précisé" }]} colour="gray" onSave={(v) => update({ defaultVatRate: v === NONE ? undefined : parseVat(v) })} />
+      <Property icon={Euro} label="Prix par convive" kind="number" value={form.defaultPricePerGuest ?? null} min={0} decimals={2} suffix="€" onSave={(v) => update({ defaultPricePerGuest: v > 0 ? round2(v) : undefined })} />
+      <Property icon={Users} label="Convives par défaut" kind="number" value={form.defaultGuestCount ?? null} min={1} decimals={0} onSave={(v) => update({ defaultGuestCount: v > 0 ? Math.round(v) : undefined })} />
+      <Property icon={FileText} label="Notes" kind="multiline" value={form.notes ?? ""} placeholder="Ajouter une note…" onSave={(v) => update({ notes: v })} />
+    </PropertyList>
+  );
 
   return (
-    <div className="max-w-doc">
+    <div className="mx-auto max-w-doc">
       <PageHeader
         breadcrumb={[{ label: "Clients", to: "/clients" }, { label: isNew ? "Nouveau client" : form.name || "Client" }]}
-        title={
-          <EditableText
-            value={form.name}
-            onSave={(v) => {
-              const name = v.trim();
-              if (name) update({ name });
-              else setForm((p) => ({ ...p, name: client?.name ?? p.name }));
-            }}
-            placeholder="Nom du client"
-            className="text-h1 md:text-h1-lg"
-            inputClassName="input-field text-h1"
-          />
-        }
-        meta={
-          <span>
-            {meta}
-            {saveLabel && <span className="ml-2 text-sm">{saveLabel}</span>}
-          </span>
-        }
+        iconKey={form.kind === "particulier" ? "particulier" : "client"}
+        title={form.name}
+        titlePlaceholder="Nom du client"
+        onTitleChange={(v) => update({ name: v })}
+        meta={[client && client.active === false ? "Archivé" : undefined, saveLabel || undefined].filter(Boolean).join(" · ") || undefined}
         actions={
           !isNew && (
-            <ActionMenu
-              items={[
-                client?.active === false
-                  ? { label: "Réactiver", icon: <ArchiveRestore className="h-4 w-4" />, onClick: () => void setActive(true) }
-                  : { label: "Archiver", icon: <Archive className="h-4 w-4" />, onClick: () => void setActive(false) },
-                { label: "Supprimer", icon: <Trash2 className="h-4 w-4" />, variant: "danger", onClick: () => void remove() },
-              ]}
-            />
+            <>
+              <Button variant="default" size="md" onClick={facturerMois} className="hidden md:inline-flex">Facturer le mois</Button>
+              <ActionMenu
+                title={form.name}
+                items={[
+                  client?.active === false
+                    ? { label: "Réactiver", icon: <ArchiveRestore />, onClick: () => void setActive(true) }
+                    : { label: "Archiver", icon: <Archive />, onClick: () => void setActive(false) },
+                  { kind: "separator" },
+                  { label: "Supprimer", icon: <Trash2 />, variant: "danger", onClick: () => void remove() },
+                ]}
+              />
+            </>
           )
         }
+        properties={properties}
       />
 
-      <Section title="Informations">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <FieldLabel htmlFor="c-kind">Type</FieldLabel>
-            <select id="c-kind" className="input-field" value={form.kind ?? ""} onChange={(e) => update({ kind: (e.target.value || undefined) as ClientForm["kind"] })}>
-              <option value="">Non précisé</option>
-              <option value="entreprise">Entreprise</option>
-              <option value="particulier">Particulier</option>
-            </select>
-          </div>
-          <div>
-            <FieldLabel htmlFor="c-contact">Contact</FieldLabel>
-            <input id="c-contact" className="input-field" value={form.contactName ?? ""} onChange={(e) => update({ contactName: e.target.value })} />
-          </div>
-          <div>
-            <FieldLabel htmlFor="c-phone">Téléphone</FieldLabel>
-            <input id="c-phone" type="tel" className="input-field" value={form.phone ?? ""} onChange={(e) => update({ phone: e.target.value })} />
-          </div>
-          <div>
-            <FieldLabel htmlFor="c-email">Email</FieldLabel>
-            <input id="c-email" type="email" className="input-field" value={form.email ?? ""} onChange={(e) => update({ email: e.target.value })} />
-          </div>
-          <div className="md:col-span-2">
-            <FieldLabel htmlFor="c-address">Adresse</FieldLabel>
-            <input id="c-address" className="input-field" value={form.address ?? ""} onChange={(e) => update({ address: e.target.value })} />
-          </div>
-          <div>
-            <FieldLabel htmlFor="c-vatnum">Numéro de TVA</FieldLabel>
-            <input id="c-vatnum" className="input-field" value={form.vatNumber ?? ""} onChange={(e) => update({ vatNumber: e.target.value })} />
-          </div>
-          <div>
-            <FieldLabel htmlFor="c-invoicing">Facturation</FieldLabel>
-            <select id="c-invoicing" className="input-field" value={form.invoicing ?? ""} onChange={(e) => update({ invoicing: (e.target.value || undefined) as ClientForm["invoicing"] })}>
-              <option value="">Non précisé</option>
-              <option value="par_evenement">Par événement</option>
-              <option value="mensuelle">Mensuelle</option>
-            </select>
-          </div>
-          <div>
-            <FieldLabel htmlFor="c-prestation">Prestation par défaut</FieldLabel>
-            <select
-              id="c-prestation"
-              className="input-field"
-              value={form.defaultPrestationType ?? ""}
-              onChange={(e) => {
-                const key = e.target.value || undefined;
-                const vat = prestationTypes.find((p) => p.key === key)?.defaultVatRate;
-                update({ defaultPrestationType: key, ...(vat !== undefined && form.defaultVatRate === undefined ? { defaultVatRate: vat } : {}) });
-              }}
-            >
-              <option value="">Non précisé</option>
-              {prestationTypes.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
-            </select>
-          </div>
-          <div>
-            <FieldLabel htmlFor="c-vat">TVA par défaut</FieldLabel>
-            <select id="c-vat" className="input-field" value={form.defaultVatRate ?? ""} onChange={(e) => update({ defaultVatRate: parseVat(e.target.value) })}>
-              <option value="">Non précisé</option>
-              {VAT_RATES.map((r) => <option key={r} value={r}>{r} %</option>)}
-            </select>
-          </div>
-          <div>
-            <FieldLabel htmlFor="c-price">Prix par convive (€)</FieldLabel>
-            <input id="c-price" type="number" inputMode="decimal" min={0} step="0.01" className="input-field" value={form.defaultPricePerGuest ?? ""} onChange={(e) => { const n = parseNum(e.target.value); update({ defaultPricePerGuest: n === undefined ? undefined : round2(n) }); }} />
-          </div>
-          <div>
-            <FieldLabel htmlFor="c-guests">Convives par défaut</FieldLabel>
-            <input id="c-guests" type="number" inputMode="numeric" min={1} step={1} className="input-field" value={form.defaultGuestCount ?? ""} onChange={(e) => { const n = parseNum(e.target.value); update({ defaultGuestCount: n ? Math.round(n) : undefined }); }} />
-          </div>
-          <div className="md:col-span-2">
-            <FieldLabel htmlFor="c-notes">Notes</FieldLabel>
-            <textarea id="c-notes" className="input-field" rows={3} value={form.notes ?? ""} onChange={(e) => update({ notes: e.target.value })} />
-          </div>
+      {isNew && (
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" size="md" onClick={() => void create()} disabled={creating || !form.name.trim()}>Créer</Button>
+          <Button variant="default" size="md" onClick={() => navigate("/clients")}>Annuler</Button>
         </div>
-        {isNew && (
-          <div className="mt-6 flex flex-wrap gap-2">
-            <button type="button" onClick={() => void create()} disabled={creating || !form.name.trim()} className="min-h-11 rounded-lg bg-primary px-5 text-base font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
-              Créer
-            </button>
-            <button type="button" onClick={() => navigate("/clients")} className="min-h-11 rounded-lg border border-border px-5 text-base hover:bg-hover">
-              Annuler
-            </button>
-          </div>
-        )}
-      </Section>
+      )}
 
       <Section title="Semaine type" meta={isNew ? undefined : "Un modèle par jour de livraison"}>
         {isNew ? (
-          <p className="text-base text-muted-foreground">Créez le client pour configurer sa semaine type.</p>
+          <p className="text-sm text-muted-foreground">Créez le client pour configurer sa semaine type.</p>
         ) : (
           <div className="divide-y divide-border">
             {WEEKDAYS.map((w) => {
               const dayTemplates = templates.filter((t) => t.weekday === w.value);
-              const isEditingHere = editing?.weekday === w.value;
-              return (
-                <div key={w.value} className="py-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-lead font-semibold">{w.label}</h3>
-                    {!isEditingHere && dayTemplates.length === 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={() => startNewTemplate(w.value)} className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border px-3 text-base hover:bg-hover">
-                          <Plus className="h-5 w-5" /> Ajouter un jour
-                        </button>
-                        <button type="button" onClick={() => { setEditing(null); setPickFor(pickFor === w.value ? null : w.value); }} className="min-h-11 rounded-lg border border-border px-3 text-base hover:bg-hover">
-                          Créer depuis un événement
-                        </button>
-                      </div>
-                    )}
+              if (dayTemplates.length === 0) {
+                return (
+                  <div key={w.value} className={ROW}>
+                    <span className="w-24 shrink-0 text-sm text-muted-foreground touch:text-base">{w.label}</span>
+                    <Button variant="link" size="sm" icon={<Plus />} onClick={() => startNewTemplate(w.value)} className="-mx-2">Ajouter un jour</Button>
+                    <div className="ml-auto">
+                      <ActionMenu className="reveal" title={w.label} items={[{ label: "Créer depuis un événement", onClick: () => { setEditing(null); setPickFor(w.value); } }]} />
+                    </div>
                   </div>
-
-                  {pickFor === w.value && (
-                    <EventPicker events={events} clientId={id!} onPick={(ev) => applyEvent(ev, w.value)} onClose={() => setPickFor(null)} />
-                  )}
-
-                  {isEditingHere && editing && (
-                    <TemplateEditor
-                      template={editing}
-                      recipes={recipes}
-                      courses={courses}
-                      prestationTypes={prestationTypes}
-                      onChange={setEditing}
-                      onSave={() => void upsertTemplate(editing)}
-                      onCancel={() => setEditing(null)}
-                      onDelete={editing.templateId ? () => void removeTemplate(editing.templateId) : undefined}
-                    />
-                  )}
-
-                  {!isEditingHere && dayTemplates.map((t) => (
-                    <TemplateView
-                      key={t.templateId}
-                      template={t}
-                      recipeById={recipeById}
-                      courses={courses}
-                      prestationLabel={prestationLabel(t.prestationType)}
-                      people={people}
-                      onAssign={(next) => void saveTemplates(templates.map((x) => (x.templateId === t.templateId ? { ...x, assignedTo: next } : x)))}
-                      onEdit={() => { setPickFor(null); setEditing({ ...t, recipes: [...t.recipes], extraCosts: [...t.extraCosts] }); }}
-                      onFromEvent={() => { setEditing(null); setPickFor(pickFor === w.value ? null : w.value); }}
-                    />
-                  ))}
-                </div>
-              );
+                );
+              }
+              return dayTemplates.map((t) => (
+                <TemplateRow
+                  key={t.templateId}
+                  dayLabel={w.label}
+                  template={t}
+                  recipeById={recipeById}
+                  courses={courses}
+                  prestationLabel={prestationLabel(t.prestationType)}
+                  people={people}
+                  onAssign={(next) => void saveTemplates(templates.map((x) => (x.templateId === t.templateId ? { ...x, assignedTo: next } : x)))}
+                  onOpen={() => { setPickFor(null); setEditing({ ...t, recipes: [...t.recipes], extraCosts: [...t.extraCosts] }); }}
+                  onFromEvent={() => { setEditing(null); setPickFor(w.value); }}
+                  onDelete={() => void removeTemplate(t.templateId)}
+                />
+              ));
             })}
           </div>
         )}
       </Section>
 
       {!isNew && (
-        <Section
-          title="Historique"
-          action={
-            <button type="button" onClick={() => void linkEvents()} disabled={!form.email?.trim() && !form.contactName?.trim()} title="Associe les événements dont le contact correspond" className="min-h-11 rounded-lg border border-border px-3 text-base hover:bg-hover disabled:opacity-50">
-              Associer les événements existants
-            </button>
-          }
-        >
-          <h3 className="text-base font-semibold text-muted-foreground">Événements</h3>
-          {clientEvents.length === 0 ? (
-            <p className="mt-2 text-base text-muted-foreground">Aucun événement pour ce client.</p>
-          ) : (
-            <div className="mt-1 divide-y divide-border">
-              {clientEvents.map((ev) => {
-                const inv = invoiceNumberByEvent.get(ev.eventId);
-                return (
+        <>
+          <Section
+            title="Historique"
+            action={
+              <Button variant="default" size="sm" onClick={() => void linkEvents()} disabled={!canLink} title="Associe les événements dont le contact correspond" className="hidden md:inline-flex">
+                Associer les événements existants
+              </Button>
+            }
+          >
+            <Button variant="default" size="lg" onClick={() => void linkEvents()} disabled={!canLink} className="mb-3 w-full md:hidden">Associer les événements existants</Button>
+            {clientEvents.length === 0 ? (
+              <EmptyState message="Aucun événement pour ce client." action={{ label: "+ Nouvel événement", to: `/events/new?client=${id}` }} />
+            ) : (
+              <div className="divide-y divide-border">
+                {clientEvents.map((ev) => {
+                  const inv = invoiceNumberByEvent.get(ev.eventId);
+                  return (
+                    <ListRow
+                      key={ev.eventId}
+                      to={`/events/${ev.eventId}`}
+                      title={ev.name}
+                      subtitle={`${dayMonthShortLabel(ev.date)} · ${ev.guestCount} convives`}
+                      trailing={
+                        <>
+                          {inv !== undefined && <StatusTag status="invoiced" label={inv ? `Facturé n° ${inv}` : "Facturé"} />}
+                          <Tag colour="gray">Signé {fmtEur((ev.sellingPricePerGuest || 0) * (ev.guestCount || 0))}</Tag>
+                        </>
+                      }
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </Section>
+
+          <Section title="Journal">
+            <Button variant="default" size="lg" onClick={facturerMois} className="mb-3 w-full md:hidden">Facturer le mois</Button>
+            {clientEntries.length === 0 ? (
+              <EmptyState message="Aucune écriture pour ce client." />
+            ) : (
+              <div className="divide-y divide-border">
+                {clientEntries.map((e) => (
                   <ListRow
-                    key={ev.eventId}
-                    to={`/events/${ev.eventId}`}
-                    title={ev.name}
-                    subtitle={`${longDayLabel(ev.date)} · ${ev.guestCount} convives`}
+                    key={e.entryId}
+                    title={e.label}
+                    subtitle={[dayMonthLabel(e.date), e.number ? `n° ${e.number}` : undefined].filter(Boolean).join(" · ")}
                     trailing={
                       <>
-                        {inv !== undefined && <Tag variant="primary">Facturé{inv ? ` n° ${inv}` : ""}</Tag>}
-                        <span className="text-sm tabular-nums text-muted-foreground">Signé {fmtEur((ev.sellingPricePerGuest || 0) * (ev.guestCount || 0))}</span>
+                        <span>{fmtEur(e.htva)} HTVA</span>
+                        {e.paid ? <StatusTag status="paid" /> : <StatusTag status="unpaid" label="À payer" />}
                       </>
                     }
                   />
-                );
-              })}
-            </div>
-          )}
-
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-base font-semibold text-muted-foreground">Journal</h3>
-            <button type="button" onClick={() => navigate(`/comptes/journal?client=${id}&prefill=month&ym=${ymOf(todayIso())}`)} className="min-h-11 rounded-lg border border-border px-3 text-base hover:bg-hover">
-              Facturer le mois
-            </button>
-          </div>
-          {clientEntries.length === 0 ? (
-            <p className="mt-2 text-base text-muted-foreground">Aucune écriture pour ce client.</p>
-          ) : (
-            <div className="mt-1 divide-y divide-border">
-              {clientEntries.map((e) => (
-                <ListRow
-                  key={e.entryId}
-                  title={e.label}
-                  subtitle={[dayMonthLabel(e.date), e.number ? `n° ${e.number}` : undefined].filter(Boolean).join(" · ")}
-                  trailing={
-                    <>
-                      <span className="text-sm tabular-nums text-muted-foreground">{fmtEur(e.htva)} HTVA</span>
-                      {e.paid ? <StatusTag status="paid" /> : <StatusTag status="invoiced" label="À payer" />}
-                    </>
-                  }
-                />
-              ))}
-            </div>
-          )}
-        </Section>
+                ))}
+              </div>
+            )}
+          </Section>
+        </>
       )}
+
+      <Dialog open={pickFor !== null} onClose={() => setPickFor(null)} title="Créer depuis un événement" size="md">
+        {pickFor !== null && <EventPicker events={events} clientId={id!} onPick={(ev) => applyEvent(ev, pickFor)} />}
+      </Dialog>
+
+      <Dialog
+        open={editing !== null}
+        onClose={() => setEditing(null)}
+        title={editing ? (editing.templateId ? `Modèle du ${WEEKDAYS.find((w) => w.value === editing.weekday)?.label.toLowerCase()}` : `Nouveau modèle du ${WEEKDAYS.find((w) => w.value === editing.weekday)?.label.toLowerCase()}`) : ""}
+        size="md"
+        footer={editing ? (
+          <>
+            {editing.templateId && <Button variant="danger" size="md" onClick={() => void removeTemplate(editing.templateId)} className="mr-auto">Supprimer</Button>}
+            <Button variant="default" size="md" onClick={() => setEditing(null)}>Annuler</Button>
+            <Button variant="primary" size="md" onClick={() => void upsertTemplate(editing)} disabled={!editing.name.trim() || editing.guestCount < 1}>Enregistrer</Button>
+          </>
+        ) : undefined}
+      >
+        {editing && (
+          <TemplateEditor
+            template={editing}
+            recipes={recipes}
+            courses={courses}
+            prestationTypes={prestationTypes}
+            onChange={setEditing}
+          />
+        )}
+      </Dialog>
     </div>
   );
 }
 
-function TemplateView({ template: t, recipeById, courses, prestationLabel, people, onAssign, onEdit, onFromEvent }: {
+function TemplateRow({ dayLabel, template: t, recipeById, courses, prestationLabel, people, onAssign, onOpen, onFromEvent, onDelete }: {
+  dayLabel: string;
   template: ClientTemplate;
   recipeById: Map<string, Recipe>;
   courses: string[];
   prestationLabel?: string;
   people: Person[];
   onAssign: (next: string[]) => void;
-  onEdit: () => void;
+  onOpen: () => void;
   onFromEvent: () => void;
+  onDelete: () => void;
 }) {
-  const groups = useMemo(() => {
-    const byCourse = new Map<string, TemplateLine[]>();
-    for (const l of t.recipes) {
-      const course = l.course || recipeById.get(l.recipeId)?.defaultCourse || "Autre";
-      const list = byCourse.get(course) ?? [];
-      list.push(l);
-      byCourse.set(course, list);
-    }
+  const lines = useMemo(() => {
     const order = (c: string) => { const i = courses.indexOf(c); return i === -1 ? courses.length : i; };
-    return [...byCourse.entries()].sort(([a], [b]) => order(a) - order(b));
+    return [...t.recipes].sort((a, b) => order(a.course || recipeById.get(a.recipeId)?.defaultCourse || "Autre") - order(b.course || recipeById.get(b.recipeId)?.defaultCourse || "Autre"));
   }, [t.recipes, recipeById, courses]);
 
-  const extras = t.extraCosts.reduce((s, c) => s + (c.amount || 0), 0);
+  const title = !isWeekdayLabel(t.name) && t.name !== dayLabel ? t.name : undefined;
+  const tags = (
+    <>
+      {title && <span className="text-sm text-muted-foreground">{title}</span>}
+      {lines.map((l, i) => (
+        <Tag key={`${l.recipeId}-${i}`} colour="gray">{recipeById.get(l.recipeId)?.name ?? "Recette inconnue"} ×{l.portions}</Tag>
+      ))}
+      {lines.length === 0 && <span className="text-sm text-placeholder">Aucune recette</span>}
+      {prestationLabel && <Tag colour="blue">{prestationLabel}</Tag>}
+    </>
+  );
+  const controls = (
+    <span className="ml-auto flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      <PersonAssign value={t.assignedTo ?? []} options={people} onChange={onAssign} size="sm" title="Équipe du modèle" align="right" />
+      <ActionMenu
+        className="reveal"
+        title={dayLabel}
+        items={[
+          { label: "Modifier", onClick: onOpen },
+          { label: "Créer depuis un événement", onClick: onFromEvent },
+          { kind: "separator" },
+          { label: "Supprimer", variant: "danger", onClick: onDelete },
+        ]}
+      />
+    </span>
+  );
 
   return (
-    <div className="mt-2">
-      <div className="flex flex-wrap items-center gap-2">
-        {!isWeekdayLabel(t.name) && <span className="text-base font-medium">{t.name}</span>}
-        {prestationLabel && <Tag variant="primary">{prestationLabel}</Tag>}
-        {t.vatRate !== undefined && <Tag>{t.vatRate} %</Tag>}
-        <PersonAssign value={t.assignedTo ?? []} options={people} onChange={onAssign} size="md" title="Équipe du modèle" />
+    <div className="group cursor-pointer rounded px-2 py-1 hover:bg-hover" role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => { if (e.key === "Enter") onOpen(); }}>
+      <div className="hidden min-h-7 items-center gap-3 md:flex">
+        <span className="w-24 shrink-0 text-sm font-medium">{dayLabel}</span>
+        <span className="w-12 shrink-0 text-sm tabular-nums">{t.guestCount}</span>
+        <span className="w-32 shrink-0 text-sm tabular-nums text-muted-foreground">{fmtEur(t.sellingPricePerGuest)} · {fmtEur(t.guestCount * t.sellingPricePerGuest)}</span>
+        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1">{tags}</span>
+        {controls}
       </div>
-      <div className="mt-1 text-base text-muted-foreground">
-        {t.guestCount} convives · {fmtEur(t.sellingPricePerGuest)} / convive · {fmtEur(t.guestCount * t.sellingPricePerGuest)}
-        {extras > 0 && ` · ${fmtEur(extras)} de coûts annexes`}
-      </div>
-      {groups.length === 0 ? (
-        <p className="mt-2 text-base text-muted-foreground">Aucune recette.</p>
-      ) : (
-        <div className="mt-2 space-y-2">
-          {groups.map(([course, lines]) => (
-            <div key={course}>
-              <div className="text-sm font-medium text-muted-foreground">{course}</div>
-              <ul className="text-base">
-                {lines.map((l, i) => (
-                  <li key={`${l.recipeId}-${i}`} className="flex justify-between gap-3">
-                    <span className="truncate">{recipeById.get(l.recipeId)?.name ?? "Recette inconnue"}</span>
-                    <span className="shrink-0 tabular-nums">× {l.portions}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+      <div className="md:hidden">
+        <div className="flex min-h-11 items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-base"><span className="font-medium">{dayLabel}</span> <span className="text-muted-foreground">· {t.guestCount} conv. · {fmtEur(t.guestCount * t.sellingPricePerGuest)}</span></span>
+          {controls}
         </div>
-      )}
-      {t.notes && <p className="mt-2 whitespace-pre-wrap text-base text-muted-foreground">{t.notes}</p>}
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" onClick={onEdit} className="min-h-11 rounded-lg border border-border px-3 text-base hover:bg-hover">Modifier</button>
-        <button type="button" onClick={onFromEvent} className="min-h-11 rounded-lg border border-border px-3 text-base hover:bg-hover">Créer depuis un événement</button>
+        <div className="flex flex-wrap items-center gap-1 pb-2">{tags}</div>
       </div>
     </div>
   );
 }
 
-function EventPicker({ events, clientId, onPick, onClose }: {
+function EventPicker({ events, clientId, onPick }: {
   events: AppEvent[];
   clientId: string;
   onPick: (ev: AppEvent) => void;
-  onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -680,17 +638,16 @@ function EventPicker({ events, clientId, onPick, onClose }: {
   }, [events, clientId, q]);
 
   return (
-    <div className="mt-3 rounded-lg border border-border bg-card p-3">
-      <div className="flex items-center gap-2">
-        <Search className="h-5 w-5 shrink-0 text-muted-foreground" />
-        <input className="min-h-11 flex-1 bg-transparent text-base outline-none" placeholder="Rechercher un événement…" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
-        <button type="button" onClick={onClose} aria-label="Fermer" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-hover"><X className="h-5 w-5" /></button>
+    <div>
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-icon" />
+        <input className="input-field pl-7" placeholder="Rechercher un événement…" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">{q ? "Tous les événements" : "Événements de ce client. Tapez un nom pour chercher parmi tous."}</p>
+      <p className="mt-1 text-caption text-muted-foreground">{q ? "Tous les événements" : "Événements de ce client. Tapez un nom pour chercher parmi tous."}</p>
       {list.length === 0 ? (
-        <p className="mt-2 text-base text-muted-foreground">Aucun événement.</p>
+        <p className="mt-3 text-sm text-muted-foreground">Aucun événement.</p>
       ) : (
-        <div className="mt-1 divide-y divide-border">
+        <div className="mt-2 divide-y divide-border">
           {list.map((ev) => (
             <ListRow key={ev.eventId} title={ev.name} subtitle={`${longDayLabel(ev.date)} · ${ev.guestCount} convives · ${ev.recipes.length} recettes`} onClick={() => onPick(ev)} />
           ))}
@@ -700,15 +657,12 @@ function EventPicker({ events, clientId, onPick, onClose }: {
   );
 }
 
-function TemplateEditor({ template: t, recipes, courses, prestationTypes, onChange, onSave, onCancel, onDelete }: {
+function TemplateEditor({ template: t, recipes, courses, prestationTypes, onChange }: {
   template: ClientTemplate;
   recipes: Recipe[];
   courses: string[];
   prestationTypes: PrestationTypeSetting[];
   onChange: (t: ClientTemplate) => void;
-  onSave: () => void;
-  onCancel: () => void;
-  onDelete?: () => void;
 }) {
   const recipeById = useMemo(() => new Map(recipes.map((r) => [r.recipeId, r])), [recipes]);
   const options = useMemo(
@@ -717,117 +671,73 @@ function TemplateEditor({ template: t, recipes, courses, prestationTypes, onChan
   );
   const set = (patch: Partial<ClientTemplate>) => onChange({ ...t, ...patch });
   const setLine = (i: number, patch: Partial<TemplateLine>) => set({ recipes: t.recipes.map((l, j) => (j === i ? { ...l, ...patch } : l)) });
-  const move = (i: number, dir: -1 | 1) => {
-    const j = i + dir;
-    if (j < 0 || j >= t.recipes.length) return;
-    const next = [...t.recipes];
-    [next[i], next[j]] = [next[j], next[i]];
-    set({ recipes: next });
-  };
   const setExtra = (i: number, patch: Partial<EventExtraCost>) => set({ extraCosts: t.extraCosts.map((c, j) => (j === i ? { ...c, ...patch } : c)) });
+  const courseOptions = courses.map((c) => ({ value: c, label: c }));
 
   return (
-    <div className="mt-3 rounded-lg border border-border bg-card p-4">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="md:col-span-2">
-          <FieldLabel htmlFor="t-name">Nom du modèle</FieldLabel>
-          <input id="t-name" className="input-field" value={t.name} onChange={(e) => set({ name: e.target.value })} />
-        </div>
-        <div>
-          <FieldLabel htmlFor="t-guests">Convives</FieldLabel>
-          <input id="t-guests" type="number" inputMode="numeric" min={1} step={1} className="input-field" value={t.guestCount || ""} onChange={(e) => set({ guestCount: Math.round(parseNum(e.target.value) ?? 0) })} />
-        </div>
-        <div>
-          <FieldLabel htmlFor="t-price">Prix par convive (€)</FieldLabel>
-          <input id="t-price" type="number" inputMode="decimal" min={0} step="0.01" className="input-field" value={t.sellingPricePerGuest || ""} onChange={(e) => set({ sellingPricePerGuest: parseNum(e.target.value) ?? 0 })} />
-        </div>
-        <div>
-          <FieldLabel htmlFor="t-prestation">Prestation</FieldLabel>
-          <select
-            id="t-prestation"
-            className="input-field"
-            value={t.prestationType ?? ""}
-            onChange={(e) => {
-              const key = e.target.value || undefined;
-              const vat = prestationTypes.find((p) => p.key === key)?.defaultVatRate;
-              set({ prestationType: key, ...(vat !== undefined ? { vatRate: vat } : {}) });
-            }}
-          >
-            <option value="">Non précisé</option>
-            {prestationTypes.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
-          </select>
-        </div>
-        <div>
-          <FieldLabel htmlFor="t-vat">TVA</FieldLabel>
-          <select id="t-vat" className="input-field" value={t.vatRate ?? ""} onChange={(e) => set({ vatRate: parseVat(e.target.value) })}>
-            <option value="">Non précisé</option>
-            {VAT_RATES.map((r) => <option key={r} value={r}>{r} %</option>)}
-          </select>
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <FieldLabel>Recettes</FieldLabel>
-        {t.recipes.length > 0 && (
-          <ul className="divide-y divide-border">
-            {t.recipes.map((l, i) => (
-              <li key={`${l.recipeId}-${i}`} className="flex flex-wrap items-center gap-2 py-2">
-                <span className="min-w-0 flex-1 truncate text-base">{recipeById.get(l.recipeId)?.name ?? "Recette inconnue"}</span>
-                <select aria-label="Catégorie" className="input-field w-auto" value={l.course ?? ""} onChange={(e) => setLine(i, { course: e.target.value || undefined })}>
-                  <option value="">Catégorie</option>
-                  {courses.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <input aria-label="Portions" type="number" inputMode="numeric" min={1} step={1} className="input-field w-24 text-right tabular-nums" value={l.portions || ""} onChange={(e) => setLine(i, { portions: Math.round(parseNum(e.target.value) ?? 0) })} />
-                <button type="button" aria-label="Monter" disabled={i === 0} onClick={() => move(i, -1)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-hover disabled:opacity-30"><ChevronUp className="h-5 w-5" /></button>
-                <button type="button" aria-label="Descendre" disabled={i === t.recipes.length - 1} onClick={() => move(i, 1)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-hover disabled:opacity-30"><ChevronDown className="h-5 w-5" /></button>
-                <button type="button" aria-label="Retirer" onClick={() => set({ recipes: t.recipes.filter((_, j) => j !== i) })} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-destructive hover:bg-destructive-soft"><X className="h-5 w-5" /></button>
-              </li>
-            ))}
-          </ul>
-        )}
-        <SearchSelect
-          className="mt-2"
-          options={options}
-          value=""
-          placeholder="Ajouter une recette…"
-          onChange={(recipeId) => {
-            const r = recipeById.get(recipeId);
-            if (!r) return;
-            set({ recipes: [...t.recipes, { recipeId, portions: t.guestCount || 1, course: r.defaultCourse }] });
+    <div>
+      <PropertyList className="mt-0">
+        <Property label="Nom du modèle" kind="text" value={t.name} onSave={(v) => set({ name: v })} />
+        <Property icon={Users} label="Convives" kind="number" value={t.guestCount || null} min={1} decimals={0} onSave={(v) => set({ guestCount: Math.round(v) })} />
+        <Property icon={Euro} label="Prix par convive" kind="number" value={t.sellingPricePerGuest || null} min={0} decimals={2} suffix="€" onSave={(v) => set({ sellingPricePerGuest: v })} />
+        <Property
+          icon="🍽"
+          label="Prestation"
+          kind="select"
+          value={t.prestationType ?? ""}
+          options={[...prestationTypes.map((p) => ({ value: p.key, label: p.label })), { value: NONE, label: "Non précisé" }]}
+          colour="gray"
+          onSave={(v) => {
+            const key = v === NONE ? undefined : v;
+            const vat = prestationTypes.find((p) => p.key === key)?.defaultVatRate;
+            set({ prestationType: key, ...(vat !== undefined ? { vatRate: vat } : {}) });
           }}
         />
-      </div>
+        <Property icon={Percent} label="TVA" kind="select" value={t.vatRate === undefined ? "" : String(t.vatRate)} options={[...VAT_RATES.map((r) => ({ value: String(r), label: `${r} %` })), { value: NONE, label: "Non précisé" }]} colour="gray" onSave={(v) => set({ vatRate: v === NONE ? undefined : parseVat(v) })} />
+        <Property icon={FileText} label="Notes" kind="multiline" value={t.notes ?? ""} placeholder="Ajouter une note…" onSave={(v) => set({ notes: v })} />
+      </PropertyList>
 
-      <div className="mt-5">
-        <FieldLabel>Coûts annexes</FieldLabel>
-        {t.extraCosts.map((c, i) => (
-          <div key={i} className="flex flex-wrap items-center gap-2 py-1">
-            <input aria-label="Libellé" className="input-field min-w-0 flex-1" placeholder="Libellé" value={c.label} onChange={(e) => setExtra(i, { label: e.target.value })} />
-            <select aria-label="Nature" className="input-field w-auto" value={c.kind ?? ""} onChange={(e) => setExtra(i, { kind: (e.target.value || undefined) as ExtraCostKind | undefined })}>
-              <option value="">Nature</option>
-              {EXTRA_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
-            </select>
-            <input aria-label="Montant" type="number" inputMode="decimal" min={0} step="0.01" className="input-field w-28 text-right tabular-nums" value={c.amount || ""} onChange={(e) => setExtra(i, { amount: parseNum(e.target.value) ?? 0 })} />
-            <button type="button" aria-label="Retirer" onClick={() => set({ extraCosts: t.extraCosts.filter((_, j) => j !== i) })} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-destructive hover:bg-destructive-soft"><X className="h-5 w-5" /></button>
-          </div>
-        ))}
-        <button type="button" onClick={() => set({ extraCosts: [...t.extraCosts, { label: "", amount: 0 }] })} className="mt-1 inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-base hover:bg-hover">
-          <Plus className="h-5 w-5" /> Coût annexe
-        </button>
-      </div>
+      <h3 className="mt-5 text-base font-semibold">Recettes</h3>
+      {t.recipes.length > 0 && (
+        <ul className="mt-1">
+          {t.recipes.map((l, i) => (
+            <li key={`${l.recipeId}-${i}`} className="group flex min-h-9 items-center gap-2 rounded px-1 hover:bg-hover touch:min-h-11">
+              <span className="min-w-0 flex-1 truncate">{recipeById.get(l.recipeId)?.name ?? "Recette inconnue"}</span>
+              <SelectPill value={l.course ?? ""} options={courseOptions} colour="gray" placeholder="Catégorie" align="right" aria-label="Catégorie" onChange={(v) => setLine(i, { course: v || undefined })} />
+              <span className="w-20 text-right tabular-nums">
+                <EditableInlineNum value={l.portions || 0} min={1} onSave={(v) => setLine(i, { portions: Math.round(v) })} suffix=" port." />
+              </span>
+              <IconButton size="sm" aria-label="Retirer" onClick={() => set({ recipes: t.recipes.filter((_, j) => j !== i) })} icon={<X />} className="reveal" />
+            </li>
+          ))}
+        </ul>
+      )}
+      <SearchSelect
+        className="mt-2"
+        options={options}
+        value=""
+        placeholder="Ajouter une recette…"
+        onChange={(recipeId) => {
+          const r = recipeById.get(recipeId);
+          if (!r) return;
+          set({ recipes: [...t.recipes, { recipeId, portions: t.guestCount || 1, course: r.defaultCourse }] });
+        }}
+      />
 
-      <div className="mt-5">
-        <FieldLabel htmlFor="t-notes">Notes</FieldLabel>
-        <textarea id="t-notes" className="input-field" rows={2} value={t.notes ?? ""} onChange={(e) => set({ notes: e.target.value })} />
+      <div className="mt-5 flex items-center justify-between">
+        <h3 className="text-base font-semibold">Coûts annexes</h3>
+        <Button variant="ghost" size="sm" icon={<Plus />} onClick={() => set({ extraCosts: [...t.extraCosts, { label: "", amount: 0 }] })}>Ajouter</Button>
       </div>
-
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        <button type="button" onClick={onSave} disabled={!t.name.trim() || t.guestCount < 1} className="min-h-11 rounded-lg bg-primary px-5 text-base font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">Enregistrer</button>
-        <button type="button" onClick={onCancel} className="min-h-11 rounded-lg border border-border px-4 text-base hover:bg-hover">Annuler</button>
-        {onDelete && (
-          <button type="button" onClick={onDelete} className="ml-auto min-h-11 rounded-lg px-3 text-base text-destructive hover:bg-destructive-soft">Supprimer ce modèle</button>
-        )}
-      </div>
+      {t.extraCosts.map((c, i) => (
+        <div key={i} className="group mt-1 flex items-center gap-2">
+          <input aria-label="Libellé" className="input-field min-w-0 flex-1" placeholder="Libellé" value={c.label} onChange={(e) => setExtra(i, { label: e.target.value })} />
+          <SelectPill value={c.kind ?? ""} options={EXTRA_KINDS} colour="gray" placeholder="Nature" align="right" aria-label="Nature" onChange={(v) => setExtra(i, { kind: (v || undefined) as ExtraCostKind | undefined })} />
+          <span className="w-20 text-right tabular-nums">
+            <EditableInlineNum value={c.amount || 0} min={0} onSave={(v) => setExtra(i, { amount: v })} suffix=" €" />
+          </span>
+          <IconButton size="sm" aria-label="Retirer" onClick={() => set({ extraCosts: t.extraCosts.filter((_, j) => j !== i) })} icon={<X />} />
+        </div>
+      ))}
     </div>
   );
 }

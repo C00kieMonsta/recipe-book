@@ -313,6 +313,7 @@ export default function Journal() {
           onPick={(v) => setParam({ ym: v })}
           isToday={ym === today.slice(0, 7)}
           onToday={() => setParam({ ym: today.slice(0, 7) })}
+          todayLabel="Ce mois"
         />
       }
       right={
@@ -391,7 +392,7 @@ export default function Journal() {
     { key: "tvac", label: "Total TVAC", align: "right", render: (e) => fmtEur(e.totalTvac) },
     { key: "htva", label: "HTVA", align: "right", render: (e) => fmtEur(e.htva) },
     { key: "vat", label: "TVA %", align: "right", width: "5rem", render: (e) => `${e.vatRate} %` },
-    { key: "paid", label: "Réglé", width: "8rem", render: (e) => <PaidPopover entry={e} onSaved={reload} /> },
+    { key: "paid", label: "Réglé", width: "8rem", render: (e) => <PaidPopover entry={e} onSaved={reload} align="right" /> },
   ];
 
   const purchaseColumns: TableColumn<LedgerEntry>[] = [
@@ -405,7 +406,7 @@ export default function Journal() {
     { key: "vat", label: "TVA", align: "right", render: (e) => fmtEur(e.vatAmount) },
     { key: "tvac", label: "TVAC", align: "right", render: (e) => fmtEur(e.totalTvac) },
     { key: "number", label: "Réf.", render: (e) => e.number ?? "" },
-    { key: "paid", label: "Réglé", width: "8rem", render: (e) => <PaidPopover entry={e} onSaved={reload} /> },
+    { key: "paid", label: "Réglé", width: "8rem", render: (e) => <PaidPopover entry={e} onSaved={reload} align="right" /> },
   ];
 
   const emptyText = book === "ventes" ? `Aucune ligne pour ${monthLabel(ym)}.` : `Aucun achat pour ${monthLabel(ym)}.`;

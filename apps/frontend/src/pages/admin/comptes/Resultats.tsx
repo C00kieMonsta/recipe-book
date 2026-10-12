@@ -9,7 +9,7 @@ import { useReportInputs } from "@/lib/use-report-inputs";
 import { ledgerErrorMessage } from "@/lib/accounting";
 import { exportLedgerXlsx } from "@/lib/ledger-export";
 import { useToast } from "@/hooks/use-toast";
-import { PageHeader, Section, Tag, ListRow, NumericInput, FieldLabel } from "@/components/ui";
+import { ActionMenu, Button, Callout, Checkbox, DateNav, Dialog, FieldLabel, ListRow, NumericInput, Property, PropertyList, Section, SelectPill, Table, Tag, Toolbar, type TableColumn } from "@/components/ui";
 
 const SCENARIO_KEY = "recipe-book:scenario";
 const NOT_CONFIGURED = "Comptabilité non configurée : la table ta-ledger n'existe pas encore";
@@ -81,48 +81,53 @@ function SourceMpDialog({ row, existing, purchases, onClose, onSaved }: {
   };
 
   const option = (value: MpSource, label: string, figure: string) => (
-    <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-2 hover:bg-hover">
-      <input type="radio" name="mp-source" className="h-5 w-5" checked={source === value} onChange={() => setSource(value)} />
-      <span className="flex-1 text-base">{label}</span>
-      <span className="text-base tabular-nums">{figure}</span>
-    </label>
+    <Checkbox
+      shape="circle"
+      checked={source === value}
+      onChange={() => setSource(value)}
+      label={`${label} · ${figure}`}
+      className="mx-0 flex h-8 w-full items-center gap-2 rounded px-2 text-sm hover:bg-hover touch:h-11 touch:text-base"
+    />
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-overlay p-0 md:items-center md:p-4" onClick={onClose}>
-      <div role="dialog" aria-modal="true" aria-labelledby="mp-title" className="max-h-[90vh] w-full max-w-doc overflow-y-auto rounded-t-xl bg-card p-5 md:rounded-xl" onClick={(e) => e.stopPropagation()}>
-        <h2 id="mp-title" className="text-h3">Source MP · {monthLabel(row.ym)}</h2>
-        <p className="mt-1 text-base text-muted-foreground">Le coût matières du mois vient de la source choisie ici.</p>
-        <div className="mt-4 space-y-1">
-          {option("calcule", "Calculé (événements terminés)", fmtEur(row.mp.calcule))}
-          {option("achats", "Achats (entrées MP du journal)", fmtEur(row.mp.achats))}
-          {option("saisi", "Saisi (total du classeur)", row.mp.saisi !== undefined ? fmtEur(row.mp.saisi) : "–")}
-        </div>
-        {source === "saisi" && (
-          <div className="mt-3">
-            <FieldLabel htmlFor="mp-saisi">Montant saisi (HTVA)</FieldLabel>
-            <NumericInput value={saisi} onChange={setSaisi} min={0} className="input-field min-h-11 text-right tabular-nums" suffix="€" />
-          </div>
-        )}
-
-        <h3 className="mt-6 text-base font-semibold">Achats MP du mois</h3>
-        {purchases.length === 0 ? (
-          <p className="mt-1 text-base text-muted-foreground">Aucun achat MP dans le journal pour ce mois.</p>
-        ) : (
-          <div className="mt-1 divide-y divide-border">
-            {purchases.map((p) => (
-              <ListRow key={p.entryId} title={p.label} subtitle={`${dayLabel(p.date)}${p.supplier ? ` · ${p.supplier}` : ""}`} trailing={<span className="tabular-nums">{fmtEur(p.htva)}</span>} to={`/comptes/journal?book=achats&ym=${row.ym}`} />
-            ))}
-          </div>
-        )}
-        <Link to={`/comptes/journal?book=achats&ym=${row.ym}`} className="mt-2 inline-flex min-h-11 items-center text-base text-primary hover:underline">Ajouter un achat</Link>
-
-        <div className="mt-6 flex flex-wrap justify-end gap-2">
-          <button type="button" onClick={onClose} className="min-h-11 rounded-lg border px-4 text-base hover:bg-hover">Annuler</button>
-          <button type="button" onClick={save} disabled={saving} className="min-h-11 rounded-lg bg-primary px-4 text-base font-medium text-primary-foreground disabled:opacity-60">Enregistrer</button>
-        </div>
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Source MP · ${monthLabel(row.ym)}`}
+      size="md"
+      footer={
+        <>
+          <Button variant="default" size="md" onClick={onClose}>Annuler</Button>
+          <Button variant="primary" size="md" onClick={save} disabled={saving}>Enregistrer</Button>
+        </>
+      }
+    >
+      <p className="text-sm text-muted-foreground">Le coût matières du mois vient de la source choisie ici.</p>
+      <div className="-mx-2 mt-3 flex flex-col">
+        {option("calcule", "Calculé (événements terminés)", fmtEur(row.mp.calcule))}
+        {option("achats", "Achats (entrées MP du journal)", fmtEur(row.mp.achats))}
+        {option("saisi", "Saisi (total du classeur)", row.mp.saisi !== undefined ? fmtEur(row.mp.saisi) : "–")}
       </div>
-    </div>
+      {source === "saisi" && (
+        <div className="mt-3">
+          <FieldLabel htmlFor="mp-saisi">Montant saisi (HTVA)</FieldLabel>
+          <NumericInput id="mp-saisi" value={saisi} onChange={setSaisi} min={0} className="input-field text-right tabular-nums" suffix="€" />
+        </div>
+      )}
+
+      <h3 className="mt-5 text-base font-semibold">Achats MP du mois</h3>
+      {purchases.length === 0 ? (
+        <p className="mt-1 text-sm text-muted-foreground">Aucun achat MP dans le journal pour ce mois.</p>
+      ) : (
+        <div className="mt-1 divide-y divide-border">
+          {purchases.map((p) => (
+            <ListRow key={p.entryId} title={p.label} subtitle={`${dayLabel(p.date)}${p.supplier ? ` · ${p.supplier}` : ""}`} trailing={<span className="text-foreground">{fmtEur(p.htva)}</span>} to={`/comptes/journal?book=achats&ym=${row.ym}`} />
+          ))}
+        </div>
+      )}
+      <Button as={Link} to={`/comptes/journal?book=achats&ym=${row.ym}`} variant="link" size="sm" className="mt-2 -ml-2">Ajouter un achat</Button>
+    </Dialog>
   );
 }
 
@@ -138,12 +143,6 @@ export default function Resultats() {
 
   const nowYear = new Date().getFullYear();
   const currentYm = `${nowYear}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
-
-  const years = useMemo(() => {
-    const ys = new Set<number>([nowYear - 3, nowYear - 2, nowYear - 1, nowYear, nowYear + 1, year]);
-    for (const k of Object.keys(settings?.objectives ?? {})) ys.add(Number(k));
-    return Array.from(ys).filter((y) => Number.isInteger(y)).sort();
-  }, [settings, year, nowYear]);
 
   const st = useMemo(() => (inputs ? incomeStatement(year, inputs, scenario) : null), [inputs, year, scenario]);
   const objective = settings?.objectives?.[String(year)];
@@ -175,224 +174,144 @@ export default function Resultats() {
   const purchasesOf = (ym: string) => entries.filter((e) => e.book === "achats" && e.kind === "mp" && e.date.slice(0, 7) === ym);
 
   const mpCell = (r: IncomeRow) => (
-    <button type="button" onClick={() => setMpRow(r)} className="flex min-h-11 w-full flex-col items-end justify-center rounded px-1 text-right hover:bg-hover" aria-label={`Source MP ${monthLabel(r.ym)}`}>
+    <button type="button" onClick={() => setMpRow(r)} className="-mx-1 flex h-7 flex-col items-end justify-center rounded px-1 text-right hover:bg-hover touch:h-11" aria-label={`Source MP ${monthLabel(r.ym)}`}>
       <span className="flex items-center gap-1 tabular-nums">
         {fmtEur(r.mp.amount)}
-        <Tag variant={r.mp.source === "saisi" ? "neutral" : r.mp.source === "achats" ? "info" : "primary"}>{MP_LABEL[r.mp.source]}</Tag>
+        <Tag colour={r.mp.source === "saisi" ? "gray" : r.mp.source === "achats" ? "purple" : "blue"}>{MP_LABEL[r.mp.source]}</Tag>
       </span>
-      {r.mp.achatsPartiels !== undefined && (
-        <span className="flex items-center gap-1 text-sm text-muted-foreground tabular-nums">{fmtEur(r.mp.achatsPartiels)} <Tag variant="warning">achats partiels</Tag></span>
-      )}
     </button>
   );
 
   const mpNote = (r: IncomeRow) => {
     if (r.ym >= currentYm) {
-      return r.mp.upcoming !== undefined ? <span className="text-sm text-muted-foreground tabular-nums">MP prévu {fmtEur(r.mp.upcoming)}</span> : null;
+      return r.mp.upcoming !== undefined ? <span className="text-caption text-muted-foreground tabular-nums">MP prévu {fmtEur(r.mp.upcoming)}</span> : null;
+    }
+    if (r.mp.achatsPartiels !== undefined) {
+      return <span className="text-caption text-muted-foreground tabular-nums">{fmtEur(r.mp.achatsPartiels)} achats partiels</span>;
     }
     return r.mp.nonTermines ? (
-      <Link to="/events" className="text-sm text-warning hover:underline" onClick={(e) => e.stopPropagation()}>
+      <Link to="/events" className="text-caption text-warning hover:underline" onClick={(e) => e.stopPropagation()}>
         {r.mp.nonTermines} {r.mp.nonTermines > 1 ? "événements non terminés" : "événement non terminé"}
       </Link>
     ) : null;
   };
 
-  const personnelLink = (r: IncomeRow) => (
-    <Link to={`/comptes/journal?book=achats&kind=personnel&ym=${r.ym}`} className="inline-flex min-h-11 items-center justify-end tabular-nums hover:underline">{fmtEur(r.personnelExtra)}</Link>
+  const neg = (n: number) => (n < 0 ? "text-danger" : "");
+
+  const columns: TableColumn<IncomeRow>[] = [
+    { key: "month", label: "Mois", render: (r) => <Link to={`/comptes/journal?ym=${r.ym}`} className="font-medium hover:underline">{monthName(r.ym)}</Link> },
+    { key: "ca", label: "CA HTVA", align: "right", render: (r) => fmtEur(r.ca) },
+    { key: "mp", label: "Coûts MP", align: "right", render: (r) => <span className="flex flex-col items-end">{mpCell(r)}{mpNote(r)}</span> },
+    { key: "marge", label: "Marge brute", align: "right", render: (r) => signed(r.margeBrute) },
+    { key: "autresProduits", label: "Autres produits", align: "right", render: (r) => fmtEur(r.autresProduits) },
+    { key: "charges", label: "Charges fixes", align: "right", render: (r) => fmtEur(r.chargesFixes) },
+    { key: "personnel", label: "Personnel extra", align: "right", render: (r) => <Link to={`/comptes/journal?book=achats&kind=personnel&ym=${r.ym}`} className="tabular-nums hover:underline">{fmtEur(r.personnelExtra)}</Link> },
+    { key: "autresCouts", label: "Autres coûts", align: "right", render: (r) => fmtEur(r.autresCouts) },
+    { key: "resultat", label: "Résultat avant impôts", align: "right", render: (r) => <span className={`font-medium ${neg(r.resultat)}`}>{signed(r.resultat)}</span> },
+    { key: "margePct", label: "Marge %", align: "right", render: (r) => fmtPct(r.margePct) },
+    { key: "impots", label: "Impôts (estimation)", align: "right", render: (r) => fmtEur(r.impots) },
+    { key: "net", label: "Résultat net", align: "right", trailing: true, render: (r) => <span className={`font-medium ${neg(r.resultatNet)}`}>{signed(r.resultatNet)}</span> },
+  ];
+
+  const scenarioPill = (
+    <SelectPill
+      value={scenario}
+      options={[{ value: "avec", label: "Avec salarié" }, { value: "seule", label: "Seule" }]}
+      colour="gray"
+      align="right"
+      aria-label="Scénario de simulation"
+      onChange={(v) => pickScenario(v as Scenario)}
+    />
   );
 
-  const scenarioPicker = (
-    <select aria-label="Scénario de simulation" className="input-field input-compact min-h-11 w-auto" value={scenario} onChange={(e) => pickScenario(e.target.value as Scenario)}>
-      <option value="avec">Avec salarié</option>
-      <option value="seule">Seule</option>
-    </select>
+  const ratio = (label: string, value: string) => (
+    <div className="flex h-8 items-center justify-between gap-3 border-b border-border text-sm last:border-b-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="tabular-nums">{value}</span>
+    </div>
   );
 
   return (
-    <div className="max-w-wide mx-auto">
-      <PageHeader
-        breadcrumb={[{ label: "Comptabilité", to: "/comptes" }, { label: "Compte de résultats" }]}
-        title={`Compte de résultats ${year}`}
-        meta="Gestion, HTVA. Les mois réalisés lisent le journal; les charges fixes sont celles du scénario avec salarié."
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <select aria-label="Année" className="input-field min-h-11 w-auto" value={year} onChange={(e) => setYear(Number(e.target.value))}>
-              {years.map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
-            <button type="button" disabled={!inputs} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border px-4 text-base hover:bg-hover disabled:opacity-50" onClick={onExport}>
-              <Download className="h-4 w-4" /> Exporter {year} (xlsx)
-            </button>
-          </div>
-        }
+    <div>
+      <Toolbar
+        left={<DateNav label={String(year)} onPrev={() => setYear(year - 1)} onNext={() => setYear(year + 1)} isToday={year === nowYear} onToday={() => setYear(nowYear)} todayLabel="Cette année" />}
+        right={<ActionMenu items={[{ label: `Exporter ${year} (xlsx)`, icon: <Download />, onClick: onExport, disabled: !inputs }]} />}
       />
+      <p className="mt-3 text-sm text-muted-foreground">Gestion, HTVA. Les mois réalisés lisent le journal; les charges fixes sont celles du scénario avec salarié.</p>
 
-      {notConfigured && <p className="card-elevated mb-6 p-4 text-base text-muted-foreground">{NOT_CONFIGURED}</p>}
-      {error && <p className="mb-6 text-base text-destructive">{error}</p>}
-      {loading && <p className="text-base text-muted-foreground">Chargement…</p>}
+      {notConfigured && <div className="mt-4"><Callout emoji="💶">{NOT_CONFIGURED}</Callout></div>}
+      {error && <div className="mt-4"><Callout tone="danger">{error}</Callout></div>}
+      {loading && <p className="mt-4 text-sm text-muted-foreground">Chargement…</p>}
 
       {st && (
         <>
-          {/* Desktop table */}
-          <div className="hidden overflow-x-auto md:block">
-            <table className="table min-w-[1100px]">
-              <thead>
-                <tr className="text-muted-foreground">
-                  <th className="sticky left-0 bg-background">Mois</th>
-                  <th className="text-right">CA HTVA</th>
-                  <th className="text-right">Coûts MP</th>
-                  <th className="text-right">Marge brute</th>
-                  <th className="text-right">Autres produits</th>
-                  <th className="text-right">Charges fixes</th>
-                  <th className="text-right">Personnel extra</th>
-                  <th className="text-right">Autres coûts</th>
-                  <th className="text-right">Résultat avant impôts</th>
-                  <th className="text-right">Marge %</th>
-                  <th className="text-right">Impôts (estimation)</th>
-                  <th className="text-right">Résultat net</th>
-                </tr>
-              </thead>
-              <tbody>
-                {st.months.map((r) => (
-                  <tr key={r.ym} className="border-t border-border align-top">
-                    <td className="sticky left-0 bg-background"><Link to={`/comptes/journal?ym=${r.ym}`} className="inline-flex min-h-11 items-center font-medium hover:underline">{monthName(r.ym)}</Link></td>
-                    <td className="text-right">{fmtEur(r.ca)}</td>
-                    <td className="text-right">{mpCell(r)}<div className="text-right">{mpNote(r)}</div></td>
-                    <td className="text-right">{signed(r.margeBrute)}</td>
-                    <td className="text-right">{fmtEur(r.autresProduits)}</td>
-                    <td className="text-right">{fmtEur(r.chargesFixes)}</td>
-                    <td className="text-right">{personnelLink(r)}</td>
-                    <td className="text-right">{fmtEur(r.autresCouts)}</td>
-                    <td className={`text-right font-medium ${r.resultat < 0 ? "text-destructive" : ""}`}>{signed(r.resultat)}</td>
-                    <td className="text-right">{fmtPct(r.margePct)}</td>
-                    <td className="text-right">{fmtEur(r.impots)}</td>
-                    <td className={`text-right font-medium ${r.resultatNet < 0 ? "text-destructive" : ""}`}>{signed(r.resultatNet)}</td>
-                  </tr>
+          <div className="mt-4">
+            <Table
+              columns={columns}
+              rows={st.months}
+              rowKey={(r) => r.ym}
+              className="md:overflow-x-auto"
+              footer={{
+                month: "Total année",
+                ca: fmtEur(st.annual.ca),
+                mp: fmtEur(st.annual.mp),
+                marge: signed(st.annual.margeBrute),
+                autresProduits: fmtEur(st.annual.autresProduits),
+                charges: fmtEur(st.annual.chargesFixes),
+                personnel: fmtEur(st.annual.personnelExtra),
+                autresCouts: fmtEur(st.annual.autresCouts),
+                resultat: <span className={neg(st.annual.resultat)}>{signed(st.annual.resultat)}</span>,
+                margePct: fmtPct(st.annual.margePct),
+                impots: <span className="inline-flex items-center gap-1">{fmtEur(st.annual.impots)}{st.annual.impotsSource === "reel" && <Tag colour="green">réel</Tag>}</span>,
+                net: <span className={neg(st.annual.resultatNet)}>{signed(st.annual.resultatNet)}</span>,
+              }}
+            />
+          </div>
+          <p className="mt-3 text-sm text-muted-foreground">Impôts : le total annuel est calculé sur le résultat cumulé, pas additionné.</p>
+
+          <Section title="Ratios">
+            <div className="max-w-doc">
+              {ratio("MP / CA", fmtPct(st.ratios.mpSurCa))}
+              {ratio("Marge brute / CA", fmtPct(st.ratios.margeBruteSurCa))}
+              {ratio("Charges fixes / CA", fmtPct(st.ratios.chargesFixesSurCa))}
+            </div>
+          </Section>
+
+          {st.simulation && (
+            <Section title="Simulation" action={scenarioPill}>
+              <dl className="grid grid-cols-2 rounded-lg bg-surface text-base tabular-nums md:grid-cols-4">
+                {([
+                  ["CA", fmtEur(st.simulation.ca), ""],
+                  ["MP", fmtEur(st.simulation.mp), ""],
+                  ["Marge brute", signed(st.simulation.margeBrute), ""],
+                  ["Charges fixes", fmtEur(st.simulation.chargesFixes), ""],
+                  ["Personnel extra", fmtEur(st.simulation.personnelExtra), ""],
+                  ["Résultat avant impôts", signed(st.simulation.resultat), neg(st.simulation.resultat)],
+                  ["Impôts", fmtEur(st.simulation.impots), ""],
+                  ["Résultat net", signed(st.simulation.resultatNet), neg(st.simulation.resultatNet)],
+                ] as const).map(([label, value, cls]) => (
+                  <div key={label} className="p-3">
+                    <dt className="text-sm text-muted-foreground">{label}</dt>
+                    <dd className={`mt-0.5 text-h3 ${cls}`}>{value}</dd>
+                  </div>
                 ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td className="sticky left-0 bg-background">Total année</td>
-                  <td className="text-right">{fmtEur(st.annual.ca)}</td>
-                  <td className="text-right">{fmtEur(st.annual.mp)}</td>
-                  <td className="text-right">{signed(st.annual.margeBrute)}</td>
-                  <td className="text-right">{fmtEur(st.annual.autresProduits)}</td>
-                  <td className="text-right">{fmtEur(st.annual.chargesFixes)}</td>
-                  <td className="text-right">{fmtEur(st.annual.personnelExtra)}</td>
-                  <td className="text-right">{fmtEur(st.annual.autresCouts)}</td>
-                  <td className={`text-right ${st.annual.resultat < 0 ? "text-destructive" : ""}`}>{signed(st.annual.resultat)}</td>
-                  <td className="text-right">{fmtPct(st.annual.margePct)}</td>
-                  <td className="text-right">
-                    <span className="inline-flex items-center gap-1">{fmtEur(st.annual.impots)}{st.annual.impotsSource === "reel" && <Tag variant="success">réel</Tag>}</span>
-                  </td>
-                  <td className={`text-right ${st.annual.resultatNet < 0 ? "text-destructive" : ""}`}>{signed(st.annual.resultatNet)}</td>
-                </tr>
-                <tr className="text-muted-foreground">
-                  <td className="sticky left-0 bg-background font-normal">MP / CA</td>
-                  <td /><td className="text-right font-normal">{fmtPct(st.ratios.mpSurCa)}</td><td colSpan={9} />
-                </tr>
-                <tr className="text-muted-foreground">
-                  <td className="sticky left-0 bg-background font-normal">Marge brute / CA</td>
-                  <td /><td /><td className="text-right font-normal">{fmtPct(st.ratios.margeBruteSurCa)}</td><td colSpan={8} />
-                </tr>
-                <tr className="text-muted-foreground">
-                  <td className="sticky left-0 bg-background font-normal">Charges fixes / CA</td>
-                  <td colSpan={4} /><td className="text-right font-normal">{fmtPct(st.ratios.chargesFixesSurCa)}</td><td colSpan={6} />
-                </tr>
-                {st.simulation && (
-                  <tr className="border-t border-border">
-                    <td className="sticky left-0 bg-background"><span className="flex flex-col gap-1"><span>Simulation</span>{scenarioPicker}</span></td>
-                    <td className="text-right">{fmtEur(st.simulation.ca)}</td>
-                    <td className="text-right">{fmtEur(st.simulation.mp)}</td>
-                    <td className="text-right">{signed(st.simulation.margeBrute)}</td>
-                    <td className="text-right">–</td>
-                    <td className="text-right">{fmtEur(st.simulation.chargesFixes)}</td>
-                    <td className="text-right">{fmtEur(st.simulation.personnelExtra)}</td>
-                    <td className="text-right">–</td>
-                    <td className={`text-right ${st.simulation.resultat < 0 ? "text-destructive" : ""}`}>{signed(st.simulation.resultat)}</td>
-                    <td className="text-right">{fmtPct(st.simulation.margePct)}</td>
-                    <td className="text-right">{fmtEur(st.simulation.impots)}</td>
-                    <td className={`text-right ${st.simulation.resultatNet < 0 ? "text-destructive" : ""}`}>{signed(st.simulation.resultatNet)}</td>
-                  </tr>
-                )}
-              </tfoot>
-            </table>
-          </div>
-
-          {/* Phone cards */}
-          <div className="space-y-3 md:hidden">
-            {st.months.map((r) => (
-              <div key={r.ym} className="card-elevated p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <Link to={`/comptes/journal?ym=${r.ym}`} className="text-base font-semibold hover:underline">{monthLabel(r.ym)}</Link>
-                  <span className={`text-base font-semibold tabular-nums ${r.resultatNet < 0 ? "text-destructive" : ""}`}>{signed(r.resultatNet)}</span>
-                </div>
-                <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-base tabular-nums">
-                  <div><dt className="text-sm text-muted-foreground">CA HTVA</dt><dd>{fmtEur(r.ca)}</dd></div>
-                  <div><dt className="text-sm text-muted-foreground">Coûts MP</dt><dd>{mpCell(r)}{mpNote(r)}</dd></div>
-                  <div><dt className="text-sm text-muted-foreground">Résultat avant impôts</dt><dd className={r.resultat < 0 ? "text-destructive" : ""}>{signed(r.resultat)}</dd></div>
-                  <div><dt className="text-sm text-muted-foreground">Résultat net</dt><dd className={r.resultatNet < 0 ? "text-destructive" : ""}>{signed(r.resultatNet)}</dd></div>
-                </dl>
-                <details className="mt-2">
-                  <summary className="flex min-h-11 cursor-pointer items-center text-base text-muted-foreground">Détails</summary>
-                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-base tabular-nums">
-                    <div><dt className="text-sm text-muted-foreground">Marge brute</dt><dd>{signed(r.margeBrute)}</dd></div>
-                    <div><dt className="text-sm text-muted-foreground">Autres produits</dt><dd>{fmtEur(r.autresProduits)}</dd></div>
-                    <div><dt className="text-sm text-muted-foreground">Charges fixes</dt><dd>{fmtEur(r.chargesFixes)}</dd></div>
-                    <div><dt className="text-sm text-muted-foreground">Personnel extra</dt><dd>{personnelLink(r)}</dd></div>
-                    <div><dt className="text-sm text-muted-foreground">Autres coûts</dt><dd>{fmtEur(r.autresCouts)}</dd></div>
-                    <div><dt className="text-sm text-muted-foreground">Marge %</dt><dd>{fmtPct(r.margePct)}</dd></div>
-                    <div><dt className="text-sm text-muted-foreground">Impôts (estimation)</dt><dd>{fmtEur(r.impots)}</dd></div>
-                  </dl>
-                </details>
-              </div>
-            ))}
-            <div className="card-elevated p-4">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-base font-semibold">Total année</span>
-                <span className={`text-base font-semibold tabular-nums ${st.annual.resultatNet < 0 ? "text-destructive" : ""}`}>{signed(st.annual.resultatNet)}</span>
-              </div>
-              <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-base tabular-nums">
-                <div><dt className="text-sm text-muted-foreground">CA HTVA</dt><dd>{fmtEur(st.annual.ca)}</dd></div>
-                <div><dt className="text-sm text-muted-foreground">Coûts MP</dt><dd>{fmtEur(st.annual.mp)}</dd></div>
-                <div><dt className="text-sm text-muted-foreground">Résultat avant impôts</dt><dd className={st.annual.resultat < 0 ? "text-destructive" : ""}>{signed(st.annual.resultat)}</dd></div>
-                <div><dt className="text-sm text-muted-foreground">Impôts</dt><dd className="flex items-center gap-1">{fmtEur(st.annual.impots)}{st.annual.impotsSource === "reel" && <Tag variant="success">réel</Tag>}</dd></div>
-                <div><dt className="text-sm text-muted-foreground">MP / CA</dt><dd>{fmtPct(st.ratios.mpSurCa)}</dd></div>
-                <div><dt className="text-sm text-muted-foreground">Marge brute / CA</dt><dd>{fmtPct(st.ratios.margeBruteSurCa)}</dd></div>
-                <div><dt className="text-sm text-muted-foreground">Charges fixes / CA</dt><dd>{fmtPct(st.ratios.chargesFixesSurCa)}</dd></div>
               </dl>
-            </div>
-            {st.simulation && (
-              <div className="card-elevated p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-base font-semibold">Simulation</span>
-                  {scenarioPicker}
-                </div>
-                <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-base tabular-nums">
-                  <div><dt className="text-sm text-muted-foreground">CA</dt><dd>{fmtEur(st.simulation.ca)}</dd></div>
-                  <div><dt className="text-sm text-muted-foreground">MP</dt><dd>{fmtEur(st.simulation.mp)}</dd></div>
-                  <div><dt className="text-sm text-muted-foreground">Charges fixes</dt><dd>{fmtEur(st.simulation.chargesFixes)}</dd></div>
-                  <div><dt className="text-sm text-muted-foreground">Personnel extra</dt><dd>{fmtEur(st.simulation.personnelExtra)}</dd></div>
-                  <div><dt className="text-sm text-muted-foreground">Résultat avant impôts</dt><dd>{signed(st.simulation.resultat)}</dd></div>
-                  <div><dt className="text-sm text-muted-foreground">Résultat net</dt><dd>{signed(st.simulation.resultatNet)}</dd></div>
-                </dl>
-              </div>
-            )}
-          </div>
+              <p className="mt-2 text-sm text-muted-foreground">Marge {fmtPct(st.simulation.margePct)}</p>
+            </Section>
+          )}
 
-          <p className="mt-3 text-base text-muted-foreground">Impôts : le total annuel est calculé sur le résultat cumulé, pas additionné.</p>
-
-          <Section title={`Taux ISoc ${fmtPct(taxRate, 0)}`} meta={objective?.smeReducedRate ? "taux réduit PME activé" : undefined} action={<Link to={`/comptes/previsionnel?year=${year}`} className="inline-flex min-h-11 items-center text-base text-primary hover:underline">Objectif dans le Prévisionnel</Link>}>
-            <div className="flex flex-wrap items-end gap-4">
-              <div>
-                <FieldLabel htmlFor="res-isoc">Taux ISoc</FieldLabel>
-                <NumericInput value={round2(taxRate * 100)} min={0} onChange={(v) => void saveTax({ corporateTaxRate: Math.min(1, v / 100) })} className="input-field min-h-11 w-24 text-right tabular-nums" suffix="%" />
-              </div>
-              <label className="flex min-h-11 cursor-pointer items-center gap-3 text-base">
-                <input type="checkbox" className="h-5 w-5" checked={Boolean(objective?.smeReducedRate)} onChange={(e) => void saveTax({ smeReducedRate: e.target.checked || undefined })} />
-                Taux réduit PME
-              </label>
-            </div>
-            <p className="mt-3 max-w-doc text-base text-muted-foreground">{ISOC_HELP}</p>
+          <Section
+            title={`Taux ISoc ${fmtPct(taxRate, 0)}`}
+            meta={objective?.smeReducedRate ? "taux réduit PME activé" : undefined}
+            action={<Button as={Link} to={`/comptes/previsionnel?year=${year}`} variant="subtle" size="sm">Objectif dans le Prévisionnel</Button>}
+          >
+            <PropertyList className="mt-0 max-w-doc">
+              <Property label="Taux ISoc" kind="number" value={round2(taxRate * 100)} min={0} max={100} decimals={2} suffix="%" onSave={(v) => saveTax({ corporateTaxRate: Math.min(1, v / 100) })} />
+              <Property label="Taux réduit PME" kind="custom">
+                <Checkbox checked={Boolean(objective?.smeReducedRate)} onChange={(on) => void saveTax({ smeReducedRate: on || undefined })} label={objective?.smeReducedRate ? "Activé" : "Désactivé"} className="-mx-1" />
+              </Property>
+            </PropertyList>
+            <p className="mt-3 max-w-doc text-sm text-muted-foreground">{ISOC_HELP}</p>
           </Section>
         </>
       )}

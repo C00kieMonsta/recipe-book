@@ -1,23 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import type { AppSettings, DuplicateConfidence, GroceryList, Ingredient, Recipe, UnitPrice, UnitQty } from "@packages/types";
 import { PRICE_TO_QTY_UNIT, damerauLevenshtein, normalizeIngredientName } from "@packages/types";
 import { api, ApiError } from "@/lib/api";
 import type { DuplicateGroupDetail, DuplicateMemberDetail } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { fmt } from "@/lib/recipe-helpers";
-import { PageHeader, Tag, SearchSelect, SupplierTag } from "@/components/ui";
+import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
+import { PageHeader, Tag, SearchSelect, SupplierTag, Section, Button, Callout, Checkbox, EmptyState, type TagColour } from "@/components/ui";
 
 const NOTICE_KEY = "ingredientMergeNoticeSeen";
 const FUZZY_MIN_LEN = 5;
 
 const QTY_LABEL: Record<UnitQty, string> = { g: "grammes", "pièce": "pièces", ml: "millilitres", botte: "bottes" };
 
-const CONFIDENCE: Record<DuplicateConfidence, { label: string; variant: "success" | "warning" | "neutral" }> = {
-  identique: { label: "Identique", variant: "success" },
-  proche: { label: "Proche", variant: "warning" },
-  a_verifier: { label: "À vérifier", variant: "neutral" },
+const CONFIDENCE: Record<DuplicateConfidence, { label: string; colour: TagColour }> = {
+  identique: { label: "Identique", colour: "green" },
+  proche: { label: "Proche", colour: "yellow" },
+  a_verifier: { label: "À vérifier", colour: "gray" },
 };
 
 interface GroupState {
@@ -88,6 +89,9 @@ export default function IngredientDuplicates() {
   const [manualA, setManualA] = useState("");
   const [manualB, setManualB] = useState("");
   const { toast } = useToast();
+
+  useBackLink({ to: "/ingredients", label: "Ingrédients" });
+  useTopTitle("Doublons");
 
   useEffect(() => {
     let cancelled = false;
@@ -237,31 +241,26 @@ export default function IngredientDuplicates() {
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
 
   return (
-    <div className="max-w-doc mx-auto">
+    <div className="mx-auto max-w-doc">
       <PageHeader
         breadcrumb={[{ label: "Ingrédients", to: "/ingredients" }, { label: "Doublons" }]}
+        iconKey="ingredients"
         title="Doublons d'ingrédients"
         meta={`${groups.length} groupe${groups.length > 1 ? "s" : ""} · ${totalMembers} ingrédient${totalMembers > 1 ? "s" : ""}`}
       />
 
-      {loadError && (
-        <div className="mb-6 rounded-lg bg-destructive-soft px-4 py-3 text-base text-destructive">{loadError}</div>
-      )}
+      {loadError && <Callout emoji="⚠️" tone="danger">{loadError}</Callout>}
 
-      <section className="rounded-xl border border-border bg-card p-4">
-        <h2 className="text-h3">Comparer deux ingrédients</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Construit un groupe manuel à partir de deux ingrédients de votre choix.</p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+      <Section title="Comparer deux ingrédients" meta="construit un groupe manuel" className="!mt-0">
+        <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
           <SearchSelect options={ingredientOptions} value={manualA} onChange={setManualA} placeholder="Premier ingrédient…" />
           <SearchSelect options={ingredientOptions} value={manualB} onChange={setManualB} placeholder="Second ingrédient…" />
-          <button type="button" onClick={addManualGroup} disabled={!manualA || !manualB || manualA === manualB} className="min-h-11 px-4 border rounded-lg text-sm font-medium hover:bg-hover disabled:opacity-50">
-            Comparer
-          </button>
+          <Button variant="default" size="md" onClick={addManualGroup} disabled={!manualA || !manualB || manualA === manualB}>Comparer</Button>
         </div>
-      </section>
+      </Section>
 
       {groups.length === 0 && !loadError && (
-        <p className="mt-block text-base text-muted-foreground">Aucun doublon probable. <Link to="/ingredients" className="underline">Retour aux ingrédients</Link></p>
+        <EmptyState message="Aucun doublon probable." action={{ label: "Retour aux ingrédients", to: "/ingredients" }} />
       )}
 
       {groups.map((g) => {
@@ -271,113 +270,112 @@ export default function IngredientDuplicates() {
           : g.members.reduce((n, m) => n + m.recipeCount, 0);
         return (
           <section key={g.id} className="mt-block">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h2 className="text-h3">{survivor.name}</h2>
-              <span className="text-caption text-muted-foreground">{g.key}</span>
-              <span className="text-sm text-muted-foreground">{g.members.length} variantes · {recipeTotal} recette{recipeTotal > 1 ? "s" : ""}</span>
-              {g.manual && <Tag variant="info">Groupe manuel</Tag>}
-            </div>
+            <Callout
+              emoji="🧅"
+              title={
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate">{survivor.name}</span>
+                  <span className="truncate font-normal text-muted-foreground">{g.members.length} variantes · {recipeTotal} recette{recipeTotal > 1 ? "s" : ""}</span>
+                  {g.manual && <Tag colour="blue">Groupe manuel</Tag>}
+                </span>
+              }
+              count={g.members.length}
+            >
+              <div className="-mx-1 mt-1">
+                {g.members.map((m) => {
+                  const isSurvivor = m.ingredientId === survivor.ingredientId;
+                  const mismatch = !isSurvivor && !sameFamily(m.unit, survivor.unit);
+                  const usedBy = recipesUsing.get(m.ingredientId);
+                  const recipeCount = usedBy ? usedBy.length : m.recipeCount;
+                  const listCount = listsUsing.get(m.ingredientId) ?? m.listCount;
+                  const conf = CONFIDENCE[m.confidence];
+                  return (
+                    <div key={m.ingredientId} className="flex flex-wrap items-start gap-x-2 gap-y-1 rounded px-1 py-1 hover:bg-hover">
+                      <div className="flex shrink-0 items-center">
+                        <Checkbox shape="circle" checked={isSurvivor} onChange={() => setSurvivor(g.id, m.ingredientId)} disabled={g.merging} label={<span className="hidden sm:inline">Conserver</span>} aria-label="Conserver" className="w-auto" />
+                        {isSurvivor ? (
+                          <span className="inline-block w-7 sm:w-[84px]" aria-hidden="true" />
+                        ) : (
+                          <Checkbox checked={g.included.has(m.ingredientId)} onChange={() => toggleInclude(g.id, m.ingredientId)} disabled={mismatch || g.merging} label={<span className="hidden sm:inline">Inclure</span>} aria-label="Inclure" className="w-auto" />
+                        )}
+                      </div>
 
-            <div className="mt-3 rounded-xl border border-border bg-card px-3">
-              {g.members.map((m) => {
-                const isSurvivor = m.ingredientId === survivor.ingredientId;
-                const mismatch = !isSurvivor && !sameFamily(m.unit, survivor.unit);
-                const usedBy = recipesUsing.get(m.ingredientId);
-                const recipeCount = usedBy ? usedBy.length : m.recipeCount;
-                const listCount = listsUsing.get(m.ingredientId) ?? m.listCount;
-                const conf = CONFIDENCE[m.confidence];
-                return (
-                  <div key={m.ingredientId} className="flex flex-wrap items-start gap-x-2 gap-y-1 py-3 border-t border-border/50 first:border-t-0">
-                    <div className="flex items-center shrink-0">
-                      <label className="inline-flex items-center gap-1.5 min-h-11 min-w-11 px-1 cursor-pointer text-sm">
-                        <input type="radio" name={`survivor-${g.id}`} className="h-5 w-5 accent-primary" checked={isSurvivor} onChange={() => setSurvivor(g.id, m.ingredientId)} disabled={g.merging} />
-                        <span className="hidden sm:inline">Conserver</span>
-                      </label>
-                      {isSurvivor ? (
-                        <span className="inline-block min-w-11 sm:min-w-[88px]" aria-hidden="true" />
-                      ) : (
-                        <label className={`inline-flex items-center gap-1.5 min-h-11 min-w-11 px-1 text-sm ${mismatch ? "cursor-not-allowed text-muted-foreground" : "cursor-pointer"}`}>
-                          <input type="checkbox" className="h-5 w-5 accent-primary" checked={g.included.has(m.ingredientId)} onChange={() => toggleInclude(g.id, m.ingredientId)} disabled={mismatch || g.merging} />
-                          <span className="hidden sm:inline">Inclure</span>
-                        </label>
+                      <div className={`min-w-0 flex-1 basis-56 ${mismatch ? "opacity-60" : ""}`}>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-base font-medium">{m.name}</span>
+                          {isSurvivor ? <Tag colour="blue">Conservé</Tag> : <Tag colour={conf.colour}>{conf.label}</Tag>}
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
+                          <span className="tabular-nums">{fmt(m.price)} {m.unit}</span>
+                          {m.supplier && (<><span aria-hidden="true">·</span><SupplierTag name={m.supplier} /></>)}
+                          <span aria-hidden="true">·</span>
+                          <span>dans {recipeCount} recette{recipeCount > 1 ? "s" : ""} · {listCount} liste{listCount > 1 ? "s" : ""}</span>
+                          {m.updatedAt && (<><span aria-hidden="true">·</span><span>maj {new Date(m.updatedAt).toLocaleDateString("fr-BE")}</span></>)}
+                        </div>
+                      </div>
+
+                      {mismatch && (
+                        <div className="basis-full pl-1 text-sm sm:pl-[136px]">
+                          <p className="font-medium text-warning">Unité différente ({m.unit} vs {survivor.unit})</p>
+                          {usedBy && usedBy.length > 0 && (
+                            <details className="mt-1">
+                              <summary className="inline-flex min-h-7 cursor-pointer items-center text-primary touch:min-h-11">Voir {usedBy.length > 1 ? `les ${usedBy.length} recettes` : "la recette"}</summary>
+                              <ul className="mt-1 list-disc pl-5">
+                                {usedBy.map((r) => (
+                                  <li key={r.recipeId}><Link to={`/recipes/${r.recipeId}`} className="text-primary">{r.name}</Link></li>
+                                ))}
+                              </ul>
+                            </details>
+                          )}
+                          <p className="mt-1 text-muted-foreground">
+                            Ces recettes utilisent cet ingrédient en {QTY_LABEL[PRICE_TO_QTY_UNIT[m.unit]]}. Convertissez leurs quantités en {QTY_LABEL[PRICE_TO_QTY_UNIT[survivor.unit]]}, puis revenez fusionner.
+                          </p>
+                        </div>
                       )}
                     </div>
-
-                    <div className={`min-w-0 flex-1 basis-56 ${mismatch ? "opacity-60" : ""}`}>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-base font-medium">{m.name}</span>
-                        {isSurvivor ? <Tag variant="primary">Conservé</Tag> : <Tag variant={conf.variant}>{conf.label}</Tag>}
-                      </div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
-                        <span className="tabular-nums">{fmt(m.price)} {m.unit}</span>
-                        {m.supplier && (<><span aria-hidden="true">·</span><SupplierTag name={m.supplier} /></>)}
-                        <span aria-hidden="true">·</span>
-                        <span>dans {recipeCount} recette{recipeCount > 1 ? "s" : ""} · {listCount} liste{listCount > 1 ? "s" : ""}</span>
-                        {m.updatedAt && (<><span aria-hidden="true">·</span><span>maj {new Date(m.updatedAt).toLocaleDateString("fr-BE")}</span></>)}
-                      </div>
-                    </div>
-
-                    {mismatch && (
-                      <div className="basis-full pl-1 sm:pl-[136px] text-sm">
-                        <p className="text-warning font-medium">Unité différente ({m.unit} vs {survivor.unit})</p>
-                        {usedBy && usedBy.length > 0 && (
-                          <details className="mt-1">
-                            <summary className="cursor-pointer underline min-h-11 inline-flex items-center">Voir {usedBy.length > 1 ? `les ${usedBy.length} recettes` : "la recette"}</summary>
-                            <ul className="mt-1 list-disc pl-5">
-                              {usedBy.map((r) => (
-                                <li key={r.recipeId}><Link to={`/recipes/${r.recipeId}`} className="underline">{r.name}</Link></li>
-                              ))}
-                            </ul>
-                          </details>
-                        )}
-                        <p className="mt-1 text-muted-foreground">
-                          Ces recettes utilisent cet ingrédient en {QTY_LABEL[PRICE_TO_QTY_UNIT[m.unit]]}. Convertissez leurs quantités en {QTY_LABEL[PRICE_TO_QTY_UNIT[survivor.unit]]}, puis revenez fusionner.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            </Callout>
 
             {g.error && (
-              <div className="mt-3 flex items-start gap-2 rounded-lg bg-destructive-soft px-4 py-3 text-sm text-destructive">
-                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-                <span>{g.error}</span>
+              <div className="mt-3">
+                <Callout emoji="⚠️" tone="danger">{g.error}</Callout>
               </div>
             )}
 
             {g.failures && g.failures.length > 0 && (
-              <div className="mt-3 rounded-lg bg-destructive-soft px-4 py-3 text-sm text-destructive">
-                <p className="font-medium">{g.failures.length} élément{g.failures.length > 1 ? "s" : ""} n'ont pas pu être mis à jour. Rien n'a été supprimé.</p>
-                <ul className="mt-1 list-disc pl-5">
-                  {g.failures.map((f, i) => <li key={i}>{failureLabel(f)}</li>)}
-                </ul>
+              <div className="mt-3">
+                <Callout emoji="⚠️" tone="danger" title={`${g.failures.length} élément${g.failures.length > 1 ? "s" : ""} n'ont pas pu être mis à jour. Rien n'a été supprimé.`}>
+                  <ul className="list-disc pl-5">
+                    {g.failures.map((f, i) => <li key={i}>{failureLabel(f)}</li>)}
+                  </ul>
+                </Callout>
               </div>
             )}
 
             {noticeFor === g.id && (
-              <div className="mt-3 rounded-lg bg-warning-soft px-4 py-3 text-base">
-                <p>Fermez les autres onglets de l'application avant de fusionner.</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button type="button" onClick={acknowledgeNotice} className="min-h-11 px-4 bg-primary text-primary-foreground rounded-lg text-sm font-medium">Continuer la fusion</button>
-                  <button type="button" onClick={() => setNoticeFor(null)} className="min-h-11 px-4 border rounded-lg text-sm font-medium">Annuler</button>
-                </div>
+              <div className="mt-3">
+                <Callout emoji="⚠️" tone="warning" title="Fermez les autres onglets de l'application avant de fusionner.">
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button variant="primary" size="sm" onClick={acknowledgeNotice}>Continuer la fusion</Button>
+                    <Button variant="default" size="sm" onClick={() => setNoticeFor(null)}>Annuler</Button>
+                  </div>
+                </Callout>
               </div>
             )}
 
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
+            <div className="mt-2 flex flex-wrap items-center gap-1">
+              <Button
+                variant="default"
+                size="sm"
                 onClick={() => merge(g.id)}
                 disabled={g.included.size === 0 || g.merging}
-                className="inline-flex items-center gap-2 min-h-11 px-4 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm disabled:opacity-50"
+                icon={g.failures ? <RefreshCw /> : undefined}
               >
-                {g.failures ? <><RefreshCw className="h-4 w-4" /> Réessayer</> : g.merging ? "Fusion en cours…" : `Fusionner dans ${survivor.name}`}
-              </button>
-              <button type="button" onClick={() => ignore(g.id)} disabled={g.merging} className="min-h-11 px-4 border rounded-lg text-sm font-medium hover:bg-hover disabled:opacity-50">
-                Ignorer ce groupe
-              </button>
+                {g.failures ? "Réessayer" : g.merging ? "Fusion en cours…" : `Fusionner dans ${survivor.name}`}
+              </Button>
+              <Button variant="subtle" size="sm" onClick={() => ignore(g.id)} disabled={g.merging}>Ignorer ce groupe</Button>
             </div>
           </section>
         );

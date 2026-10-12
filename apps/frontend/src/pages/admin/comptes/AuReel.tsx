@@ -1,13 +1,12 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { AuReelRow } from "@packages/types";
 import { DEFAULT_PRESTATION_TYPES, auReel, auReelYear, fmtEur, invoicedEventIds } from "@packages/types";
 import { api } from "@/lib/api";
 import { dayLabel, monthLabel } from "@/lib/dates";
 import { useReportInputs } from "@/lib/use-report-inputs";
 import { useToast } from "@/hooks/use-toast";
-import { PageHeader, Section, Tag, ListRow, MoneyTile, EditableInlineNum, EditableInlineText } from "@/components/ui";
+import { Button, Callout, DateNav, EditableInlineNum, EditableInlineText, ListRow, MoneyTile, Section, Tag, Toolbar } from "@/components/ui";
 
 const NOT_CONFIGURED = "Comptabilité non configurée : la table ta-ledger n'existe pas encore";
 
@@ -89,8 +88,8 @@ export default function AuReel() {
     const type = typeOf(r);
     const tags = (
       <>
-        {!type && <Tag variant="warning">Sans type</Tag>}
-        {r.kind === "entry" ? <Tag variant="primary">facturé</Tag> : <Tag variant="info">signé</Tag>}
+        {!type && <Tag colour="yellow">Sans type</Tag>}
+        {r.kind === "entry" ? <Tag colour="purple">facturé</Tag> : <Tag colour="blue">signé</Tag>}
       </>
     );
     if (r.kind === "entry") {
@@ -102,11 +101,11 @@ export default function AuReel() {
           <ListRow
             title={r.label}
             subtitle={parts.join(" · ")}
-            trailing={<><span className="text-base tabular-nums">{fmtEur(r.htva)}</span>{tags}</>}
+            trailing={<><span className="text-foreground">{fmtEur(r.htva)}</span>{tags}</>}
             to={`/comptes/journal?ym=${ym}`}
           />
           {r.hours !== undefined && (
-            <div className="px-3 pb-3 text-base text-muted-foreground">Heures <strong className="text-foreground tabular-nums">{fmtHours(r.hours)}</strong></div>
+            <div className="px-2 pb-2 text-sm text-muted-foreground">Heures <strong className="font-medium text-foreground tabular-nums">{fmtHours(r.hours)}</strong></div>
           )}
         </div>
       );
@@ -119,14 +118,14 @@ export default function AuReel() {
     const toInvoice = r.status === "completed" && !invoiced.has(r.eventId);
     const fields = (
       <>
-        <span className="inline-flex min-h-11 shrink-0 items-center gap-1 whitespace-nowrap">
+        <span className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap touch:h-11">
           {r.hours === undefined && hoursFor !== r.eventId ? (
-            <button type="button" className="text-primary hover:underline" onClick={() => setHoursFor(r.eventId)}>ajouter des heures</button>
+            <Button variant="link" size="sm" className="-ml-2" onClick={() => setHoursFor(r.eventId)}>ajouter des heures</Button>
           ) : (
             <>Heures <EditableInlineNum value={r.hours ?? 0} min={0} suffix=" h" onSave={(v) => { setHoursFor(null); saveEvent(r.eventId, { hoursSpent: v }); }} /></>
           )}
         </span>
-        <span className="block min-h-11 min-w-0 truncate leading-[2.75rem]">
+        <span className="inline-flex h-7 min-w-0 items-center gap-1 truncate touch:h-11">
           Observations <EditableInlineText value={r.notes ?? ""} placeholder="ajouter" onSave={(v) => saveEvent(r.eventId, { notes: v })} />
         </span>
       </>
@@ -140,57 +139,67 @@ export default function AuReel() {
             subtitle={parts.join(" · ")}
             trailing={
               <>
-                <span className="text-base tabular-nums">{fmtEur(r.htva)}</span>
-                {toInvoice && <Tag variant="warning">à facturer</Tag>}
+                <span className="text-foreground">{fmtEur(r.htva)}</span>
+                {toInvoice && <Tag colour="yellow">à facturer</Tag>}
                 {tags}
               </>
             }
             to={toInvoice ? `/events/${r.eventId}?facturer=1` : `/events/${r.eventId}`}
           />
-          <div className="hidden w-[21rem] shrink-0 items-center gap-x-4 pr-3 text-base text-muted-foreground md:flex">{fields}</div>
+          <div className="hidden w-[21rem] shrink-0 items-center gap-x-4 pr-2 text-sm text-muted-foreground md:flex">{fields}</div>
         </div>
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 px-3 pb-3 text-base text-muted-foreground md:hidden">{fields}</div>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 px-2 pb-2 text-sm text-muted-foreground md:hidden">{fields}</div>
       </div>
     );
   };
 
-  const navBtn = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border hover:bg-hover";
+  const nowYm = currentYm();
+  const stat = (label: string, value: ReactNode, className = "") => (
+    <div className="p-3">
+      <dt className="text-sm text-muted-foreground">{label}</dt>
+      <dd className={`mt-0.5 text-h3 tabular-nums ${className}`}>{value}</dd>
+    </div>
+  );
 
   return (
-    <div className="max-w-doc mx-auto pb-24 md:pb-0">
-      <PageHeader
-        breadcrumb={[{ label: "Comptabilité", to: "/comptes" }, { label: "Au réel" }]}
-        title={`Au réel · ${monthLabel(ym)}`}
-        meta="Ce qui est facturé et ce qui est signé, mois par mois, face à l'objectif."
-        actions={
-          <>
-            <button type="button" className={navBtn} aria-label="Mois précédent" onClick={() => setYm(shiftYm(ym, -1))}><ChevronLeft className="h-5 w-5" /></button>
-            <span className="inline-flex min-h-11 min-w-[9rem] items-center justify-center text-base font-medium capitalize" aria-live="polite">{monthLabel(ym)}</span>
-            <button type="button" className={navBtn} aria-label="Mois suivant" onClick={() => setYm(shiftYm(ym, 1))}><ChevronRight className="h-5 w-5" /></button>
-          </>
+    <div className="max-w-doc pb-24 md:pb-0">
+      <Toolbar
+        left={
+          <DateNav
+            label={monthLabel(ym)}
+            value={ym}
+            pickerType="month"
+            onPrev={() => setYm(shiftYm(ym, -1))}
+            onNext={() => setYm(shiftYm(ym, 1))}
+            onPick={(v) => setYm(v)}
+            isToday={ym === nowYm}
+            onToday={() => setYm(nowYm)}
+            todayLabel="Ce mois"
+          />
         }
       />
+      <p className="mt-3 text-sm text-muted-foreground">Ce qui est facturé et ce qui est signé, mois par mois, face à l'objectif.</p>
 
-      {notConfigured && <p className="card-elevated mb-6 p-4 text-base text-muted-foreground">{NOT_CONFIGURED}</p>}
-      {error && <p className="mb-6 text-base text-destructive">{error}</p>}
-      {loading && <p className="text-base text-muted-foreground">Chargement…</p>}
+      {notConfigured && <div className="mt-4"><Callout emoji="💶">{NOT_CONFIGURED}</Callout></div>}
+      {error && <div className="mt-4"><Callout tone="danger">{error}</Callout></div>}
+      {loading && <p className="mt-4 text-sm text-muted-foreground">Chargement…</p>}
 
       {month && (
         <>
           {month.rows.length === 0 ? (
-            <p className="text-base text-muted-foreground">Rien de facturé ni de signé ce mois-ci.</p>
+            <p className="mt-4 text-sm text-muted-foreground">Rien de facturé ni de signé ce mois-ci.</p>
           ) : (
-            <div>{month.rows.map(renderRow)}</div>
+            <div className="mt-3">{month.rows.map(renderRow)}</div>
           )}
 
-          <footer className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-card p-4 md:static md:mt-6 md:rounded-xl md:border">
-            <dl className="mx-auto grid max-w-doc grid-cols-2 gap-x-4 gap-y-2 text-base tabular-nums md:grid-cols-3">
-              <div><dt className="text-sm text-muted-foreground">Total signé</dt><dd className="font-semibold">{fmtEur(month.totalSigne)}</dd></div>
-              <div><dt className="text-sm text-muted-foreground">Total heures</dt><dd className="font-semibold">{fmtHours(month.totalHeures)}</dd></div>
-              <div><dt className="text-sm text-muted-foreground">Je vise</dt><dd>{fmtMoney(month.jeVise)}</dd></div>
-              <div><dt className="text-sm text-muted-foreground">Temps disponible</dt><dd>{fmtHours(month.tempsDisponible)}</dd></div>
-              <div><dt className="text-sm text-muted-foreground">Il me reste à signer</dt><dd className={month.resteASigner !== undefined && month.resteASigner <= 0 ? "text-success" : ""}>{fmtMoney(month.resteASigner)}</dd></div>
-              <div><dt className="text-sm text-muted-foreground">Heures restantes</dt><dd className={month.heuresRestantes !== undefined && month.heuresRestantes < 0 ? "text-warning" : ""}>{fmtHours(month.heuresRestantes)}</dd></div>
+          <footer className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-background p-4 md:static md:mt-6 md:border-0 md:p-0">
+            <dl className="mx-auto grid max-w-doc grid-cols-2 gap-x-4 gap-y-2 text-base tabular-nums md:grid-cols-3 md:gap-0 md:rounded-lg md:bg-surface">
+              {stat("Total signé", fmtEur(month.totalSigne))}
+              {stat("Total heures", fmtHours(month.totalHeures))}
+              {stat("Je vise", fmtMoney(month.jeVise))}
+              {stat("Temps disponible", fmtHours(month.tempsDisponible))}
+              {stat("Il me reste à signer", fmtMoney(month.resteASigner), month.resteASigner !== undefined && month.resteASigner <= 0 ? "text-success" : "")}
+              {stat("Heures restantes", fmtHours(month.heuresRestantes), month.heuresRestantes !== undefined && month.heuresRestantes < 0 ? "text-warning" : "")}
             </dl>
             {!objective && (
               <p className="mt-2 text-sm text-muted-foreground">Pas d'objectif pour {year} : <Link to={`/comptes/previsionnel?year=${year}`} className="text-primary hover:underline">définir dans le Prévisionnel</Link>.</p>
@@ -201,11 +210,12 @@ export default function AuReel() {
 
       {yearSummary && (
         <Section title={`Année ${year}`} meta="signé et facturé">
-          <div className="grid grid-cols-2 gap-3">
-            <MoneyTile label="Total signé" value={fmtEur(yearSummary.totalSigne)} />
-            <MoneyTile label="Total heures" value={fmtHours(yearSummary.totalHeures)} />
-            <MoneyTile label="Objectif annuel" value={fmtMoney(yearSummary.annualRevenue)} to={`/comptes/previsionnel?year=${year}`} />
+          <div className="grid grid-cols-2 rounded-lg bg-surface">
+            <MoneyTile flat label="Total signé" value={fmtEur(yearSummary.totalSigne)} />
+            <MoneyTile flat label="Total heures" value={fmtHours(yearSummary.totalHeures)} />
+            <MoneyTile flat label="Objectif annuel" value={fmtMoney(yearSummary.annualRevenue)} to={`/comptes/previsionnel?year=${year}`} />
             <MoneyTile
+              flat
               label="Écart à l'objectif"
               value={fmtMoney(yearSummary.ecart)}
               sub={yearSummary.ecart === undefined ? "Pas d'objectif" : yearSummary.ecart <= 0 ? "Objectif atteint" : "Reste à signer"}

@@ -88,7 +88,7 @@ export default function PersonChips({ personIds, people, size = "md", inherited 
       title={names || "Assigner"}
       aria-label={label ?? (names ? `Assigné à ${names}. Modifier` : "Assigner")}
       aria-haspopup="dialog"
-      className={`inline-flex h-7 shrink-0 items-center justify-center rounded px-0.5 hover:bg-hover touch:h-11 ${className}`}
+      className={`inline-flex h-7 shrink-0 items-center justify-center rounded px-0.5 hover:bg-hover touch:h-11 touch:min-w-11 ${className}`}
     >
       {inner}
     </button>

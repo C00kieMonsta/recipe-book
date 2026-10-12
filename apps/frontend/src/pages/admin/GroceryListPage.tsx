@@ -1,22 +1,42 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { Plus, X, Copy, FileDown, FileSpreadsheet, GripVertical, Check, Pencil, ShoppingCart, Trash2, ArrowLeft, Eye, EyeOff } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Plus, X, Copy, FileDown, FileSpreadsheet, GripVertical, Trash2, Printer, Calendar, ShoppingCart, Store } from "lucide-react";
 import type { GroceryList, GroceryListItem, Ingredient } from "@packages/types";
 import { UNITS_QTY, PRICE_TO_QTY_UNIT, fmtQtyText, isoWeekOf, parseIsoWeek } from "@packages/types";
 import { useToast } from "@/hooks/use-toast";
+import { useTouchScreen } from "@/hooks/use-touch-screen";
 import { api } from "@/lib/api";
-import { useFullBleed } from "@/components/admin/AdminLayout";
-import { ListRow, SupplierTag, ActionMenu, NumericInput, SearchSelect, IngredientFormModal } from "@/components/ui";
+import { rangeLabel } from "@/lib/dates";
+import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
+import {
+  SupplierTag,
+  ActionMenu,
+  NumericInput,
+  SearchSelect,
+  IngredientFormModal,
+  PageHeader,
+  Button,
+  IconButton,
+  Checkbox,
+  PropertyList,
+  Property,
+  SelectPill,
+  Table,
+  EmptyState,
+  Tag,
+} from "@/components/ui";
 import { fmt } from "@/lib/recipe-helpers";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
 const itemKey = (g: GroceryListItem) => `${g.ingredientId}:${g.unit}`;
 
+const ROW = "group flex min-h-8 items-center gap-2 rounded px-1 hover:bg-hover touch:min-h-11";
+
 export default function GroceryListPage() {
-  useFullBleed(true);
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
+  const isTouch = useTouchScreen();
 
   const [list, setList] = useState<GroceryList | null>(null);
   const [title, setTitle] = useState("Liste de courses");
@@ -26,14 +46,12 @@ export default function GroceryListPage() {
   const [settingsSuppliers, setSettingsSuppliers] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [editingTitle, setEditingTitle] = useState(false);
   const [addingIng, setAddingIng] = useState(false);
   const [newIngId, setNewIngId] = useState("");
   const [newIngQty, setNewIngQty] = useState(0);
   const [newIngUnit, setNewIngUnit] = useState<string>("g");
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dropSupplier, setDropSupplier] = useState<string | null>(null);
-  const [mobileShowList, setMobileShowList] = useState(false);
   const [editing, setEditing] = useState(false);
   const [hideChecked, setHideChecked] = useState(false);
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
@@ -43,6 +61,11 @@ export default function GroceryListPage() {
   const savingRef = useRef(false);
   const dirtyRef = useRef(false);
   const listId = list?.listId ?? null;
+  const idParam = searchParams.get("id");
+
+  const weekOfList = list?.range ? isoWeekOf(list.range.from) : null;
+  useBackLink(editing ? { to: "/grocery-list", label: "Courses" } : null);
+  useTopTitle(editing ? title : "Courses");
 
   const autoSave = useCallback(async (listId: string, t: string, i: GroceryListItem[]) => {
     if (savingRef.current) return;
@@ -93,9 +116,9 @@ export default function GroceryListPage() {
       setAllIngredients(ings);
       setSettingsSuppliers((settings?.suppliers ?? []).map((s) => s.name));
 
-      const idParam = searchParams.get("id");
-      if (idParam) {
-        const found = lists.find((l) => l.listId === idParam);
+      const id = searchParams.get("id");
+      if (id) {
+        const found = lists.find((l) => l.listId === id);
         if (found) { setList(found); setTitle(found.title); setItems(found.items); setEditing(true); }
       }
       setLoading(false);
@@ -104,8 +127,22 @@ export default function GroceryListPage() {
     init();
   }, []);
 
+  // Back navigation to /grocery-list without an id shows the index again.
+  useEffect(() => {
+    if (!initialized.current) return;
+    if (!idParam && list) {
+      clearTimeout(autoSaveTimer.current);
+      dirtyRef.current = false;
+      setList(null); setItems([]); setTitle("Liste de courses"); setEditing(false); setOpenRows(new Set());
+    } else if (idParam && list?.listId !== idParam) {
+      const found = savedLists.find((l) => l.listId === idParam);
+      if (found) { setList(found); setTitle(found.title); setItems(found.items); setEditing(true); setOpenRows(new Set()); }
+    }
+  }, [idParam]);
+
   const visibleItems = useMemo(() => hideChecked ? items.filter((g) => !g.checked) : items, [items, hideChecked]);
   const suppliers = useMemo(() => [...new Set(visibleItems.map((g) => g.supplier))].sort(), [visibleItems]);
+  const allSuppliers = useMemo(() => [...new Set(items.map((g) => g.supplier))].sort(), [items]);
   const grouped = useMemo(() => {
     const map: Record<string, GroceryListItem[]> = {};
     suppliers.forEach((s) => { map[s] = []; });
@@ -133,6 +170,11 @@ export default function GroceryListPage() {
   const removeItem = (idx: number) => {
     dirtyRef.current = true;
     setItems(items.filter((_, i) => i !== idx));
+  };
+
+  const uncheckAll = () => {
+    dirtyRef.current = true;
+    setItems(items.map((g) => ({ ...g, checked: false })));
   };
 
   const toggleRow = (key: string) => {
@@ -190,7 +232,7 @@ export default function GroceryListPage() {
     dirtyRef.current = false;
     setList(l); setTitle(l.title); setItems(l.items);
     setSearchParams({ id: l.listId }, { replace: true });
-    setEditing(true); setMobileShowList(false); setOpenRows(new Set());
+    setEditing(true); setOpenRows(new Set());
   };
 
   const startNewList = () => {
@@ -198,7 +240,7 @@ export default function GroceryListPage() {
     dirtyRef.current = false;
     setList(null); setTitle("Nouvelle liste"); setItems([]);
     setSearchParams({}, { replace: true });
-    setEditing(true); setMobileShowList(false); setOpenRows(new Set());
+    setEditing(true); setOpenRows(new Set());
   };
 
   const deleteCurrent = async () => {
@@ -213,7 +255,6 @@ export default function GroceryListPage() {
     setItems([]);
     setTitle("Liste de courses");
     setSearchParams({}, { replace: true });
-    setMobileShowList(true);
     try {
       await api.groceryLists.delete(id);
       setSavedLists((prev) => prev.filter((l) => l.listId !== id));
@@ -242,7 +283,7 @@ export default function GroceryListPage() {
     doc.setFont("helvetica", "normal"); doc.setFontSize(9);
     doc.text(today, m, m + 14);
     let startY = m + 22;
-    suppliers.forEach((supplier) => {
+    allSuppliers.forEach((supplier) => {
       const supplierItems = items.filter((g) => g.supplier === supplier);
       if (startY > 260) { doc.addPage(); startY = m; }
       doc.setFont("helvetica", "bold"); doc.setFontSize(11);
@@ -305,278 +346,181 @@ export default function GroceryListPage() {
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
 
   const uncheckedCount = items.filter((g) => !g.checked).length;
-  const weekOfList = list?.range ? isoWeekOf(list.range.from) : null;
 
-  const sidebar = (
-    <div className="flex h-full flex-col">
-      <div className="border-b p-3">
-        <button
-          type="button"
-          onClick={startNewList}
-          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 text-base font-medium text-primary-foreground hover:opacity-90"
-        >
-          <Plus className="h-5 w-5" /> Nouvelle liste
-        </button>
+  if (!editing) {
+    return (
+      <div className="mx-auto max-w-wide">
+        <PageHeader
+          iconKey="courses"
+          title="Courses"
+          meta={`${savedLists.length} liste${savedLists.length > 1 ? "s" : ""}`}
+          actions={<Button variant="primary" size="lg" icon={<Plus />} onClick={startNewList}>Nouvelle liste</Button>}
+        />
+        <Table<GroceryList>
+          rows={savedLists}
+          rowKey={(l) => l.listId}
+          onRowClick={selectList}
+          empty={<EmptyState message="Aucune liste de courses. Générez une liste depuis la semaine ou créez-en une." action={{ label: "+ Nouvelle liste", onClick: startNewList }} />}
+          columns={[
+            { key: "title", label: "Titre", render: (l) => <span className="font-medium">{l.title}</span> },
+            { key: "range", label: "Période", width: "200px", render: (l) => (l.range ? rangeLabel(l.range.from, l.range.to) : "") },
+            { key: "count", label: "Ingrédients", width: "110px", align: "right", render: (l) => `${l.items.length}` },
+            { key: "checked", label: "Cochés", width: "100px", align: "right", trailing: true, render: (l) => { const n = l.items.filter((i) => i.checked).length; return n > 0 ? <Tag colour="green">{n} cochés</Tag> : ""; } },
+            { key: "updated", label: "Maj", width: "110px", render: (l) => new Date(l.updatedAt).toLocaleDateString("fr-BE", { day: "numeric", month: "short" }) },
+          ]}
+        />
       </div>
-      <div className="flex-1 overflow-y-auto p-2">
-        {savedLists.length === 0 ? (
-          <p className="p-4 text-center text-sm text-muted-foreground">Aucune liste sauvegardée</p>
-        ) : (
-          savedLists.map((l) => {
-            const isActive = list?.listId === l.listId;
-            const checkedCount = l.items.filter((i) => i.checked).length;
-            const date = new Date(l.updatedAt).toLocaleDateString("fr-BE", { day: "numeric", month: "short" });
-            return (
-              <ListRow
-                key={l.listId}
-                onClick={() => selectList(l)}
-                title={l.title}
-                subtitle={[`${l.items.length} ingr.`, checkedCount > 0 ? `${checkedCount} cochés` : null, date].filter(Boolean).join(" · ")}
-                className={isActive ? "bg-selected hover:bg-selected" : ""}
-              />
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
+    );
+  }
 
   const menuItems = [
-    { label: "Exporter en PDF", icon: <FileDown className="h-4 w-4" />, onClick: exportPdf },
-    { label: "Exporter en CSV", icon: <FileSpreadsheet className="h-4 w-4" />, onClick: exportCsv },
-    { label: "Copier la liste", icon: <Copy className="h-4 w-4" />, onClick: copyList },
-    ...(list ? [{ label: "Supprimer la liste", icon: <Trash2 className="h-4 w-4" />, onClick: deleteCurrent, variant: "danger" as const }] : []),
+    ...(isTouch ? [{ label: "Imprimer", icon: <Printer />, onClick: () => window.print() }] : []),
+    { kind: "check" as const, label: "Masquer les cochés", checked: hideChecked, onClick: () => setHideChecked((v) => !v) },
+    { label: "Tout décocher", onClick: uncheckAll, disabled: items.every((g) => !g.checked) },
+    { kind: "separator" as const },
+    { label: "Partager (copier la liste)", icon: <Copy />, onClick: copyList },
+    { label: "Exporter en PDF", icon: <FileDown />, onClick: exportPdf },
+    { label: "Exporter en CSV", icon: <FileSpreadsheet />, onClick: exportCsv },
+    ...(list ? [{ kind: "separator" as const }, { label: "Supprimer la liste", icon: <Trash2 />, onClick: deleteCurrent, variant: "danger" as const }] : []),
   ];
 
-  const detail = (
-    <div className="flex h-full flex-col overflow-hidden">
-      <div className="shrink-0 border-b bg-background px-4 py-3">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setMobileShowList(true)}
-            aria-label="Retour aux listes"
-            className="-ml-2 flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground md:hidden"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <div className="min-w-0 flex-1">
-            {weekOfList && (
-              <Link to={`/semaine/${weekOfList}`} className="inline-flex min-h-6 items-center text-sm text-muted-foreground hover:text-foreground hover:underline underline-offset-4">
-                Semaine {parseIsoWeek(weekOfList).week}
-              </Link>
-            )}
-            {editingTitle ? (
-              <input
-                className="w-full border-b-2 border-primary bg-transparent text-h3 outline-none"
-                value={title}
-                onChange={(e) => { dirtyRef.current = true; setTitle(e.target.value); }}
-                onBlur={() => setEditingTitle(false)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setEditingTitle(false); }}
-                autoFocus
-              />
-            ) : (
-              <button type="button" onClick={() => setEditingTitle(true)} className="group flex min-h-11 max-w-full items-center gap-2 text-left">
-                <h2 className="truncate text-h3">{title}</h2>
-                <Pencil className="reveal h-4 w-4 shrink-0 text-muted-foreground" />
-              </button>
-            )}
-            <p className="text-sm text-muted-foreground">
-              {uncheckedCount} à acheter · {items.length - uncheckedCount} cochés · {suppliers.length} fournisseur{suppliers.length > 1 ? "s" : ""}
-              {saving && <span className="ml-2 text-caption">Sauvegarde…</span>}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setHideChecked((v) => !v)}
-              aria-pressed={hideChecked}
-              className={`flex min-h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors ${hideChecked ? "border-primary bg-primary text-primary-foreground" : "hover:bg-hover"}`}
-            >
-              {hideChecked ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              <span className="hidden sm:inline">{hideChecked ? "Afficher cochés" : "Masquer cochés"}</span>
-            </button>
-            <ActionMenu items={menuItems} />
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="mx-auto max-w-doc">
-          {addingIng ? (
-            <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-surface p-3">
-              <SearchSelect
-                options={availableIngs.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))}
-                value={newIngId}
-                onChange={(v) => {
-                  setNewIngId(v);
-                  const ing = allIngredients.find((i) => i.ingredientId === v);
-                  if (ing) setNewIngUnit(PRICE_TO_QTY_UNIT[ing.unit] || "g");
-                }}
-                placeholder="Rechercher un ingrédient…"
-                className="min-w-[160px] flex-1"
-                onCreateNew={(name) => setCreatingIngredient(name)}
-              />
-              <NumericInput className="input-field w-24 text-right tabular-nums" value={newIngQty} onChange={setNewIngQty} placeholder="Qté" />
-              <select className="input-field w-auto" value={newIngUnit} onChange={(e) => setNewIngUnit(e.target.value)}>
-                {UNITS_QTY.map((u) => <option key={u}>{u}</option>)}
-              </select>
-              <button type="button" onClick={addItem} disabled={!newIngId || newIngQty <= 0} className="min-h-11 rounded-lg bg-primary px-4 text-base font-medium text-primary-foreground disabled:opacity-50">Ajouter</button>
-              <button type="button" onClick={() => setAddingIng(false)} aria-label="Annuler" className="flex min-h-11 min-w-11 items-center justify-center text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setAddingIng(true)}
-              className="mb-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-dashed text-base font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-            >
-              <Plus className="h-5 w-5" /> Ajouter un ingrédient
-            </button>
-          )}
-
-          {items.length === 0 && (
-            <div className="py-12 text-center text-muted-foreground">
-              <ShoppingCart className="mx-auto mb-3 h-8 w-8 opacity-30" />
-              <p className="text-base font-medium">Aucun ingrédient</p>
-              <p className="mt-1 text-sm">Générez une liste depuis la semaine ou le jour, ou ajoutez manuellement</p>
-            </div>
-          )}
-
-          {items.length > 0 && (
-            <p className="pointer:block mb-3 hidden text-sm text-muted-foreground">
-              Glissez un ingrédient vers un fournisseur pour le déplacer
-            </p>
-          )}
-
-          {suppliers.map((supplier) => (
-            <section
-              key={supplier}
-              className={`mb-4 rounded-lg border transition-colors ${dropSupplier === supplier ? "border-primary bg-selected" : "border-border"}`}
-              onDragOver={(e) => { e.preventDefault(); setDropSupplier(supplier); }}
-              onDragLeave={() => setDropSupplier(null)}
-              onDrop={(e) => { e.preventDefault(); handleDrop(supplier); }}
-            >
-              <header className="flex min-h-11 items-center gap-2 border-b border-border/40 px-3">
-                <SupplierTag name={supplier} />
-                <span className="text-sm text-muted-foreground">{grouped[supplier]?.length || 0}</span>
-              </header>
-
-              <div className="divide-y divide-border/40">
-                {(grouped[supplier] || []).map((g) => {
-                  const gIdx = getIdx(g);
-                  const key = itemKey(g);
-                  const need = needQty(g);
-                  const open = openRows.has(key);
-                  return (
-                    <div
-                      key={key}
-                      draggable
-                      onDragStart={() => setDragIdx(gIdx)}
-                      onDragEnd={() => { setDragIdx(null); setDropSupplier(null); }}
-                      className={`${dragIdx === gIdx ? "opacity-40" : ""} ${g.checked ? "opacity-60" : ""}`}
-                    >
-                      <div className="flex min-h-12 items-center gap-2 pr-2">
-                        <span className="pointer:flex hidden w-6 shrink-0 cursor-grab items-center justify-center self-stretch text-placeholder" aria-hidden="true">
-                          <GripVertical className="h-4 w-4" />
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => patchItem(gIdx, { checked: !g.checked })}
-                          aria-pressed={g.checked}
-                          className="flex min-h-12 min-w-0 flex-1 items-center gap-3 py-1 pl-2 text-left pointer:pl-0 hover:bg-hover"
-                        >
-                          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded border-2 ${g.checked ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}>
-                            {g.checked && <Check className="h-4 w-4" />}
-                          </span>
-                          <span className={`min-w-0 flex-1 truncate text-base ${g.checked ? "line-through text-muted-foreground" : ""}`}>{g.name}</span>
-                          <span className={`shrink-0 text-base font-bold tabular-nums ${need > 0 ? "" : "text-success"}`}>
-                            {need > 0 ? fmtQtyText(need, g.unit) : "✓"}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => toggleRow(key)}
-                          aria-expanded={open}
-                          className={`min-h-11 shrink-0 rounded-lg border px-3 text-sm font-medium transition-colors ${open ? "border-primary bg-selected" : "hover:bg-hover"}`}
-                        >
-                          Stock
-                        </button>
-                      </div>
-
-                      {open && (
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/40 bg-surface px-3 py-2">
-                          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                            Besoin
-                            <NumericInput className="input-field input-compact w-20 text-right tabular-nums" value={g.totalQty} onChange={(v) => patchItem(gIdx, { totalQty: v })} />
-                            <span>{g.unit}</span>
-                          </label>
-                          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                            En stock
-                            <NumericInput className="input-field input-compact w-20 text-right tabular-nums" value={g.haveQty ?? 0} onChange={(v) => patchItem(gIdx, { haveQty: v > 0 ? v : undefined })} placeholder="0" autoFocus />
-                            <span>{g.unit}</span>
-                          </label>
-                          <span className="text-sm text-muted-foreground tabular-nums">{fmt(g.pricePerUnit)} {g.priceUnit}</span>
-                          <label className="pointer:hidden flex items-center gap-2 text-sm text-muted-foreground">
-                            Déplacer vers
-                            <select
-                              className="input-field input-compact w-auto"
-                              value={g.supplier}
-                              onChange={(e) => patchItem(gIdx, { supplier: e.target.value })}
-                            >
-                              {moveTargets.map((s) => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => removeItem(gIdx)}
-                            className="ml-auto flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-destructive hover:bg-destructive-soft"
-                          >
-                            <X className="h-4 w-4" /> Retirer
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-
-  const emptyState = (
-    <div className="flex flex-1 items-center justify-center text-muted-foreground">
-      <div className="text-center">
-        <ShoppingCart className="mx-auto mb-3 h-10 w-10 opacity-20" />
-        <p className="text-base font-medium">Sélectionnez une liste</p>
-        <p className="mt-1 text-sm">ou créez-en une nouvelle</p>
-      </div>
-    </div>
-  );
+  const weekNumber = weekOfList ? parseIsoWeek(weekOfList).week : null;
 
   return (
-    <div className="flex h-[calc(100dvh-68px)] flex-col md:h-[100dvh]">
-      <div className="hidden min-h-0 flex-1 md:flex">
-        <div className="flex w-72 shrink-0 flex-col overflow-hidden border-r bg-surface">
-          {sidebar}
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col">
-          {editing ? detail : emptyState}
-        </div>
-      </div>
+    <div className="mx-auto max-w-doc">
+      <PageHeader
+        breadcrumb={[
+          ...(weekOfList ? [{ label: `Semaine ${weekNumber}`, to: `/semaine/${weekOfList}` }] : []),
+          { label: "Courses", to: "/grocery-list" },
+          { label: title },
+        ]}
+        iconKey="courses"
+        title={title}
+        onTitleChange={(v) => { dirtyRef.current = true; setTitle(v); }}
+        meta={saving ? "Sauvegarde…" : undefined}
+        actions={
+          <>
+            <ActionMenu items={menuItems} title={title} />
+            <Button variant="default" size="md" icon={<Printer />} onClick={() => window.print()} className="hidden md:inline-flex">Imprimer</Button>
+          </>
+        }
+        properties={
+          <PropertyList>
+            <Property icon={Calendar} label="Période" kind="computed" value={list?.range ? rangeLabel(list.range.from, list.range.to) : undefined} placeholder="Liste manuelle" />
+            <Property icon="🎉" label="Événements" kind="computed" value={list?.eventIds?.length ? `${list.eventIds.length}` : undefined} placeholder="Aucun" />
+            <Property icon={Store} label="Fournisseurs" kind="computed" value={allSuppliers.length ? `${allSuppliers.length}` : undefined} placeholder="Aucun" />
+            <Property icon={ShoppingCart} label="À acheter" kind="computed" value={items.length ? `${uncheckedCount} · ${items.length - uncheckedCount} cochés` : undefined} placeholder="Aucun ingrédient" />
+          </PropertyList>
+        }
+      />
 
-      <div className="flex min-h-0 flex-1 flex-col md:hidden">
-        {mobileShowList || !editing ? (
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="border-b px-4 py-3">
-              <h1 className="text-h2">Listes de courses</h1>
-            </div>
-            {sidebar}
+      {items.length === 0 && !addingIng && (
+        <EmptyState message="Aucun ingrédient. Générez une liste depuis la semaine ou le jour, ou ajoutez manuellement." action={{ label: "+ Ajouter un ingrédient", onClick: () => setAddingIng(true) }} />
+      )}
+
+      {suppliers.map((supplier) => (
+        <section
+          key={supplier}
+          className={`mt-6 rounded transition-colors ${dropSupplier === supplier ? "bg-selected" : ""}`}
+          onDragOver={(e) => { e.preventDefault(); setDropSupplier(supplier); }}
+          onDragLeave={() => setDropSupplier(null)}
+          onDrop={(e) => { e.preventDefault(); handleDrop(supplier); }}
+        >
+          <h3 className="flex h-7 items-center gap-2 text-base font-semibold">
+            {supplier && supplier !== "Autre" ? <SupplierTag name={supplier} /> : <span>Sans fournisseur</span>}
+            <span className="text-caption font-normal text-muted-foreground">{grouped[supplier]?.length || 0}</span>
+          </h3>
+          <div className="mt-1">
+            {(grouped[supplier] || []).map((g) => {
+              const gIdx = getIdx(g);
+              const key = itemKey(g);
+              const need = needQty(g);
+              const open = openRows.has(key);
+              return (
+                <div
+                  key={key}
+                  draggable={!isTouch}
+                  onDragStart={() => setDragIdx(gIdx)}
+                  onDragEnd={() => { setDragIdx(null); setDropSupplier(null); }}
+                  className={dragIdx === gIdx ? "opacity-40" : ""}
+                >
+                  <div className={ROW}>
+                    {!isTouch && (
+                      <span className="reveal flex h-7 w-4 shrink-0 cursor-grab items-center justify-center text-icon" aria-hidden="true">
+                        <GripVertical className="h-4 w-4" />
+                      </span>
+                    )}
+                    <Checkbox checked={g.checked} onChange={(c) => patchItem(gIdx, { checked: c })} aria-label={g.name} className="-ml-1" />
+                    <button
+                      type="button"
+                      onClick={() => patchItem(gIdx, { checked: !g.checked })}
+                      className={`min-w-0 flex-1 truncate text-left text-base ${g.checked ? "text-muted-foreground line-through" : ""}`}
+                    >
+                      {g.name}
+                    </button>
+                    <span className={`shrink-0 text-base tabular-nums ${g.checked ? "text-muted-foreground" : need > 0 ? "font-medium" : "text-success"}`}>
+                      {need > 0 ? fmtQtyText(need, g.unit) : "✓"}
+                    </span>
+                    <ActionMenu
+                      className="reveal"
+                      title={g.name}
+                      items={[
+                        { kind: "check", label: "Stock", checked: open, onClick: () => toggleRow(key) },
+                        { kind: "separator" },
+                        { kind: "section", label: "Déplacer vers" },
+                        ...moveTargets.map((s) => ({ kind: "check" as const, label: s, checked: s === g.supplier, onClick: () => { if (s !== g.supplier) patchItem(gIdx, { supplier: s }); } })),
+                        { kind: "separator" },
+                        { label: "Retirer", icon: <X />, onClick: () => removeItem(gIdx), variant: "danger" },
+                      ]}
+                    />
+                  </div>
+
+                  {open && (
+                    <div className="ml-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded bg-surface px-3 py-2">
+                      <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                        Besoin
+                        <NumericInput className="input-field input-compact w-20 text-right tabular-nums" value={g.totalQty} onChange={(v) => patchItem(gIdx, { totalQty: v })} />
+                        <span>{g.unit}</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                        En stock
+                        <NumericInput className="input-field input-compact w-20 text-right tabular-nums" value={g.haveQty ?? 0} onChange={(v) => patchItem(gIdx, { haveQty: v > 0 ? v : undefined })} placeholder="0" autoFocus />
+                        <span>{g.unit}</span>
+                      </label>
+                      <span className="text-sm text-muted-foreground tabular-nums">{fmt(g.pricePerUnit)} {g.priceUnit}</span>
+                      <IconButton size="sm" aria-label="Fermer" onClick={() => toggleRow(key)} icon={<X />} className="ml-auto" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+
+      <div className="mt-4">
+        {addingIng ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <SearchSelect
+              options={availableIngs.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))}
+              value={newIngId}
+              onChange={(v) => {
+                setNewIngId(v);
+                const ing = allIngredients.find((i) => i.ingredientId === v);
+                if (ing) setNewIngUnit(PRICE_TO_QTY_UNIT[ing.unit] || "g");
+              }}
+              placeholder="Rechercher un ingrédient…"
+              className="min-w-[160px] flex-1"
+              onCreateNew={(name) => setCreatingIngredient(name)}
+              autoFocus
+            />
+            <NumericInput className="input-field w-24 text-right tabular-nums" value={newIngQty} onChange={setNewIngQty} placeholder="Qté" aria-label="Quantité" />
+            <SelectPill value={newIngUnit} options={UNITS_QTY.map((u) => ({ value: u, label: u }))} onChange={setNewIngUnit} colour="gray" aria-label="Unité" />
+            <Button variant="primary" size="md" onClick={addItem} disabled={!newIngId || newIngQty <= 0}>Ajouter</Button>
+            <IconButton size="md" aria-label="Annuler" onClick={() => setAddingIng(false)} icon={<X />} />
           </div>
         ) : (
-          detail
+          <Button variant="subtle" size="sm" icon={<Plus />} onClick={() => setAddingIng(true)} className="-mx-1">Ajouter un ingrédient</Button>
         )}
       </div>
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
-import { Check, Plus, X, Search } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 import type {
   AppEvent,
   AppSettings,
@@ -20,7 +20,8 @@ import { api, ApiError, type EventInput } from "@/lib/api";
 import { longDayLabel, todayIso, weekdayOf } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
 import { calcEventCost, calcRecipeCost, fmt } from "@/lib/recipe-helpers";
-import { FieldLabel, NumericInput, PageHeader, Section, Tag } from "@/components/ui";
+import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
+import { FieldLabel, NumericInput, PageHeader, Section, Tag, Button, IconButton, SearchSelect, MoneyTile } from "@/components/ui";
 import { PersonChip } from "@/components/admin/PersonChips";
 
 // Lines of a not-yet-created event have no lineId; the server fills it on POST.
@@ -42,7 +43,8 @@ function safeReturn(raw: string | null): string | null {
   return raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : null;
 }
 
-const ICON_BTN = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-hover hover:text-foreground";
+const PERSON_TOGGLE = "inline-flex h-8 items-center gap-1.5 rounded-sm pl-1 pr-2.5 text-sm shadow-outline hover:bg-hover touch:h-11 touch:text-base";
+const PERSON_ON = "bg-selected text-primary shadow-[0_0_0_1px_rgba(35,131,226,0.35)] hover:bg-selected";
 
 export default function EventEditor() {
   const { id } = useParams<{ id: string }>();
@@ -76,7 +78,6 @@ export default function EventEditor() {
   const [prestationType, setPrestationType] = useState("");
   const [vatRate, setVatRate] = useState<VatRate | undefined>(undefined);
   const [assignedTo, setAssignedTo] = useState<string[]>([]);
-  const [recipeSearch, setRecipeSearch] = useState("");
   const retour = safeReturn(searchParams.get("retour"));
 
   const [newClientOpen, setNewClientOpen] = useState(false);
@@ -94,6 +95,10 @@ export default function EventEditor() {
   const prestationTypes: PrestationTypeSetting[] = settings?.prestationTypes?.length ? settings.prestationTypes : DEFAULT_PRESTATION_TYPES;
   const courses: string[] = settings?.courses?.length ? settings.courses : DEFAULT_COURSES;
   const people: Person[] = settings?.people?.filter((p) => p.active) ?? [];
+
+  const pageTitle = isNew && !currentId ? "Nouvel événement" : name || "Modifier l'événement";
+  useBackLink({ to: retour ?? (currentId ? `/events/${currentId}` : "/events"), label: "Événements" });
+  useTopTitle(pageTitle);
 
   const defaultVatFor = (types: PrestationTypeSetting[], key: string | undefined): VatRate | undefined =>
     types.find((t) => t.key === key)?.defaultVatRate;
@@ -266,10 +271,10 @@ export default function EventEditor() {
   const margin = totalRevenue - totalCost;
   const marginPct = totalRevenue > 0 ? (margin / totalRevenue) * 100 : 0;
 
-  const filteredRecipes = useMemo(() => {
-    if (!recipeSearch) return allRecipes.slice(0, 10);
-    return allRecipes.filter((r) => r.name.toLowerCase().includes(recipeSearch.toLowerCase())).slice(0, 10);
-  }, [allRecipes, recipeSearch]);
+  const recipeOptions = useMemo(
+    () => [...allRecipes].sort((a, b) => a.name.localeCompare(b.name, "fr")).map((r) => ({ value: r.recipeId, label: r.name, detail: r.type })),
+    [allRecipes],
+  );
 
   const runLineOp = async (op: () => Promise<AppEvent>) => {
     setSaving(true);
@@ -293,7 +298,6 @@ export default function EventEditor() {
     if (recipes.some((r) => r.recipeId === recipeId) && !window.confirm("Cette recette est déjà dans le menu. Ajouter une seconde ligne ?")) return;
     const rec = allRecipes.find((r) => r.recipeId === recipeId);
     const line: LocalLine = { recipeId, portions: Math.max(1, Math.round(guestCount)), course: rec?.defaultCourse };
-    setRecipeSearch("");
     if (currentId) {
       runLineOp(() => api.events.lines.add(currentId, { recipeId: line.recipeId, portions: line.portions, course: line.course }));
     } else {
@@ -381,7 +385,7 @@ export default function EventEditor() {
   const hint = saving
     ? "Sauvegarde…"
     : savedOnce
-      ? "Enregistré ✓"
+      ? "Enregistré"
       : !name.trim()
         ? "Saisissez un nom pour démarrer"
         : !prestationType
@@ -391,22 +395,21 @@ export default function EventEditor() {
   const courseOptions = (current: string | undefined) =>
     current && !courses.includes(current) ? [current, ...courses] : courses;
 
+  const footer = (
+    <>
+      <Button variant="default" size="md" onClick={handleCancel}>Annuler</Button>
+      <Button variant="primary" size="md" icon={<Check />} onClick={handleDone}>Enregistrer</Button>
+    </>
+  );
+
   return (
     <div className="mx-auto max-w-doc">
       <PageHeader
         breadcrumb={[{ label: "Événements", to: "/events" }, { label: isNew && !currentId ? "Nouveau" : name || "Événement" }]}
-        title={isNew && !currentId ? "Nouvel événement" : name || "Modifier l'événement"}
+        iconKey="evenement"
+        title={pageTitle}
         meta={hint || undefined}
-        actions={
-          <>
-            <button type="button" onClick={handleCancel} className="inline-flex min-h-11 items-center rounded-lg border border-border px-4 text-base font-medium hover:bg-hover">
-              Annuler
-            </button>
-            <button type="button" onClick={handleDone} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 text-base font-medium text-primary-foreground hover:opacity-90">
-              <Check className="h-5 w-5" /> Enregistrer
-            </button>
-          </>
-        }
+        actions={<div className="hidden items-center gap-1 md:flex">{footer}</div>}
       />
 
       <Section title="Informations" className="!mt-0">
@@ -423,7 +426,7 @@ export default function EventEditor() {
               <option value={NEW_CLIENT}>Nouveau client…</option>
             </select>
             {newClientOpen && (
-              <div className="mt-3 rounded-lg border border-border bg-surface p-4">
+              <div className="mt-3 rounded-lg bg-surface p-4">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <FieldLabel htmlFor="new-client-name">Nom du client</FieldLabel>
@@ -438,12 +441,8 @@ export default function EventEditor() {
                   </div>
                 </div>
                 <div className="mt-3 flex gap-2">
-                  <button type="button" onClick={createClient} disabled={creatingClient || !newClientName.trim()} className="inline-flex min-h-11 items-center rounded-lg bg-primary px-4 text-base font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
-                    Créer le client
-                  </button>
-                  <button type="button" onClick={() => { setNewClientOpen(false); setNewClientName(""); }} className="inline-flex min-h-11 items-center rounded-lg border border-input px-4 text-base hover:bg-hover">
-                    Annuler
-                  </button>
+                  <Button variant="primary" size="md" onClick={createClient} disabled={creatingClient || !newClientName.trim()}>Créer le client</Button>
+                  <Button variant="default" size="md" onClick={() => { setNewClientOpen(false); setNewClientName(""); }}>Annuler</Button>
                 </div>
               </div>
             )}
@@ -460,9 +459,9 @@ export default function EventEditor() {
                       type="button"
                       aria-pressed={on}
                       onClick={() => setAssignedTo(on ? assignedTo.filter((id) => id !== p.personId) : [...assignedTo, p.personId])}
-                      className={`inline-flex min-h-11 items-center gap-2 rounded-sm border px-3 pl-1.5 text-base ${on ? "border-primary bg-selected font-medium" : "border-border hover:bg-hover"}`}
+                      className={`${PERSON_TOGGLE} ${on ? PERSON_ON : ""}`}
                     >
-                      <PersonChip personId={p.personId} people={people} size="md" />
+                      <PersonChip personId={p.personId} people={people} size="sm" />
                       {p.name}
                     </button>
                   );
@@ -474,7 +473,7 @@ export default function EventEditor() {
             <FieldLabel htmlFor="ev-prestation">
               <span className="inline-flex items-center gap-2">
                 Type de prestation
-                {!prestationType && currentId && <Tag variant="warning">À renseigner</Tag>}
+                {!prestationType && currentId && <Tag colour="yellow">À renseigner</Tag>}
               </span>
             </FieldLabel>
             <select id="ev-prestation" className="input-field" required value={prestationType} onChange={(e) => onPrestationChange(e.target.value)}>
@@ -494,16 +493,16 @@ export default function EventEditor() {
             <input id="ev-date" className="input-field" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </div>
           <div>
-            <FieldLabel>Nombre de convives</FieldLabel>
-            <NumericInput className="input-field" value={guestCount} onChange={(v) => { guestCountTouched.current = true; setGuestCount(Math.max(1, Math.round(v))); }} min={1} />
+            <FieldLabel htmlFor="ev-guests">Nombre de convives</FieldLabel>
+            <NumericInput id="ev-guests" className="input-field" value={guestCount} onChange={(v) => { guestCountTouched.current = true; setGuestCount(Math.max(1, Math.round(v))); }} min={1} />
           </div>
           <div>
-            <FieldLabel>Prix de vente par convive HTVA (€)</FieldLabel>
-            <NumericInput className="input-field" value={sellingPricePerGuest} onChange={setSellingPricePerGuest} />
+            <FieldLabel htmlFor="ev-price">Prix de vente par convive HTVA (€)</FieldLabel>
+            <NumericInput id="ev-price" className="input-field" value={sellingPricePerGuest} onChange={setSellingPricePerGuest} />
           </div>
           <div className="sm:col-span-2">
             <FieldLabel htmlFor="ev-notes">Notes</FieldLabel>
-            <textarea id="ev-notes" className="input-field min-h-[80px]" value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <textarea id="ev-notes" className="input-field" value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
         </div>
       </Section>
@@ -526,22 +525,7 @@ export default function EventEditor() {
       </Section>
 
       <Section title="Menu" meta={recipes.length > 0 ? `${recipes.length} ligne${recipes.length > 1 ? "s" : ""}` : undefined}>
-        <div className="relative">
-          <div className="flex min-h-11 items-center gap-2 rounded-lg border border-input bg-card px-3">
-            <Search className="h-5 w-5 text-muted-foreground" />
-            <input className="flex-1 bg-transparent text-base outline-none" placeholder="Ajouter une recette…" value={recipeSearch} onChange={(e) => setRecipeSearch(e.target.value)} />
-          </div>
-          {recipeSearch && filteredRecipes.length > 0 && (
-            <div className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-border bg-card shadow-lg">
-              {filteredRecipes.map((r) => (
-                <button key={r.recipeId} type="button" onClick={() => addRecipe(r.recipeId)} className="flex min-h-11 w-full items-center justify-between gap-3 px-4 text-left text-base hover:bg-hover">
-                  <span className="font-medium">{r.name}</span>
-                  <span className="text-sm text-muted-foreground">{r.type}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <SearchSelect options={recipeOptions} value="" onChange={addRecipe} placeholder="Ajouter une recette…" />
 
         {recipes.length > 0 && (
           <ul className="mt-4 divide-y divide-border">
@@ -552,35 +536,33 @@ export default function EventEditor() {
               const courseValue = rl.course ?? rec?.defaultCourse ?? "";
               return (
                 <li key={rl.lineId ?? `local-${i}`} className="py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <Link to={`/recipes/${rl.recipeId}`} className="min-w-0 flex-1 text-base font-medium hover:text-primary hover:underline">
+                  <div className="flex items-center justify-between gap-3">
+                    <Link to={`/recipes/${rl.recipeId}`} className="min-w-0 flex-1 truncate text-sm font-medium hover:underline touch:text-base">
                       {rec?.name || "Recette inconnue"}
                     </Link>
-                    <button type="button" onClick={() => removeRecipeLine(i)} className={ICON_BTN} aria-label="Retirer la recette">
-                      <X className="h-5 w-5" />
-                    </button>
+                    <IconButton size="sm" aria-label="Retirer la recette" onClick={() => removeRecipeLine(i)} icon={<X />} />
                   </div>
                   <div className="mt-2 flex flex-wrap items-end gap-3">
                     <div className="w-36">
-                      <FieldLabel className="!text-sm !text-muted-foreground">Catégorie</FieldLabel>
-                      <select className="input-field" value={courseValue} onChange={(e) => patchLine(i, { course: e.target.value || rec?.defaultCourse || "Autre" })}>
+                      <FieldLabel htmlFor={`ev-line-course-${i}`}>Catégorie</FieldLabel>
+                      <select id={`ev-line-course-${i}`} className="input-field" value={courseValue} onChange={(e) => patchLine(i, { course: e.target.value || rec?.defaultCourse || "Autre" })}>
                         {!courseValue && <option value="">Non définie</option>}
                         {courseOptions(courseValue).map((c) => <option key={c} value={c}>{c}</option>)}
                       </select>
                     </div>
                     <div className="w-28">
-                      <FieldLabel className="!text-sm !text-muted-foreground">Portions</FieldLabel>
-                      <NumericInput className="input-field text-right" value={rl.portions} onChange={(v) => { const p = Math.max(1, Math.round(v)); if (p !== rl.portions) patchLine(i, { portions: p }); }} min={1} />
+                      <FieldLabel htmlFor={`ev-line-portions-${i}`}>Portions</FieldLabel>
+                      <NumericInput id={`ev-line-portions-${i}`} className="input-field text-right" value={rl.portions} onChange={(v) => { const p = Math.max(1, Math.round(v)); if (p !== rl.portions) patchLine(i, { portions: p }); }} min={1} />
                     </div>
                     <div className="ml-auto text-right text-sm text-muted-foreground tabular-nums">
                       <div>{fmt(costPerPortion)} / portion</div>
-                      <div className="text-base font-medium text-foreground">{fmt(lineCost)}</div>
+                      <div className="font-medium text-foreground">{fmt(lineCost)}</div>
                     </div>
                   </div>
                 </li>
               );
             })}
-            <li className="flex items-center justify-between py-3 text-base font-semibold">
+            <li className="flex items-center justify-between border-t border-divider py-3 text-sm font-semibold">
               <span>Sous-total recettes HTVA</span>
               <span className="tabular-nums">{fmt(liveRecipeCost)}</span>
             </li>
@@ -590,27 +572,21 @@ export default function EventEditor() {
 
       <Section
         title="Coûts supplémentaires"
-        action={
-          <button type="button" onClick={addExtraCost} className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-input px-3 text-base font-medium hover:bg-hover">
-            <Plus className="h-5 w-5" /> Ajouter
-          </button>
-        }
+        action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addExtraCost}>Ajouter</Button>}
       >
-        {extraCosts.length === 0 && <p className="text-base text-muted-foreground">Aucun coût supplémentaire.</p>}
+        {extraCosts.length === 0 && <p className="text-sm text-muted-foreground">Aucun coût supplémentaire.</p>}
         {extraCosts.map((ec, i) => (
-          <div key={i} className="mb-3 flex flex-wrap items-center gap-3">
-            <input className="input-field min-w-[10rem] flex-1" placeholder="Description…" value={ec.label} onChange={(e) => updateExtraCost(i, { label: e.target.value })} />
-            <select className="input-field w-36" value={ec.kind ?? "autre"} onChange={(e) => updateExtraCost(i, { kind: e.target.value as ExtraCostKind })}>
+          <div key={i} className="mb-2 flex flex-wrap items-center gap-2">
+            <input className="input-field min-w-[10rem] flex-1" placeholder="Description…" aria-label="Description" value={ec.label} onChange={(e) => updateExtraCost(i, { label: e.target.value })} />
+            <select className="input-field w-36" aria-label="Nature" value={ec.kind ?? "autre"} onChange={(e) => updateExtraCost(i, { kind: e.target.value as ExtraCostKind })}>
               {EXTRA_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
             </select>
-            <NumericInput className="input-field w-28 text-right" value={ec.amount} onChange={(v) => updateExtraCost(i, { amount: v })} />
-            <button type="button" onClick={() => removeExtraCost(i)} className={ICON_BTN} aria-label="Retirer le coût">
-              <X className="h-5 w-5" />
-            </button>
+            <NumericInput className="input-field w-28 text-right" aria-label="Montant" value={ec.amount} onChange={(v) => updateExtraCost(i, { amount: v })} />
+            <IconButton size="md" aria-label="Retirer le coût" onClick={() => removeExtraCost(i)} icon={<X />} />
           </div>
         ))}
         {extraCosts.length > 0 && (
-          <div className="flex justify-between border-t border-border py-3 text-base font-semibold">
+          <div className="flex justify-between border-t border-divider py-3 text-sm font-semibold">
             <span>Sous-total</span>
             <span className="tabular-nums">{fmt(totalExtraCosts)}</span>
           </div>
@@ -618,51 +594,41 @@ export default function EventEditor() {
       </Section>
 
       <Section title="Résumé financier">
-        <div className="rounded-lg bg-surface p-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="text-base">
-              <span className="text-muted-foreground">Coût calculé recettes : </span>
-              <span className="font-semibold tabular-nums">{fmt(liveRecipeCost)}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <FieldLabel className="!mb-0">Coût réel recettes HTVA</FieldLabel>
-              <NumericInput
-                className="input-field w-32 text-right"
-                value={actualCost ?? 0}
-                onChange={(v) => setActualCost(v > 0 ? v : null)}
-                placeholder="0"
-              />
-              {actualCost !== null && (
-                <button type="button" onClick={() => setActualCost(null)} className={ICON_BTN} aria-label="Effacer le coût réel">
-                  <X className="h-5 w-5" />
-                </button>
-              )}
-            </div>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="text-sm">
+            <span className="text-muted-foreground">Coût calculé recettes : </span>
+            <span className="font-semibold tabular-nums">{fmt(liveRecipeCost)}</span>
           </div>
-          {actualCost !== null && (
-            <p className="mt-2 text-sm text-muted-foreground">Le coût réel remplace le coût calculé dans les calculs de marge.</p>
-          )}
+          <div className="flex items-center gap-2">
+            <FieldLabel htmlFor="ev-actual-cost" className="!mb-0">Coût réel recettes HTVA</FieldLabel>
+            <NumericInput
+              id="ev-actual-cost"
+              className="input-field w-32 text-right"
+              value={actualCost ?? 0}
+              onChange={(v) => setActualCost(v > 0 ? v : null)}
+              placeholder="0"
+            />
+            {actualCost !== null && (
+              <IconButton size="md" aria-label="Effacer le coût réel" onClick={() => setActualCost(null)} icon={<X />} />
+            )}
+          </div>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
-          <SummaryCard label="Coût total HTVA" value={fmt(totalCost)} />
-          <SummaryCard label="Revenu total HTVA" value={fmt(totalRevenue)} />
-          <SummaryCard label="Marge HTVA" value={fmt(margin)} className={margin >= 0 ? "text-success" : "text-destructive"} />
-          <SummaryCard label="Marge %" value={`${marginPct.toFixed(1)} %`} className={marginPct >= 0 ? "text-success" : "text-destructive"} />
+        {actualCost !== null && (
+          <p className="mt-2 text-sm text-muted-foreground">Le coût réel remplace le coût calculé dans les calculs de marge.</p>
+        )}
+        <div className="mt-4 grid grid-cols-2 overflow-hidden rounded-lg bg-surface md:grid-cols-4 md:divide-x md:divide-border">
+          <MoneyTile flat label="Coût total HTVA" value={fmt(totalCost)} />
+          <MoneyTile flat label="Revenu total HTVA" value={fmt(totalRevenue)} />
+          <MoneyTile flat label="Marge HTVA" value={<span className={margin >= 0 ? "text-success" : "text-danger"}>{fmt(margin)}</span>} />
+          <MoneyTile flat label="Marge %" value={<span className={marginPct >= 0 ? "text-success" : "text-danger"}>{marginPct.toFixed(1).replace(".", ",")} %</span>} />
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-4">
-          <SummaryCard label="Coût/convive HTVA" value={fmt(guestCount > 0 ? totalCost / guestCount : 0)} />
-          <SummaryCard label="Marge/convive HTVA" value={fmt(guestCount > 0 ? margin / guestCount : 0)} className={margin >= 0 ? "text-success" : "text-destructive"} />
+        <div className="mt-2 grid grid-cols-2 overflow-hidden rounded-lg bg-surface md:divide-x md:divide-border">
+          <MoneyTile flat label="Coût/convive HTVA" value={fmt(guestCount > 0 ? totalCost / guestCount : 0)} />
+          <MoneyTile flat label="Marge/convive HTVA" value={<span className={margin >= 0 ? "text-success" : "text-danger"}>{fmt(guestCount > 0 ? margin / guestCount : 0)}</span>} />
         </div>
       </Section>
-    </div>
-  );
-}
 
-function SummaryCard({ label, value, className = "" }: { label: string; value: string; className?: string }) {
-  return (
-    <div className="card-elevated p-4 text-center">
-      <div className="text-sm text-muted-foreground">{label}</div>
-      <div className={`mt-1 text-lead font-semibold tabular-nums ${className}`}>{value}</div>
+      <div className="mt-block flex justify-end gap-2 border-t border-border pt-4">{footer}</div>
     </div>
   );
 }

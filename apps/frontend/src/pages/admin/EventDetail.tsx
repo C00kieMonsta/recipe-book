@@ -36,6 +36,7 @@ import {
   buildCostSnapshot,
   assigneesOf,
   isoWeekOf,
+  personName,
 } from "@packages/types";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -70,7 +71,7 @@ import {
 } from "@/components/ui";
 import { PREP_STATUS_OPTIONS } from "@/components/ui/StatusControl";
 import LedgerEntryForm from "@/components/comptes/LedgerEntryForm";
-import PersonChips from "@/components/admin/PersonChips";
+import PersonChips, { PersonChip } from "@/components/admin/PersonChips";
 import PersonPicker from "@/components/admin/PersonPicker";
 import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
 import { PaidPopover } from "@/pages/admin/comptes/Journal";
@@ -147,6 +148,8 @@ export default function EventDetail() {
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const [billingForm, setBillingForm] = useState<"facture" | "acompte" | null>(null);
   const [pickerLineId, setPickerLineId] = useState<string | null>(null);
+  const [teamOpen, setTeamOpen] = useState(false);
+  const teamRef = useRef<HTMLDivElement>(null);
   const priceRef = useRef<HTMLDivElement>(null);
   const addRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef(new Map<string, HTMLDivElement>());
@@ -654,7 +657,7 @@ export default function EventDetail() {
             <Link to={`/recipes/${line.recipeId}`} title={recipe?.name} className="text-sm text-foreground hover:underline touch:text-base">
               {recipe?.name ?? "Recette supprimée"}
             </Link>
-            {line.notes && noteLineId !== line.lineId && <span className="text-sm text-muted-foreground"> · {line.notes}</span>}
+            {line.notes && noteLineId !== line.lineId && <span className="block text-sm text-muted-foreground md:inline"><span className="hidden md:inline"> · </span>{line.notes}</span>}
           </div>
           <span className="shrink-0 whitespace-nowrap text-sm tabular-nums touch:text-base" data-portions>
             <EditableInlineNum value={line.portions} min={1} onSave={(v) => patchLine(line.lineId, { portions: Math.max(1, Math.round(v)) })} suffix=" port." />
@@ -713,7 +716,7 @@ export default function EventDetail() {
   const renderCourseBlock = (group: { course: string; lines: EventRecipeLine[] }) => {
     const isDropHere = dropTarget?.course === group.course && dropTarget.lineId === null;
     return (
-      <div key={group.course} className="mt-4">
+      <div key={group.course} className="mt-4 first:mt-0">
         <h3 className="text-base font-semibold">{group.course}</h3>
         <div
           className={`mt-1 rounded transition-colors ${isDropHere ? "bg-selected" : ""}`}
@@ -725,6 +728,13 @@ export default function EventDetail() {
       </div>
     );
   };
+
+  const billingButtons = (size: "md" | "lg") => (
+    <>
+      <Button variant="default" size={size} onClick={() => setBillingForm("acompte")}>Enregistrer un acompte</Button>
+      <Button variant="primary" size={size} icon={<Plus />} onClick={() => setBillingForm("facture")}>Créer la facture</Button>
+    </>
+  );
 
   const terminerButton = (className: string, size: "md" | "lg") => (
     <Button variant={event.status === "upcoming" && isPast ? "primary" : "default"} size={size} onClick={terminer} className={className}>
@@ -751,7 +761,7 @@ export default function EventDetail() {
         }
         properties={
           <PropertyList>
-            <Property icon={Calendar} label="Date" kind="date" value={event.date} onSave={(v) => saveField({ date: v })} />
+            <Property icon={Calendar} label="Date" kind="date" value={event.date} format={longDayLabel} onSave={(v) => saveField({ date: v })} />
             <Property icon={Users} label="Convives" kind="number" value={event.guestCount} min={1} decimals={0} onSave={(v) => saveField({ guestCount: Math.max(1, Math.round(v)) })} />
             <Property icon="🍽" label="Prestation" kind="select" value={event.prestationType ?? ""} options={prestationOptions} colour="gray" placeholder="Choisir une prestation" onSave={(v) => saveField({ prestationType: v })} />
             <Property icon={Building2} label="Client" kind="relation" value={event.clientId ?? ""} options={clientOptions} href={(cid) => `/clients/${cid}`} allowEmpty placeholder="Aucun client" onSave={(v) => saveField({ clientId: v || undefined })} />
@@ -777,7 +787,20 @@ export default function EventDetail() {
               {billing === "paye" && <StatusTag status="paid" label={lastPaidAt ? `Payé le ${dayMonthLabel(lastPaidAt)}` : "Payé"} />}
               {!event.prestationType && <Tag colour="red">Type de prestation manquant</Tag>}
             </Property>
-            <Property icon="👩‍🍳" label="Équipe" kind="people" value={event.assignedTo ?? []} people={people} placeholder="Ajouter une personne" onSave={(ids) => saveField({ assignedTo: ids })} />
+            <Property icon="👩‍🍳" label="Équipe" kind="custom">
+              <div ref={teamRef} className="relative flex flex-wrap items-center gap-1">
+                {(event.assignedTo ?? []).map((pid) => (
+                  <button key={pid} type="button" onClick={() => setTeamOpen((o) => !o)} className="inline-flex h-7 items-center gap-1.5 rounded pl-0.5 pr-1.5 text-base hover:bg-hover touch:h-11">
+                    <PersonChip personId={pid} people={people} size="sm" />
+                    {personName(people, pid)}
+                  </button>
+                ))}
+                <IconButton size="sm" aria-label="Modifier l'équipe" icon={<Plus />} onClick={() => setTeamOpen((o) => !o)} />
+                {teamOpen && (
+                  <PersonPicker value={event.assignedTo ?? []} options={people} onChange={(ids) => save({ assignedTo: ids })} onClose={() => setTeamOpen(false)} title="Équipe" />
+                )}
+              </div>
+            </Property>
             <Property icon={Clock} label="Heures passées" kind="number" value={event.hoursSpent ?? 0} min={0} suffix="h" onSave={(v) => saveField({ hoursSpent: round2(Math.max(0, v)) })} />
           </PropertyList>
         }
@@ -803,7 +826,7 @@ export default function EventDetail() {
           }
         >
           {grouped.length === 0 && !addingRecipe && <EmptyState message="Aucune recette au menu." action={{ label: "+ Ajouter une recette", onClick: () => setAddingRecipe(true) }} />}
-          <div className="-mt-4">{grouped.map(renderCourseBlock)}</div>
+          <div>{grouped.map(renderCourseBlock)}</div>
           <div className="mt-2" ref={addRef}>
             {addingRecipe ? (
               <SearchSelect options={recipeOptions} value="" onChange={addRecipe} placeholder="Rechercher une recette…" autoFocus />
@@ -852,13 +875,9 @@ export default function EventDetail() {
       <div id="facturation" className="scroll-mt-20">
         <Section
           title="Facturation"
-          action={!ledgerNotConfigured && !billingForm ? (
-            <>
-              <Button variant="default" size="md" onClick={() => setBillingForm("acompte")}>Enregistrer un acompte</Button>
-              <Button variant="primary" size="md" icon={<Plus />} onClick={() => setBillingForm("facture")}>Créer la facture</Button>
-            </>
-          ) : undefined}
+          action={!ledgerNotConfigured && !billingForm ? <div className="hidden items-center gap-1 md:flex">{billingButtons("md")}</div> : undefined}
         >
+          {!ledgerNotConfigured && !billingForm && <div className="mb-3 flex flex-col gap-2 md:hidden">{billingButtons("lg")}</div>}
           {ledgerNotConfigured ? (
             <Callout emoji="💶" tone="warning">{NOT_CONFIGURED}</Callout>
           ) : (
@@ -1054,7 +1073,7 @@ function InlineContact({ value, onSave, placeholder, inputMode }: { value: strin
       tabIndex={0}
       onClick={() => setEditing(true)}
       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
-      className={`prop-value inline-flex min-h-6 items-center text-base ${value ? "" : "no-print text-placeholder"}`}
+      className={`prop-value inline-flex min-h-6 shrink-0 items-center whitespace-nowrap text-base ${value ? "" : "no-print text-placeholder"}`}
     >
       {value || placeholder}
     </span>

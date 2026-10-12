@@ -51,7 +51,7 @@ export default function PlanningBar(props: PlanningBarProps) {
     <>
       <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         <Toolbar
-          left={<ViewTabs items={tabs} value={view} aria-label="Affichage" />}
+          left={<ViewTabs items={tabs} value={view} aria-label="Affichage" className="-ml-2" />}
           center={(
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
               <DateNav label={dateLabel} onPrev={onPrev} onNext={onNext} onPick={onPick} value={pickValue} pickerType="date" isToday={isToday} onToday={onToday} />
@@ -59,7 +59,7 @@ export default function PlanningBar(props: PlanningBarProps) {
             </div>
           )}
           right={right}
-          rightTouch={rightTouch}
+          rightTouch={rightTouch && <span className="flex items-center gap-0.5 touch:-mr-1">{rightTouch}</span>}
           filters={filters}
         />
       </div>

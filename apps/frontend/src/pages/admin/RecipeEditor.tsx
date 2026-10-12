@@ -1,15 +1,12 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Save, Plus, X, ImagePlus } from "lucide-react";
+import { Save, Plus, X, ImagePlus } from "lucide-react";
 import type { Recipe, RecipeIngredient, RecipePricing, RecipePhoto, Ingredient } from "@packages/types";
 import { UNITS_QTY, DEFAULT_RECIPE_CATEGORIES, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import NumericInput from "@/components/ui/NumericInput";
-import SearchSelect from "@/components/ui/SearchSelect";
-import IngredientFormModal from "@/components/ui/IngredientFormModal";
-import FieldLabel from "@/components/ui/FieldLabel";
-import Section from "@/components/ui/Section";
+import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
+import { NumericInput, SearchSelect, IngredientFormModal, FieldLabel, Section, PageHeader, Button, IconButton } from "@/components/ui";
 import { fmt } from "@/lib/recipe-helpers";
 
 const DEFAULT_PRICING: RecipePricing = {
@@ -17,10 +14,6 @@ const DEFAULT_PRICING: RecipePricing = {
   takeAway: { coef: 3, tva: 6 },
   chosenPrice: { surPlace: 0, takeAway: 0 },
 };
-
-const BTN = "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-base font-medium transition-colors";
-const BTN_PRIMARY = `${BTN} bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50`;
-const BTN_OUTLINE = `${BTN} border bg-card hover:bg-hover`;
 
 interface FormState {
   name: string;
@@ -50,6 +43,10 @@ export default function RecipeEditor() {
     name: "", type: "Buffet", portions: 1, portionWeight: 150, description: "",
     techniques: [""], ingredients: [], photos: [], pricing: DEFAULT_PRICING,
   });
+
+  const title = isNew ? "Nouvelle recette" : "Modifier la recette";
+  useBackLink({ to: isNew ? "/recipes" : `/recipes/${id}`, label: "Recettes" });
+  useTopTitle(title);
 
   useEffect(() => {
     const loadData = async () => {
@@ -158,24 +155,28 @@ export default function RecipeEditor() {
 
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
 
+  const cancel = () => navigate(isNew ? "/recipes" : `/recipes/${id}`);
+  const footer = (
+    <>
+      <Button variant="default" size="md" onClick={cancel}>Annuler</Button>
+      <Button variant="primary" size="md" icon={<Save />} onClick={handleSave} disabled={saving}>{saving ? "Sauvegarde…" : "Enregistrer"}</Button>
+    </>
+  );
+
   return (
     <div className="mx-auto max-w-doc">
-      <div className="mb-5 flex items-center justify-between gap-2">
-        <button onClick={() => navigate(isNew ? "/recipes" : `/recipes/${id}`)} className="flex min-h-11 items-center gap-2 text-base font-medium text-muted-foreground hover:text-foreground transition-colors">
-          <ArrowLeft className="h-4 w-4" /> Annuler
-        </button>
-        <button onClick={handleSave} disabled={saving} className={BTN_PRIMARY}>
-          <Save className="h-4 w-4" /> {saving ? "Sauvegarde…" : "Enregistrer"}
-        </button>
-      </div>
+      <PageHeader
+        breadcrumb={[{ label: "Recettes", to: "/recipes" }, ...(isNew ? [] : [{ label: form.name || "Recette", to: `/recipes/${id}` }]), { label: isNew ? "Nouvelle" : "Modification" }]}
+        iconKey="recette"
+        title={title}
+        actions={<div className="hidden items-center gap-1 md:flex">{footer}</div>}
+      />
 
-      <h1 className="text-h1 md:text-h1-lg">{isNew ? "Nouvelle recette" : "Modifier la recette"}</h1>
-
-      <Section title="Informations">
+      <Section title="Informations" className="!mt-0">
         <FieldLabel htmlFor="recipe-name">Nom</FieldLabel>
         <input id="recipe-name" className="input-field" value={form.name} onChange={(e) => update("name", e.target.value)} />
         <FieldLabel htmlFor="recipe-description" className="mt-3">Description</FieldLabel>
-        <textarea id="recipe-description" className="input-field min-h-[80px]" value={form.description} onChange={(e) => update("description", e.target.value)} />
+        <textarea id="recipe-description" className="input-field" value={form.description} onChange={(e) => update("description", e.target.value)} />
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
             <FieldLabel htmlFor="recipe-type">Format</FieldLabel>
@@ -184,28 +185,28 @@ export default function RecipeEditor() {
             </select>
           </div>
           <div>
-            <FieldLabel>Portions</FieldLabel>
-            <NumericInput className="input-field" value={form.portions} onChange={(v) => update("portions", v)} min={1} />
+            <FieldLabel htmlFor="recipe-portions">Portions</FieldLabel>
+            <NumericInput id="recipe-portions" className="input-field" value={form.portions} onChange={(v) => update("portions", v)} min={1} />
           </div>
           <div>
-            <FieldLabel>Poids par personne (g)</FieldLabel>
-            <NumericInput className="input-field" value={form.portionWeight} onChange={(v) => update("portionWeight", v)} />
+            <FieldLabel htmlFor="recipe-weight">Poids par personne (g)</FieldLabel>
+            <NumericInput id="recipe-weight" className="input-field" value={form.portionWeight} onChange={(v) => update("portionWeight", v)} />
           </div>
         </div>
       </Section>
 
       <Section title="Photos">
-        <div className="flex gap-3 flex-wrap">
+        <div className="flex flex-wrap gap-3">
           {form.photos.map((photo, idx) => (
-            <div key={idx} className="relative w-40 rounded-lg overflow-hidden border">
-              <img src={photo.url} alt={photo.label} className="w-full h-28 object-cover" />
-              <button onClick={() => update("photos", form.photos.filter((_, i) => i !== idx))} aria-label="Retirer la photo" className="absolute top-1 right-1 flex h-8 w-8 items-center justify-center rounded-full bg-overlay text-background"><X className="h-4 w-4" /></button>
-              <input className="w-full border-t px-2 py-1.5 text-sm text-center bg-transparent outline-none" value={photo.label} onChange={(e) => { const u = [...form.photos]; u[idx] = { ...u[idx], label: e.target.value }; update("photos", u); }} placeholder="Légende…" />
+            <div key={idx} className="relative w-40 overflow-hidden rounded-lg shadow-card">
+              <img src={photo.url} alt={photo.label} className="h-28 w-full object-cover" />
+              <IconButton size="sm" aria-label="Retirer la photo" onClick={() => update("photos", form.photos.filter((_, i) => i !== idx))} icon={<X />} className="absolute right-1 top-1 bg-background/90 text-foreground" />
+              <input className="w-full border-t border-border bg-transparent px-2 py-1.5 text-center text-sm outline-none placeholder:text-placeholder" value={photo.label} onChange={(e) => { const u = [...form.photos]; u[idx] = { ...u[idx], label: e.target.value }; update("photos", u); }} placeholder="Légende…" />
             </div>
           ))}
           {form.photos.length < 3 && (
-            <label className="w-40 h-36 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer text-muted-foreground hover:border-primary/40 transition-colors">
-              <ImagePlus className="h-7 w-7" /><span className="text-sm font-medium">Ajouter une photo</span>
+            <label className="flex h-36 w-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg bg-surface text-muted-foreground hover:bg-hover">
+              <ImagePlus className="h-6 w-6" /><span className="text-sm font-medium">Ajouter une photo</span>
               <input type="file" accept="image/*" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handlePhotoUpload(e.target.files[0]); e.target.value = ""; }} />
             </label>
           )}
@@ -214,19 +215,17 @@ export default function RecipeEditor() {
 
       <Section
         title="Étapes de préparation"
-        action={<button onClick={addTechnique} className={`${BTN_OUTLINE} px-3`}><Plus className="h-4 w-4" /> Ajouter une étape</button>}
+        action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addTechnique}>Étape</Button>}
       >
-        <p className="text-sm text-muted-foreground mb-3">Décrivez chaque étape de la recette. Entrée passe à l'étape suivante.</p>
+        <p className="mb-3 text-sm text-muted-foreground">Décrivez chaque étape de la recette. Entrée passe à l'étape suivante.</p>
         {form.techniques.length === 0 && (
-          <button onClick={addTechnique} className="w-full py-6 border-2 border-dashed rounded-xl text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors text-base font-medium">
-            + Ajouter la première étape
-          </button>
+          <Button variant="subtle" size="sm" icon={<Plus />} onClick={addTechnique} className="-mx-1">Ajouter la première étape</Button>
         )}
         {form.techniques.map((t, i) => (
-          <div key={i} className="flex gap-2 mb-2">
-            <span className="w-7 h-7 rounded-full bg-muted text-foreground flex items-center justify-center text-sm font-semibold shrink-0 mt-2">{i + 1}</span>
+          <div key={i} className="mb-2 flex items-start gap-2">
+            <span className="w-6 shrink-0 pt-1.5 text-right text-sm text-muted-foreground tabular-nums">{i + 1}</span>
             <textarea
-              className="input-field flex-1 min-h-[50px]"
+              className="input-field min-h-[50px] flex-1"
               value={t}
               onChange={(e) => updateTechnique(i, e.target.value)}
               onKeyDown={(e) => {
@@ -243,7 +242,7 @@ export default function RecipeEditor() {
                 : "Étape suivante…"
               }
             />
-            <button onClick={() => removeTechnique(i)} aria-label="Supprimer l'étape" className="flex min-h-11 min-w-11 items-center justify-center text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            <IconButton size="md" aria-label="Supprimer l'étape" onClick={() => removeTechnique(i)} icon={<X />} />
           </div>
         ))}
       </Section>
@@ -252,8 +251,9 @@ export default function RecipeEditor() {
         title="Ingrédients"
         action={
           <>
-            <button
-              type="button"
+            <Button
+              variant="subtle"
+              size="sm"
               title="Ajouter plusieurs lignes vides d'un coup pour saisie au clavier"
               onClick={() => {
                 const raw = prompt("Nombre de lignes à ajouter (1 à 40) ?", "5");
@@ -267,15 +267,14 @@ export default function RecipeEditor() {
                 };
                 update("ingredients", [...form.ingredients, ...Array.from({ length: n }, () => ({ ...blank }))]);
               }}
-              className={`${BTN_OUTLINE} px-3`}
             >
-              <Plus className="h-4 w-4" /> Plusieurs lignes…
-            </button>
-            <button onClick={addIngLine} className={`${BTN_OUTLINE} px-3`}><Plus className="h-4 w-4" /> Ajouter</button>
+              Plusieurs lignes…
+            </Button>
+            <Button variant="ghost" size="sm" icon={<Plus />} onClick={addIngLine}>Ajouter</Button>
           </>
         }
       >
-        <div className="overflow-x-auto">
+        <div className="-mx-2 overflow-x-auto px-2">
           <table className="table table-fixed min-w-[560px]">
             <colgroup>
               <col className="w-[42%]" />
@@ -284,7 +283,7 @@ export default function RecipeEditor() {
               <col className="w-[16%]" />
               <col className="w-[10%]" />
             </colgroup>
-            <thead><tr className="border-b text-muted-foreground">
+            <thead><tr>
               <th>Produit</th>
               <th className="text-right">Quantité</th>
               <th>Unité</th>
@@ -293,12 +292,12 @@ export default function RecipeEditor() {
             </tr></thead>
             <tbody>
               {form.ingredients.map((ri, i) => (
-                <tr key={i} className="border-b border-border/30">
+                <tr key={i}>
                   <td className="!px-1"><SearchSelect options={allIngredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))} value={ri.ingredientId} onChange={(v) => { const ing = allIngredients.find((ig) => ig.ingredientId === v); const updates: Partial<RecipeIngredient> = { ingredientId: v }; if (ing) updates.unit = PRICE_TO_QTY_UNIT[ing.unit]; const a = [...form.ingredients]; a[i] = { ...a[i], ...updates }; update("ingredients", a); }} placeholder="Rechercher…" onCreateNew={(name) => setCreatingIngredient({ name, row: i })} /></td>
-                  <td className="!px-1"><NumericInput className="input-field text-right w-full" value={ri.qty} onChange={(v) => updateIngLine(i, "qty", v)} /></td>
-                  <td className="!px-1"><select className="input-field w-full" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)}>{UNITS_QTY.map((u) => <option key={u}>{u}</option>)}</select></td>
-                  <td className="!px-1"><NumericInput className="input-field text-right w-full" value={ri.lossPct} onChange={(v) => updateIngLine(i, "lossPct", v)} /></td>
-                  <td className="!px-0 text-center"><button onClick={() => removeIngLine(i)} aria-label="Retirer la ligne" className="inline-flex min-h-11 min-w-11 items-center justify-center text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button></td>
+                  <td className="!px-1"><NumericInput className="input-field w-full text-right" value={ri.qty} onChange={(v) => updateIngLine(i, "qty", v)} aria-label="Quantité" /></td>
+                  <td className="!px-1"><select className="input-field w-full" aria-label="Unité" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)}>{UNITS_QTY.map((u) => <option key={u}>{u}</option>)}</select></td>
+                  <td className="!px-1"><NumericInput className="input-field w-full text-right" value={ri.lossPct} onChange={(v) => updateIngLine(i, "lossPct", v)} aria-label="Perte" /></td>
+                  <td className="!px-0 text-center"><IconButton size="md" aria-label="Retirer la ligne" onClick={() => removeIngLine(i)} icon={<X />} /></td>
                 </tr>
               ))}
             </tbody>
@@ -309,25 +308,27 @@ export default function RecipeEditor() {
       <Section title="Tarification">
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <div>
-            <h3 className="text-base font-semibold mb-3">Sur place</h3>
-            <FieldLabel>Coefficient</FieldLabel>
-            <NumericInput className="input-field" value={form.pricing.surPlace.coef} onChange={(v) => updatePricing("surPlace.coef", v)} />
-            <FieldLabel className="mt-3">TVA %</FieldLabel>
-            <NumericInput className="input-field" value={form.pricing.surPlace.tva} onChange={(v) => updatePricing("surPlace.tva", v)} />
-            <FieldLabel className="mt-3">Prix choisi TVAC</FieldLabel>
-            <NumericInput className="input-field" value={form.pricing.chosenPrice.surPlace} onChange={(v) => updatePricing("chosenPrice.surPlace", v)} />
+            <h3 className="mb-3 text-base font-semibold">Sur place</h3>
+            <FieldLabel htmlFor="sp-coef">Coefficient</FieldLabel>
+            <NumericInput id="sp-coef" className="input-field" value={form.pricing.surPlace.coef} onChange={(v) => updatePricing("surPlace.coef", v)} />
+            <FieldLabel htmlFor="sp-tva" className="mt-3">TVA %</FieldLabel>
+            <NumericInput id="sp-tva" className="input-field" value={form.pricing.surPlace.tva} onChange={(v) => updatePricing("surPlace.tva", v)} />
+            <FieldLabel htmlFor="sp-price" className="mt-3">Prix choisi TVAC</FieldLabel>
+            <NumericInput id="sp-price" className="input-field" value={form.pricing.chosenPrice.surPlace} onChange={(v) => updatePricing("chosenPrice.surPlace", v)} />
           </div>
           <div>
-            <h3 className="text-base font-semibold mb-3">Take away</h3>
-            <FieldLabel>Coefficient</FieldLabel>
-            <NumericInput className="input-field" value={form.pricing.takeAway.coef} onChange={(v) => updatePricing("takeAway.coef", v)} />
-            <FieldLabel className="mt-3">TVA %</FieldLabel>
-            <NumericInput className="input-field" value={form.pricing.takeAway.tva} onChange={(v) => updatePricing("takeAway.tva", v)} />
-            <FieldLabel className="mt-3">Prix choisi TVAC</FieldLabel>
-            <NumericInput className="input-field" value={form.pricing.chosenPrice.takeAway} onChange={(v) => updatePricing("chosenPrice.takeAway", v)} />
+            <h3 className="mb-3 text-base font-semibold">Take away</h3>
+            <FieldLabel htmlFor="ta-coef">Coefficient</FieldLabel>
+            <NumericInput id="ta-coef" className="input-field" value={form.pricing.takeAway.coef} onChange={(v) => updatePricing("takeAway.coef", v)} />
+            <FieldLabel htmlFor="ta-tva" className="mt-3">TVA %</FieldLabel>
+            <NumericInput id="ta-tva" className="input-field" value={form.pricing.takeAway.tva} onChange={(v) => updatePricing("takeAway.tva", v)} />
+            <FieldLabel htmlFor="ta-price" className="mt-3">Prix choisi TVAC</FieldLabel>
+            <NumericInput id="ta-price" className="input-field" value={form.pricing.chosenPrice.takeAway} onChange={(v) => updatePricing("chosenPrice.takeAway", v)} />
           </div>
         </div>
       </Section>
+
+      <div className="mt-block flex justify-end gap-2 border-t border-border pt-4">{footer}</div>
 
       {creatingIngredient !== null && (
         <IngredientFormModal

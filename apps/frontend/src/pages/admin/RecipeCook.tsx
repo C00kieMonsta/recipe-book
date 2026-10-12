@@ -1,18 +1,16 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
-import { X, ChevronLeft, ChevronRight, Check, Circle, CheckCircle2, ListChecks } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, ListChecks } from "lucide-react";
 import type { Recipe, Ingredient, AppEvent } from "@packages/types";
 import { fmtQty, scaleQtyNumber } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { useMiseEnPlace } from "@/hooks/use-mise-en-place";
-import Stepper from "@/components/ui/Stepper";
+import { Button, Checkbox, IconButton, Sheet, Stepper } from "@/components/ui";
 import { StepText } from "@/components/ui/RecipeReader";
 
 const SWIPE_MIN_PX = 60;
-
-const FOOTER_BTN = "flex min-h-14 flex-1 items-center justify-center gap-2 rounded-xl text-lead font-medium transition-colors";
 
 export default function RecipeCook() {
   const { id } = useParams<{ id: string }>();
@@ -101,8 +99,6 @@ export default function RecipeCook() {
     : event
       ? `/jour/${event.date.slice(0, 10)}${personQuery}`
       : `/recipes/${id}`);
-  // Matches the exitTo chain: prep sheet line, then the day, then the recipe.
-  const exitLabel = eventId && lineId ? "Fiche" : event ? "Jour" : "Recette";
   const exit = useCallback(() => navigate(exitTo), [navigate, exitTo]);
 
   useEffect(() => {
@@ -124,13 +120,13 @@ export default function RecipeCook() {
   const ingredientById = useMemo(() => new Map(ingredients.map((i) => [i.ingredientId, i])), [ingredients]);
 
   if (loading) {
-    return <div className="fixed inset-0 bg-background flex items-center justify-center text-h2 text-muted-foreground">Chargement…</div>;
+    return <div className="fixed inset-0 flex items-center justify-center bg-background text-base text-muted-foreground">Chargement…</div>;
   }
   if (error || !recipe) {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background p-6">
-        <p className="text-lead text-muted-foreground">Recette introuvable.</p>
-        <button type="button" onClick={exit} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-muted pl-2 pr-3 text-base font-medium text-foreground hover:border-primary"><ChevronLeft className="h-5 w-5" /> {exitLabel}</button>
+        <p className="text-base text-muted-foreground">Recette introuvable.</p>
+        <Button variant="default" size="md" onClick={exit} icon={<ChevronLeft />}>Retour</Button>
       </div>
     );
   }
@@ -169,8 +165,9 @@ export default function RecipeCook() {
     }
   };
 
-  const markDone = async () => {
-    if (!eventId || !lineId || !event) return;
+  // "Terminer" on the last step: the line is done and the day (or the fiche) takes over.
+  const finish = async () => {
+    if (!eventId || !lineId || !event) { exit(); return; }
     setMarking(true);
     try {
       await api.events.lines.patch(eventId, lineId, { prepStatus: "done" });
@@ -183,25 +180,18 @@ export default function RecipeCook() {
   };
 
   const ingredientList = (
-    <ul className="divide-y divide-border">
+    <ul>
       {recipe.ingredients.map((ri, i) => {
         const ing = ingredientById.get(ri.ingredientId);
         const done = mep.ticked.has(i);
         const q = fmtQty(scaleQtyNumber(ri.qty, ratio), ri.unit);
         return (
-          <li key={`${ri.ingredientId}-${i}`}>
-            <button
-              type="button"
-              onClick={() => toggleTick(i)}
-              aria-pressed={done}
-              className={`flex w-full min-h-12 items-center gap-3 py-2 text-left text-lead transition-colors ${done ? "text-muted-foreground" : "text-foreground"}`}
-            >
-              {done ? <CheckCircle2 className="h-6 w-6 shrink-0 text-success" /> : <Circle className="h-6 w-6 shrink-0 text-muted-foreground" />}
-              <span className="min-w-0 flex-1">{ing?.name ?? "Ingrédient inconnu"}</span>
-              <span className="shrink-0 whitespace-nowrap font-semibold tabular-nums">
-                {q.value} <span className="font-normal text-muted-foreground">{q.unit}</span>
-              </span>
-            </button>
+          <li key={`${ri.ingredientId}-${i}`} className={`flex min-h-8 items-center gap-2 text-base touch:min-h-11 ${done ? "text-muted-foreground" : "text-foreground"}`}>
+            <Checkbox shape="circle" checked={done} onChange={() => toggleTick(i)} aria-label={`${ing?.name ?? "Ingrédient"} : ${done ? "coché" : "à cocher"}`} className="-ml-1.5" />
+            <span className="min-w-0 flex-1">{ing?.name ?? "Ingrédient inconnu"}</span>
+            <span className="shrink-0 whitespace-nowrap font-medium tabular-nums">
+              {q.value} <span className="font-normal text-muted-foreground">{q.unit}</span>
+            </span>
           </li>
         );
       })}
@@ -209,8 +199,9 @@ export default function RecipeCook() {
   );
 
   const prevStep = step > 0 ? recipe.techniques[step - 1] : null;
+  const nextStep = step < totalSteps - 1 ? recipe.techniques[step + 1] : null;
   const scaledNote = ratio !== 1 && (
-    <p className="mb-3 text-sm text-muted-foreground">
+    <p className="mb-3 text-caption text-muted-foreground">
       {scaleSteps
         ? `Quantités adaptées pour ${cookPortions} portions (recette de base : ${recipe.portions})`
         : `Quantités de la recette de base (${recipe.portions} portions)`}
@@ -219,14 +210,12 @@ export default function RecipeCook() {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-background select-text">
-      <header className="flex h-16 shrink-0 items-center gap-3 border-b bg-card px-3 md:px-6">
-        <button type="button" onClick={exit} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-muted pl-2 pr-3 text-base font-medium text-foreground hover:border-primary">
-          <ChevronLeft className="h-5 w-5" /> {exitLabel}
-        </button>
+      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-1 md:px-3">
+        <IconButton size="md" aria-label="Fermer" onClick={exit} icon={<X />} />
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-h2 leading-tight">{recipe.name}</h1>
+          <h1 className="truncate text-base font-semibold leading-tight">{recipe.name}</h1>
           {(contextName || cookPortions !== recipe.portions) && (
-            <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
+            <p className="truncate text-sm leading-tight text-muted-foreground">{subtitle}</p>
           )}
         </div>
         {!lineId && (
@@ -235,28 +224,28 @@ export default function RecipeCook() {
           </div>
         )}
         {totalSteps > 0 && (
-          <div className="shrink-0 text-base tabular-nums text-muted-foreground">
+          <div className="shrink-0 pr-2 text-sm tabular-nums text-muted-foreground">
             Étape {step + 1} / {totalSteps}
           </div>
         )}
       </header>
 
       <div className="flex min-h-0 flex-1 md:grid md:grid-cols-[320px_1fr]">
-        <aside className="hidden min-h-0 overflow-y-auto border-r bg-surface px-4 py-4 md:block">
+        <aside className="hidden min-h-0 overflow-y-auto bg-surface px-4 py-4 md:block">
           <h2 className="text-h3">Ingrédients</h2>
           <p className="mb-2 text-sm text-muted-foreground">pour {cookPortions} portions</p>
           {ingredientList}
         </aside>
 
         <main
-          className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-8"
+          className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-8"
           onTouchStart={onTouchStart}
           onTouchEnd={onTouchEnd}
         >
           {totalSteps === 0 ? (
             <div className="mx-auto max-w-doc">
               <p className="text-cook">Pas d'étapes</p>
-              <p className="mt-2 text-lead text-muted-foreground">Cette recette n'a pas encore d'étapes de préparation.</p>
+              <p className="mt-2 text-base text-muted-foreground">Cette recette n'a pas encore d'étapes de préparation.</p>
             </div>
           ) : (
             <>
@@ -264,13 +253,20 @@ export default function RecipeCook() {
                 {scaledNote}
                 {prevStep && (
                   <p className="mb-4 whitespace-pre-wrap text-base text-muted-foreground">
-                    <span className="font-semibold">{step}.</span> <StepText step={prevStep} ratio={stepRatio} />
+                    <span className="mr-1 tabular-nums">{step}.</span>
+                    <StepText step={prevStep} ratio={stepRatio} />
                   </p>
                 )}
                 <p className="whitespace-pre-wrap text-cook text-foreground">
-                  <span className="mr-2 text-muted-foreground">{step + 1}.</span>
+                  <span className="mr-2 tabular-nums text-muted-foreground">{step + 1}.</span>
                   <StepText step={recipe.techniques[step]} ratio={stepRatio} />
                 </p>
+                {nextStep && (
+                  <p className="mt-4 whitespace-pre-wrap text-base text-muted-foreground">
+                    <span className="mr-1 tabular-nums">{step + 2}.</span>
+                    <StepText step={nextStep} ratio={stepRatio} />
+                  </p>
+                )}
               </div>
 
               <div className="mx-auto hidden max-w-doc md:block">
@@ -284,9 +280,9 @@ export default function RecipeCook() {
                           type="button"
                           onClick={() => setStep(i)}
                           aria-current={current ? "step" : undefined}
-                          className={`flex w-full gap-4 rounded-lg text-left transition-colors ${current ? "text-cook md:text-cook-lg text-foreground" : "text-lead text-muted-foreground hover:text-foreground"}`}
+                          className={`flex w-full gap-4 rounded text-left transition-colors ${current ? "text-cook md:text-cook-lg text-foreground" : "text-base text-muted-foreground hover:text-foreground"}`}
                         >
-                          <span className={`shrink-0 tabular-nums ${current ? "" : "pt-0.5"}`}>{i + 1}.</span>
+                          <span className={`shrink-0 tabular-nums ${current ? "text-muted-foreground" : "pt-0.5"}`}>{i + 1}.</span>
                           <span className="min-w-0 flex-1 whitespace-pre-wrap"><StepText step={t} ratio={stepRatio} /></span>
                         </button>
                       </li>
@@ -302,56 +298,33 @@ export default function RecipeCook() {
       <button
         type="button"
         onClick={() => setSheetOpen(true)}
-        className="flex min-h-14 shrink-0 items-center justify-between border-t bg-surface px-4 text-lead font-medium md:hidden"
+        className="flex h-11 shrink-0 items-center justify-between bg-surface px-4 text-sm font-medium md:hidden"
       >
-        <span className="flex items-center gap-2"><ListChecks className="h-5 w-5" /> Ingrédients ({recipe.ingredients.length})</span>
-        <span className="text-base text-muted-foreground">{cookPortions} portions</span>
+        <span className="flex items-center gap-2"><ListChecks className="h-4 w-4 text-icon" aria-hidden="true" /> Ingrédients ({recipe.ingredients.length})</span>
+        <span className="text-sm font-normal text-muted-foreground">{cookPortions} portions</span>
       </button>
 
-      <footer className="flex shrink-0 gap-3 border-t bg-card px-3 py-3 md:px-6">
-        <button type="button" onClick={goPrev} disabled={step === 0} className={`${FOOTER_BTN} border hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent`}>
-          <ChevronLeft className="h-6 w-6" /> Précédent
-        </button>
+      <footer className="flex shrink-0 gap-2 border-t border-border px-3 py-2 md:px-6">
+        <Button variant="default" size="lg" onClick={goPrev} disabled={step === 0} className="flex-1" icon={<ChevronLeft />}>Précédent</Button>
         {isLast ? (
-          lineId && event ? (
-            <button type="button" onClick={markDone} disabled={marking} className={`${FOOTER_BTN} bg-success text-primary-foreground hover:opacity-90 disabled:opacity-50`}>
-              <Check className="h-6 w-6" /> {marking ? "Enregistrement…" : "Marquer fait"}
-            </button>
-          ) : (
-            <button type="button" onClick={exit} className={`${FOOTER_BTN} bg-primary text-primary-foreground hover:opacity-90`}>
-              <Check className="h-6 w-6" /> Terminer
-            </button>
-          )
+          <Button variant="primary" size="lg" onClick={finish} disabled={marking} className="flex-1">
+            {marking ? "Enregistrement…" : "Terminer"}
+          </Button>
         ) : (
-          <button type="button" onClick={goNext} className={`${FOOTER_BTN} bg-primary text-primary-foreground hover:opacity-90`}>
-            Suivant <ChevronRight className="h-6 w-6" />
-          </button>
+          <Button variant="primary" size="lg" onClick={goNext} className="flex-1">
+            Suivant <ChevronRight className="h-4 w-4" aria-hidden="true" />
+          </Button>
         )}
       </footer>
 
-      {sheetOpen && (
-        <div className="fixed inset-0 z-50 flex items-end bg-overlay md:hidden" onClick={() => setSheetOpen(false)}>
-          <div
-            role="dialog"
-            aria-label="Ingrédients"
-            className="flex max-h-[85vh] w-full flex-col rounded-t-2xl bg-card shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b px-4 py-2">
-              <h2 className="text-h3">Ingrédients ({recipe.ingredients.length})</h2>
-              <button type="button" onClick={() => setSheetOpen(false)} aria-label="Fermer" className="flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-hover">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            {!lineId && (
-              <div className="border-b px-4 py-3">
-                <Stepper value={cookPortions} onChange={setCookPortions} min={1} label="portions" />
-              </div>
-            )}
-            <div className="overflow-y-auto px-4 pb-6">{ingredientList}</div>
+      <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title={`Ingrédients (${recipe.ingredients.length})`} aria-label="Ingrédients">
+        {!lineId && (
+          <div className="px-4 pb-2">
+            <Stepper value={cookPortions} onChange={setCookPortions} min={1} label="portions" />
           </div>
-        </div>
-      )}
+        )}
+        <div className="px-4 pb-4">{ingredientList}</div>
+      </Sheet>
     </div>
   );
 }
