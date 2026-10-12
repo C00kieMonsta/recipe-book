@@ -1,7 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Plus, Upload, Check, Download, AlertTriangle, FileSpreadsheet } from "lucide-react";
+import { Search, Plus, Upload, Check, Download, AlertTriangle, FileSpreadsheet, BookOpen } from "lucide-react";
 import ActionMenu from "@/components/ui/ActionMenu";
+import PageHeader from "@/components/ui/PageHeader";
+import Tag from "@/components/ui/Tag";
+import ListRow from "@/components/ui/ListRow";
+import FieldLabel from "@/components/ui/FieldLabel";
 import type { Recipe, Ingredient } from "@packages/types";
 import { DEFAULT_RECIPE_CATEGORIES } from "@packages/types";
 import { api } from "@/lib/api";
@@ -24,9 +28,13 @@ const CSV_SAMPLE = [
   ["Pâtes pesto", "Buffet", "1", "150", "4", "3", "12", "6", "10.00", "10.00", "Fusilis au pesto, edamame, parmesan"],
 ];
 
+const BTN = "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-base font-medium transition-colors";
+const BTN_PRIMARY = `${BTN} bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50`;
+const BTN_OUTLINE = `${BTN} border bg-card hover:bg-hover disabled:opacity-50`;
+
 function downloadTemplate() {
   const rows = [CSV_HEADERS, ...CSV_SAMPLE];
-  const csv = "\uFEFF" + rows.map((r) => r.map((c) => `"${c}"`).join(";")).join("\n");
+  const csv = "﻿" + rows.map((r) => r.map((c) => `"${c}"`).join(";")).join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   a.download = "recettes_template.csv";
@@ -116,65 +124,85 @@ export default function Recipes() {
     XLSX.writeFile(wb, "recettes.xlsx");
   };
 
+  const createRecipe = async () => {
+    try {
+      const created = await api.recipes.create({ name: "Nouvelle recette", type: categories[0] || "Buffet", portions: 1, portionWeight: 150, techniques: [], ingredients: [], photos: [] });
+      navigate(`/recipes/${created.recipeId}?mode=edit`);
+    } catch { toast({ title: "Erreur lors de la création", variant: "destructive" }); }
+  };
+
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
 
   return (
-    <div className="max-w-[1100px] mx-auto">
-      <div className="flex justify-between items-start mb-6 flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Recettes</h1>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-1">{recipes.length} recettes au total</p>
-        </div>
-        <div className="flex gap-1.5 sm:gap-2 items-center">
-          <button onClick={async () => {
-            try {
-              const created = await api.recipes.create({ name: "Nouvelle recette", type: categories[0] || "Buffet", portions: 1, portionWeight: 150, techniques: [], ingredients: [], photos: [] });
-              navigate(`/recipes/${created.recipeId}`);
-            } catch { toast({ title: "Erreur lors de la création", variant: "destructive" }); }
-          }} className="flex items-center gap-1.5 px-3 py-2 sm:px-4 bg-primary text-primary-foreground rounded-lg text-xs sm:text-sm font-medium shadow-sm hover:opacity-90 transition-opacity">
-            <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Nouvelle recette</span><span className="sm:hidden">Nouveau</span>
-          </button>
-          <ActionMenu items={[
-            { label: "Exporter Excel", icon: <FileSpreadsheet className="h-4 w-4" />, onClick: exportExcel },
-            { label: "Importer", icon: <Upload className="h-4 w-4" />, onClick: () => setShowImport(true) },
-          ]} />
-        </div>
+    <div className="mx-auto max-w-wide">
+      <PageHeader
+        title="Recettes"
+        meta={`${recipes.length} recettes`}
+        actions={
+          <>
+            <button onClick={createRecipe} className={BTN_PRIMARY}>
+              <Plus className="h-5 w-5" /> <span className="hidden sm:inline">Nouvelle recette</span><span className="sm:hidden">Nouvelle</span>
+            </button>
+            <ActionMenu items={[
+              { label: "Exporter Excel", icon: <FileSpreadsheet className="h-4 w-4" />, onClick: exportExcel },
+              { label: "Importer", icon: <Upload className="h-4 w-4" />, onClick: () => setShowImport(true) },
+            ]} />
+          </>
+        }
+      />
+
+      <div className="sticky top-[68px] z-30 -mx-4 bg-background px-4 py-2 md:static md:mx-0 md:px-0 md:py-0">
+        <label className="flex min-h-11 w-full items-center gap-2 rounded-lg border bg-card px-3 md:max-w-sm">
+          <Search className="h-5 w-5 text-muted-foreground" />
+          <input className="min-w-0 flex-1 bg-transparent text-base outline-none" placeholder="Rechercher une recette…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+        </label>
       </div>
 
-      <div className="flex gap-4 mb-6 flex-wrap items-center">
-        <div className="flex items-center gap-2 px-3 py-2 bg-card border rounded-lg flex-1 max-w-sm">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <input className="flex-1 bg-transparent outline-none text-sm" placeholder="Rechercher une recette…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
-        </div>
-        <div className="flex gap-1.5 flex-wrap">
-          <PillBtn active={filterType === "all"} onClick={() => { setFilterType("all"); setPage(1); }}>Tous</PillBtn>
-          {types.map((t) => <PillBtn key={t} active={filterType === t} onClick={() => { setFilterType(t); setPage(1); }}>{t}</PillBtn>)}
-        </div>
+      <div className="mt-3 flex gap-2 overflow-x-auto pb-1 md:flex-wrap">
+        <ChipBtn active={filterType === "all"} onClick={() => { setFilterType("all"); setPage(1); }}>Tous</ChipBtn>
+        {types.map((t) => <ChipBtn key={t} active={filterType === t} onClick={() => { setFilterType(t); setPage(1); }}>{t}</ChipBtn>)}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div className="mt-4 divide-y divide-border md:hidden">
+        {paginatedItems.map((r) => (
+          <ListRow
+            key={r.recipeId}
+            to={`/recipes/${r.recipeId}`}
+            leading={<Thumb recipe={r} />}
+            title={r.name}
+            subtitle={`${r.type} · ${r.portions} portions · ${r.ingredients.length} ingrédients`}
+          />
+        ))}
+        {paginatedItems.length === 0 && <p className="py-8 text-center text-base text-muted-foreground">Aucune recette.</p>}
+      </div>
+
+      <div className="mt-6 hidden gap-5 md:grid md:grid-cols-2 lg:grid-cols-3">
         {paginatedItems.map((r) => {
           const cost = calcRecipeCost(r, ingredients);
           return (
-            <button key={r.recipeId} onClick={() => navigate(`/recipes/${r.recipeId}`)} className="text-left border rounded-xl bg-card overflow-hidden hover:shadow-md transition-shadow group">
-              {r.photos?.length ? (
-                <img src={r.photos[0].url} alt={r.name} className="w-full h-40 object-cover" />
+            <button key={r.recipeId} onClick={() => navigate(`/recipes/${r.recipeId}`)} className="card-elevated overflow-hidden text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+              {r.photos?.[0]?.url ? (
+                <img src={r.photos[0].url} alt={r.name} className="aspect-[3/2] w-full object-cover" />
               ) : (
-                <div className="h-1.5 bg-gradient-to-r from-primary to-accent" />
+                <div className="flex h-40 items-center justify-center bg-primary-soft">
+                  <BookOpen className="h-12 w-12 text-primary" />
+                </div>
               )}
               <div className="p-4">
-                <div className="inline-block px-2.5 py-0.5 rounded-full bg-muted text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">{r.type}</div>
-                <h3 className="font-serif text-lg font-bold mb-1 tracking-tight">{r.name}</h3>
-                <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{r.description}</p>
-                <div className="flex gap-4 pt-3 border-t border-border/50 text-xs text-muted-foreground font-medium">
-                  <span>{r.ingredients.length} ing.</span>
-                  <span>Coût HT: {fmt(cost)}</span>
-                  {r.pricing?.chosenPrice?.surPlace > 0 && <span>PV TVAC: {fmt(r.pricing.chosenPrice.surPlace)}</span>}
+                <Tag variant="primary">{r.type}</Tag>
+                <h3 className="mt-2 font-serif text-h2">{r.name}</h3>
+                {r.description && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{r.description}</p>}
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-border/60 pt-3 text-sm text-muted-foreground">
+                  <span>{r.portions} portions</span>
+                  <span>{r.ingredients.length} ingrédients</span>
+                  <span>Coût HT {fmt(cost)}</span>
+                  {r.pricing?.chosenPrice?.surPlace > 0 && <span>PV TVAC {fmt(r.pricing.chosenPrice.surPlace)}</span>}
                 </div>
               </div>
             </button>
           );
         })}
+        {paginatedItems.length === 0 && <p className="col-span-full py-8 text-center text-base text-muted-foreground">Aucune recette.</p>}
       </div>
 
       <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} onPrev={prev} onNext={next} />
@@ -190,9 +218,9 @@ export default function Recipes() {
                 load();
                 let msg = `${result.created} créées, ${result.skipped} ignorées`;
                 if (result.unmatchedIngredients?.length > 0) {
-                  msg += ` — ${result.unmatchedIngredients.length} ingrédients non trouvés`;
+                  msg += `, ${result.unmatchedIngredients.length} ingrédients non trouvés`;
                 }
-                toast({ title: `Import terminé — ${msg}` });
+                toast({ title: `Import terminé : ${msg}` });
               } catch (e) {
                 toast({ title: (e as Error).message || "Erreur lors de l'import", variant: "destructive" });
               }
@@ -205,9 +233,24 @@ export default function Recipes() {
   );
 }
 
-function PillBtn({ children, active, onClick }: { children: React.ReactNode; active: boolean; onClick: () => void }) {
+function Thumb({ recipe }: { recipe: Recipe }) {
+  const url = recipe.photos?.[0]?.url;
+  if (url) return <img src={url} alt="" className="h-16 w-16 rounded-lg object-cover" />;
   return (
-    <button onClick={onClick} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${active ? "bg-foreground text-background border-foreground" : "bg-card hover:bg-muted"}`}>
+    <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-primary-soft">
+      <BookOpen className="h-7 w-7 text-primary" />
+    </div>
+  );
+}
+
+function ChipBtn({ children, active, onClick }: { children: React.ReactNode; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-colors ${active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:bg-hover"}`}
+    >
       {children}
     </button>
   );
@@ -303,70 +346,71 @@ function RecipeImport({ existingNames, onImport, onCancel }: {
 
   return (
     <div>
-      <h2 className="font-serif text-xl font-bold mb-1">Importer des recettes</h2>
-      <p className="text-xs text-muted-foreground mb-5">Formats supportés : <strong>CSV</strong> ou <strong>JSON</strong>. Les recettes existantes sont ignorées.</p>
+      <h2 className="font-serif text-h2 mb-1">Importer des recettes</h2>
+      <p className="text-base text-muted-foreground mb-5">Formats acceptés : CSV ou JSON. Les recettes existantes sont ignorées.</p>
 
       {step === "upload" && (
         <>
+          <FieldLabel htmlFor="recipe-import-file">Fichier</FieldLabel>
           <div className="flex flex-col items-center justify-center gap-2 p-10 border-2 border-dashed rounded-xl cursor-pointer text-muted-foreground hover:border-primary/40 transition-colors" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }} onClick={() => fileRef.current?.click()}>
             <Upload className="h-8 w-8" />
-            <span className="text-sm font-medium">Glisser-déposer votre fichier CSV ou JSON</span>
-            <span className="text-xs">ou cliquer pour parcourir</span>
+            <span className="text-base font-medium">Glisser-déposer votre fichier CSV ou JSON</span>
+            <span className="text-sm">ou cliquer pour parcourir</span>
           </div>
-          <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,.json" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
+          <input id="recipe-import-file" ref={fileRef} type="file" accept=".csv,.tsv,.txt,.json" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
           <div className="flex justify-between mt-5">
-            <button onClick={downloadTemplate} className="flex items-center gap-2 px-3 py-2 border rounded-lg text-sm font-medium hover:bg-muted"><Download className="h-4 w-4" /> Modèle CSV</button>
-            <button onClick={onCancel} className="px-4 py-2 border rounded-lg text-sm font-medium">Annuler</button>
+            <button onClick={downloadTemplate} className={BTN_OUTLINE}><Download className="h-4 w-4" /> Modèle CSV</button>
+            <button onClick={onCancel} className={BTN_OUTLINE}>Annuler</button>
           </div>
         </>
       )}
 
       {step === "preview" && (
         <>
-          <div className="flex justify-between items-center px-4 py-2.5 bg-muted rounded-lg mb-4">
-            <span className="font-semibold text-sm">{fileName}</span>
-            <div className="flex gap-2">
-              <span className="px-2.5 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-semibold">{newCount} nouvelles</span>
-              {dupCount > 0 && <span className="px-2.5 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">{dupCount} existantes</span>}
+          <div className="flex justify-between items-center gap-3 px-4 py-2.5 bg-muted rounded-lg mb-4">
+            <span className="truncate font-semibold text-base">{fileName}</span>
+            <div className="flex shrink-0 gap-2">
+              <Tag variant="success">{newCount} nouvelles</Tag>
+              {dupCount > 0 && <Tag variant="warning">{dupCount} existantes</Tag>}
             </div>
           </div>
           {unmapped.length > 0 && (
-            <div className="flex gap-2 items-start p-3 bg-amber-50 border border-amber-200 rounded-lg mb-4 text-xs text-amber-800">
+            <div className="flex gap-2 items-start p-3 bg-warning-soft rounded-lg mb-4 text-sm text-warning">
               <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-              <span>Colonnes non reconnues : {unmapped.map((c) => <code key={c} className="bg-amber-100 px-1 rounded mx-0.5">{c}</code>)}</span>
+              <span>Colonnes non reconnues : {unmapped.map((c) => <code key={c} className="rounded bg-card px-1 mx-0.5">{c}</code>)}</span>
             </div>
           )}
           <div className="max-h-[340px] overflow-y-auto border rounded-xl">
-            <table className="w-full text-sm">
+            <table className="table">
               <thead className="sticky top-0 bg-card z-10">
-                <tr className="border-b-2 border-border">
-                  <th className="px-3 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Recette</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Type</th>
-                  <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Portions</th>
-                  <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Poids</th>
-                  {hasIngredients && <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Ing.</th>}
-                  <th className="px-3 py-2 w-6" />
+                <tr className="border-b-2 border-border text-muted-foreground">
+                  <th>Recette</th>
+                  <th>Type</th>
+                  <th className="text-right">Portions</th>
+                  <th className="text-right">Poids</th>
+                  {hasIngredients && <th className="text-right">Ing.</th>}
+                  <th className="w-10" />
                 </tr>
               </thead>
               <tbody>
                 {preview.map((r, i) => (
-                  <tr key={i} className={`border-b border-border/30 ${r.isDup ? "opacity-40" : ""}`}>
-                    <td className="px-3 py-2 font-semibold">{r.name}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{r.type}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{r.portions}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{r.portionWeight}g</td>
-                    {hasIngredients && <td className="px-3 py-2 text-right tabular-nums">{r.ingredientCount}</td>}
-                    <td className="px-3 py-2 text-center">{r.isDup && <span title="Déjà existante" className="text-amber-500 text-xs">⚠</span>}</td>
+                  <tr key={i} className={`border-b border-border/30 ${r.isDup ? "opacity-50" : ""}`}>
+                    <td className="font-semibold">{r.name}</td>
+                    <td className="text-muted-foreground">{r.type}</td>
+                    <td className="text-right">{r.portions}</td>
+                    <td className="text-right">{r.portionWeight} g</td>
+                    {hasIngredients && <td className="text-right">{r.ingredientCount}</td>}
+                    <td className="text-center">{r.isDup && <AlertTriangle aria-label="Déjà existante" className="inline h-4 w-4 text-warning" />}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div className="flex justify-between mt-5">
-            <button onClick={() => setStep("upload")} disabled={importing} className="px-4 py-2 border rounded-lg text-sm font-medium disabled:opacity-50">Changer de fichier</button>
+          <div className="flex justify-between flex-wrap gap-2 mt-5">
+            <button onClick={() => setStep("upload")} disabled={importing} className={BTN_OUTLINE}>Changer de fichier</button>
             <div className="flex gap-2">
-              <button onClick={onCancel} disabled={importing} className="px-4 py-2 border rounded-lg text-sm font-medium disabled:opacity-50">Annuler</button>
-              <button onClick={async () => { setImporting(true); await onImport(apiPayload); setImporting(false); }} disabled={newCount === 0 || importing} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm disabled:opacity-50">
+              <button onClick={onCancel} disabled={importing} className={BTN_OUTLINE}>Annuler</button>
+              <button onClick={async () => { setImporting(true); await onImport(apiPayload); setImporting(false); }} disabled={newCount === 0 || importing} className={BTN_PRIMARY}>
                 <Check className="h-4 w-4" />
                 {importing ? "Import en cours…" : `Importer ${newCount} recette${newCount > 1 ? "s" : ""}`}
               </button>

@@ -8,6 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import NumericInput from "@/components/ui/NumericInput";
 import SearchSelect from "@/components/ui/SearchSelect";
 import IngredientFormModal from "@/components/ui/IngredientFormModal";
+import FieldLabel from "@/components/ui/FieldLabel";
+import Section from "@/components/ui/Section";
 import { fmt } from "@/lib/recipe-helpers";
 
 const DEFAULT_PRICING: RecipePricing = {
@@ -15,6 +17,10 @@ const DEFAULT_PRICING: RecipePricing = {
   takeAway: { coef: 3, tva: 6 },
   chosenPrice: { surPlace: 0, takeAway: 0 },
 };
+
+const BTN = "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-base font-medium transition-colors";
+const BTN_PRIMARY = `${BTN} bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50`;
+const BTN_OUTLINE = `${BTN} border bg-card hover:bg-hover`;
 
 interface FormState {
   name: string;
@@ -143,178 +149,175 @@ export default function RecipeEditor() {
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
 
   return (
-    <div className="max-w-[1100px] mx-auto">
-      <div className="flex justify-between items-center mb-5">
-        <button onClick={() => navigate(isNew ? "/recipes" : `/recipes/${id}`)} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+    <div className="mx-auto max-w-doc">
+      <div className="mb-5 flex items-center justify-between gap-2">
+        <button onClick={() => navigate(isNew ? "/recipes" : `/recipes/${id}`)} className="flex min-h-11 items-center gap-2 text-base font-medium text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-4 w-4" /> Annuler
         </button>
-        <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50">
+        <button onClick={handleSave} disabled={saving} className={BTN_PRIMARY}>
           <Save className="h-4 w-4" /> {saving ? "Sauvegarde…" : "Enregistrer"}
         </button>
       </div>
 
-      <h1 className="text-3xl font-bold tracking-tight mb-6">{isNew ? "Nouvelle recette" : "Modifier la recette"}</h1>
+      <h1 className="font-serif text-h1 md:text-h1-lg">{isNew ? "Nouvelle recette" : "Modifier la recette"}</h1>
 
-      <div className="grid gap-5">
-        <section className="card-elevated p-5">
-          <h2 className="font-serif text-lg font-bold mb-4">Informations</h2>
-          <FieldLabel>Nom</FieldLabel>
-          <input className="input-field" value={form.name} onChange={(e) => update("name", e.target.value)} />
-          <FieldLabel>Description</FieldLabel>
-          <textarea className="input-field min-h-[80px]" value={form.description} onChange={(e) => update("description", e.target.value)} />
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <FieldLabel>Type</FieldLabel>
-              <select className="input-field" value={form.type} onChange={(e) => update("type", e.target.value)}>
-                {categories.map((t) => <option key={t}>{t}</option>)}
-              </select>
-            </div>
-            <div>
-              <FieldLabel>Portions</FieldLabel>
-              <NumericInput className="input-field" value={form.portions} onChange={(v) => update("portions", v)} min={1} />
-            </div>
-            <div>
-              <FieldLabel>Poids/pers (g)</FieldLabel>
-              <NumericInput className="input-field" value={form.portionWeight} onChange={(v) => update("portionWeight", v)} />
-            </div>
+      <Section title="Informations">
+        <FieldLabel htmlFor="recipe-name">Nom</FieldLabel>
+        <input id="recipe-name" className="input-field" value={form.name} onChange={(e) => update("name", e.target.value)} />
+        <FieldLabel htmlFor="recipe-description" className="mt-3">Description</FieldLabel>
+        <textarea id="recipe-description" className="input-field min-h-[80px]" value={form.description} onChange={(e) => update("description", e.target.value)} />
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <FieldLabel htmlFor="recipe-type">Format</FieldLabel>
+            <select id="recipe-type" className="input-field" value={form.type} onChange={(e) => update("type", e.target.value)}>
+              {categories.map((t) => <option key={t}>{t}</option>)}
+            </select>
           </div>
-        </section>
+          <div>
+            <FieldLabel>Portions</FieldLabel>
+            <NumericInput className="input-field" value={form.portions} onChange={(v) => update("portions", v)} min={1} />
+          </div>
+          <div>
+            <FieldLabel>Poids par personne (g)</FieldLabel>
+            <NumericInput className="input-field" value={form.portionWeight} onChange={(v) => update("portionWeight", v)} />
+          </div>
+        </div>
+      </Section>
 
-        <section className="card-elevated p-5">
-          <h2 className="font-serif text-lg font-bold mb-3">Photos</h2>
-          <div className="flex gap-3 flex-wrap">
-            {form.photos.map((photo, idx) => (
-              <div key={idx} className="relative w-40 rounded-lg overflow-hidden border">
-                <img src={photo.url} alt={photo.label} className="w-full h-28 object-cover" />
-                <button onClick={() => update("photos", form.photos.filter((_, i) => i !== idx))} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-foreground/70 text-background flex items-center justify-center"><X className="h-3 w-3" /></button>
-                <input className="w-full border-t px-2 py-1 text-xs text-center bg-transparent outline-none" value={photo.label} onChange={(e) => { const u = [...form.photos]; u[idx] = { ...u[idx], label: e.target.value }; update("photos", u); }} placeholder="Label…" />
-              </div>
-            ))}
-            {form.photos.length < 3 && (
-              <label className="w-40 h-36 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer text-muted-foreground hover:border-primary/40 transition-colors">
-                <ImagePlus className="h-7 w-7" /><span className="text-xs font-medium">Ajouter photo</span>
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handlePhotoUpload(e.target.files[0]); e.target.value = ""; }} />
-              </label>
-            )}
-          </div>
-        </section>
-
-        <section className="card-elevated p-5">
-          <div className="flex justify-between items-center mb-1">
-            <h2 className="font-serif text-lg font-bold">Étapes de préparation</h2>
-            <button onClick={addTechnique} className="flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium hover:bg-muted"><Plus className="h-3.5 w-3.5" /> Ajouter une étape</button>
-          </div>
-          <p className="text-xs text-muted-foreground mb-3">Décrivez chaque étape de la recette. Appuyez sur Entrée pour passer à l'étape suivante.</p>
-          {form.techniques.length === 0 && (
-            <button onClick={addTechnique} className="w-full py-6 border-2 border-dashed rounded-xl text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors text-sm font-medium">
-              + Ajouter la première étape
-            </button>
-          )}
-          {form.techniques.map((t, i) => (
-            <div key={i} className="flex gap-2 mb-2">
-              <span className="w-6 h-6 rounded-full bg-foreground text-background flex items-center justify-center text-xs font-bold shrink-0 mt-2">{i + 1}</span>
-              <textarea
-                className="input-field flex-1 min-h-[50px]"
-                value={t}
-                onChange={(e) => updateTechnique(i, e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    if (i === form.techniques.length - 1) addTechnique();
-                    const next = e.currentTarget.closest("section")?.querySelectorAll("textarea")[i + 1];
-                    if (next) (next as HTMLTextAreaElement).focus();
-                  }
-                }}
-                placeholder={
-                  i === 0 ? "Ex: Préchauffer le four à 180°C…"
-                  : i === 1 ? "Ex: Mélanger les ingrédients secs…"
-                  : "Étape suivante…"
-                }
-              />
-              <button onClick={() => removeTechnique(i)} className="p-1 mt-2 text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+      <Section title="Photos">
+        <div className="flex gap-3 flex-wrap">
+          {form.photos.map((photo, idx) => (
+            <div key={idx} className="relative w-40 rounded-lg overflow-hidden border">
+              <img src={photo.url} alt={photo.label} className="w-full h-28 object-cover" />
+              <button onClick={() => update("photos", form.photos.filter((_, i) => i !== idx))} aria-label="Retirer la photo" className="absolute top-1 right-1 flex h-8 w-8 items-center justify-center rounded-full bg-foreground/70 text-background"><X className="h-4 w-4" /></button>
+              <input className="w-full border-t px-2 py-1.5 text-sm text-center bg-transparent outline-none" value={photo.label} onChange={(e) => { const u = [...form.photos]; u[idx] = { ...u[idx], label: e.target.value }; update("photos", u); }} placeholder="Légende…" />
             </div>
           ))}
-        </section>
+          {form.photos.length < 3 && (
+            <label className="w-40 h-36 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer text-muted-foreground hover:border-primary/40 transition-colors">
+              <ImagePlus className="h-7 w-7" /><span className="text-sm font-medium">Ajouter une photo</span>
+              <input type="file" accept="image/*" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handlePhotoUpload(e.target.files[0]); e.target.value = ""; }} />
+            </label>
+          )}
+        </div>
+      </Section>
 
-        <section className="card-elevated p-5">
-          <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
-            <h2 className="font-serif text-lg font-bold">Ingrédients</h2>
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                title="Ajouter plusieurs lignes vides d'un coup pour saisie au clavier"
-                onClick={() => {
-                  const raw = prompt("Nombre de lignes à ajouter (1 à 40) ?", "5");
-                  const n = parseInt(raw || "0", 10);
-                  if (Number.isNaN(n) || n < 1 || n > 40) return;
-                  const blank: RecipeIngredient = {
-                    ingredientId: allIngredients[0]?.ingredientId || "",
-                    qty: 0,
-                    unit: "g",
-                    lossPct: 0,
-                  };
-                  update("ingredients", [...form.ingredients, ...Array.from({ length: n }, () => ({ ...blank }))]);
-                }}
-                className="flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium hover:bg-muted"
-              >
-                <Plus className="h-3.5 w-3.5" /> Plusieurs lignes…
-              </button>
-              <button onClick={addIngLine} className="flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium hover:bg-muted"><Plus className="h-3.5 w-3.5" /> Ajouter</button>
-            </div>
+      <Section
+        title="Étapes de préparation"
+        action={<button onClick={addTechnique} className={`${BTN_OUTLINE} px-3`}><Plus className="h-4 w-4" /> Ajouter une étape</button>}
+      >
+        <p className="text-sm text-muted-foreground mb-3">Décrivez chaque étape de la recette. Entrée passe à l'étape suivante.</p>
+        {form.techniques.length === 0 && (
+          <button onClick={addTechnique} className="w-full py-6 border-2 border-dashed rounded-xl text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors text-base font-medium">
+            + Ajouter la première étape
+          </button>
+        )}
+        {form.techniques.map((t, i) => (
+          <div key={i} className="flex gap-2 mb-2">
+            <span className="w-7 h-7 rounded-full bg-primary-soft text-foreground flex items-center justify-center text-sm font-semibold shrink-0 mt-2">{i + 1}</span>
+            <textarea
+              className="input-field flex-1 min-h-[50px]"
+              value={t}
+              onChange={(e) => updateTechnique(i, e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  if (i === form.techniques.length - 1) addTechnique();
+                  const next = e.currentTarget.closest("section")?.querySelectorAll("textarea")[i + 1];
+                  if (next) (next as HTMLTextAreaElement).focus();
+                }
+              }}
+              placeholder={
+                i === 0 ? "Ex : préchauffer le four à 180 °C…"
+                : i === 1 ? "Ex : mélanger les ingrédients secs…"
+                : "Étape suivante…"
+              }
+            />
+            <button onClick={() => removeTechnique(i)} aria-label="Supprimer l'étape" className="flex min-h-11 min-w-11 items-center justify-center text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
           </div>
-          <table className="w-full text-sm table-fixed">
+        ))}
+      </Section>
+
+      <Section
+        title="Ingrédients"
+        action={
+          <>
+            <button
+              type="button"
+              title="Ajouter plusieurs lignes vides d'un coup pour saisie au clavier"
+              onClick={() => {
+                const raw = prompt("Nombre de lignes à ajouter (1 à 40) ?", "5");
+                const n = parseInt(raw || "0", 10);
+                if (Number.isNaN(n) || n < 1 || n > 40) return;
+                const blank: RecipeIngredient = {
+                  ingredientId: allIngredients[0]?.ingredientId || "",
+                  qty: 0,
+                  unit: "g",
+                  lossPct: 0,
+                };
+                update("ingredients", [...form.ingredients, ...Array.from({ length: n }, () => ({ ...blank }))]);
+              }}
+              className={`${BTN_OUTLINE} px-3`}
+            >
+              <Plus className="h-4 w-4" /> Plusieurs lignes…
+            </button>
+            <button onClick={addIngLine} className={`${BTN_OUTLINE} px-3`}><Plus className="h-4 w-4" /> Ajouter</button>
+          </>
+        }
+      >
+        <div className="overflow-x-auto">
+          <table className="table table-fixed min-w-[560px]">
             <colgroup>
-              <col className="w-[45%]" />
-              <col className="w-[15%]" />
-              <col className="w-[15%]" />
-              <col className="w-[15%]" />
+              <col className="w-[42%]" />
+              <col className="w-[16%]" />
+              <col className="w-[16%]" />
+              <col className="w-[16%]" />
               <col className="w-[10%]" />
             </colgroup>
-            <thead><tr className="border-b">
-              <th className="px-2 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Produit</th>
-              <th className="px-2 py-2 text-xs font-bold uppercase text-muted-foreground">Qté</th>
-              <th className="px-2 py-2 text-xs font-bold uppercase text-muted-foreground">Unité</th>
-              <th className="px-2 py-2 text-xs font-bold uppercase text-muted-foreground">Perte %</th>
-              <th className="px-2 py-2" />
+            <thead><tr className="border-b text-muted-foreground">
+              <th>Produit</th>
+              <th className="text-right">Quantité</th>
+              <th>Unité</th>
+              <th className="text-right">Perte %</th>
+              <th />
             </tr></thead>
             <tbody>
               {form.ingredients.map((ri, i) => (
                 <tr key={i} className="border-b border-border/30">
-                  <td className="px-2 py-1"><SearchSelect options={allIngredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))} value={ri.ingredientId} onChange={(v) => { const ing = allIngredients.find((ig) => ig.ingredientId === v); const updates: Partial<RecipeIngredient> = { ingredientId: v }; if (ing) updates.unit = PRICE_TO_QTY_UNIT[ing.unit]; const a = [...form.ingredients]; a[i] = { ...a[i], ...updates }; update("ingredients", a); }} placeholder="Rechercher…" onCreateNew={(name) => setCreatingIngredient(name)} /></td>
-                  <td className="px-2 py-1"><NumericInput className="input-field !py-1 !text-xs text-right w-full" value={ri.qty} onChange={(v) => updateIngLine(i, "qty", v)} /></td>
-                  <td className="px-2 py-1"><select className="input-field !py-1 !text-xs w-full" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)}>{UNITS_QTY.map((u) => <option key={u}>{u}</option>)}</select></td>
-                  <td className="px-2 py-1"><NumericInput className="input-field !py-1 !text-xs text-right w-full" value={ri.lossPct} onChange={(v) => updateIngLine(i, "lossPct", v)} /></td>
-                  <td className="px-2 py-1 text-center"><button onClick={() => removeIngLine(i)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button></td>
+                  <td className="!px-1"><SearchSelect options={allIngredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))} value={ri.ingredientId} onChange={(v) => { const ing = allIngredients.find((ig) => ig.ingredientId === v); const updates: Partial<RecipeIngredient> = { ingredientId: v }; if (ing) updates.unit = PRICE_TO_QTY_UNIT[ing.unit]; const a = [...form.ingredients]; a[i] = { ...a[i], ...updates }; update("ingredients", a); }} placeholder="Rechercher…" onCreateNew={(name) => setCreatingIngredient(name)} /></td>
+                  <td className="!px-1"><NumericInput className="input-field text-right w-full" value={ri.qty} onChange={(v) => updateIngLine(i, "qty", v)} /></td>
+                  <td className="!px-1"><select className="input-field w-full" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)}>{UNITS_QTY.map((u) => <option key={u}>{u}</option>)}</select></td>
+                  <td className="!px-1"><NumericInput className="input-field text-right w-full" value={ri.lossPct} onChange={(v) => updateIngLine(i, "lossPct", v)} /></td>
+                  <td className="!px-0 text-center"><button onClick={() => removeIngLine(i)} aria-label="Retirer la ligne" className="inline-flex min-h-11 min-w-11 items-center justify-center text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button></td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </section>
+        </div>
+      </Section>
 
-        <section className="card-elevated p-5">
-          <h2 className="font-serif text-lg font-bold mb-4">Tarification</h2>
-          <div className="grid grid-cols-2 gap-6">
-            <div>
-              <h4 className="font-serif text-sm font-bold mb-3">Sur place</h4>
-              <FieldLabel>Coefficient</FieldLabel>
-              <NumericInput className="input-field" value={form.pricing.surPlace.coef} onChange={(v) => updatePricing("surPlace.coef", v)} />
-              <FieldLabel>TVA %</FieldLabel>
-              <NumericInput className="input-field" value={form.pricing.surPlace.tva} onChange={(v) => updatePricing("surPlace.tva", v)} />
-              <FieldLabel>Prix choisi TVAC</FieldLabel>
-              <NumericInput className="input-field" value={form.pricing.chosenPrice.surPlace} onChange={(v) => updatePricing("chosenPrice.surPlace", v)} />
-            </div>
-            <div>
-              <h4 className="font-serif text-sm font-bold mb-3">Take away</h4>
-              <FieldLabel>Coefficient</FieldLabel>
-              <NumericInput className="input-field" value={form.pricing.takeAway.coef} onChange={(v) => updatePricing("takeAway.coef", v)} />
-              <FieldLabel>TVA %</FieldLabel>
-              <NumericInput className="input-field" value={form.pricing.takeAway.tva} onChange={(v) => updatePricing("takeAway.tva", v)} />
-              <FieldLabel>Prix choisi TVAC</FieldLabel>
-              <NumericInput className="input-field" value={form.pricing.chosenPrice.takeAway} onChange={(v) => updatePricing("chosenPrice.takeAway", v)} />
-            </div>
+      <Section title="Tarification">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <div>
+            <h3 className="text-base font-semibold mb-3">Sur place</h3>
+            <FieldLabel>Coefficient</FieldLabel>
+            <NumericInput className="input-field" value={form.pricing.surPlace.coef} onChange={(v) => updatePricing("surPlace.coef", v)} />
+            <FieldLabel className="mt-3">TVA %</FieldLabel>
+            <NumericInput className="input-field" value={form.pricing.surPlace.tva} onChange={(v) => updatePricing("surPlace.tva", v)} />
+            <FieldLabel className="mt-3">Prix choisi TVAC</FieldLabel>
+            <NumericInput className="input-field" value={form.pricing.chosenPrice.surPlace} onChange={(v) => updatePricing("chosenPrice.surPlace", v)} />
           </div>
-        </section>
-      </div>
+          <div>
+            <h3 className="text-base font-semibold mb-3">Take away</h3>
+            <FieldLabel>Coefficient</FieldLabel>
+            <NumericInput className="input-field" value={form.pricing.takeAway.coef} onChange={(v) => updatePricing("takeAway.coef", v)} />
+            <FieldLabel className="mt-3">TVA %</FieldLabel>
+            <NumericInput className="input-field" value={form.pricing.takeAway.tva} onChange={(v) => updatePricing("takeAway.tva", v)} />
+            <FieldLabel className="mt-3">Prix choisi TVAC</FieldLabel>
+            <NumericInput className="input-field" value={form.pricing.chosenPrice.takeAway} onChange={(v) => updatePricing("chosenPrice.takeAway", v)} />
+          </div>
+        </div>
+      </Section>
 
       {creatingIngredient !== null && (
         <IngredientFormModal
@@ -326,8 +329,4 @@ export default function RecipeEditor() {
       )}
     </div>
   );
-}
-
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1">{children}</label>;
 }

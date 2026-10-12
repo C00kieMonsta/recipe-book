@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from "react";
+import type { ReactNode } from "react";
 import { MoreHorizontal } from "lucide-react";
 
 export interface ActionMenuItem {
   label: string;
-  icon?: React.ReactNode;
+  icon?: ReactNode;
   onClick: () => void;
   variant?: "default" | "danger";
 }
@@ -17,28 +18,37 @@ export default function ActionMenu({ items }: { items: ActionMenuItem[] }) {
     const close = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   return (
     <div ref={ref} className="relative">
       <button
+        type="button"
         onClick={() => setOpen((o) => !o)}
-        className="p-2 border rounded-lg hover:bg-muted transition-colors"
+        aria-label="Actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-input bg-card text-foreground transition-colors hover:bg-hover"
       >
-        <MoreHorizontal className="h-4 w-4" />
+        <MoreHorizontal className="h-5 w-5" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 min-w-[180px] bg-card border rounded-xl shadow-lg py-1 animate-fade-up">
+        <div role="menu" className="absolute right-0 top-full z-50 mt-1 min-w-[200px] overflow-hidden rounded-xl border bg-card py-1 shadow-lg animate-fade-up">
           {items.map((item, i) => (
             <button
               key={i}
+              type="button"
+              role="menuitem"
               onClick={() => { item.onClick(); setOpen(false); }}
-              className={`w-full text-left px-4 py-2.5 text-sm font-medium flex items-center gap-2.5 transition-colors ${
-                item.variant === "danger"
-                  ? "text-destructive hover:bg-destructive/5"
-                  : "text-foreground hover:bg-muted"
+              className={`flex min-h-11 w-full items-center gap-2.5 px-4 text-left text-base font-medium transition-colors ${
+                item.variant === "danger" ? "text-destructive hover:bg-destructive-soft" : "text-foreground hover:bg-hover"
               }`}
             >
               {item.icon}

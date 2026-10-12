@@ -43,7 +43,7 @@ export default function NumericInput({ value, onChange, className = "", placehol
         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(text); (e.target as HTMLInputElement).blur(); } }}
         className={className}
       />
-      {suffix && <span className="text-muted-foreground text-xs w-4">{suffix}</span>}
+      {suffix && <span className="min-w-4 text-sm text-muted-foreground">{suffix}</span>}
     </div>
   );
 }

@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Pencil, Trash2, Save, FileDown, ChefHat, Plus, X, Check, Copy } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
+import { Pencil, Trash2, Save, FileDown, ChefHat, Plus, X, Check, Copy } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Recipe, Ingredient, RecipePricing, RecipeIngredient } from "@packages/types";
-import { UNITS_QTY, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS, DEFAULT_RECIPE_CATEGORIES } from "@packages/types";
+import { UNITS_QTY, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS, DEFAULT_RECIPE_CATEGORIES, VAT_RATES } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { calcRecipeCost, calcIngredientLineCost, fmt, supplierColor } from "@/lib/recipe-helpers";
@@ -12,12 +12,33 @@ import ActionMenu from "@/components/ui/ActionMenu";
 import NumericInput from "@/components/ui/NumericInput";
 import SearchSelect from "@/components/ui/SearchSelect";
 import IngredientFormModal from "@/components/ui/IngredientFormModal";
+import PageHeader from "@/components/ui/PageHeader";
+import Tag from "@/components/ui/Tag";
+import FieldLabel from "@/components/ui/FieldLabel";
+import SectionToggle from "@/components/ui/SectionToggle";
+import RecipeReader from "@/components/ui/RecipeReader";
+import { EditableNum, EditableText, EditableInlineNum, EditableType } from "@/components/ui/editable";
 
 const DEFAULT_PRICING: RecipePricing = {
   surPlace: { coef: 4, tva: 12 },
   takeAway: { coef: 3, tva: 6 },
   chosenPrice: { surPlace: 0, takeAway: 0 },
 };
+
+const READER_SIZE_KEY = "recipe-book:reader-size";
+type ReaderSize = "lead" | "xl";
+
+function readReaderSize(): ReaderSize {
+  try {
+    return localStorage.getItem(READER_SIZE_KEY) === "xl" ? "xl" : "lead";
+  } catch {
+    return "lead";
+  }
+}
+
+const BTN = "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-base font-medium transition-colors";
+const BTN_PRIMARY = `${BTN} bg-primary text-primary-foreground hover:opacity-90`;
+const BTN_OUTLINE = `${BTN} border bg-card hover:bg-hover`;
 
 async function exportPdf(recipe: Recipe, ingredients: Ingredient[]) {
   const doc = new jsPDF();
@@ -41,20 +62,20 @@ async function exportPdf(recipe: Recipe, ingredients: Ingredient[]) {
   y += 12;
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
+  doc.setFontSize(11);
   doc.text(`${recipe.type} | ${recipe.portions} portions | ${recipe.portionWeight}g/pers`, m, y + 4);
   y += 8;
 
   if (recipe.description) {
-    doc.setFontSize(9);
+    doc.setFontSize(11);
     const lines = doc.splitTextToSize(recipe.description, 180);
     doc.text(lines, m, y + 4);
-    y += lines.length * 4 + 4;
+    y += lines.length * 5 + 4;
   }
 
   y += 4;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
+  doc.setFontSize(13);
   doc.text("Ingrédients", m, y + 4);
   y += 8;
 
@@ -69,7 +90,7 @@ async function exportPdf(recipe: Recipe, ingredients: Ingredient[]) {
     head: [["Produit", "Quantité"]],
     body: ingRows,
     margin: { left: m },
-    styles: { fontSize: 8 },
+    styles: { fontSize: 11 },
     headStyles: { fillColor: [60, 60, 60] },
   });
 
@@ -78,17 +99,17 @@ async function exportPdf(recipe: Recipe, ingredients: Ingredient[]) {
 
   if (recipe.techniques.length > 0) {
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
+    doc.setFontSize(13);
     doc.text("Étapes de préparation", m, y + 4);
     y += 8;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
+    doc.setFontSize(11);
     recipe.techniques.forEach((t, i) => {
       if (y > 270) { doc.addPage(); y = m; }
       const text = `${i + 1}. ${t}`;
       const lines = doc.splitTextToSize(text, 180);
       doc.text(lines, m, y + 4);
-      y += lines.length * 4 + 3;
+      y += lines.length * 5 + 3;
     });
   }
 
@@ -121,6 +142,8 @@ async function loadPhotoForPdf(key: string): Promise<{ dataUrl: string; width: n
 export default function RecipeDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editMode = searchParams.get("mode") === "edit";
   const { toast } = useToast();
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -136,15 +159,31 @@ export default function RecipeDetail() {
   const [creatingIngredient, setCreatingIngredient] = useState<string | null>(null);
   const [viewingIngredient, setViewingIngredient] = useState<Ingredient | null>(null);
   const [supplierNames] = useState(() => DEFAULT_SUPPLIERS.map((s) => s.name));
+  const [portions, setPortions] = useState(0);
+  const [readerSize, setReaderSize] = useState<ReaderSize>(readReaderSize);
   const newStepRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!id) return;
     Promise.all([api.recipes.get(id), api.ingredients.list(), api.settings.get().catch(() => null)])
-      .then(([r, i, s]) => { setRecipe(r); setIngredients(i); if (s?.recipeCategories?.length) setCategories(s.recipeCategories); })
+      .then(([r, i, s]) => { setRecipe(r); setIngredients(i); setPortions(r.portions); if (s?.recipeCategories?.length) setCategories(s.recipeCategories); })
       .catch(() => toast({ title: "Recette introuvable", variant: "destructive" }))
       .finally(() => setLoading(false));
   }, [id]);
+
+  const ingredientById = useMemo(() => new Map(ingredients.map((i) => [i.ingredientId, i])), [ingredients]);
+
+  const setMode = (edit: boolean) => {
+    const next = new URLSearchParams(searchParams);
+    if (edit) next.set("mode", "edit"); else next.delete("mode");
+    setSearchParams(next, { replace: true });
+  };
+
+  const toggleReaderSize = () => {
+    const next: ReaderSize = readerSize === "xl" ? "lead" : "xl";
+    setReaderSize(next);
+    try { localStorage.setItem(READER_SIZE_KEY, next); } catch { /* storage unavailable */ }
+  };
 
   const saveRecipeField = async (patch: Partial<Recipe>) => {
     if (!id || !recipe) return;
@@ -256,250 +295,18 @@ export default function RecipeDetail() {
   if (!recipe) return <div className="p-8 text-muted-foreground">Recette introuvable</div>;
 
   const totalCost = calcRecipeCost(recipe, ingredients);
+  const readPortions = portions || recipe.portions;
+  const cookHref = `/recipes/${id}/cook${readPortions !== recipe.portions ? `?portions=${readPortions}` : ""}`;
+  const firstPhoto = recipe.photos?.[0];
 
-  return (
-    <div className="max-w-[1100px] mx-auto">
-      <div className="flex justify-between items-center mb-5 gap-2">
-        <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors shrink-0">
-          <ArrowLeft className="h-4 w-4" /> <span className="hidden sm:inline">Retour</span>
-        </button>
-        <div className="flex gap-1.5 sm:gap-2 items-center">
-          <button onClick={() => navigate(`/recipes/${id}/cook`)} className="flex items-center gap-1.5 px-3 py-2 sm:px-4 border rounded-lg text-xs sm:text-sm font-medium hover:bg-muted transition-colors">
-            <ChefHat className="h-4 w-4" /> <span className="hidden sm:inline">Mode recette</span><span className="sm:hidden">Cuisiner</span>
-          </button>
-          <ActionMenu items={[
-            { label: "Exporter PDF", icon: <FileDown className="h-4 w-4" />, onClick: () => exportPdf(recipe, ingredients) },
-            { label: "Dupliquer", icon: <Copy className="h-4 w-4" />, onClick: handleDuplicateRecipe },
-            { label: "Modifier", icon: <Pencil className="h-4 w-4" />, onClick: () => navigate(`/recipes/${id}/edit`) },
-            { label: "Supprimer", icon: <Trash2 className="h-4 w-4" />, onClick: () => setDeleteConfirm(true), variant: "danger" },
-          ]} />
-        </div>
-      </div>
+  const menuItems = [
+    { label: "Dupliquer", icon: <Copy className="h-4 w-4" />, onClick: handleDuplicateRecipe },
+    { label: "Exporter PDF", icon: <FileDown className="h-4 w-4" />, onClick: () => exportPdf(recipe, ingredients) },
+    { label: "Supprimer", icon: <Trash2 className="h-4 w-4" />, onClick: () => setDeleteConfirm(true), variant: "danger" as const },
+  ];
 
-      <div className="flex gap-6 mb-7 flex-wrap">
-        <div className="flex-1 min-w-0">
-          <EditableType value={recipe.type} options={categories} onSave={(v) => saveRecipeField({ type: v })} />
-          <EditableText
-            value={recipe.name}
-            onSave={(v) => saveRecipeField({ name: v })}
-            className="text-2xl sm:text-3xl font-bold tracking-tight mb-2"
-            inputClassName="text-2xl sm:text-3xl font-bold tracking-tight mb-2 w-full border-b-2 border-primary bg-transparent outline-none"
-          />
-          <EditableText
-            value={recipe.description || ""}
-            onSave={(v) => saveRecipeField({ description: v })}
-            className="text-muted-foreground leading-relaxed mb-4 text-sm sm:text-base"
-            inputClassName="text-muted-foreground leading-relaxed mb-4 text-sm sm:text-base w-full border-b border-primary/50 bg-transparent outline-none"
-            placeholder="Ajouter une description…"
-            multiline
-          />
-          <div className="flex gap-4 sm:gap-6 text-xs sm:text-sm text-muted-foreground flex-wrap">
-            <span>Portions: <EditableInlineNum value={recipe.portions} onSave={(v) => saveRecipeField({ portions: v })} min={1} /></span>
-            <span>Poids/pers: <EditableInlineNum value={recipe.portionWeight} onSave={(v) => saveRecipeField({ portionWeight: v })} suffix="g" /></span>
-            <span className="hidden sm:inline">Créé le: <strong className="text-foreground">{new Date(recipe.createdAt).toLocaleDateString("fr-BE")}</strong></span>
-          </div>
-        </div>
-        {recipe.photos?.length > 0 && (
-          <div className="flex gap-3 shrink-0">
-            {recipe.photos.map((photo, idx) => (
-              <div key={idx} className="relative">
-                <img src={photo.url} alt={photo.label} className="w-28 h-22 sm:w-36 sm:h-28 object-cover rounded-lg border" />
-                {photo.label && <div className="text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mt-1">{photo.label}</div>}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="grid gap-5">
-        <section className="card-elevated p-4 sm:p-5">
-          <div className="flex justify-between items-center mb-4 gap-2">
-            <h2 className="font-serif text-lg font-bold">Étapes de préparation</h2>
-            <button
-              onClick={() => { setAddingStep(true); setTimeout(() => newStepRef.current?.focus(), 50); }}
-              className="flex items-center gap-1 px-2.5 py-1 border rounded-lg text-xs font-medium hover:bg-muted transition-colors shrink-0"
-            >
-              <Plus className="h-3.5 w-3.5" /> Étape
-            </button>
-          </div>
-          {recipe.techniques.length > 0 ? (
-            <ol className="space-y-2">
-              {recipe.techniques.map((t, i) => (
-                <li key={i} className="group flex gap-2 sm:gap-3 items-start text-sm leading-relaxed">
-                  <span className="w-6 h-6 rounded-full bg-foreground text-background flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">{i + 1}</span>
-                  {editingStep === i ? (
-                    <div className="flex-1 flex flex-col gap-2">
-                      <textarea
-                        className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:border-primary outline-none resize-y"
-                        rows={Math.max(2, editStepValue.split("\n").length)}
-                        value={editStepValue}
-                        onChange={(e) => setEditStepValue(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveStep(i); } if (e.key === "Escape") setEditingStep(null); }}
-                        autoFocus
-                      />
-                      <div className="flex gap-2">
-                        <button onClick={() => handleSaveStep(i)} className="flex items-center gap-1 px-2 py-1 bg-primary text-primary-foreground rounded-md text-xs font-medium"><Check className="h-3 w-3" /> OK</button>
-                        <button onClick={() => setEditingStep(null)} className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground">Annuler</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <span
-                      className="text-muted-foreground pt-0.5 flex-1 cursor-pointer hover:text-foreground transition-colors rounded px-1 -mx-1 hover:bg-muted/50 whitespace-pre-wrap"
-                      onClick={() => { setEditingStep(i); setEditStepValue(t); }}
-                    >
-                      {t}
-                    </span>
-                  )}
-                  {editingStep !== i && (
-                    <button
-                      onClick={() => handleDeleteStep(i)}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition-all shrink-0"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ol>
-          ) : !addingStep ? (
-            <button
-              onClick={() => { setAddingStep(true); setTimeout(() => newStepRef.current?.focus(), 50); }}
-              className="w-full py-5 border-2 border-dashed rounded-xl text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors text-sm font-medium"
-            >
-              + Ajouter la première étape
-            </button>
-          ) : null}
-          {addingStep && (
-            <div className="mt-3 flex flex-col gap-2">
-              <textarea
-                ref={newStepRef}
-                className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:border-primary outline-none resize-y"
-                rows={Math.max(2, newStep.split("\n").length)}
-                placeholder="Décrivez l'étape…"
-                value={newStep}
-                onChange={(e) => setNewStep(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAddStep(); } if (e.key === "Escape") { setAddingStep(false); setNewStep(""); } }}
-              />
-              <div className="flex gap-2">
-                <button onClick={handleAddStep} disabled={!newStep.trim()} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium disabled:opacity-50"><Plus className="h-3 w-3" /> Ajouter</button>
-                <button onClick={() => { setAddingStep(false); setNewStep(""); }} className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground">Annuler</button>
-              </div>
-            </div>
-          )}
-        </section>
-
-        <section className="card-elevated p-4 sm:p-5">
-          <div className="flex justify-between items-center mb-4 gap-2">
-            <h2 className="font-serif text-lg font-bold">Ingrédients</h2>
-            <button
-              onClick={() => { setAddingIngredient(true); setNewIng({ ingredientId: "", qty: 0, unit: "g", lossPct: 0 }); }}
-              className="flex items-center gap-1 px-2.5 py-1 border rounded-lg text-xs font-medium hover:bg-muted transition-colors shrink-0"
-            >
-              <Plus className="h-3.5 w-3.5" /> Ingrédient
-            </button>
-          </div>
-          <div className="overflow-x-auto -mx-4 sm:-mx-5 px-4 sm:px-5">
-            <table className="w-full text-sm min-w-[400px]">
-              <thead>
-                <tr className="border-b-2 border-border">
-                  <th className="px-2 sm:px-3 py-2 text-left text-xs font-bold uppercase text-muted-foreground">Produit</th>
-                  <th className="px-2 sm:px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Qté</th>
-                  <th className="px-2 sm:px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground hidden sm:table-cell">Perte</th>
-                  <th className="px-2 sm:px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground hidden sm:table-cell">Prix/unité</th>
-                  <th className="px-2 sm:px-3 py-2 text-right text-xs font-bold uppercase text-muted-foreground">Coût</th>
-                  <th className="w-8" />
-                </tr>
-              </thead>
-              <tbody>
-                {recipe.ingredients.map((ri, idx) => {
-                  const ing = ingredients.find((i) => i.ingredientId === ri.ingredientId);
-                  if (!ing) return null;
-                  const lineCost = calcIngredientLineCost(ri, ing);
-                  const updateIngField = (field: keyof RecipeIngredient, value: unknown) => {
-                    const ingList = [...recipe.ingredients];
-                    ingList[idx] = { ...ingList[idx], [field]: value };
-                    saveRecipeField({ ingredients: ingList });
-                  };
-                  return (
-                    <tr key={idx} className="border-b border-border/30 group">
-                      <td className="px-2 sm:px-3 py-2">
-                        <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ background: supplierColor(ing.supplier) }} />
-                        <button onClick={() => setViewingIngredient(ing)} className="hover:underline hover:text-primary transition-colors text-left">{ing.name}</button>
-                      </td>
-                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums whitespace-nowrap">
-                        <EditableInlineNum value={ri.qty} onSave={(v) => updateIngField("qty", v)} /> {ri.unit}
-                      </td>
-                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell">
-                        <EditableInlineNum value={ri.lossPct || 0} onSave={(v) => updateIngField("lossPct", v)} suffix="%" />
-                      </td>
-                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell">{fmt(ing.price)}</td>
-                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums font-semibold">{fmt(lineCost)}</td>
-                      <td className="px-1 py-2">
-                        <button onClick={() => handleRemoveIngredient(idx)} className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-destructive transition-all">
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {addingIngredient && (
-                  <tr className="border-b border-primary/30 bg-muted/30">
-                    <td className="px-2 sm:px-3 py-1.5">
-                      <SearchSelect
-                        options={ingredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))}
-                        value={newIng.ingredientId}
-                        onChange={(v) => {
-                          const ing = ingredients.find((i) => i.ingredientId === v);
-                          const unit = ing ? PRICE_TO_QTY_UNIT[ing.unit] : "g";
-                          setNewIng((p) => ({ ...p, ingredientId: v, unit }));
-                        }}
-                        placeholder="Rechercher un ingrédient…"
-                        onCreateNew={(name) => setCreatingIngredient(name)}
-                      />
-                    </td>
-                    <td className="px-2 sm:px-3 py-1.5">
-                      <div className="flex gap-1 justify-end">
-                        <NumericInput
-                          className="w-16 border rounded-md px-2 py-1 text-xs text-right bg-background focus:border-primary outline-none"
-                          value={newIng.qty}
-                          onChange={(v) => setNewIng((p) => ({ ...p, qty: v }))}
-                          placeholder="Qté"
-                          autoFocus
-                        />
-                        <select
-                          className="border rounded-md px-1 py-1 text-xs bg-background focus:border-primary outline-none"
-                          value={newIng.unit}
-                          onChange={(e) => setNewIng((p) => ({ ...p, unit: e.target.value as typeof p.unit }))}
-                        >
-                          {UNITS_QTY.map((u) => <option key={u}>{u}</option>)}
-                        </select>
-                      </div>
-                    </td>
-                    <td className="hidden sm:table-cell" />
-                    <td className="hidden sm:table-cell" />
-                    <td className="px-2 sm:px-3 py-1.5" colSpan={2}>
-                      <div className="flex gap-1 justify-end">
-                        <button onClick={handleAddIngredient} disabled={!newIng.ingredientId || newIng.qty <= 0} className="p-1 bg-primary text-primary-foreground rounded-md disabled:opacity-50"><Check className="h-3.5 w-3.5" /></button>
-                        <button onClick={() => setAddingIngredient(false)} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-border">
-                  <td colSpan={2} className="px-2 sm:px-3 py-2 font-bold sm:hidden">Total HTVA</td>
-                  <td colSpan={4} className="px-2 sm:px-3 py-2 font-bold hidden sm:table-cell">Total matières HTVA</td>
-                  <td className="px-2 sm:px-3 py-2 text-right font-bold tabular-nums" colSpan={2}>{fmt(totalCost)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </section>
-
-        <PricingSimulation recipe={recipe} totalCost={totalCost} />
-      </div>
-
+  const modals = (
+    <>
       {creatingIngredient !== null && (
         <IngredientFormModal
           ingredient={{ name: creatingIngredient, price: 0, unit: "€/kg", supplier: supplierNames[0] || "" }}
@@ -521,15 +328,339 @@ export default function RecipeDetail() {
       {deleteConfirm && (
         <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setDeleteConfirm(false)}>
           <div className="bg-card rounded-2xl p-7 max-w-sm w-[92%] shadow-xl animate-fade-up text-center" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-serif text-lg font-bold mb-2">Confirmer la suppression</h3>
-            <p className="text-muted-foreground text-sm mb-6">Cette action est irréversible.</p>
+            <h3 className="font-serif text-h3 mb-2">Confirmer la suppression</h3>
+            <p className="text-muted-foreground text-base mb-6">Cette action est irréversible.</p>
             <div className="flex gap-3 justify-center">
-              <button onClick={() => setDeleteConfirm(false)} className="px-4 py-2 border rounded-lg text-sm font-medium">Annuler</button>
-              <button onClick={handleDelete} className="px-4 py-2 bg-destructive text-destructive-foreground rounded-lg text-sm font-medium">Supprimer</button>
+              <button onClick={() => setDeleteConfirm(false)} className={BTN_OUTLINE}>Annuler</button>
+              <button onClick={handleDelete} className={`${BTN} bg-destructive text-destructive-foreground hover:opacity-90`}>Supprimer</button>
             </div>
           </div>
         </div>
       )}
+    </>
+  );
+
+  if (!editMode) {
+    return (
+      <div className="mx-auto max-w-doc pb-24 md:pb-0">
+        <PageHeader
+          breadcrumb={[{ label: "Recettes", to: "/recipes" }, { label: recipe.name }]}
+          title={recipe.name}
+          actions={
+            <>
+              <Link to={cookHref} className={`${BTN_PRIMARY} hidden md:inline-flex`}>
+                <ChefHat className="h-5 w-5" /> Cuisiner
+              </Link>
+              <button type="button" onClick={() => setMode(true)} className={`${BTN_OUTLINE} hidden md:inline-flex`}>
+                <Pencil className="h-4 w-4" /> Modifier
+              </button>
+              <ActionMenu items={menuItems} />
+            </>
+          }
+        />
+
+        {firstPhoto?.url && (
+          <img src={firstPhoto.url} alt={firstPhoto.label || recipe.name} className="aspect-[3/2] w-full rounded-xl object-cover" />
+        )}
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Tag variant="primary">{recipe.type}</Tag>
+          <Tag>{recipe.portions} portions</Tag>
+          <Tag>{recipe.portionWeight} g/pers</Tag>
+        </div>
+
+        {recipe.description && (
+          <p className="mt-4 whitespace-pre-wrap text-base leading-relaxed">{recipe.description}</p>
+        )}
+
+        <div className="mt-block flex justify-end">
+          <button
+            type="button"
+            onClick={toggleReaderSize}
+            aria-pressed={readerSize === "xl"}
+            aria-label="Agrandir le texte"
+            title="Taille du texte"
+            className={`${BTN_OUTLINE} min-w-11 px-3 font-serif ${readerSize === "xl" ? "bg-primary-soft" : ""}`}
+          >
+            Aa
+          </button>
+        </div>
+
+        <RecipeReader
+          recipe={recipe}
+          ingredientById={ingredientById}
+          portions={readPortions}
+          onPortionsChange={setPortions}
+          size={readerSize}
+          showCost
+          className="mt-3"
+        />
+
+        <SectionToggle title="Simulation de prix">
+          <PricingSimulation recipe={recipe} totalCost={totalCost} />
+        </SectionToggle>
+
+        <div className="fixed inset-x-0 bottom-0 z-30 flex gap-2 border-t bg-card p-3 md:hidden">
+          <Link to={cookHref} className={`${BTN_PRIMARY} flex-1`}>
+            <ChefHat className="h-5 w-5" /> Cuisiner
+          </Link>
+          <button type="button" onClick={() => setMode(true)} className={`${BTN_OUTLINE} flex-1`}>
+            <Pencil className="h-4 w-4" /> Modifier
+          </button>
+        </div>
+
+        {modals}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-wide">
+      <div className="mb-5 flex items-center justify-between gap-2">
+        <nav aria-label="Fil d'Ariane" className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+          <Link to="/recipes" className="hover:text-foreground hover:underline">Recettes</Link>
+          <span aria-hidden="true">/</span>
+          <span className="truncate">{recipe.name}</span>
+          <span aria-hidden="true">/</span>
+          <span>Modification</span>
+        </nav>
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={() => setMode(false)} className={BTN_PRIMARY}>
+            <Check className="h-5 w-5" /> Terminé
+          </button>
+          <ActionMenu items={menuItems} />
+        </div>
+      </div>
+
+      <div className="flex gap-6 mb-7 flex-wrap">
+        <div className="flex-1 min-w-0">
+          <EditableType value={recipe.type} options={categories} onSave={(v) => saveRecipeField({ type: v })} />
+          <EditableText
+            value={recipe.name}
+            onSave={(v) => saveRecipeField({ name: v })}
+            className="font-serif text-h1 mb-2"
+            inputClassName="font-serif text-h1 mb-2 w-full border-b-2 border-primary bg-transparent outline-none"
+          />
+          <EditableText
+            value={recipe.description || ""}
+            onSave={(v) => saveRecipeField({ description: v })}
+            className="text-muted-foreground leading-relaxed mb-4 text-base"
+            inputClassName="text-muted-foreground leading-relaxed mb-4 text-base w-full border-b border-primary/50 bg-transparent outline-none"
+            placeholder="Ajouter une description…"
+            multiline
+          />
+          <div className="flex gap-4 sm:gap-6 text-base text-muted-foreground flex-wrap">
+            <span>Portions : <EditableInlineNum value={recipe.portions} onSave={(v) => saveRecipeField({ portions: v })} min={1} /></span>
+            <span>Poids/pers : <EditableInlineNum value={recipe.portionWeight} onSave={(v) => saveRecipeField({ portionWeight: v })} suffix="g" /></span>
+            <span className="hidden sm:inline">Créé le : <strong className="text-foreground">{new Date(recipe.createdAt).toLocaleDateString("fr-BE")}</strong></span>
+          </div>
+        </div>
+        {recipe.photos?.length > 0 && (
+          <div className="flex gap-3 shrink-0">
+            {recipe.photos.map((photo, idx) => (
+              <div key={idx} className="relative">
+                <img src={photo.url} alt={photo.label} className="w-28 h-20 sm:w-36 sm:h-28 object-cover rounded-lg border" />
+                {photo.label && <div className="text-center text-caption text-muted-foreground mt-1">{photo.label}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-5">
+        <section className="card-elevated p-4 sm:p-5">
+          <div className="flex justify-between items-center mb-4 gap-2">
+            <h2 className="text-h3">Étapes de préparation</h2>
+            <button
+              onClick={() => { setAddingStep(true); setTimeout(() => newStepRef.current?.focus(), 50); }}
+              className={`${BTN_OUTLINE} shrink-0 px-3`}
+            >
+              <Plus className="h-4 w-4" /> Étape
+            </button>
+          </div>
+          {recipe.techniques.length > 0 ? (
+            <ol className="space-y-2">
+              {recipe.techniques.map((t, i) => (
+                <li key={i} className="group flex gap-2 sm:gap-3 items-start text-base leading-relaxed">
+                  <span className="w-7 h-7 rounded-full bg-primary-soft text-foreground flex items-center justify-center text-sm font-semibold shrink-0 mt-0.5">{i + 1}</span>
+                  {editingStep === i ? (
+                    <div className="flex-1 flex flex-col gap-2">
+                      <textarea
+                        className="input-field resize-y"
+                        rows={Math.max(2, editStepValue.split("\n").length)}
+                        value={editStepValue}
+                        onChange={(e) => setEditStepValue(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveStep(i); } if (e.key === "Escape") setEditingStep(null); }}
+                        autoFocus
+                      />
+                      <div className="flex gap-2">
+                        <button onClick={() => handleSaveStep(i)} className={`${BTN_PRIMARY} px-3`}><Check className="h-4 w-4" /> OK</button>
+                        <button onClick={() => setEditingStep(null)} className={`${BTN} px-3 text-muted-foreground hover:text-foreground`}>Annuler</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <span
+                      className="text-foreground pt-0.5 flex-1 cursor-pointer transition-colors rounded px-1 -mx-1 hover:bg-hover whitespace-pre-wrap"
+                      onClick={() => { setEditingStep(i); setEditStepValue(t); }}
+                    >
+                      {t}
+                    </span>
+                  )}
+                  {editingStep !== i && (
+                    <button
+                      onClick={() => handleDeleteStep(i)}
+                      aria-label="Supprimer l'étape"
+                      className="reveal flex min-h-11 min-w-11 items-center justify-center text-muted-foreground hover:text-destructive transition-all shrink-0"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ol>
+          ) : !addingStep ? (
+            <button
+              onClick={() => { setAddingStep(true); setTimeout(() => newStepRef.current?.focus(), 50); }}
+              className="w-full py-5 border-2 border-dashed rounded-xl text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors text-base font-medium"
+            >
+              + Ajouter la première étape
+            </button>
+          ) : null}
+          {addingStep && (
+            <div className="mt-3 flex flex-col gap-2">
+              <textarea
+                ref={newStepRef}
+                className="input-field resize-y"
+                rows={Math.max(2, newStep.split("\n").length)}
+                placeholder="Décrivez l'étape…"
+                value={newStep}
+                onChange={(e) => setNewStep(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAddStep(); } if (e.key === "Escape") { setAddingStep(false); setNewStep(""); } }}
+              />
+              <div className="flex gap-2">
+                <button onClick={handleAddStep} disabled={!newStep.trim()} className={`${BTN_PRIMARY} px-3 disabled:opacity-50`}><Plus className="h-4 w-4" /> Ajouter</button>
+                <button onClick={() => { setAddingStep(false); setNewStep(""); }} className={`${BTN} px-3 text-muted-foreground hover:text-foreground`}>Annuler</button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="card-elevated p-4 sm:p-5">
+          <div className="flex justify-between items-center mb-4 gap-2">
+            <h2 className="text-h3">Ingrédients</h2>
+            <button
+              onClick={() => { setAddingIngredient(true); setNewIng({ ingredientId: "", qty: 0, unit: "g", lossPct: 0 }); }}
+              className={`${BTN_OUTLINE} shrink-0 px-3`}
+            >
+              <Plus className="h-4 w-4" /> Ingrédient
+            </button>
+          </div>
+          <div className="overflow-x-auto -mx-4 sm:-mx-5 px-4 sm:px-5">
+            <table className="table min-w-[400px]">
+              <thead>
+                <tr className="border-b-2 border-border text-muted-foreground">
+                  <th>Produit</th>
+                  <th className="text-right">Qté</th>
+                  <th className="text-right hidden sm:table-cell">Perte</th>
+                  <th className="text-right hidden sm:table-cell">Prix/unité</th>
+                  <th className="text-right">Coût</th>
+                  <th className="w-12" />
+                </tr>
+              </thead>
+              <tbody>
+                {recipe.ingredients.map((ri, idx) => {
+                  const ing = ingredients.find((i) => i.ingredientId === ri.ingredientId);
+                  if (!ing) return null;
+                  const lineCost = calcIngredientLineCost(ri, ing);
+                  const updateIngField = (field: keyof RecipeIngredient, value: unknown) => {
+                    const ingList = [...recipe.ingredients];
+                    ingList[idx] = { ...ingList[idx], [field]: value };
+                    saveRecipeField({ ingredients: ingList });
+                  };
+                  return (
+                    <tr key={idx} className="border-b border-border/30 group">
+                      <td>
+                        <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ background: supplierColor(ing.supplier) }} />
+                        <button onClick={() => setViewingIngredient(ing)} className="hover:underline hover:text-primary transition-colors text-left">{ing.name}</button>
+                      </td>
+                      <td className="text-right whitespace-nowrap">
+                        <EditableInlineNum value={ri.qty} onSave={(v) => updateIngField("qty", v)} /> {ri.unit}
+                      </td>
+                      <td className="text-right hidden sm:table-cell">
+                        <EditableInlineNum value={ri.lossPct || 0} onSave={(v) => updateIngField("lossPct", v)} suffix="%" />
+                      </td>
+                      <td className="text-right hidden sm:table-cell">{fmt(ing.price)}</td>
+                      <td className="text-right font-semibold">{fmt(lineCost)}</td>
+                      <td className="!px-0">
+                        <button onClick={() => handleRemoveIngredient(idx)} aria-label="Retirer l'ingrédient" className="reveal flex min-h-11 min-w-11 items-center justify-center text-muted-foreground hover:text-destructive transition-all">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {addingIngredient && (
+                  <tr className="border-b border-primary/30 bg-muted/30">
+                    <td>
+                      <SearchSelect
+                        options={ingredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))}
+                        value={newIng.ingredientId}
+                        onChange={(v) => {
+                          const ing = ingredients.find((i) => i.ingredientId === v);
+                          const unit = ing ? PRICE_TO_QTY_UNIT[ing.unit] : "g";
+                          setNewIng((p) => ({ ...p, ingredientId: v, unit }));
+                        }}
+                        placeholder="Rechercher un ingrédient…"
+                        onCreateNew={(name) => setCreatingIngredient(name)}
+                      />
+                    </td>
+                    <td>
+                      <div className="flex gap-1 justify-end">
+                        <NumericInput
+                          className="input-field w-20 text-right"
+                          value={newIng.qty}
+                          onChange={(v) => setNewIng((p) => ({ ...p, qty: v }))}
+                          placeholder="Qté"
+                          autoFocus
+                        />
+                        <select
+                          className="input-field w-auto"
+                          value={newIng.unit}
+                          onChange={(e) => setNewIng((p) => ({ ...p, unit: e.target.value as typeof p.unit }))}
+                        >
+                          {UNITS_QTY.map((u) => <option key={u}>{u}</option>)}
+                        </select>
+                      </div>
+                    </td>
+                    <td className="hidden sm:table-cell" />
+                    <td className="hidden sm:table-cell" />
+                    <td colSpan={2}>
+                      <div className="flex gap-1 justify-end">
+                        <button onClick={handleAddIngredient} disabled={!newIng.ingredientId || newIng.qty <= 0} aria-label="Ajouter" className="flex min-h-11 min-w-11 items-center justify-center bg-primary text-primary-foreground rounded-lg disabled:opacity-50"><Check className="h-4 w-4" /></button>
+                        <button onClick={() => setAddingIngredient(false)} aria-label="Annuler" className="flex min-h-11 min-w-11 items-center justify-center text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={2} className="sm:hidden">Total HTVA</td>
+                  <td colSpan={4} className="hidden sm:table-cell">Total matières HTVA</td>
+                  <td className="text-right" colSpan={2}>{fmt(totalCost)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+
+        <section className="card-elevated p-4 sm:p-5">
+          <h2 className="text-h3 mb-4">Simulation de prix</h2>
+          <PricingSimulation recipe={recipe} totalCost={totalCost} />
+        </section>
+      </div>
+
+      {modals}
     </div>
   );
 }
@@ -581,23 +712,22 @@ function PricingSimulation({ recipe, totalCost }: { recipe: Recipe; totalCost: n
   const taChosenMarge = taChosen > 0 ? taChosen / (1 + pricing.takeAway.tva / 100) - cpP : 0;
 
   return (
-    <section className="card-elevated p-4 sm:p-5 bg-gradient-to-br from-card to-muted/30">
-      <div className="flex justify-between items-center mb-4 gap-2">
-        <h2 className="font-serif text-lg font-bold">Simulation de prix</h2>
-        {dirty && (
-          <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium shadow-sm disabled:opacity-50 shrink-0">
-            <Save className="h-3.5 w-3.5" /> {saving ? "…" : "Enregistrer"}
+    <div>
+      {dirty && (
+        <div className="mb-3 flex justify-end">
+          <button onClick={handleSave} disabled={saving} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 text-base font-medium text-primary-foreground disabled:opacity-50">
+            <Save className="h-4 w-4" /> {saving ? "…" : "Enregistrer"}
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="overflow-x-auto -mx-4 sm:-mx-5 px-4 sm:px-5">
-      <table className="w-full text-sm border-collapse min-w-[360px]">
+      <div className="overflow-x-auto">
+      <table className="w-full text-base border-collapse min-w-[360px]">
         <thead>
           <tr>
-            <th className="pb-2 text-left text-xs font-bold uppercase tracking-wider text-muted-foreground" />
-            <th className="pb-2 px-4 text-right text-xs font-bold uppercase tracking-wider text-muted-foreground">Sur place</th>
-            <th className="pb-2 px-4 text-right text-xs font-bold uppercase tracking-wider text-muted-foreground">Take away</th>
+            <th className="pb-2 text-left text-sm font-semibold text-muted-foreground" />
+            <th className="pb-2 px-4 text-right text-sm font-semibold text-muted-foreground">Sur place</th>
+            <th className="pb-2 px-4 text-right text-sm font-semibold text-muted-foreground">Take away</th>
           </tr>
         </thead>
         <tbody>
@@ -605,15 +735,15 @@ function PricingSimulation({ recipe, totalCost }: { recipe: Recipe; totalCost: n
           <CalcRow label={`Coût par portion HTVA (÷${portions})`} sp={fmt(cpP)} ta={fmt(cpP)} bold />
 
           <EditRow
-            label="COEF"
+            label="Coefficient"
             sp={<EditableNum value={pricing.surPlace.coef} onChange={(v) => set("surPlace.coef", v)} />}
             ta={<EditableNum value={pricing.takeAway.coef} onChange={(v) => set("takeAway.coef", v)} />}
           />
           <CalcRow label="Prix vente portion HTVA" sp={fmt(spHTVA)} ta={fmt(taHTVA)} />
           <EditRow
             label="TVA"
-            sp={<EditableNum value={pricing.surPlace.tva} onChange={(v) => set("surPlace.tva", v)} suffix="%" />}
-            ta={<EditableNum value={pricing.takeAway.tva} onChange={(v) => set("takeAway.tva", v)} suffix="%" />}
+            sp={<VatSelect value={pricing.surPlace.tva} onChange={(v) => set("surPlace.tva", v)} />}
+            ta={<VatSelect value={pricing.takeAway.tva} onChange={(v) => set("takeAway.tva", v)} />}
           />
           <CalcRow label="Prix TVAC" sp={fmt(spTVAC)} ta={fmt(taTVAC)} />
           <CalcRow label="Marge par portion" sp={fmt(spHTVA - cpP)} ta={fmt(taHTVA - cpP)} positive />
@@ -622,25 +752,39 @@ function PricingSimulation({ recipe, totalCost }: { recipe: Recipe; totalCost: n
 
           <EditRow
             label="Prix de vente choisi TVAC"
-            sp={<EditableNum value={spChosen} onChange={(v) => set("chosenPrice.surPlace", v)} placeholder="—" />}
-            ta={<EditableNum value={taChosen} onChange={(v) => set("chosenPrice.takeAway", v)} placeholder="—" />}
+            sp={<EditableNum value={spChosen} onChange={(v) => set("chosenPrice.surPlace", v)} placeholder="–" />}
+            ta={<EditableNum value={taChosen} onChange={(v) => set("chosenPrice.takeAway", v)} placeholder="–" />}
             bold
           />
           <CalcRow
-            label="COEF calculé"
-            sp={spChosen > 0 ? spChosenCoef.toFixed(2) : "—"}
-            ta={taChosen > 0 ? taChosenCoef.toFixed(2) : "—"}
+            label="Coefficient calculé"
+            sp={spChosen > 0 ? spChosenCoef.toFixed(2) : "–"}
+            ta={taChosen > 0 ? taChosenCoef.toFixed(2) : "–"}
           />
           <CalcRow
             label="Marge par portion"
-            sp={spChosen > 0 ? fmt(spChosenMarge) : "—"}
-            ta={taChosen > 0 ? fmt(taChosenMarge) : "—"}
+            sp={spChosen > 0 ? fmt(spChosenMarge) : "–"}
+            ta={taChosen > 0 ? fmt(taChosenMarge) : "–"}
             positive={spChosenMarge > 0 || taChosenMarge > 0}
           />
         </tbody>
       </table>
       </div>
-    </section>
+    </div>
+  );
+}
+
+function VatSelect({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  return (
+    <select
+      className="input-field input-compact w-auto min-h-11 text-right font-semibold tabular-nums"
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      aria-label="TVA"
+    >
+      {!VAT_RATES.includes(value as (typeof VAT_RATES)[number]) && <option value={value}>{value} %</option>}
+      {VAT_RATES.map((r) => <option key={r} value={r}>{r} %</option>)}
+    </select>
   );
 }
 
@@ -648,8 +792,8 @@ function CalcRow({ label, sp, ta, bold, positive }: { label: string; sp: string;
   return (
     <tr className="border-b border-border/20">
       <td className={`py-2 ${bold ? "font-bold text-foreground" : "font-medium text-muted-foreground"}`}>{label}</td>
-      <td className={`py-2 px-4 text-right tabular-nums ${bold ? "font-bold" : "font-medium"} ${positive ? "text-green-600" : ""}`}>{sp}</td>
-      <td className={`py-2 px-4 text-right tabular-nums ${bold ? "font-bold" : "font-medium"} ${positive ? "text-green-600" : ""}`}>{ta}</td>
+      <td className={`py-2 px-4 text-right tabular-nums ${bold ? "font-bold" : "font-medium"} ${positive ? "text-success" : ""}`}>{sp}</td>
+      <td className={`py-2 px-4 text-right tabular-nums ${bold ? "font-bold" : "font-medium"} ${positive ? "text-success" : ""}`}>{ta}</td>
     </tr>
   );
 }
@@ -657,163 +801,9 @@ function CalcRow({ label, sp, ta, bold, positive }: { label: string; sp: string;
 function EditRow({ label, sp, ta, bold }: { label: string; sp: React.ReactNode; ta: React.ReactNode; bold?: boolean }) {
   return (
     <tr className="border-b border-border/20 bg-muted/20">
-      <td className={`py-1.5 ${bold ? "font-bold text-foreground" : "font-semibold text-foreground"}`}>{label}</td>
+      <td className={`py-1.5 ${bold ? "font-bold text-foreground" : "font-semibold text-foreground"}`}><FieldLabel className="mb-0">{label}</FieldLabel></td>
       <td className="py-1.5 px-3 text-right">{sp}</td>
       <td className="py-1.5 px-3 text-right">{ta}</td>
     </tr>
-  );
-}
-
-function EditableNum({ value, onChange, suffix, placeholder }: {
-  value: number;
-  onChange: (v: number) => void;
-  suffix?: string;
-  placeholder?: string;
-}) {
-  return (
-    <NumericInput
-      value={value}
-      onChange={onChange}
-      suffix={suffix}
-      placeholder={placeholder}
-      className="w-20 text-right px-2 py-0.5 border rounded-md bg-background text-sm font-semibold tabular-nums focus:border-primary outline-none"
-    />
-  );
-}
-
-function EditableText({ value, onSave, className, inputClassName, placeholder, multiline }: {
-  value: string;
-  onSave: (v: string) => void;
-  className?: string;
-  inputClassName?: string;
-  placeholder?: string;
-  multiline?: boolean;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(value);
-
-  useEffect(() => { setText(value); }, [value]);
-
-  const commit = () => {
-    setEditing(false);
-    if (text !== value) onSave(text);
-  };
-
-  if (editing) {
-    if (multiline) {
-      return (
-        <textarea
-          className={inputClassName}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => { if (e.key === "Escape") { setText(value); setEditing(false); } }}
-          autoFocus
-          rows={2}
-        />
-      );
-    }
-    return (
-      <input
-        className={inputClassName}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setText(value); setEditing(false); } }}
-        autoFocus
-      />
-    );
-  }
-
-  return (
-    <div
-      className={`${className} cursor-pointer rounded px-1 -mx-1 hover:bg-muted/50 transition-colors ${!value && placeholder ? "text-muted-foreground/50 italic" : ""}`}
-      onClick={() => setEditing(true)}
-    >
-      {value || placeholder || "—"}
-    </div>
-  );
-}
-
-function EditableInlineNum({ value, onSave, suffix, min }: {
-  value: number;
-  onSave: (v: number) => void;
-  suffix?: string;
-  min?: number;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(String(value));
-
-  useEffect(() => { setText(String(value)); }, [value]);
-
-  const commit = () => {
-    setEditing(false);
-    const cleaned = text.replace(",", ".");
-    const parsed = parseFloat(cleaned);
-    const final = isNaN(parsed) ? 0 : (min !== undefined ? Math.max(min, parsed) : parsed);
-    if (final !== value) onSave(final);
-  };
-
-  if (editing) {
-    return (
-      <span className="inline-flex items-center gap-0.5">
-        <input
-          className="w-16 text-right px-1 py-0 border-b border-primary bg-transparent text-foreground font-semibold tabular-nums outline-none text-sm"
-          type="text"
-          inputMode="decimal"
-          value={text}
-          onChange={(e) => { if (e.target.value === "" || /^-?\d*[.,]?\d*$/.test(e.target.value)) setText(e.target.value); }}
-          onBlur={commit}
-          onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setText(String(value)); setEditing(false); } }}
-          autoFocus
-        />
-        {suffix && <span>{suffix}</span>}
-      </span>
-    );
-  }
-
-  return (
-    <strong
-      className="text-foreground cursor-pointer hover:bg-muted/50 rounded px-0.5 transition-colors tabular-nums"
-      onClick={() => setEditing(true)}
-    >
-      {value}{suffix || ""}
-    </strong>
-  );
-}
-
-function EditableType({ value, options, onSave }: { value: string; options: string[]; onSave: (v: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  return (
-    <div ref={ref} className="relative inline-block mb-3">
-      <button
-        onClick={() => setOpen(!open)}
-        className="px-3 py-1 rounded-full bg-foreground text-background text-xs font-semibold uppercase tracking-wider hover:opacity-80 transition-opacity"
-      >
-        {value}
-      </button>
-      {open && (
-        <div className="absolute z-20 mt-1 left-0 bg-card border rounded-lg shadow-lg overflow-hidden">
-          {options.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => { if (opt !== value) onSave(opt); setOpen(false); }}
-              className={`block w-full text-left px-4 py-1.5 text-xs hover:bg-muted transition-colors whitespace-nowrap ${opt === value ? "bg-muted/50 font-bold" : ""}`}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
