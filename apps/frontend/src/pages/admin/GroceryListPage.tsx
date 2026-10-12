@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Plus, X, Copy, FileDown, FileSpreadsheet, GripVertical, Check, Pencil, ShoppingCart, Trash2, ArrowLeft, Eye, EyeOff } from "lucide-react";
 import type { GroceryList, GroceryListItem, Ingredient } from "@packages/types";
-import { UNITS_QTY, PRICE_TO_QTY_UNIT } from "@packages/types";
+import { UNITS_QTY, PRICE_TO_QTY_UNIT, fmtQtyText, isoWeekOf, parseIsoWeek } from "@packages/types";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import { useFullBleed } from "@/components/admin/AdminLayout";
@@ -12,7 +12,6 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
 const itemKey = (g: GroceryListItem) => `${g.ingredientId}:${g.unit}`;
-const qty = (n: number) => String(Number(n.toFixed(2)));
 
 export default function GroceryListPage() {
   useFullBleed(true);
@@ -228,7 +227,7 @@ export default function GroceryListPage() {
   const copyList = () => {
     const lines = items.map((g) => {
       const need = needQty(g);
-      return `${g.checked ? "[✓]" : "[ ]"} ${g.name}\t${need} ${g.unit}\t${g.supplier}`;
+      return `${g.checked ? "[✓]" : "[ ]"} ${g.name}\t${fmtQtyText(need, g.unit)}\t${g.supplier}`;
     });
     navigator.clipboard.writeText(lines.join("\n"));
     toast({ title: "Liste copiée dans le presse-papier" });
@@ -255,9 +254,9 @@ export default function GroceryListPage() {
         body: supplierItems.map((g) => [
           g.checked ? "✓" : "",
           g.name,
-          `${qty(g.totalQty)} ${g.unit}`,
-          g.haveQty != null ? `${qty(g.haveQty)} ${g.unit}` : "-",
-          `${qty(needQty(g))} ${g.unit}`,
+          fmtQtyText(g.totalQty, g.unit),
+          g.haveQty != null ? fmtQtyText(g.haveQty, g.unit) : "-",
+          fmtQtyText(needQty(g), g.unit),
           `${fmt(g.pricePerUnit)} ${g.priceUnit}`,
         ]),
         margin: { left: m },
@@ -306,6 +305,7 @@ export default function GroceryListPage() {
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
 
   const uncheckedCount = items.filter((g) => !g.checked).length;
+  const weekOfList = list?.range ? isoWeekOf(list.range.from) : null;
 
   const sidebar = (
     <div className="flex h-full flex-col">
@@ -361,6 +361,11 @@ export default function GroceryListPage() {
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div className="min-w-0 flex-1">
+            {weekOfList && (
+              <Link to={`/semaine/${weekOfList}`} className="inline-flex min-h-6 items-center text-sm text-muted-foreground hover:text-foreground hover:underline underline-offset-4">
+                Semaine {parseIsoWeek(weekOfList).week}
+              </Link>
+            )}
             {editingTitle ? (
               <input
                 className="w-full border-b-2 border-primary bg-transparent text-h3 outline-none"
@@ -485,7 +490,7 @@ export default function GroceryListPage() {
                           </span>
                           <span className={`min-w-0 flex-1 truncate text-base ${g.checked ? "line-through text-muted-foreground" : ""}`}>{g.name}</span>
                           <span className={`shrink-0 text-base font-bold tabular-nums ${need > 0 ? "" : "text-success"}`}>
-                            {need > 0 ? `${qty(need)} ${g.unit}` : "✓"}
+                            {need > 0 ? fmtQtyText(need, g.unit) : "✓"}
                           </span>
                         </button>
                         <button

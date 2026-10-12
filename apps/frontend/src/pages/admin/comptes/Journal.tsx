@@ -53,7 +53,7 @@ function Sheet({ children, onClose, wide }: { children: ReactNode; onClose: () =
 }
 
 // Two-field "Réglé" popover shared with the event page and À facturer; the trigger defaults to the journal tag.
-export function PaidPopover({ entry, onSaved, trigger, align = "left" }: { entry: LedgerEntry; onSaved: () => void; trigger?: ReactNode; align?: "left" | "right" }) {
+export function PaidPopover({ entry, onSaved, trigger, align = "left", className = "" }: { entry: LedgerEntry; onSaved: () => void; trigger?: ReactNode; align?: "left" | "right"; className?: string }) {
   const [open, setOpen] = useState(false);
   const [paid, setPaid] = useState(entry.paid);
   const [method, setMethod] = useState<string>(entry.paymentMethod ?? "");
@@ -79,8 +79,8 @@ export function PaidPopover({ entry, onSaved, trigger, align = "left" }: { entry
   };
 
   return (
-    <div className="relative" onClick={(e) => e.stopPropagation()}>
-      <button type="button" className="inline-flex min-h-11 items-center" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="dialog">
+    <div className={`relative ${className}`} onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="inline-flex min-h-11 w-full items-center" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="dialog">
         {trigger ?? <Tag variant={entry.paid ? "success" : "warning"}>{entry.paid ? "Réglé" : "Non réglé"}</Tag>}
       </button>
       {open && (

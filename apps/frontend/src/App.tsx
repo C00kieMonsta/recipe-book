@@ -1,5 +1,6 @@
-import { Routes, Route, Navigate } from "react-router-dom";
-import { isoWeekOf } from "@packages/types";
+import { lazy, Suspense } from "react";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { addDays, isoWeekOf, weekdayOf } from "@packages/types";
 import { todayIso } from "@/lib/dates";
 import LoginPage from "@/pages/LoginPage";
 import AdminLayout from "@/components/admin/AdminLayout";
@@ -26,8 +27,29 @@ import Previsionnel from "@/pages/admin/comptes/Previsionnel";
 import AuReel from "@/pages/admin/comptes/AuReel";
 import Settings from "@/pages/admin/Settings";
 
+const AFacturer = lazy(() => import("@/pages/admin/comptes/AFacturer"));
+
+const LAST_WEEK_KEY = "recipe-book:last-week";
+
+// Sunday is the planning day, so it opens on the coming week.
+function planningWeek(): string {
+  const today = todayIso();
+  return weekdayOf(today) === 7 ? isoWeekOf(addDays(today, 1)) : isoWeekOf(today);
+}
+
 function HomeRedirect() {
-  return <Navigate to={`/semaine/${isoWeekOf(todayIso())}`} replace />;
+  return <Navigate to={`/semaine/${planningWeek()}`} replace />;
+}
+
+function WeekIndexRedirect() {
+  const { search } = useLocation();
+  const last = sessionStorage.getItem(LAST_WEEK_KEY);
+  return <Navigate to={last && last.startsWith("/semaine/") ? last : `/semaine/${planningWeek()}${search}`} replace />;
+}
+
+function TodayRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/jour/${todayIso()}${search}`} replace />;
 }
 
 export default function App() {
@@ -37,7 +59,9 @@ export default function App() {
       <Route path="/recipes/:id/cook" element={<RecipeCook />} />
       <Route element={<AdminLayout />}>
         <Route path="/" element={<HomeRedirect />} />
+        <Route path="/semaine" element={<WeekIndexRedirect />} />
         <Route path="/semaine/:isoWeek" element={<Week />} />
+        <Route path="/jour/aujourdhui" element={<TodayRedirect />} />
         <Route path="/jour/:date" element={<Day />} />
         <Route path="/recipes" element={<Recipes />} />
         <Route path="/recipes/new" element={<RecipeEditor />} />
@@ -57,6 +81,14 @@ export default function App() {
         <Route path="/comptes" element={<Navigate to="/comptes/journal" replace />} />
         <Route path="/comptes" element={<ComptesLayout />}>
           <Route path="journal" element={<Journal />} />
+          <Route
+            path="a-facturer"
+            element={
+              <Suspense fallback={<p className="text-base text-muted-foreground">Chargement…</p>}>
+                <AFacturer />
+              </Suspense>
+            }
+          />
           <Route path="apercu" element={<Apercu />} />
           <Route path="resultats" element={<Resultats />} />
           <Route path="previsionnel" element={<Previsionnel />} />

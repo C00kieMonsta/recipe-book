@@ -737,7 +737,7 @@ export default function Settings() {
                 <input
                   aria-label={`Initiales de ${p.name}`}
                   aria-invalid={duplicate || undefined}
-                  className={`input-field w-20 text-center uppercase ${duplicate ? "border-destructive" : ""}`}
+                  className={`input-field w-20 text-center ${duplicate ? "border-destructive" : ""}`}
                   value={p.initials ?? ""}
                   placeholder={personInitials(p)}
                   maxLength={3}
@@ -1229,12 +1229,11 @@ export default function Settings() {
             </div>
           ))}
         </dl>
-        {health && (!health.tables.clients || !health.tables.ledger) && (
-          <p className="mt-2 text-base text-muted-foreground">
-            Créer la table {!health.tables.clients ? "ta-clients" : "ta-ledger"}-&lt;stage&gt; puis renseigner le paramètre SSM (README, étape 4)
-            {!health.tables.clients && !health.tables.ledger ? ", de même pour ta-ledger-<stage>." : "."}
+        {health && ([["clients", "ta-clients"], ["ledger", "ta-ledger"]] as const).filter(([key]) => !health.tables[key]).map(([key, table]) => (
+          <p key={key} className="mt-2 text-base text-muted-foreground">
+            Créer la table {table}-&lt;stage&gt; puis renseigner le paramètre SSM (README, étape 4)
           </p>
-        )}
+        ))}
       </Section>
       </div>
 

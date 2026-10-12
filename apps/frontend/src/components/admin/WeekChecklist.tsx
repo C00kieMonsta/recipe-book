@@ -64,8 +64,8 @@ export default function WeekChecklist(props: WeekChecklistProps) {
 
   if (!open) {
     return (
-      <section aria-live="polite" className="card-elevated p-3">
-        <button type="button" onClick={onToggle} aria-expanded={false} className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg px-1 text-left hover:bg-hover">
+      <section aria-live="polite" className="card-elevated">
+        <button type="button" onClick={onToggle} aria-expanded={false} className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl px-3 text-left hover:bg-hover">
           <span className="text-h3">À faire avant la semaine · {count}</span>
           <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
         </button>

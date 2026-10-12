@@ -19,6 +19,7 @@ import {
   shortEventName,
   sortEventLines,
   weekChecklist,
+  rangeLabel,
   weekdayOf,
   weekGroceryList,
   weekPlan,
@@ -188,11 +189,11 @@ export default function Week() {
     dayRefs.current[date]?.scrollIntoView({ block: "start" });
   }, []);
 
-  // Phone: today, else the first day with events, is brought into view once loaded.
+  // Phone: today is brought into view once loaded; on a Sunday looking at next week, the first day with events.
   useEffect(() => {
     if (loading || window.innerWidth >= 1280) return;
-    const target = todayInWeek ? today : plan.days.find((d) => d.events.length > 0)?.date;
-    if (target) scrollToDay(target);
+    const target = todayInWeek ? today : weekdayOf(today) === 7 ? plan.days.find((d) => d.events.length > 0)?.date : undefined;
+    if (target && target !== dates[0]) scrollToDay(target);
   }, [safeWeek, loading]);
 
   const onTouchStart = (e: React.TouchEvent) => {
@@ -343,7 +344,7 @@ export default function Week() {
   );
 
   return (
-    <div className="h-[calc(100dvh-68px)] overflow-y-auto px-4 py-2 md:h-dvh xl:px-6 xl:py-4 print:h-auto print:overflow-visible">
+    <div className="h-[calc(100dvh-68px)] overflow-y-auto px-4 py-1 md:h-dvh xl:px-6 xl:py-4 print:h-auto print:overflow-visible">
       {/* Header zone: nav, range and money; swipe changes the week on the phone */}
       <div className="no-print" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         <div className="flex items-center gap-1 xl:min-h-14 xl:gap-4">
@@ -369,7 +370,7 @@ export default function Week() {
           </button>
         </div>
 
-        <div className="flex min-h-8 items-center gap-2 xl:hidden">
+        <div className="flex h-8 items-center gap-2 xl:hidden">
           <WeekPicker from={dates[0]} to={dates[6]} value={thursday} onChange={(d) => navigate(weekUrl(isoWeekOf(d)))} />
           {safeWeek !== todayWeek && (
             <Link to={weekUrl(todayWeek)} onClick={() => todayInWeek && scrollToDay(today)} className="inline-flex min-h-11 items-center rounded-lg px-1 text-base text-primary hover:bg-hover">Aujourd'hui</Link>
@@ -408,7 +409,7 @@ export default function Week() {
 
       {/* Checklist */}
       {!loading && (
-        <div className="no-print mt-2 xl:mt-3">
+        <div className="no-print mt-1 xl:mt-3">
           <WeekChecklist
             items={checklist}
             open={checklistOpen}
@@ -437,16 +438,14 @@ export default function Week() {
             const dayPeople = plan.peopleByDay[day.date] ?? [];
             return (
               <div key={day.date} className="min-w-0 max-h-[calc(100dvh-300px)] overflow-y-auto rounded-lg">
-                <div className={`sticky top-0 z-10 min-h-[72px] rounded-lg px-2 py-1.5 ${isToday ? "bg-primary-soft" : "bg-background"}`}>
-                  <div className="flex items-start justify-between gap-1">
-                    <Link to={dayUrl(day.date)} state={state} className="min-w-0 rounded hover:underline underline-offset-4">
-                      <div className="text-h3">{dayLabel(day.date)}</div>
-                      <div className={`text-sm ${isToday ? "" : "text-muted-foreground"}`}>{dayMeta(day, true)}</div>
-                    </Link>
-                    <Link to={newEventUrl(day.date)} aria-label={`Nouvel événement le ${longDayLabel(day.date)}`} className={`${ICON_BTN} -mr-2 -mt-1 text-muted-foreground`}>
-                      <Plus className="h-5 w-5" />
-                    </Link>
-                  </div>
+                <div className={`relative sticky top-0 z-10 min-h-[72px] rounded-lg px-2 py-1.5 ${isToday ? "bg-primary-soft" : "bg-background"}`}>
+                  <Link to={dayUrl(day.date)} state={state} className="block min-w-0 rounded hover:underline underline-offset-4">
+                    <div className="pr-9 text-h3">{dayLabel(day.date)}</div>
+                    <div className={`truncate text-sm ${isToday ? "" : "text-muted-foreground"}`}>{dayMeta(day, true)}</div>
+                  </Link>
+                  <Link to={newEventUrl(day.date)} aria-label={`Nouvel événement le ${longDayLabel(day.date)}`} className={`${ICON_BTN} absolute right-0 top-0 text-muted-foreground`}>
+                    <Plus className="h-5 w-5" />
+                  </Link>
                   {dayPeople.length > 0 && (
                     <div className="flex min-h-5 items-center gap-0.5">
                       {dayPeople.slice(0, 4).map((id) => (
@@ -506,18 +505,18 @@ export default function Week() {
                               const ids = assigneesOf(line, ev);
                               const dim = isOtherPerson(ev, line);
                               return (
-                                <li key={line.lineId} className={`group grid min-h-9 grid-cols-[36px_minmax(0,1fr)_auto_auto] items-center text-sm touch:min-h-11 ${dim ? "opacity-40" : ""}`}>
-                                  <StatusDot value={status} onCycle={() => cycle(ev, line)} />
-                                  <Link to={prepUrl(ev.eventId, line.lineId)} state={state} className={`min-w-0 rounded px-1 py-1 hover:bg-hover ${status === "done" ? "text-muted-foreground" : ""}`}>
-                                    <span className="line-clamp-2">{recipeName(line.recipeId)}</span>
+                                <li key={line.lineId} className={`group grid min-h-9 grid-cols-[32px_minmax(0,1fr)_auto] items-center text-sm touch:min-h-11 ${dim ? "opacity-40" : ""}`}>
+                                  <StatusDot value={status} onCycle={() => cycle(ev, line)} className="-ml-1" />
+                                  <Link to={prepUrl(ev.eventId, line.lineId)} state={state} className={`min-w-0 rounded px-0.5 py-1 hover:bg-hover ${status === "done" ? "text-muted-foreground" : ""}`}>
+                                    <span className="line-clamp-3">{recipeName(line.recipeId)}</span>
                                   </Link>
-                                  <span className={`px-1 font-semibold tabular-nums ${status === "done" ? "text-muted-foreground" : ""}`}>{line.portions}</span>
-                                  <span className="inline-flex items-center">
-                                    {(ids.length || canAssign) ? (
-                                      <AssignChips value={own ? line.assignedTo ?? [] : ids} options={people} enabled={canAssign} inherited={!own && ids.length > 0} allowInherit onChange={(next) => assignLine(ev.eventId, line.lineId, next)} title={recipeName(line.recipeId)} />
-                                    ) : null}
-                                  </span>
-                                  <div className="col-span-full hidden pl-9 pb-1 pointer:group-hover:block">
+                                  <span className={`pl-1 font-semibold tabular-nums ${status === "done" ? "text-muted-foreground" : ""}`}>{line.portions}</span>
+                                  {ids.length > 0 && (
+                                    <span className="col-start-2 col-span-2 -mt-1 flex justify-end">
+                                      <AssignChips value={own ? line.assignedTo ?? [] : ids} options={people} enabled={canAssign} inherited={!own} allowInherit onChange={(next) => assignLine(ev.eventId, line.lineId, next)} title={recipeName(line.recipeId)} />
+                                    </span>
+                                  )}
+                                  <div className="col-span-full hidden pl-8 pb-1 pointer:group-hover:block">
                                     <StatusDots value={status} onChange={(s) => setStatus(ev, line, s)} />
                                   </div>
                                 </li>
@@ -546,8 +545,8 @@ export default function Week() {
               const isToday = day.date === today;
               const empty = day.events.length === 0;
               return (
-                <section key={day.date} ref={(el) => { dayRefs.current[day.date] = el; }} className="scroll-mt-16">
-                  <div className={`sticky top-[60px] z-10 -mx-4 flex min-h-12 items-center gap-2 px-4 ${isToday ? "bg-primary-soft" : "bg-background"}`}>
+                <section key={day.date} ref={(el) => { dayRefs.current[day.date] = el; }} className="scroll-mt-14">
+                  <div className={`sticky top-[56px] z-10 -mx-4 flex min-h-12 items-center gap-2 px-4 ${isToday ? "bg-primary-soft" : "bg-background"}`}>
                     <Link to={dayUrl(day.date)} state={state} className="flex min-h-12 min-w-0 flex-1 items-center gap-2">
                       <span className="w-16 shrink-0 text-base font-medium">{dayLabel(day.date)}</span>
                       <span className={`min-w-0 truncate text-sm ${empty ? "text-muted-foreground" : isToday ? "" : "text-muted-foreground"}`}>
@@ -609,7 +608,7 @@ export default function Week() {
 
       {/* Print */}
       <div className="hidden print:block">
-        <h1 className="font-serif text-h1">Semaine {weekNo} · {dates[0].slice(8, 10)}/{dates[0].slice(5, 7)} au {dates[6].slice(8, 10)}/{dates[6].slice(5, 7)}</h1>
+        <h1 className="font-serif text-h1">Semaine {weekNo} · {rangeLabel(dates[0], dates[6])}</h1>
         {printMode === "week" ? (
           <WeekPrint days={plan.days} people={people} courses={courses} recipeById={recipeById} clientOf={clientOf} dayMeta={dayMeta} />
         ) : (
@@ -665,7 +664,7 @@ export default function Week() {
             onSubmit={(e) => { e.preventDefault(); createClientWeek(); }}
           >
             <h2 className="text-h3">Créer la semaine {sheet.client.name}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{dates[0].slice(8, 10)}/{dates[0].slice(5, 7)} au {dates[6].slice(8, 10)}/{dates[6].slice(5, 7)} · un événement par jour de modèle</p>
+            <p className="mt-1 text-sm text-muted-foreground">{rangeLabel(dates[0], dates[6])} · un événement par jour de modèle</p>
             <label className="mt-4 block text-base">
               Convives
               <input

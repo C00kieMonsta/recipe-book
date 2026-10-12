@@ -260,17 +260,17 @@ export default function PrepSheet() {
         <div className="min-w-0">
           <div className="no-print flex min-h-11 items-center gap-1">
             <Link to={backUrl} aria-label="Retour au jour" className={`${ICON_BTN} -ml-3`}><ChevronLeft className="h-6 w-6" /></Link>
-            <Link to={backUrl} className="inline-flex min-h-11 min-w-0 items-center text-sm text-muted-foreground hover:text-foreground hover:underline underline-offset-4">
-              <span className="shrink-0 whitespace-nowrap">{dayShortLabel(date)} · </span>
+            <Link to={backUrl} className="inline-flex min-h-11 min-w-0 items-center gap-1 text-sm text-muted-foreground hover:text-foreground hover:underline underline-offset-4">
+              <span className="shrink-0 whitespace-nowrap">{dayShortLabel(date)} ·</span>
               <span className="truncate">{who}</span>
             </Link>
-            <div className="ml-auto flex shrink-0 items-center gap-1">
+            <div className="ml-auto flex shrink-0 items-center">
               {prevUrl ? (
                 <Link to={prevUrl} state={{ from }} aria-label="Ligne précédente" className={ICON_BTN}><ChevronLeft className="h-5 w-5" /></Link>
               ) : (
                 <span className={ICON_BTN} aria-hidden="true"><ChevronLeft className="h-5 w-5 opacity-30" /></span>
               )}
-              <span className="text-sm tabular-nums text-muted-foreground">{index + 1}/{dayLines.length}</span>
+              <span className="px-1 text-sm tabular-nums text-muted-foreground">{index + 1}/{dayLines.length}</span>
               {nextUrl ? (
                 <Link to={nextUrl} state={{ from }} aria-label="Ligne suivante" className={ICON_BTN}><ChevronRight className="h-5 w-5" /></Link>
               ) : (

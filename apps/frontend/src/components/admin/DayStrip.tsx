@@ -29,9 +29,9 @@ export default function DayStrip({ dates, counts, today, onPick, className = "" 
             aria-current={isToday ? "date" : undefined}
             className={`flex min-h-11 flex-col items-center justify-center rounded-lg leading-none ${isToday ? "bg-primary-soft" : "hover:bg-hover"}`}
           >
-            <span className="text-caption text-muted-foreground">{LETTERS[i]}</span>
-            <span className="text-base font-semibold tabular-nums">{Number(date.slice(8, 10))}</span>
-            <span className={`text-caption tabular-nums ${n ? "text-muted-foreground" : "text-transparent"}`}>{n || "0"}</span>
+            <span className="text-caption leading-none text-muted-foreground">{LETTERS[i]}</span>
+            <span className="text-base font-semibold leading-none tabular-nums">{Number(date.slice(8, 10))}</span>
+            <span className={`text-caption leading-none tabular-nums ${n ? "text-muted-foreground" : "text-transparent"}`}>{n || "0"}</span>
           </button>
         );
       })}

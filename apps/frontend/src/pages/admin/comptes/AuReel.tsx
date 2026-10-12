@@ -119,14 +119,14 @@ export default function AuReel() {
     const toInvoice = r.status === "completed" && !invoiced.has(r.eventId);
     const fields = (
       <>
-        <span className="inline-flex min-h-11 items-center gap-1">
+        <span className="inline-flex min-h-11 shrink-0 items-center gap-1 whitespace-nowrap">
           {r.hours === undefined && hoursFor !== r.eventId ? (
             <button type="button" className="text-primary hover:underline" onClick={() => setHoursFor(r.eventId)}>ajouter des heures</button>
           ) : (
             <>Heures <EditableInlineNum value={r.hours ?? 0} min={0} suffix=" h" onSave={(v) => { setHoursFor(null); saveEvent(r.eventId, { hoursSpent: v }); }} /></>
           )}
         </span>
-        <span className="inline-flex min-h-11 items-center gap-1">
+        <span className="block min-h-11 min-w-0 truncate leading-[2.75rem]">
           Observations <EditableInlineText value={r.notes ?? ""} placeholder="ajouter" onSave={(v) => saveEvent(r.eventId, { notes: v })} />
         </span>
       </>
@@ -147,7 +147,7 @@ export default function AuReel() {
             }
             to={toInvoice ? `/events/${r.eventId}?facturer=1` : `/events/${r.eventId}`}
           />
-          <div className="hidden shrink-0 items-center gap-x-6 pr-3 text-base text-muted-foreground md:flex">{fields}</div>
+          <div className="hidden w-[21rem] shrink-0 items-center gap-x-4 pr-3 text-base text-muted-foreground md:flex">{fields}</div>
         </div>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-1 px-3 pb-3 text-base text-muted-foreground md:hidden">{fields}</div>
       </div>

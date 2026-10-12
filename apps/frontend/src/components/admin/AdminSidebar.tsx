@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import { useChrome } from "./AdminLayout";
 
 interface MenuItem {
   path: string;
@@ -41,19 +42,8 @@ const menuItems: MenuItem[] = [
   { path: "/settings", icon: Settings, label: "Paramètres", isActive: startsWith("/settings") },
 ];
 
-const COLLAPSE_BELOW = "(max-width: 1535.98px)";
-
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
-  useEffect(() => {
-    const mql = window.matchMedia(query);
-    const onChange = () => setMatches(mql.matches);
-    onChange();
-    mql.addEventListener("change", onChange);
-    return () => mql.removeEventListener("change", onChange);
-  }, [query]);
-  return matches;
-}
+// Below this width the sidebar starts as the labelled rail; the chevron overrides it.
+const WIDE_PX = 1400;
 
 export interface AdminSidebarProps {
   hidden?: boolean;
@@ -63,12 +53,11 @@ export default function AdminSidebar({ hidden = false }: AdminSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuth();
+  const { backTo } = useChrome();
   const [mobileOpen, setMobileOpen] = useState(false);
-  // null means no choice yet, so the week page decides from the viewport.
   const [collapsedPref, setCollapsedPref] = useLocalStorage<boolean | null>("recipe-book:sidebar-collapsed", null);
-  const narrow = useMediaQuery(COLLAPSE_BELOW);
-  const onWeek = location.pathname.startsWith("/semaine");
-  const collapsed = collapsedPref ?? (onWeek && narrow);
+  const [wide] = useState(() => typeof window !== "undefined" && window.innerWidth >= WIDE_PX);
+  const collapsed = collapsedPref ?? !wide;
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
@@ -110,17 +99,16 @@ export default function AdminSidebar({ hidden = false }: AdminSidebarProps) {
         </div>
       )}
 
-      <nav className={`flex-1 space-y-1 ${isCollapsed ? "px-2" : "px-3"}`}>
+      <nav className={`flex-1 space-y-1 ${isCollapsed ? "px-1.5" : "px-3"}`}>
         {menuItems.map((item) => {
           const isActive = item.isActive(location.pathname);
           return (
             <Link
               key={item.path}
               to={item.path}
-              title={isCollapsed ? item.label : undefined}
               aria-current={isActive ? "page" : undefined}
-              className={`flex items-center rounded-lg text-sm font-medium transition-colors ${
-                isCollapsed ? "justify-center px-2 py-2.5" : "gap-3 px-4 py-2.5"
+              className={`flex rounded-lg font-medium transition-colors ${
+                isCollapsed ? "flex-col items-center gap-1 px-1 py-2" : "items-center gap-3 px-4 py-2.5 text-sm"
               } ${
                 isActive
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
@@ -128,7 +116,7 @@ export default function AdminSidebar({ hidden = false }: AdminSidebarProps) {
               }`}
             >
               <item.icon className="h-5 w-5 shrink-0" />
-              {!isCollapsed && item.label}
+              <span className={isCollapsed ? "rail-label" : ""}>{item.label}</span>
             </Link>
           );
         })}
@@ -138,6 +126,7 @@ export default function AdminSidebar({ hidden = false }: AdminSidebarProps) {
         <button
           onClick={handleLogout}
           title={isCollapsed ? "Déconnexion" : undefined}
+          aria-label={isCollapsed ? "Déconnexion" : undefined}
           className={`flex items-center rounded-lg text-sm font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors ${
             isCollapsed ? "justify-center p-2" : "gap-3 px-3 py-2 w-full"
           }`}
@@ -154,21 +143,28 @@ export default function AdminSidebar({ hidden = false }: AdminSidebarProps) {
       {/* Desktop sidebar */}
       <aside
         className={`hidden md:flex shrink-0 h-screen sticky top-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex-col transition-all duration-300 ${
-          collapsed ? "w-16" : "w-60"
+          collapsed ? "w-[84px]" : "w-60"
         }`}
       >
         {sidebarContent(collapsed)}
       </aside>
 
       {/* Mobile top bar */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-sidebar text-sidebar-foreground border-b border-sidebar-border">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shrink-0">
-            <span className="font-serif text-sm font-bold text-white">A</span>
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex min-h-[68px] items-center justify-between px-4 py-3 bg-sidebar text-sidebar-foreground border-b border-sidebar-border">
+        {backTo ? (
+          <Link to={backTo.to} className="-ml-2 inline-flex min-h-11 items-center gap-1 rounded-lg pl-1 pr-3 text-base font-medium hover:bg-sidebar-accent">
+            <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+            {backTo.label}
+          </Link>
+        ) : (
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shrink-0">
+              <span className="font-serif text-sm font-bold text-white">A</span>
+            </div>
+            <span className="font-serif text-sm font-semibold">La Table d'Amélie</span>
           </div>
-          <span className="font-serif text-sm font-semibold">La Table d'Amélie</span>
-        </div>
-        <button onClick={() => setMobileOpen(!mobileOpen)} className="p-2 -mr-2 rounded-lg hover:bg-sidebar-accent transition-colors" aria-label="Menu">
+        )}
+        <button onClick={() => setMobileOpen(!mobileOpen)} className="inline-flex min-h-11 min-w-11 -mr-2 items-center justify-center rounded-lg hover:bg-sidebar-accent transition-colors" aria-label="Menu">
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
       </div>
@@ -177,7 +173,7 @@ export default function AdminSidebar({ hidden = false }: AdminSidebarProps) {
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-30" onClick={() => setMobileOpen(false)}>
           <div className="absolute inset-0 bg-foreground/30 backdrop-blur-sm" />
-          <aside className="absolute top-[52px] left-0 right-0 bg-sidebar text-sidebar-foreground flex flex-col max-h-[calc(100vh-52px)] overflow-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <aside className="absolute top-[68px] left-0 right-0 bg-sidebar text-sidebar-foreground flex flex-col max-h-[calc(100vh-68px)] overflow-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
             {sidebarContent(false)}
           </aside>
         </div>
