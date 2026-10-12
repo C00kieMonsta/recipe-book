@@ -43,6 +43,8 @@ import { ActionMenu } from "@/components/ui";
 
 const ICON_BTN = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-foreground hover:bg-hover";
 const TEXT_BTN = "inline-flex min-h-11 items-center gap-2 rounded-lg border border-input bg-card px-3 text-base font-medium hover:bg-hover disabled:opacity-50";
+// PersonChips has no 16px size; shrink its sm circles for the 171px columns.
+const CHIP_16 = "[&_.rounded-full]:h-4 [&_.rounded-full]:w-4 [&_.rounded-full]:text-[9px]";
 const SELECT = "min-h-11 rounded-lg border border-input bg-card px-2 text-base";
 const SWIPE_PX = 60;
 const LAST_WEEK_KEY = "recipe-book:last-week";
@@ -505,17 +507,17 @@ export default function Week() {
                               const ids = assigneesOf(line, ev);
                               const dim = isOtherPerson(ev, line);
                               return (
-                                <li key={line.lineId} className={`group grid min-h-9 grid-cols-[32px_minmax(0,1fr)_auto] items-center text-sm touch:min-h-11 ${dim ? "opacity-40" : ""}`}>
+                                <li key={line.lineId} className={`group grid min-h-9 grid-cols-[32px_minmax(0,1fr)_auto_auto] items-center text-sm touch:min-h-11 ${dim ? "opacity-40" : ""}`}>
                                   <StatusDot value={status} onCycle={() => cycle(ev, line)} className="-ml-1" />
-                                  <Link to={prepUrl(ev.eventId, line.lineId)} state={state} className={`min-w-0 rounded px-0.5 py-1 hover:bg-hover ${status === "done" ? "text-muted-foreground" : ""}`}>
-                                    <span className="line-clamp-3">{recipeName(line.recipeId)}</span>
+                                  <Link to={prepUrl(ev.eventId, line.lineId)} state={state} title={recipeName(line.recipeId)} className={`min-w-0 rounded px-0.5 py-1 hover:bg-hover ${status === "done" ? "text-muted-foreground" : ""}`}>
+                                    <span className="line-clamp-2">{recipeName(line.recipeId)}</span>
                                   </Link>
+                                  <span className="flex justify-end">
+                                    {ids.length > 0 && (
+                                      <AssignChips value={own ? line.assignedTo ?? [] : ids} options={people} enabled={canAssign} inherited={!own} allowInherit max={2} className={CHIP_16} onChange={(next) => assignLine(ev.eventId, line.lineId, next)} title={recipeName(line.recipeId)} />
+                                    )}
+                                  </span>
                                   <span className={`pl-1 font-semibold tabular-nums ${status === "done" ? "text-muted-foreground" : ""}`}>{line.portions}</span>
-                                  {ids.length > 0 && (
-                                    <span className="col-start-2 col-span-2 -mt-1 flex justify-end">
-                                      <AssignChips value={own ? line.assignedTo ?? [] : ids} options={people} enabled={canAssign} inherited={!own} allowInherit onChange={(next) => assignLine(ev.eventId, line.lineId, next)} title={recipeName(line.recipeId)} />
-                                    </span>
-                                  )}
                                   <div className="col-span-full hidden pl-8 pb-1 pointer:group-hover:block">
                                     <StatusDots value={status} onChange={(s) => setStatus(ev, line, s)} />
                                   </div>
@@ -696,12 +698,14 @@ interface AssignChipsProps {
   enabled: boolean;
   inherited?: boolean;
   allowInherit?: boolean;
+  max?: number;
+  className?: string;
   onChange: (next: string[]) => void;
   title: string;
 }
 
 // Chips that open the picker in a fixed box, so the scrolling column does not clip it.
-function AssignChips({ value, options, enabled, inherited = false, allowInherit = false, onChange, title }: AssignChipsProps) {
+function AssignChips({ value, options, enabled, inherited = false, allowInherit = false, max, className, onChange, title }: AssignChipsProps) {
   const anchor = useRef<HTMLSpanElement>(null);
   const [rect, setRect] = useState<{ top: number; left: number; right: number } | null>(null);
   const close = useCallback(() => setRect(null), []);
@@ -713,7 +717,7 @@ function AssignChips({ value, options, enabled, inherited = false, allowInherit 
   const alignRight = rect ? rect.left > window.innerWidth - 280 : false;
   return (
     <span ref={anchor} className="inline-flex">
-      <PersonChips personIds={value} people={options} size="sm" inherited={inherited} onClick={enabled ? open : undefined} />
+      <PersonChips personIds={value} people={options} size="sm" inherited={inherited} max={max} className={className} onClick={enabled ? open : undefined} />
       {rect && (
         <div style={{ position: "fixed", top: rect.top, left: alignRight ? rect.right : rect.left, width: 0, height: 0 }} className="z-50">
           <PersonPicker value={value} options={options} onChange={onChange} allowInherit={allowInherit} onClose={close} title={title} align={alignRight ? "right" : "left"} />

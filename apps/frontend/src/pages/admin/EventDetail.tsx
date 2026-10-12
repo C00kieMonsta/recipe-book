@@ -640,16 +640,18 @@ export default function EventDetail() {
                     <GripVertical className="h-5 w-5" />
                   </span>
                 )}
-                <div className="flex shrink-0">
-                  <button type="button" aria-label="Monter" disabled={index === 0} onClick={() => moveLine(group.course, index, -1)} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-hover disabled:opacity-30">
-                    <ChevronUp className="h-5 w-5" />
-                  </button>
-                  <button type="button" aria-label="Descendre" disabled={index === group.lines.length - 1} onClick={() => moveLine(group.course, index, 1)} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-hover disabled:opacity-30">
-                    <ChevronDown className="h-5 w-5" />
-                  </button>
-                </div>
+                {!isPhone && (
+                  <div className="flex shrink-0">
+                    <button type="button" aria-label="Monter" disabled={index === 0} onClick={() => moveLine(group.course, index, -1)} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-hover disabled:opacity-30">
+                      <ChevronUp className="h-5 w-5" />
+                    </button>
+                    <button type="button" aria-label="Descendre" disabled={index === group.lines.length - 1} onClick={() => moveLine(group.course, index, 1)} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-hover disabled:opacity-30">
+                      <ChevronDown className="h-5 w-5" />
+                    </button>
+                  </div>
+                )}
                 <div className={`flex-1 ${isPhone ? "min-w-0 px-0.5" : "min-w-[8rem] px-1"}`}>
-                  <Link to={`/recipes/${line.recipeId}`} className="text-base font-medium text-foreground hover:underline">
+                  <Link to={`/recipes/${line.recipeId}`} title={recipe?.name} className={`text-base font-medium text-foreground hover:underline ${isPhone ? "line-clamp-2" : ""}`}>
                     {recipe?.name ?? "Recette supprimée"}
                   </Link>
                   {line.notes && noteLineId !== line.lineId && <div className="text-sm text-muted-foreground">{line.notes}</div>}
@@ -692,6 +694,8 @@ export default function EventDetail() {
                     </select>
                   )}
                   <ActionMenu items={[
+                    ...(isPhone && index > 0 ? [{ label: "Monter", onClick: () => moveLine(group.course, index, -1) }] : []),
+                    ...(isPhone && index < group.lines.length - 1 ? [{ label: "Descendre", onClick: () => moveLine(group.course, index, 1) }] : []),
                     ...(isPhone
                       ? [
                           { label: "Catégorie ›", onClick: () => setCourseLineId(line.lineId) },
