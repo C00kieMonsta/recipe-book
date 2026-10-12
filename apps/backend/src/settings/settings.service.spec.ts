@@ -212,7 +212,7 @@ describe("SettingsService.update", () => {
 
     expect(result.courses).toEqual(["Plat", "Dessert"]);
     expect(result.ignoredDuplicateGroups).toEqual(["oeuf"]);
-    expect(result.monthCloses["2026-10"]?.lockedAt).toBe("2026-11-01T00:00:00.000Z");
+    expect(result.monthCloses?.["2026-10"]?.lockedAt).toBe("2026-11-01T00:00:00.000Z");
   });
 
   it("creates the item from defaults when none exists", async () => {

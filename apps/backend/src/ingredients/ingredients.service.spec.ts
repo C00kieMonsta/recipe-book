@@ -242,11 +242,11 @@ describe("IngredientsService", () => {
       expect(ddb.updates).toHaveLength(0);
     });
 
-    it("treats a merged id that no longer exists as done", async () => {
+    it("treats a merged id that no longer exists as done and does not record it", async () => {
       const result = await service.merge("oeuf", ["oeufs", "gone"]);
       expect(result).toMatchObject({ ok: true, removed: 1 });
       const survivor = await ddb.get("ingredients", { ingredientId: "oeuf" }) as unknown as Ingredient;
-      expect(survivor.mergedFrom).toEqual(["oeufs", "gone"]);
+      expect(survivor.mergedFrom).toEqual(["oeufs"]);
     });
 
     it("409s UNIT_MISMATCH and writes nothing", async () => {
@@ -306,6 +306,28 @@ describe("IngredientsService", () => {
       expect(ddb.deleted).toHaveLength(0);
       expect(ddb.rows("ingredients").has("oeufs")).toBe(true);
       expect(ddb.updates.some((u) => u.table === "ingredients")).toBe(false);
+    });
+  });
+
+  describe("update", () => {
+    beforeEach(async () => {
+      await putAll("ingredients", [ing({ ingredientId: "oeuf", name: "Oeuf", unit: "€/pièce" })]);
+      await putAll("recipes", [recipe("r1", "Omelette", [{ ingredientId: "oeuf", qty: 3, unit: "pièce", lossPct: 0 }])]);
+    });
+
+    it("409s UNIT_IN_USE when the unit changes family while recipes reference it", async () => {
+      const call = service.update("oeuf", { unit: "€/kg" });
+      await expect(call).rejects.toBeInstanceOf(ConflictException);
+      await call.catch((err: ConflictException) => {
+        expect(err.getResponse()).toEqual({ code: "UNIT_IN_USE", recipes: ["Omelette"] });
+      });
+      expect(ddb.updates).toHaveLength(0);
+    });
+
+    it("accepts a price change and a unit change within the family", async () => {
+      const updated = await service.update("oeuf", { price: 0.4, unit: "€/pièce" });
+      expect(updated.price).toBe(0.4);
+      expect(updated.unit).toBe("€/pièce");
     });
   });
 

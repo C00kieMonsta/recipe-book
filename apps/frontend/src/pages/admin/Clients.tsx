@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Plus, Search } from "lucide-react";
 import type { AppEvent, Client, PrestationTypeSetting } from "@packages/types";
 import { DEFAULT_PRESTATION_TYPES, fmtEur } from "@packages/types";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { dayLabel, todayIso } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
 import { ListRow, PageHeader, SectionToggle } from "@/components/ui";
@@ -39,9 +39,15 @@ export default function Clients() {
   const [prestationTypes, setPrestationTypes] = useState<PrestationTypeSetting[]>(DEFAULT_PRESTATION_TYPES);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [notConfigured, setNotConfigured] = useState(false);
 
   useEffect(() => {
-    Promise.all([api.clients.list(), api.events.list(), api.settings.get()])
+    // The clients table may not be provisioned yet; show a notice instead of an error.
+    const clientsOrEmpty = api.clients.list().catch((e: unknown) => {
+      if (e instanceof ApiError && e.status === 503) { setNotConfigured(true); return [] as Client[]; }
+      return Promise.reject(e);
+    });
+    Promise.all([clientsOrEmpty, api.events.list(), api.settings.get()])
       .then(([c, e, s]) => {
         setClients(c);
         setEvents(e);
@@ -113,6 +119,11 @@ export default function Clients() {
         />
       </div>
 
+      {notConfigured && (
+        <p className="mt-4 rounded-lg bg-warning-soft px-4 py-3 text-base text-warning">
+          Clients non configurés : la table ta-clients n'existe pas encore sur le serveur.
+        </p>
+      )}
       {loading ? (
         <p className="mt-6 text-base text-muted-foreground">Chargement…</p>
       ) : active.length === 0 ? (

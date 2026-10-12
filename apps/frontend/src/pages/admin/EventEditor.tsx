@@ -15,7 +15,7 @@ import type {
   VatRate,
 } from "@packages/types";
 import { DEFAULT_COURSES, DEFAULT_PRESTATION_TYPES, VAT_RATES } from "@packages/types";
-import { api, type EventInput } from "@/lib/api";
+import { api, ApiError, type EventInput } from "@/lib/api";
 import { longDayLabel, todayIso, weekdayOf } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
 import { calcEventCost, calcRecipeCost, fmt } from "@/lib/recipe-helpers";
@@ -102,7 +102,13 @@ export default function EventEditor() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [recs, ings, cls, st] = await Promise.all([api.recipes.list(), api.ingredients.list(), api.clients.list(), api.settings.get()]);
+        const [recs, ings, cls, st] = await Promise.all([
+          api.recipes.list(),
+          api.ingredients.list(),
+          // The clients table may not be provisioned yet; the editor must still open.
+          api.clients.list().catch((e: unknown) => (e instanceof ApiError && e.status === 503 ? [] : Promise.reject(e))),
+          api.settings.get(),
+        ]);
         setAllRecipes(recs);
         setAllIngredients(ings);
         setClients(cls);

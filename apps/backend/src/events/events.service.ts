@@ -17,6 +17,12 @@ type IncomingLine = Omit<EventRecipeLine, "lineId"> & { lineId?: string };
 const definedEntries = <T extends object>(obj: T): Partial<T> =>
   Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as Partial<T>;
 
+type NonNullFields<T> = { [K in keyof T]: Exclude<T[K], null> };
+
+// A null on create means "not set", so it is not stored as a NULL attribute.
+const withoutNull = <T extends object>(obj: T): NonNullFields<T> =>
+  Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== null)) as NonNullFields<T>;
+
 const fillLineIds = (lines: IncomingLine[]): EventRecipeLine[] =>
   lines.map((l) => ({ ...l, lineId: l.lineId ?? randomUUID() }));
 
@@ -56,7 +62,7 @@ export class EventsService {
     const { costSnapshot, ...rest } = data;
     const event: AppEvent = {
       eventId: randomUUID(),
-      ...(Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null)) as typeof rest),
+      ...withoutNull(rest),
       recipes: fillLineIds(data.recipes),
       ...(costSnapshot && { costSnapshot: { ...costSnapshot, takenAt: now } }),
       nameLower: data.name.toLowerCase(),

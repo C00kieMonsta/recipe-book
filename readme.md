@@ -221,3 +221,7 @@ The backend connects to real AWS DynamoDB by default. To use DynamoDB Local inst
 | `scripts/setup-s3-cloudfront.sh` | Set up frontend S3/CloudFront manually |
 | `scripts/setup-route53.sh` | DNS configuration |
 | `scripts/attach-cert-cloudfront.sh` | Attach ACM certificate to CloudFront |
+
+## Local smoke test
+
+`scripts/smoke-local.mjs` exercises every endpoint against DynamoDB Local (Java 17, jar from AWS). Start DynamoDB Local on port 8000, create the tables with `scripts/dynamodb-local-tables.sh http://localhost:8000 local`, build the backend, then start the API from a directory with no `.env` and every variable inline (`DDB_ENDPOINT=http://localhost:8000`, the seven `*_TABLE` names with the `-local` suffix, fake AWS keys, `S3_BUCKET`, `ADMIN_CREDENTIALS` with a bcrypt hash for the smoke password, `JWT_SECRET`, `PORT=3101`). Then run `node scripts/smoke-local.mjs`. The script prints PASS or FAIL per check and exits 1 on any failure.
