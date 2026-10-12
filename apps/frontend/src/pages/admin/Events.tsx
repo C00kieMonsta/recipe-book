@@ -148,48 +148,50 @@ export default function Events() {
         }
       />
 
-      <Toolbar
-        left={<ViewTabs items={FILTERS} value={filter} onChange={(k) => { setFilter(k as Filter); setPage(1); }} aria-label="Statut" />}
-        right={
-          <>
-            {searchOpen ? searchField : <IconButton size="sm" aria-label="Rechercher" icon={<Search />} onClick={() => setSearchOpen(true)} />}
-            {filters}
-            {sort}
-            {more}
-          </>
-        }
-        rightTouch={
-          <>
-            <IconButton size="sm" aria-label="Rechercher" icon={<Search />} onClick={() => setSearchOpen((o) => !o)} className={searchOpen ? "bg-active" : ""} />
-            {filters}
-            {more}
-          </>
-        }
-        filters={chips}
-      />
-      {searchOpen && (
-        <div className="hidden items-center gap-1 py-2 touch:flex">
-          {searchField}
-          <IconButton size="sm" aria-label="Fermer la recherche" icon={<X />} onClick={() => { setSearch(""); setSearchOpen(false); }} />
-        </div>
-      )}
-
-      <div className="mt-2">
-        <Table<AppEvent>
-          rows={paginatedItems}
-          rowKey={(ev) => ev.eventId}
-          rowHref={(ev) => `/events/${ev.eventId}`}
-          empty={<EmptyState message="Aucun événement" action={{ label: "+ Nouvel événement", to: "/events/new" }} />}
-          columns={[
-            { key: "name", label: "Nom", render: (ev) => <span className="font-medium">{ev.name}</span> },
-            { key: "date", label: "Date", width: "110px", render: (ev) => dayMonthShortLabel(ev.date) },
-            { key: "client", label: "Client", render: (ev) => (ev.clientId ? clientById.get(ev.clientId)?.name : undefined) ?? ev.contactName ?? "" },
-            { key: "guests", label: "Conv.", width: "70px", align: "right", render: (ev) => `${ev.guestCount}` },
-            { key: "prestation", label: "Prestation", render: (ev) => (ev.prestationType ? <Tag colour="gray">{prestationLabel.get(ev.prestationType) ?? ev.prestationType}</Tag> : "") },
-            { key: "amount", label: "Montant", width: "110px", align: "right", trailing: true, render: (ev) => <span className="text-foreground">{fmtEur(ev.sellingPricePerGuest * ev.guestCount)}</span> },
-            { key: "status", label: "Statut", width: "110px", trailing: true, render: (ev) => <StatusTag status={ev.status} /> },
-          ]}
+      <div data-tour="events-list">
+        <Toolbar
+          left={<ViewTabs items={FILTERS} value={filter} onChange={(k) => { setFilter(k as Filter); setPage(1); }} aria-label="Statut" />}
+          right={
+            <>
+              {searchOpen ? searchField : <IconButton size="sm" aria-label="Rechercher" icon={<Search />} onClick={() => setSearchOpen(true)} />}
+              {filters}
+              {sort}
+              {more}
+            </>
+          }
+          rightTouch={
+            <>
+              <IconButton size="sm" aria-label="Rechercher" icon={<Search />} onClick={() => setSearchOpen((o) => !o)} className={searchOpen ? "bg-active" : ""} />
+              {filters}
+              {more}
+            </>
+          }
+          filters={chips}
         />
+        {searchOpen && (
+          <div className="hidden items-center gap-1 py-2 touch:flex">
+            {searchField}
+            <IconButton size="sm" aria-label="Fermer la recherche" icon={<X />} onClick={() => { setSearch(""); setSearchOpen(false); }} />
+          </div>
+        )}
+
+        <div className="mt-2">
+          <Table<AppEvent>
+            rows={paginatedItems}
+            rowKey={(ev) => ev.eventId}
+            rowHref={(ev) => `/events/${ev.eventId}`}
+            empty={<EmptyState message="Aucun événement" action={{ label: "+ Nouvel événement", to: "/events/new" }} />}
+            columns={[
+              { key: "name", label: "Nom", render: (ev) => <span className="font-medium">{ev.name}</span> },
+              { key: "date", label: "Date", width: "110px", render: (ev) => dayMonthShortLabel(ev.date) },
+              { key: "client", label: "Client", render: (ev) => (ev.clientId ? clientById.get(ev.clientId)?.name : undefined) ?? ev.contactName ?? "" },
+              { key: "guests", label: "Conv.", width: "70px", align: "right", render: (ev) => `${ev.guestCount}` },
+              { key: "prestation", label: "Prestation", render: (ev) => (ev.prestationType ? <Tag colour="gray">{prestationLabel.get(ev.prestationType) ?? ev.prestationType}</Tag> : "") },
+              { key: "amount", label: "Montant", width: "110px", align: "right", trailing: true, render: (ev) => <span className="text-foreground">{fmtEur(ev.sellingPricePerGuest * ev.guestCount)}</span> },
+              { key: "status", label: "Statut", width: "110px", trailing: true, render: (ev) => <StatusTag status={ev.status} /> },
+            ]}
+          />
+        </div>
       </div>
 
       <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} onPrev={prev} onNext={next} />

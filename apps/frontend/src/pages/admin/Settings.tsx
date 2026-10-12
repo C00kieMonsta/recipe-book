@@ -30,6 +30,7 @@ import { api, type HealthResponse } from "@/lib/api";
 import { supplierColor } from "@/lib/recipe-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { useTopTitle } from "@/components/admin/AdminLayout";
+import { useTour } from "@/components/admin/TourProvider";
 import {
   ActionMenu,
   Button,
@@ -108,6 +109,7 @@ function tabFromHash(hash: string): Tab {
 }
 
 const VAT_OPTIONS = VAT_RATES.map((r) => ({ value: String(r), label: `${r} %` }));
+const longDate = new Intl.DateTimeFormat("fr-BE", { day: "numeric", month: "long", year: "numeric" });
 
 function newId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -394,6 +396,7 @@ export default function Settings() {
   const location = useLocation();
   const navigate = useNavigate();
   useTopTitle("Paramètres");
+  const tour = useTour();
   const tab = tabFromHash(location.hash);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [loading, setLoading] = useState(true);
@@ -686,7 +689,12 @@ export default function Settings() {
   // ── Tabs ──
   const general = (
     <>
-      <Section title="Formats de recette" action={addAction("Ajouter", () => patch((d) => ({ ...d, recipeCategories: [...d.recipeCategories, ""] })))}>
+      <Section title="Visite guidée" meta={tour.seenAt ? `Vue le ${longDate.format(new Date(tour.seenAt))}` : undefined}>
+        <p className="text-sm text-muted-foreground">Neuf étapes pour voir comment planifier la semaine, préparer le jour même et facturer. Environ deux minutes.</p>
+        <Button variant="default" size="md" className="mt-2" onClick={tour.start}>Démarrer la visite</Button>
+      </Section>
+
+      <Section title="Formats de recette" meta="Le type de plat : buffet, lunch… sert à classer les recettes" action={addAction("Ajouter un format", () => patch((d) => ({ ...d, recipeCategories: [...d.recipeCategories, ""] })))}>
         <div>
           {draft.recipeCategories.map((cat, i) => (
             <NameRow
@@ -710,7 +718,7 @@ export default function Settings() {
         </div>
       </Section>
 
-      <Section title="Catégories du menu" action={addAction("Ajouter", () => patch((d) => ({ ...d, courses: [...d.courses, ""] })))}>
+      <Section title="Catégories du menu" action={addAction("Ajouter une catégorie", () => patch((d) => ({ ...d, courses: [...d.courses, ""] })))}>
         <p className="mb-2 text-sm text-muted-foreground">Ordre des services sur les menus et les fiches de préparation.</p>
         <div>
           {draft.courses.map((course, i) => (
@@ -745,7 +753,8 @@ export default function Settings() {
     <>
       <Section
         title="Types de prestation"
-        action={addAction("Ajouter", () => patch((d) => ({ ...d, prestationTypes: [...d.prestationTypes, { key: "", label: "", defaultVatRate: 12, isNew: true }] })))}
+        meta="Ce que vous vendez au client, avec sa TVA"
+        action={addAction("Ajouter un type", () => patch((d) => ({ ...d, prestationTypes: [...d.prestationTypes, { key: "", label: "", defaultVatRate: 12, isNew: true }] })))}
       >
         <p className="mb-2 text-sm text-muted-foreground">La clé est générée depuis le libellé et ne change plus une fois enregistrée.</p>
         <div className={TH}>
@@ -806,7 +815,7 @@ export default function Settings() {
         </div>
       </Section>
 
-      <Section title="Fournisseurs" action={addAction("Ajouter", () => patch((d) => ({ ...d, suppliers: [...d.suppliers, { name: "" }] })))}>
+      <Section title="Fournisseurs" action={addAction("Ajouter un fournisseur", () => patch((d) => ({ ...d, suppliers: [...d.suppliers, { name: "" }] })))}>
         <div>
           {draft.suppliers.map((s, i) => {
             const set = (field: keyof SettingsSupplier, value: string) =>
@@ -863,7 +872,7 @@ export default function Settings() {
 
   const equipe = (
     <Section title="Équipe" action={addAction("Ajouter une personne", () => setNewPersonName((v) => (v === null ? "" : v)))}>
-      <p className="mb-2 text-sm text-muted-foreground">Les personnes à qui les événements et les lignes sont assignés. Le lien du jour ouvre leur liste sur leur téléphone.</p>
+      <p className="mb-2 text-sm text-muted-foreground">Les personnes de votre équipe. Pour leur envoyer leur liste, ouvrez un jour, puis Par personne, puis Partager.</p>
       <div>
         {draft.people.map((p, i) => {
           const duplicate = p.active && (activeInitialCounts.get(personInitials(p).toUpperCase()) ?? 0) > 1;
@@ -886,7 +895,7 @@ export default function Settings() {
                 className="reveal"
                 aria-label={`Actions de ${p.name}`}
                 items={[
-                  { label: "Lien du jour", icon: <Link2 />, onClick: () => void copyDayLink(p) },
+                  { label: "Copier le lien de sa liste du jour", icon: <Link2 />, onClick: () => void copyDayLink(p) },
                   { label: "Monter", icon: <ArrowUp />, disabled: i === 0, onClick: () => patch((d) => ({ ...d, people: moveItem(d.people, i, i - 1) })) },
                   { label: "Descendre", icon: <ArrowDown />, disabled: i >= draft.people.length - 1, onClick: () => patch((d) => ({ ...d, people: moveItem(d.people, i, i + 1) })) },
                   { kind: "separator" },
@@ -929,7 +938,7 @@ export default function Settings() {
 
   const finances = (
     <>
-      <Section title="Charges fixes" action={addAction("Ajouter", addCharge)}>
+      <Section title="Charges fixes" action={addAction("Ajouter une charge", addCharge)}>
         <p className="mb-2 text-sm text-muted-foreground">Montants mensuels HTVA. Depuis et Jusqu'au sont facultatifs et bornent la période où la charge compte.</p>
         <div className="hidden md:block">
           <table className="table">
@@ -1265,29 +1274,31 @@ export default function Settings() {
 
       <Section title="À propos">
         <p className="text-sm text-muted-foreground">admin · v1.0</p>
-        <dl className="mt-2 text-sm">
-          {([["ta-clients", health?.tables.clients], ["ta-ledger", health?.tables.ledger]] as const).map(([table, present]) => (
-            <div key={table} className="flex h-8 items-center gap-3">
-              <dt className="w-28 font-mono">{table}</dt>
-              <dd>
-                {health === undefined ? (
-                  <span className="text-muted-foreground">Vérification…</span>
-                ) : health === null ? (
-                  <Tag colour="gray">État inconnu</Tag>
-                ) : present ? (
-                  <Tag colour="green">Table présente</Tag>
-                ) : (
-                  <Tag colour="red">Table absente</Tag>
-                )}
-              </dd>
-            </div>
+        <SectionToggle title="Diagnostic" storageKey="settings-diagnostic">
+          <dl className="text-sm">
+            {([["ta-clients", health?.tables.clients], ["ta-ledger", health?.tables.ledger]] as const).map(([table, present]) => (
+              <div key={table} className="flex h-8 items-center gap-3">
+                <dt className="w-28 font-mono">{table}</dt>
+                <dd>
+                  {health === undefined ? (
+                    <span className="text-muted-foreground">Vérification…</span>
+                  ) : health === null ? (
+                    <Tag colour="gray">État inconnu</Tag>
+                  ) : present ? (
+                    <Tag colour="green">Table présente</Tag>
+                  ) : (
+                    <Tag colour="red">Table absente</Tag>
+                  )}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {health && ([["clients", "ta-clients"], ["ledger", "ta-ledger"]] as const).filter(([key]) => !health.tables[key]).map(([key, table]) => (
+            <p key={key} className="mt-2 text-sm text-muted-foreground">
+              Créer la table {table}-&lt;stage&gt; puis renseigner le paramètre SSM (README, étape 4)
+            </p>
           ))}
-        </dl>
-        {health && ([["clients", "ta-clients"], ["ledger", "ta-ledger"]] as const).filter(([key]) => !health.tables[key]).map(([key, table]) => (
-          <p key={key} className="mt-2 text-sm text-muted-foreground">
-            Créer la table {table}-&lt;stage&gt; puis renseigner le paramètre SSM (README, étape 4)
-          </p>
-        ))}
+        </SectionToggle>
       </Section>
     </>
   );
@@ -1295,7 +1306,7 @@ export default function Settings() {
   return (
     <div className={`mx-auto max-w-doc ${dirty ? "pb-20 md:pb-0" : ""}`}>
       <PageHeader iconKey="parametres" title="Paramètres" className="mb-2" actions={dirty ? <span className="hidden md:inline-flex">{saveButton("md")}</span> : undefined} />
-      <Toolbar left={<ViewTabs aria-label="Paramètres" items={TABS} value={tab} onChange={setTab} />} />
+      <Toolbar left={<div data-tour="settings-tabs" className="flex min-w-0"><ViewTabs aria-label="Paramètres" items={TABS} value={tab} onChange={setTab} /></div>} />
 
       {tab === "general" && general}
       {tab === "catalogue" && catalogue}

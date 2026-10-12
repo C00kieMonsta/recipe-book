@@ -66,7 +66,7 @@ export default function RecipeReader({
 
   return (
     <div className={className}>
-      <section>
+      <section data-tour="fiche-ingredients">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-h3">{onPortionsChange ? "Ingrédients" : `Ingrédients pour ${portions}`}</h2>
           {onPortionsChange && <Stepper value={portions} onChange={onPortionsChange} min={1} label="portions" />}

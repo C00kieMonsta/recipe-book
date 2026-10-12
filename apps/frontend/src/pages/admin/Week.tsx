@@ -41,6 +41,8 @@ import PersonPicker from "@/components/admin/PersonPicker";
 import WeekChecklist from "@/components/admin/WeekChecklist";
 import AssignSheet from "@/components/admin/AssignSheet";
 import PlanningBar from "@/components/admin/PlanningBar";
+import FirstRunCallout from "@/components/admin/FirstRunCallout";
+import { OPEN_CHECKLIST_EVENT } from "@/components/admin/tour-steps";
 import {
   Button, Dialog, FieldLabel, FilterButton, FilterChip, FilterGroup, IconButton,
   Menu, MenuCheck, MenuItem, MenuRadio, MenuSection, MenuSeparator, PageHeader, useMenu,
@@ -194,6 +196,13 @@ export default function Week() {
     if (printTick > 0) window.print();
   }, [printTick]);
 
+  // The guided tour opens the checklist for its second step.
+  useEffect(() => {
+    const open = () => setChecklistOpen(true);
+    window.addEventListener(OPEN_CHECKLIST_EVENT, open);
+    return () => window.removeEventListener(OPEN_CHECKLIST_EVENT, open);
+  }, [setChecklistOpen]);
+
   const scrollToDay = useCallback((date: string) => {
     dayRefs.current[date]?.scrollIntoView({ block: "start" });
   }, []);
@@ -321,6 +330,8 @@ export default function Week() {
   const isOtherPerson = (ev: AppEvent, line: EventRecipeLine) => Boolean(selectedPerson) && !assigneesOf(line, ev).includes(selectedPerson);
   const canAssign = !touch && activePeople.length > 0;
   const counts = Object.fromEntries(plan.days.map((d) => [d.date, d.events.length]));
+  // The tour spotlights the chips of this card only.
+  const firstEventId = plan.days.find((d) => d.events.length > 0)?.events[0]?.eventId;
   const filterCount = (selectedClient ? 1 : 0) + (selectedPerson ? 1 : 0);
   const showClientFilter = clientsConfigured && clientsThisWeek.length > 0;
   const showPersonFilter = activePeople.length > 0;
@@ -433,7 +444,7 @@ export default function Week() {
         title={`Semaine ${weekNo}`}
         className="no-print"
         meta={(
-          <span className="tabular-nums">
+          <span className="tabular-nums" data-tour="week-stats">
             <abbr title="Chiffre d'affaires HTVA des événements confirmés" className="no-underline">Signé</abbr> {fmtEur0(weekTotals.signedRevenue)} HTVA · {weekTotals.guests} <span className="hidden md:inline">convives</span><span className="md:hidden">conv.</span>{doneFragment} ·{" "}
             <Link to={monthLink.to} state={state} className="inline-flex items-center gap-0.5 rounded text-primary hover:bg-hover touch:min-h-11">
               <span className="hidden md:inline">{monthLink.text}</span>
@@ -481,7 +492,8 @@ export default function Week() {
 
       {/* Checklist */}
       {!loading && (
-        <div className="no-print mt-3">
+        <div className="no-print mt-3" data-tour="week-checklist">
+          <FirstRunCallout hidden={Boolean(selectedPerson)} />
           <WeekChecklist
             items={checklist}
             firstRun={firstRun}
@@ -506,7 +518,7 @@ export default function Week() {
       {/* Laptop: seven columns */}
       {!loading && (
         <div className="mt-4 hidden grid-cols-[repeat(7,minmax(0,1fr))] gap-2 xl:grid print:hidden">
-          {plan.days.map((day) => {
+          {plan.days.map((day, i) => {
             const isToday = day.date === today;
             const past = day.date < today;
             const dayPeople = plan.peopleByDay[day.date] ?? [];
@@ -515,7 +527,7 @@ export default function Week() {
               <div key={day.date} className={`group min-w-0 ${past ? "opacity-60" : ""}`}>
                 <div className="sticky top-0 z-10 bg-background pb-1">
                   <div className="flex items-start gap-1">
-                    <Link to={dayUrl(day.date)} state={state} title={dayTitle(day)} className="min-w-0 flex-1 rounded px-1 hover:bg-hover">
+                    <Link to={dayUrl(day.date)} state={state} title={dayTitle(day)} data-tour={i === 0 ? "week-day" : undefined} className="min-w-0 flex-1 rounded px-1 hover:bg-hover">
                       <div className="flex h-7 items-center gap-1 text-sm font-semibold">
                         <span>{dayName}</span>
                         <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${isToday ? "bg-danger-solid text-white" : ""}`}>{dayNum}</span>
@@ -574,7 +586,7 @@ export default function Week() {
                             )}
                           </Link>
                           {(ev.assignedTo?.length || canAssign) ? (
-                            <div className={unassigned ? "w-full px-1 pb-1" : "pr-1 pt-0.5"}>
+                            <div className={unassigned ? "w-full px-1 pb-1" : "pr-1 pt-0.5"} data-tour={ev.eventId === firstEventId ? "assign" : undefined}>
                               <AssignChips value={ev.assignedTo ?? []} options={people} enabled={canAssign} onChange={(ids) => assignEvent(ev.eventId, ids)} title="Assigner l'événement" label={`Assigner ${title}`} />
                             </div>
                           ) : null}
@@ -616,7 +628,7 @@ export default function Week() {
       {/* Phone and tablet: every day stacked under the strip of the bar */}
       {!loading && (
         <div className="mt-2 xl:hidden print:hidden">
-          {plan.days.map((day) => {
+          {plan.days.map((day, i) => {
             const isToday = day.date === today;
             const past = day.date < today;
             const empty = day.events.length === 0;
@@ -624,7 +636,7 @@ export default function Week() {
             return (
               <section key={day.date} ref={(el) => { dayRefs.current[day.date] = el; }} className={`scroll-mt-24 md:scroll-mt-0 ${past ? "opacity-60" : ""}`}>
                 <div className="sticky top-[96px] z-10 -mx-4 flex min-h-11 items-center gap-1 bg-background px-4 md:static md:mx-0 md:px-0">
-                  <Link to={dayUrl(day.date)} state={state} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded hover:bg-hover">
+                  <Link to={dayUrl(day.date)} state={state} data-tour={i === 0 ? "week-day" : undefined} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded hover:bg-hover">
                     <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold">
                       {dayName}
                       <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${isToday ? "bg-danger-solid text-white" : ""}`}>{dayNum}</span>

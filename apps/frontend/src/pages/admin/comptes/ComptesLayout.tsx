@@ -26,7 +26,7 @@ export default function ComptesLayout() {
   return (
     <div className="mx-auto max-w-wide">
       <PageHeader iconKey="comptabilite" title="Comptabilité" className="mb-2" />
-      <Toolbar className="mb-4" left={<ViewTabs aria-label="Comptabilité" items={TABS} value={current} />} />
+      <Toolbar className="mb-4" left={<div data-tour="comptes-tabs" className="flex min-w-0"><ViewTabs aria-label="Comptabilité" items={TABS} value={current} /></div>} />
       {INTRO[current] && <p className="-mt-2 mb-4 text-sm text-muted-foreground">{INTRO[current]}</p>}
       <Outlet context={context} />
     </div>

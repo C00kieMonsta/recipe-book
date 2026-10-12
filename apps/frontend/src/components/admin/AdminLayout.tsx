@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { IconButton } from "@/components/ui/Button";
 import AdminSidebar from "./AdminSidebar";
+import { TourProvider } from "./TourProvider";
 
 export interface BackTo {
   to: string;
@@ -98,23 +99,25 @@ export default function AdminLayout() {
 
   return (
     <ChromeContext.Provider value={{ hideChrome, fullBleed, backTo, topTitle }}>
-      <div className="flex min-h-screen">
-        <AdminSidebar hidden={hideChrome} collapsed={collapsed} onCollapse={() => setCollapsedPref(true)} />
-        {!hideChrome && collapsed && (
-          <IconButton
-            size="sm"
-            aria-label="Afficher le menu"
-            className="fixed left-2 top-2 z-30 hidden md:inline-flex"
-            onClick={() => setCollapsedPref(false)}
-            icon={<ChevronsRight />}
-          />
-        )}
-        <main className={`flex-1 min-w-0 bg-background ${phoneTop} ${padding}`}>
-          <Outlet
-            context={{ fullBleed, setFullBleed, hideChrome, setHideChrome, backTo, setBackTo, topTitle, setTopTitle } satisfies AdminLayoutContext}
-          />
-        </main>
-      </div>
+      <TourProvider>
+        <div className="flex min-h-screen">
+          <AdminSidebar hidden={hideChrome} collapsed={collapsed} onCollapse={() => setCollapsedPref(true)} />
+          {!hideChrome && collapsed && (
+            <IconButton
+              size="sm"
+              aria-label="Afficher le menu"
+              className="fixed left-2 top-2 z-30 hidden md:inline-flex"
+              onClick={() => setCollapsedPref(false)}
+              icon={<ChevronsRight />}
+            />
+          )}
+          <main className={`flex-1 min-w-0 bg-background ${phoneTop} ${padding}`}>
+            <Outlet
+              context={{ fullBleed, setFullBleed, hideChrome, setHideChrome, backTo, setBackTo, topTitle, setTopTitle } satisfies AdminLayoutContext}
+            />
+          </main>
+        </div>
+      </TourProvider>
     </ChromeContext.Provider>
   );
 }

@@ -52,6 +52,8 @@ export default function AdminSidebar({ hidden = false, collapsed = false, onColl
 
   if (hidden) return null;
 
+  const menuButton = <IconButton size="lg" aria-label="Menu" onClick={() => setMobileOpen(true)} icon={<Menu />} />;
+
   const nav = (
     <>
       <nav className="mt-2 flex flex-col">
@@ -95,15 +97,16 @@ export default function AdminSidebar({ hidden = false, collapsed = false, onColl
       {/* Phone top bar */}
       <div className="fixed inset-x-0 top-0 z-40 flex h-topbar items-center gap-1 border-b border-border bg-background px-2 md:hidden">
         {backTo ? (
-          <Link to={backTo.to} className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded pl-1 pr-2 text-sm font-medium hover:bg-hover touch:h-11 touch:text-base">
+          <Link to={backTo.to} data-tour="back" className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded pl-1 pr-2 text-sm font-medium hover:bg-hover touch:h-11 touch:text-base">
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             {backTo.label}
           </Link>
         ) : (
-          <IconButton size="lg" aria-label="Menu" onClick={() => setMobileOpen(true)} icon={<Menu />} />
+          menuButton
         )}
         <span className="min-w-0 flex-1 truncate text-center text-sm font-medium">{topTitle ?? ""}</span>
-        <span className={backTo ? "w-[72px] shrink-0" : "w-11 shrink-0"} aria-hidden="true" />
+        {/* The menu stays reachable on every phone page, back link or not. */}
+        {backTo ? menuButton : <span className="w-11 shrink-0" aria-hidden="true" />}
       </div>
 
       {/* Phone drawer */}

@@ -32,7 +32,7 @@ export default function PageHeader({ breadcrumb, breadcrumbOnPhone = false, titl
   return (
     <header className={cn("mb-4", className)}>
       {breadcrumb && breadcrumb.length > 0 && (
-        <nav aria-label="Fil d'Ariane" className={cn("mb-3 flex-wrap items-center gap-0.5 text-sm text-muted-foreground", breadcrumbOnPhone ? "flex" : "hidden md:flex")}>
+        <nav aria-label="Fil d'Ariane" data-tour="breadcrumb" className={cn("mb-3 flex-wrap items-center gap-0.5 text-sm text-muted-foreground", breadcrumbOnPhone ? "flex" : "hidden md:flex")}>
           {breadcrumb.map((crumb, i) => (
             <span key={`${crumb.label}-${i}`} className="flex items-center gap-0.5">
               {i > 0 && <span aria-hidden="true" className="px-0.5 text-icon">/</span>}
