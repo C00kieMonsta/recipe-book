@@ -22,6 +22,8 @@ export interface Ingredient {
   unit: UnitPrice;
   supplier: string;
   comment?: string;
+  aliases?: string[];
+  mergedFrom?: string[];
   createdAt: string;
   updatedAt: string;
 }

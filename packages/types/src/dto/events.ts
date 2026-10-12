@@ -1,18 +1,48 @@
 import { z } from "zod";
+import { isoDate, moneyNonnegative, vatRate } from "./primitives";
 
-const eventRecipeLineSchema = z.object({
-  recipeId: z.string().min(1),
-  portions: z.number().int().positive(),
-});
+export const eventRecipeLineSchema = z
+  .object({
+    lineId: z.string().min(1).optional(),
+    recipeId: z.string().min(1),
+    portions: z.number().int().positive(),
+    course: z.string().trim().max(40).optional(),
+    notes: z.string().trim().max(500).optional(),
+    prepStatus: z.enum(["todo", "doing", "done"]).optional(),
+    prepDate: isoDate.optional(),
+  })
+  .strict();
 
-const eventExtraCostSchema = z.object({
-  label: z.string().min(1).trim(),
-  amount: z.number().nonnegative(),
-});
+export const eventExtraCostSchema = z
+  .object({
+    label: z.string().min(1).trim(),
+    amount: z.number().nonnegative(),
+    kind: z.enum(["matiere", "personnel", "location", "transport", "autre"]).optional(),
+  })
+  .strict();
+
+// takenAt is stamped by the server.
+export const costSnapshotSchema = z
+  .object({
+    rawMaterial: moneyNonnegative,
+    extrasTotal: moneyNonnegative,
+    lines: z.array(
+      z
+        .object({
+          lineId: z.string().min(1),
+          recipeId: z.string().min(1),
+          portions: z.number().int().positive(),
+          unitCost: z.number().nonnegative(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type CostSnapshotRequest = z.infer<typeof costSnapshotSchema>;
 
 export const createEventRequestSchema = z.object({
   name: z.string().min(1).trim(),
-  date: z.string().min(1),
+  date: isoDate,
   guestCount: z.number().int().positive(),
   recipes: z.array(eventRecipeLineSchema).default([]),
   extraCosts: z.array(eventExtraCostSchema).default([]),
@@ -23,8 +53,35 @@ export const createEventRequestSchema = z.object({
   contactEmail: z.string().trim().optional(),
   actualCost: z.number().nonnegative().nullish(),
   status: z.enum(["upcoming", "completed"]).default("upcoming"),
+  clientId: z.string().min(1).optional(),
+  templateId: z.string().min(1).optional(),
+  prestationType: z.string().min(1).optional(),
+  vatRate: vatRate.optional(),
+  hoursSpent: z.number().nonnegative().optional(),
+  costSnapshot: costSnapshotSchema.optional(),
 });
 export type CreateEventRequest = z.infer<typeof createEventRequestSchema>;
 
 export const updateEventRequestSchema = createEventRequestSchema.partial();
 export type UpdateEventRequest = z.infer<typeof updateEventRequestSchema>;
+
+export const putEventLinesSchema = z
+  .object({
+    lines: z
+      .array(
+        z.object({ lineId: z.string().min(1), course: z.string().trim().max(40).optional() }).strict(),
+      )
+      .min(1),
+  })
+  .strict()
+  .refine((v) => new Set(v.lines.map((l) => l.lineId)).size === v.lines.length, "lineId dupliqué");
+export type PutEventLinesRequest = z.infer<typeof putEventLinesSchema>;
+
+export const addEventLineSchema = eventRecipeLineSchema.omit({ lineId: true }).strict();
+export type AddEventLineRequest = z.infer<typeof addEventLineSchema>;
+
+export const patchEventLineSchema = eventRecipeLineSchema
+  .omit({ lineId: true, recipeId: true })
+  .partial()
+  .strict();
+export type PatchEventLineRequest = z.infer<typeof patchEventLineSchema>;

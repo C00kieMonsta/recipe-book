@@ -1,6 +1,12 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, BadRequestException, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Put, Delete, Param, Body, BadRequestException, UseGuards } from "@nestjs/common";
 import { AdminGuard } from "../auth/admin.guard";
-import { createEventRequestSchema, updateEventRequestSchema } from "@packages/types";
+import {
+  addEventLineSchema,
+  createEventRequestSchema,
+  patchEventLineSchema,
+  putEventLinesSchema,
+  updateEventRequestSchema,
+} from "@packages/types";
 import { EventsService } from "./events.service";
 
 @UseGuards(AdminGuard)
@@ -36,5 +42,31 @@ export class EventsController {
   async delete(@Param("id") id: string) {
     await this.events.delete(id);
     return { ok: true };
+  }
+
+  @Post(":id/lines")
+  async addLine(@Param("id") id: string, @Body() body: unknown) {
+    const parsed = addEventLineSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    return this.events.addLine(id, parsed.data);
+  }
+
+  @Patch(":id/lines/:lineId")
+  async patchLine(@Param("id") id: string, @Param("lineId") lineId: string, @Body() body: unknown) {
+    const parsed = patchEventLineSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    return this.events.patchLine(id, lineId, parsed.data);
+  }
+
+  @Put(":id/lines")
+  async putLines(@Param("id") id: string, @Body() body: unknown) {
+    const parsed = putEventLinesSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    return this.events.putLines(id, parsed.data);
+  }
+
+  @Delete(":id/lines/:lineId")
+  async removeLine(@Param("id") id: string, @Param("lineId") lineId: string) {
+    return this.events.removeLine(id, lineId);
   }
 }

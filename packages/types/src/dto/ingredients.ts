@@ -46,3 +46,9 @@ export const importIngredientRowSchema = z.object({
   commentaire: z.string().trim().optional(),
 });
 export type ImportIngredientRow = z.infer<typeof importIngredientRowSchema>;
+
+export const mergeIngredientsSchema = z
+  .object({ survivorId: z.string().min(1), mergedIds: z.array(z.string().min(1)).min(1) })
+  .strict()
+  .refine((v) => !v.mergedIds.includes(v.survivorId), "survivor cannot be merged");
+export type MergeIngredientsRequest = z.infer<typeof mergeIngredientsSchema>;

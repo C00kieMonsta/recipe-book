@@ -14,6 +14,8 @@ export interface GroceryList {
   listId: string;
   title: string;
   items: GroceryListItem[];
+  eventIds?: string[];
+  range?: { from: string; to: string };
   createdAt: string;
   updatedAt: string;
 }

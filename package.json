@@ -9,7 +9,7 @@
   "scripts": {
     "prepare": "husky install",
     "type-check": "pnpm --filter @packages/types run type-check && pnpm --filter @apps/backend run type-check",
-    "test": "pnpm --filter @packages/types test",
+    "test": "pnpm --filter @packages/types test && pnpm --filter @apps/backend test",
     "build:types": "pnpm --filter @packages/types build",
     "build:packages": "pnpm build:types",
     "build:backend": "pnpm --filter @apps/backend build",

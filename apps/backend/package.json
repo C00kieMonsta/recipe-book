@@ -8,7 +8,8 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "type-check": "tsc --noEmit",
-    "lint": "eslint src --ext .ts"
+    "lint": "eslint src --ext .ts",
+    "test": "jest --config ../../jest.config.js --selectProjects=backend --passWithNoTests"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.700.0",

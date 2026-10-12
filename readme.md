@@ -2,6 +2,10 @@
 
 Internal management tool for a catering business. Handles recipes, ingredients, event planning, cost/margin calculations, and grocery list generation.
 
+## Redesign
+
+The 2026 redesign (week-first home, readable recipes and cook mode, clients with weekly templates, an accounting ledger replacing the Excel workbook) is specified in [docs/redesign/REDESIGN.md](docs/redesign/REDESIGN.md). It is delivered in six slices and adds two DynamoDB tables, `ta-clients` and `ta-ledger`. Section 9 of that document lists the open questions for the owner.
+
 ---
 
 ## Architecture Overview
@@ -30,7 +34,7 @@ Internal management tool for a catering business. Handles recipes, ingredients, 
                 │  AWS SDK
     ┌───────────▼─────────────┐       ┌──────────────┐
     │      DynamoDB            │       │  S3 Bucket   │
-    │  (6 tables, on-demand)  │       │ (photo store)│
+    │  (7 tables, on-demand)  │       │ (photo store)│
     └─────────────────────────┘       └──────────────┘
 
     Secrets: AWS SSM Parameter Store
@@ -114,6 +118,8 @@ All routes are under `/api/admin/*` and protected by a JWT `AdminGuard`. The API
 | `RecipesModule` | `/admin/recipes` | `ta-recipes-{stage}` |
 | `EventsModule` | `/admin/events` | `ta-events-{stage}` |
 | `GroceryListsModule` | `/admin/grocery-lists` | `ta-grocery-lists-{stage}` |
+| `ClientsModule` | `/admin/clients` | `ta-clients-{stage}` |
+| `LedgerModule` | `/admin/ledger` | `ta-ledger-{stage}` |
 | `SettingsModule` | `/admin/settings` | `ta-settings-{stage}` |
 | `AuthModule` | `/admin/auth/login` | — (credentials in env) |
 
@@ -146,7 +152,7 @@ AWS CDK (TypeScript) with three stacks:
 | `BackendStack` | VPC, EC2 t2.micro, IAM role, Security Group, Nginx |
 | `FrontendStack` | S3 buckets (admin + landing), CloudFront distributions |
 
-**Note:** the CDK stacks are partially out of date with the manual setup (the `data-stack` only defines ingredients and recipes tables; the other tables were created manually). The `ec2-bootstrap.sh` script is the authoritative deployment mechanism for the backend.
+**Note:** `data-stack.ts` defines all seven tables, but the production tables were created manually and the other CDK stacks are partially out of date with that setup. The `ec2-bootstrap.sh` script is the authoritative deployment mechanism for the backend.
 
 ---
 
@@ -170,13 +176,15 @@ Stored in AWS SSM Parameter Store under `/la-table-amelie/production/*` and writ
 | `SETTINGS_TABLE` | DynamoDB table name |
 | `EVENTS_TABLE` | DynamoDB table name |
 | `GROCERY_LISTS_TABLE` | DynamoDB table name |
+| `CLIENTS_TABLE` | DynamoDB table name. Optional: the API boots without it and the Clients feature returns 503 until it is set |
+| `LEDGER_TABLE` | DynamoDB table name. Optional: the API boots without it and the Comptabilité feature returns 503 until it is set |
 | `S3_BUCKET` | S3 bucket for recipe photos |
 | `ADMIN_CREDENTIALS` | JSON array of `{email, hash}` (bcrypt) |
 | `JWT_SECRET` | HS256 signing secret (32+ chars) |
 
 ### Adding a new DynamoDB table
 
-1. Create the table in AWS Console or CLI (partition key: the entity's ID field, String, on-demand billing).
+1. Create the table in AWS Console or CLI (partition key: the entity's ID field, String, on-demand billing) and declare it in `infrastructure/lib/data-stack.ts`.
 2. Add the SSM parameter: `aws ssm put-parameter --name "/la-table-amelie/production/MY_TABLE" --value "ta-my-table-prod" --type String`.
 3. Add the env var to `apps/backend/src/config/config.service.ts` and `scripts/ec2-bootstrap.sh`.
 4. On the existing EC2: append the var to `.env` and run `pm2 restart la-table-amelie-api`.
