@@ -29,6 +29,8 @@ export interface WeekChecklistProps {
 
 const ROW = "flex min-h-7 items-center gap-2 text-sm touch:min-h-11";
 const TEXT = "min-w-0 flex-1";
+// Guide rows wrap on phones: bullet and link follow the first line of text.
+const GUIDE_ROW = "flex min-h-7 items-start gap-2 text-sm touch:min-h-11";
 
 const monthName = new Intl.DateTimeFormat("fr-BE", { month: "long", timeZone: "UTC" });
 const shortDate = new Intl.DateTimeFormat("fr-BE", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
@@ -38,12 +40,12 @@ function ymLabel(ym: string): string {
 }
 
 // A link styled as the small link button; Button cannot carry router state.
-function ActionLink({ to, state, children }: { to: string; state: unknown; children: ReactNode }) {
-  return <Link to={to} state={state} className={cn(BUTTON_BASE, BUTTON_SIZE.sm, BUTTON_VARIANT.link)}>{children}</Link>;
+function ActionLink({ to, state, className, children }: { to: string; state: unknown; className?: string; children: ReactNode }) {
+  return <Link to={to} state={state} className={cn(BUTTON_BASE, BUTTON_SIZE.sm, BUTTON_VARIANT.link, className)}>{children}</Link>;
 }
 
-function Bullet() {
-  return <span aria-hidden="true" className="ml-0.5 mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-icon" />;
+function Bullet({ className }: { className?: string }) {
+  return <span aria-hidden="true" className={cn("ml-0.5 mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-icon", className)} />;
 }
 
 export default function WeekChecklist(props: WeekChecklistProps) {
@@ -64,13 +66,13 @@ export default function WeekChecklist(props: WeekChecklistProps) {
     ];
     return (
       <div aria-live="polite">
-        <Callout emoji="👋" title="Pour commencer">
+        <Callout emoji="🚀" title="Pour commencer">
           <ul>
             {steps.map((step) => (
-              <li key={step.to} className={ROW}>
-                <Bullet />
-                <span className={TEXT}>{step.text}</span>
-                <ActionLink to={step.to} state={state}>
+              <li key={step.to} className={GUIDE_ROW}>
+                <Bullet className="mt-[7px]" />
+                <span className={`${TEXT} leading-5`}>{step.text}</span>
+                <ActionLink to={step.to} state={state} className="-mt-1 touch:-mt-3">
                   <span className="md:hidden">{step.short}</span>
                   <span className="hidden md:inline">{step.label}</span>
                 </ActionLink>
@@ -256,7 +258,10 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
           <span className={TEXT} title={oldest}>
             {plural(item.count, "facture impayée", "factures impayées")} · {fmtEur0(item.totalTvac)}<span className="hidden md:inline"> · {oldest}</span>
           </span>
-          <ActionLink to="/comptes/a-facturer#impayes" state={state}>Voir les impayés</ActionLink>
+          <ActionLink to="/comptes/a-facturer#impayes" state={state}>
+            <span className="md:hidden">Voir</span>
+            <span className="hidden md:inline">Voir les impayés</span>
+          </ActionLink>
         </li>
       );
     }

@@ -45,8 +45,8 @@ export default function PlanningBar(props: PlanningBarProps) {
 
   const tabs = [
     { key: "week", label: "Semaine", to: weekHref },
-    // Phones only get the suffix when it is « Aujourd'hui »; a date would crowd the 44px tabs.
-    { key: "day", label: isWeek && dayTabLabel ? <>Jour<span className={dayTabLabel === "Aujourd'hui" ? "" : "hidden md:inline"}> · {dayTabLabel}</span></> : "Jour", to: dayHref },
+    // The suffix waits for lg: under that the three 44px tabs push ⋯ and + onto a second row.
+    { key: "day", label: isWeek && dayTabLabel ? <>Jour<span className="hidden lg:inline"> · {dayTabLabel}</span></> : "Jour", to: dayHref },
     ...(personHref ? [{ key: "personne", label: "Par personne", to: personHref, title: "Les lignes de chacun, pour un jour" }] : []),
   ];
 

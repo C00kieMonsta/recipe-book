@@ -165,6 +165,8 @@ PlanningBar.tsx: add prop `dayTabLabel?: string`; when `view === "week"` and the
 
 Spec check: Layout wrap, not control size, so rule 6 holds; tabs keep the 2px underline; no new control.
 
+Deviation (repair pass): the « · Aujourd'hui » suffix shows from lg only. Under 1024px, and on every phone, the three 44px tabs with the suffix push ⋯ and + onto a second toolbar row (checked at 375 on both workspaces), so the tab reads « Jour » there.
+
 ## Build groups (disjoint files)
 
 - **planning**: FX01, FX02, FX03, FX04, FX05, FX06, FX07, FX11, FX14, FX15, FX16. Files: `apps/frontend/src/pages/admin/Week.tsx`, `apps/frontend/src/pages/admin/Day.tsx`, `apps/frontend/src/components/admin/PlanningBar.tsx`, `apps/frontend/src/components/admin/WeekChecklist.tsx`, `apps/frontend/src/components/admin/AssignSheet.tsx`, `apps/frontend/src/components/admin/PersonPicker.tsx`

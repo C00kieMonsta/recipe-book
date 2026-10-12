@@ -445,10 +445,11 @@ export default function Week() {
         className="no-print"
         meta={(
           <span className="tabular-nums" data-tour="week-stats">
-            <abbr title="Chiffre d'affaires HTVA des événements confirmés" className="no-underline">Signé</abbr> {fmtEur0(weekTotals.signedRevenue)} HTVA · {weekTotals.guests} <span className="hidden md:inline">convives</span><span className="md:hidden">conv.</span>{doneFragment}
+            <abbr title="Chiffre d'affaires HTVA des événements confirmés" className="no-underline">Signé</abbr> {fmtEur0(weekTotals.signedRevenue)} HTVA · <span className="whitespace-nowrap">{weekTotals.guests} <span className="hidden md:inline">convives</span><span className="md:hidden">conv.</span></span>{doneFragment}
             {/* The separator travels with the link so a wrapped line never ends on a lone dot. */}
+            {" "}
             <span className="whitespace-nowrap">
-              {" · "}
+              {"· "}
               <Link to={monthLink.to} state={state} className="inline-flex items-center gap-0.5 rounded text-primary hover:bg-hover touch:min-h-11">
                 <span className="hidden md:inline">{monthLink.text}</span>
                 <span className="md:hidden">{monthLink.short}</span>

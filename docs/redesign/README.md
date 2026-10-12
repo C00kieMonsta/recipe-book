@@ -13,7 +13,12 @@ Plan for the rethink of the app after the caterer's feedback (planning view, rea
 | `workings/02-synthesis-draft.md` | The first unified plan, before critique. |
 | `workings/critique.md` | 134 findings from six critics (engineer, accountant, caterer, completeness, simplifier, hands-on verifier); the 16 high-severity ones were each checked by a refuter (14 confirmed, 2 refuted). |
 | `workings/editor-decisions.md` | How the critique was applied to produce `REDESIGN.md`. |
+| `02-planning-iteration.md` | Second pass on the planning flow: Sunday checklist, people assignment, scaled quantities, mise en place, À facturer. |
+| `03-notion-ui.md` | The Notion-like design system: ten rules, tokens, primitives, every screen, acceptance. |
+| `04-first-run-and-tour.md` | The guided tour (Visite guidée) and the first-run help: entry points, nine steps, component API, persistence, accessibility, acceptance. |
+| `workings/implementation-review.md` | Review of the first implementation against the plan. |
+| `workings/first-run-review.md` | Five first-time personas walking the running app, the judge's sixteen fixes, what the tour explains, what is deferred. |
 
-Nothing in the plan is implemented. Start with section 9 of `REDESIGN.md` (questions for the caterer and the accountant), then slice 1 of section 8.
+The plan, the planning iteration, the Notion UI and the first-run pass are implemented on main (October 2026). Section 9 of `REDESIGN.md` (questions for the caterer and the accountant) and the deferred list in `workings/first-run-review.md` are the open items.
 
 The workbook at the repo root contains client names and revenue figures. Keep it out of git unless that is intended.

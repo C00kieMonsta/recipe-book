@@ -586,7 +586,10 @@ export default function Day() {
                   </h2>
                   <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{group.count}</span>
                   {mode === "personne" && group.personId && (
-                    <Button variant="ghost" size="sm" aria-label={`Partager la liste de ${group.title}`} className="no-print" onClick={() => share(group.personId ?? undefined)} icon={<Share2 />}>Partager</Button>
+                    <>
+                      <Button variant="ghost" size="sm" aria-label={`Partager la liste de ${group.title}`} className="no-print hidden md:inline-flex" onClick={() => share(group.personId ?? undefined)} icon={<Share2 />}>Partager</Button>
+                      <IconButton variant="ghost" size="sm" aria-label={`Partager la liste de ${group.title}`} className="no-print md:hidden" onClick={() => share(group.personId ?? undefined)} icon={<Share2 />} />
+                    </>
                   )}
                   {mode === "personne" && group.personId === null && (
                     <GroupAssign people={activePeople} onChange={(next) => assignAll(group.lines, next)} />
