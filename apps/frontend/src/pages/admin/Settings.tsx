@@ -240,6 +240,7 @@ function moveItem<T>(list: T[], from: number, to: number): T[] {
 export default function Settings() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
@@ -255,7 +256,7 @@ export default function Settings() {
   useEffect(() => {
     api.settings.get()
       .then((s) => setDraft(fromSettings(s)))
-      .catch(() => setDraft(fromSettings({ settingsId: "global", recipeCategories: [], suppliers: [], updatedAt: "" })))
+      .catch(() => setLoadError("Impossible de charger les paramètres"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -376,7 +377,15 @@ export default function Settings() {
     }
   };
 
-  if (loading || !draft) return <div className="p-8 text-base text-muted-foreground">Chargement…</div>;
+  if (loading) return <div className="p-8 text-base text-muted-foreground">Chargement…</div>;
+  if (!draft) {
+    return (
+      <div className="flex flex-wrap items-center gap-3 p-8 text-base text-destructive">
+        {loadError ?? "Paramètres indisponibles"}
+        <button type="button" className={btnSecondary} onClick={() => window.location.reload()}>Recharger</button>
+      </div>
+    );
+  }
 
   // ── Derived values ──
   const obj = draft.objectives[objYear] ?? emptyObjective();

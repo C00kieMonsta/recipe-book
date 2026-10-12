@@ -6,8 +6,8 @@ import { PRICE_TO_QTY_UNIT, damerauLevenshtein, normalizeIngredientName } from "
 import { api, ApiError } from "@/lib/api";
 import type { DuplicateGroupDetail, DuplicateMemberDetail } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { fmt, supplierColor } from "@/lib/recipe-helpers";
-import { PageHeader, Tag, SearchSelect } from "@/components/ui";
+import { fmt } from "@/lib/recipe-helpers";
+import { PageHeader, Tag, SearchSelect, SupplierTag } from "@/components/ui";
 
 const NOTICE_KEY = "ingredientMergeNoticeSeen";
 const FUZZY_MIN_LEN = 5;
@@ -382,14 +382,5 @@ export default function IngredientDuplicates() {
         );
       })}
     </div>
-  );
-}
-
-function SupplierTag({ name }: { name: string }) {
-  return (
-    <Tag variant="supplier">
-      <span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: supplierColor(name) }} aria-hidden="true" />
-      {name}
-    </Tag>
   );
 }

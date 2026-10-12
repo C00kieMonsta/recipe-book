@@ -3,6 +3,7 @@ import type {
   Recipe,
   AppSettings,
   AppEvent,
+  EventRecipeLine,
   GroceryList,
   Client,
   LedgerEntry,
@@ -132,6 +133,11 @@ export type MergeResponse =
   | { ok: true; recipesUpdated: number; listsUpdated: number; removed: number; preexisting?: number }
   | { ok: false; recipesUpdated: number; listsUpdated: number; failures: unknown[]; preexisting?: number };
 
+// Lines sent on create or update may omit lineId; the server fills it.
+export type EventInput = Omit<Partial<AppEvent>, "recipes"> & {
+  recipes?: (Omit<EventRecipeLine, "lineId"> & { lineId?: string })[];
+};
+
 export interface InstantiateResponse { created: AppEvent[]; skipped: string[] }
 export interface LinkEventsResponse { linked: number }
 export interface LockMonthResponse { locked: number }
@@ -172,8 +178,8 @@ export const api = {
   events: {
     list: cached("events", () => request<AppEvent[]>("/admin/events")),
     get: (id: string) => request<AppEvent>(`/admin/events/${id}`),
-    create: withInvalidate(["events"], (data: Partial<AppEvent>) => request<AppEvent>("/admin/events", json("POST", data))),
-    update: withInvalidate(["events"], (id: string, data: Partial<AppEvent>) => request<AppEvent>(`/admin/events/${id}`, json("PATCH", data))),
+    create: withInvalidate(["events"], (data: EventInput) => request<AppEvent>("/admin/events", json("POST", data))),
+    update: withInvalidate(["events"], (id: string, data: EventInput) => request<AppEvent>(`/admin/events/${id}`, json("PATCH", data))),
     delete: withInvalidate(["events"], (id: string) => request<{ ok: boolean }>(`/admin/events/${id}`, { method: "DELETE" })),
     lines: {
       add: withInvalidate(["events"], (id: string, line: AddEventLineRequest) => request<AppEvent>(`/admin/events/${id}/lines`, json("POST", line))),

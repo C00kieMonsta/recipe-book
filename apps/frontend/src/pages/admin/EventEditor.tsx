@@ -16,7 +16,7 @@ import type {
   VatRate,
 } from "@packages/types";
 import { DEFAULT_COURSES, DEFAULT_PRESTATION_TYPES, VAT_RATES } from "@packages/types";
-import { api } from "@/lib/api";
+import { api, type EventInput } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { calcEventCost, calcRecipeCost, fmt } from "@/lib/recipe-helpers";
 import { FieldLabel, NumericInput, PageHeader, Section, Tag } from "@/components/ui";
@@ -145,10 +145,10 @@ export default function EventEditor() {
   }), [name, date, guestCount, extraCosts, sellingPricePerGuest, notes, status, actualCost, contactName, contactPhone, contactEmail, clientId, prestationType, vatRate]);
 
   // Recipes travel in the payload only until the event exists; after that the line endpoints own them.
-  const buildPayload = useCallback((): Partial<AppEvent> => {
+  const buildPayload = useCallback((): EventInput => {
     const scalars = scalarPayload();
     if (currentId) return scalars;
-    return { ...scalars, recipes: recipes as EventRecipeLine[] };
+    return { ...scalars, recipes };
   }, [scalarPayload, currentId, recipes]);
 
   const canCreate = Boolean(name.trim()) && (Boolean(currentId) || Boolean(prestationType));

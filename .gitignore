@@ -32,3 +32,4 @@ Thumbs.db
 cdk.out
 
 .DS_Store
+coverage/

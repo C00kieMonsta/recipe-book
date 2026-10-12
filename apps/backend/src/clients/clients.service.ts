@@ -77,11 +77,13 @@ export class ClientsService {
 
   async update(clientId: string, fields: UpdateClientRequest): Promise<Client> {
     await this.getOrFail(clientId);
+    // Null fields reach ddb.update unchanged, which removes the attribute.
     const updates: Record<string, unknown> = { ...fields, updatedAt: new Date().toISOString() };
     if (fields.name) updates.nameLower = fields.name.toLowerCase();
     if (fields.templates) updates.templates = withTemplateIds(fields.templates);
     await this.ddb.update(this.table, { clientId }, updates);
-    return this.getOrFail(clientId);
+    const saved = await this.getOrFail(clientId);
+    return Object.fromEntries(Object.entries(saved).filter(([, v]) => v !== null)) as Client;
   }
 
   async delete(clientId: string): Promise<void> {

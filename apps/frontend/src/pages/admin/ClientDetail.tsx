@@ -57,6 +57,21 @@ type ClientForm = Omit<CreateClientRequest, "templates" | "active">;
 
 const EMPTY_FORM: ClientForm = { name: "" };
 
+// Optional fields that the API clears when sent as null.
+const CLEARABLE: ReadonlySet<keyof ClientForm> = new Set<keyof ClientForm>([
+  "kind", "contactName", "phone", "email", "address", "vatNumber", "defaultPrestationType",
+  "defaultVatRate", "defaultPricePerGuest", "defaultGuestCount", "invoicing", "notes",
+]);
+
+function toUpdateBody(patch: Partial<ClientForm>): UpdateClientRequest {
+  const body: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    const cleared = v === undefined || v === "";
+    body[k] = cleared && CLEARABLE.has(k as keyof ClientForm) ? null : v;
+  }
+  return body as UpdateClientRequest;
+}
+
 function formOf(c: Client): ClientForm {
   return {
     name: c.name,
@@ -200,7 +215,7 @@ export default function ClientDetail() {
   const update = (patch: Partial<ClientForm>) => {
     setForm((prev) => ({ ...prev, ...patch }));
     if (isNew) return;
-    pending.current = { ...pending.current, ...patch };
+    pending.current = { ...pending.current, ...toUpdateBody(patch) };
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(flush, 800);
   };

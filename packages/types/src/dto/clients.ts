@@ -44,7 +44,24 @@ export const createClientSchema = z
   .strict();
 export type CreateClientRequest = z.infer<typeof createClientSchema>;
 
-export const updateClientSchema = createClientSchema.partial().strict();
+// Scalar fields accept null on update so the client can be cleared (stored as a REMOVE).
+export const updateClientSchema = createClientSchema
+  .partial()
+  .extend({
+    kind: createClientSchema.shape.kind.nullable(),
+    contactName: createClientSchema.shape.contactName.nullable(),
+    phone: createClientSchema.shape.phone.nullable(),
+    email: createClientSchema.shape.email.nullable(),
+    address: createClientSchema.shape.address.nullable(),
+    vatNumber: createClientSchema.shape.vatNumber.nullable(),
+    defaultPrestationType: createClientSchema.shape.defaultPrestationType.nullable(),
+    defaultVatRate: createClientSchema.shape.defaultVatRate.nullable(),
+    defaultPricePerGuest: createClientSchema.shape.defaultPricePerGuest.nullable(),
+    defaultGuestCount: createClientSchema.shape.defaultGuestCount.nullable(),
+    invoicing: createClientSchema.shape.invoicing.nullable(),
+    notes: createClientSchema.shape.notes.nullable(),
+  })
+  .strict();
 export type UpdateClientRequest = z.infer<typeof updateClientSchema>;
 
 export const instantiateSchema = z

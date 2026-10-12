@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Download, FileText, Lock, LockOpen, Plus } from "lucide-react";
+import { Download, FileText, Lock, LockOpen, Plus, X } from "lucide-react";
 import type { CreateLedgerEntryRequest, LedgerBook, LedgerEntry, MpSource, PatchLedgerEntryRequest, PaymentMethod } from "@packages/types";
 import { clientLabel, fmtEur, isCommissionEntry, prefillForClientMonth, rawMaterialOfMonth } from "@packages/types";
 import { api } from "@/lib/api";
@@ -132,9 +132,12 @@ export default function Journal() {
   const ym = /^\d{4}-\d{2}$/.test(params.get("ym") ?? "") ? (params.get("ym") as string) : today.slice(0, 7);
   const year = ym.slice(0, 4);
   const book: LedgerBook = params.get("book") === "achats" ? "achats" : "ventes";
-  const filterParam = params.get("filtre") as JournalFilter | null;
+  // "kind" is the alias other pages use for the filter chip.
+  const filterParam = (params.get("filtre") ?? params.get("kind")) as JournalFilter | null;
   const chips = book === "ventes" ? SALES_FILTERS : PURCHASE_FILTERS;
   const filter: JournalFilter = filterParam && chips.some((c) => c.key === filterParam) ? filterParam : "tous";
+  // Sales type filter: an empty value means entries without prestation type.
+  const typeParam = book === "ventes" ? params.get("type") : null;
 
   const data = useReportInputs(year);
   const { inputs, entries, events, settings, clients, loading, notConfigured, error, reload } = data;
@@ -157,7 +160,10 @@ export default function Journal() {
   const monthClose = settings?.monthCloses?.[ym];
   const locked = Boolean(monthClose?.lockedAt);
   const monthEntries = useMemo(() => entriesOfMonth(entries, ym, book), [entries, ym, book]);
-  const shown = useMemo(() => applyJournalFilter(monthEntries, filter), [monthEntries, filter]);
+  const shown = useMemo(() => {
+    const filtered = applyJournalFilter(monthEntries, filter);
+    return typeParam === null ? filtered : filtered.filter((e) => (e.prestationType ?? "") === typeParam);
+  }, [monthEntries, filter, typeParam]);
   const sales = useMemo(() => salesTotals(shown, settings), [shown, settings]);
   const purchases = useMemo(() => purchaseTotals(shown), [shown]);
   const monthSales = useMemo(() => entriesOfMonth(entries, ym, "ventes"), [entries, ym]);
@@ -252,7 +258,7 @@ export default function Journal() {
             role="tab"
             aria-selected={book === b}
             className={`min-h-10 rounded-md px-4 text-base ${book === b ? "bg-primary-soft font-medium" : "text-muted-foreground hover:text-foreground"}`}
-            onClick={() => setParam({ book: b, filtre: null })}
+            onClick={() => setParam({ book: b, filtre: null, kind: null, type: null })}
           >
             {b === "ventes" ? "Ventes" : "Achats"}
           </button>
@@ -494,11 +500,22 @@ export default function Journal() {
             type="button"
             aria-pressed={filter === c.key}
             className={`min-h-11 rounded-full border px-4 text-base ${filter === c.key ? "border-primary bg-primary-soft font-medium" : "border-border hover:bg-hover"}`}
-            onClick={() => setParam({ filtre: c.key === "tous" ? null : c.key })}
+            onClick={() => setParam({ filtre: c.key === "tous" ? null : c.key, kind: null })}
           >
             {c.label}
           </button>
         ))}
+        {typeParam !== null && (
+          <button
+            type="button"
+            aria-pressed="true"
+            className="inline-flex min-h-11 items-center gap-2 rounded-full border border-primary bg-primary-soft px-4 text-base font-medium"
+            onClick={() => setParam({ type: null })}
+          >
+            Type : {typeParam ? prestationLabel(settings, typeParam) : "Sans type"}
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )}
       </div>
 
       {error && <p className="mt-4 rounded-lg bg-destructive-soft px-3 py-2 text-base text-destructive">{error}</p>}

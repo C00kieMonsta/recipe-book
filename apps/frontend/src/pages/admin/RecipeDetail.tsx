@@ -7,6 +7,7 @@ import type { Recipe, Ingredient, RecipePricing, RecipeIngredient } from "@packa
 import { UNITS_QTY, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS, DEFAULT_RECIPE_CATEGORIES, VAT_RATES } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { useLocalStorage } from "@/hooks/use-local-storage";
 import { calcRecipeCost, calcIngredientLineCost, fmt, supplierColor } from "@/lib/recipe-helpers";
 import ActionMenu from "@/components/ui/ActionMenu";
 import NumericInput from "@/components/ui/NumericInput";
@@ -25,16 +26,7 @@ const DEFAULT_PRICING: RecipePricing = {
   chosenPrice: { surPlace: 0, takeAway: 0 },
 };
 
-const READER_SIZE_KEY = "recipe-book:reader-size";
 type ReaderSize = "lead" | "xl";
-
-function readReaderSize(): ReaderSize {
-  try {
-    return localStorage.getItem(READER_SIZE_KEY) === "xl" ? "xl" : "lead";
-  } catch {
-    return "lead";
-  }
-}
 
 const BTN = "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-base font-medium transition-colors";
 const BTN_PRIMARY = `${BTN} bg-primary text-primary-foreground hover:opacity-90`;
@@ -160,7 +152,7 @@ export default function RecipeDetail() {
   const [viewingIngredient, setViewingIngredient] = useState<Ingredient | null>(null);
   const [supplierNames] = useState(() => DEFAULT_SUPPLIERS.map((s) => s.name));
   const [portions, setPortions] = useState(0);
-  const [readerSize, setReaderSize] = useState<ReaderSize>(readReaderSize);
+  const [readerSize, setReaderSize] = useLocalStorage<ReaderSize>("recipe-book:reader-size", "lead");
   const newStepRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -179,11 +171,7 @@ export default function RecipeDetail() {
     setSearchParams(next, { replace: true });
   };
 
-  const toggleReaderSize = () => {
-    const next: ReaderSize = readerSize === "xl" ? "lead" : "xl";
-    setReaderSize(next);
-    try { localStorage.setItem(READER_SIZE_KEY, next); } catch { /* storage unavailable */ }
-  };
+  const toggleReaderSize = () => setReaderSize((prev) => (prev === "xl" ? "lead" : "xl"));
 
   const saveRecipeField = async (patch: Partial<Recipe>) => {
     if (!id || !recipe) return;

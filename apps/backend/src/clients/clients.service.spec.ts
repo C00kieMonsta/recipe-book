@@ -148,6 +148,16 @@ describe("ClientsService", () => {
     expect(updated.templates[1].templateId).toBe("tpl-jeudi");
   });
 
+  it("update removes a field sent as null and returns no null values", async () => {
+    const { service } = setup();
+    const client = await service.create(hoona);
+    const updated = await service.update(client.clientId, { contactName: null, defaultVatRate: null });
+    expect("contactName" in updated).toBe(false);
+    expect("defaultVatRate" in updated).toBe(false);
+    expect(Object.values(updated)).not.toContain(null);
+    expect(updated.email).toBe("Marie@Hoona.be");
+  });
+
   it("instantiate creates one event per matching weekday with client and template fields", async () => {
     const { service } = setup();
     const client = await service.create(hoona);

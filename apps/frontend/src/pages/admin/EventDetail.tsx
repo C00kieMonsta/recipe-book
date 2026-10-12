@@ -366,8 +366,7 @@ export default function EventDetail() {
         vatRate: event.vatRate,
         status: "upcoming" as const,
       };
-      // The server fills lineId on write, so the copy sends lines without one.
-      const created = await api.events.create(payload as unknown as Partial<AppEvent>);
+      const created = await api.events.create(payload);
       toast({ title: "Événement dupliqué" });
       setDialog(null);
       navigate(`/events/${created.eventId}`);

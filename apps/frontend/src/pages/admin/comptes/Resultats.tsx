@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { Download } from "lucide-react";
 import type { IncomeRow, LedgerEntry, MonthClose, MpSource, Scenario } from "@packages/types";
 import { fmtEur, incomeStatement, round2 } from "@packages/types";
 import { api } from "@/lib/api";
 import { dayLabel, monthLabel } from "@/lib/dates";
 import { useReportInputs } from "@/lib/use-report-inputs";
+import { ledgerErrorMessage } from "@/lib/accounting";
+import { exportLedgerXlsx } from "@/lib/ledger-export";
 import { useToast } from "@/hooks/use-toast";
 import { PageHeader, Section, Tag, ListRow, NumericInput, FieldLabel } from "@/components/ui";
 
@@ -125,6 +128,7 @@ function SourceMpDialog({ row, existing, purchases, onClose, onSaved }: {
 
 // ── Page ────────────────────────────────────────────────────────────────────
 export default function Resultats() {
+  const { toast } = useToast();
   const [year, setYear] = useYearParam();
   const { inputs, entries, settings, loading, notConfigured, error, reload } = useReportInputs(year);
   const [scenario, setScenario] = useState<Scenario>(readScenario);
@@ -146,6 +150,15 @@ export default function Resultats() {
   const taxRate = objective?.corporateTaxRate ?? 0.25;
 
   const pickScenario = (s: Scenario) => { setScenario(s); writeScenario(s); };
+
+  const onExport = () => {
+    if (!inputs) return;
+    try {
+      exportLedgerXlsx(year, inputs);
+    } catch (e) {
+      toast({ title: ledgerErrorMessage(e), variant: "destructive" });
+    }
+  };
 
   const purchasesOf = (ym: string) => entries.filter((e) => e.book === "achats" && e.kind === "mp" && e.date.slice(0, 7) === ym);
 
@@ -190,9 +203,14 @@ export default function Resultats() {
         title={`Compte de résultats ${year}`}
         meta="Gestion, HTVA. Les mois réalisés lisent le journal; les charges fixes sont celles du scénario avec salarié."
         actions={
-          <select aria-label="Année" className="input-field min-h-11 w-auto" value={year} onChange={(e) => setYear(Number(e.target.value))}>
-            {years.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <select aria-label="Année" className="input-field min-h-11 w-auto" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+              {years.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <button type="button" disabled={!inputs} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border px-4 text-base hover:bg-hover disabled:opacity-50" onClick={onExport}>
+              <Download className="h-4 w-4" /> Exporter {year} (xlsx)
+            </button>
+          </div>
         }
       />
 
