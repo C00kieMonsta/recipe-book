@@ -25,7 +25,7 @@ export default function StatusControl({ value, onChange, size = "md", className 
             type="button"
             aria-pressed={active}
             onClick={() => { if (!active) onChange(seg.value); }}
-            className={`flex-1 ${h} px-3 rounded-md text-base font-medium transition-colors ${active ? seg.active : "text-muted-foreground hover:bg-hover"}`}
+            className={`flex-1 ${h} whitespace-nowrap rounded-md px-2 text-base font-medium transition-colors sm:px-3 ${active ? seg.active : "text-muted-foreground hover:bg-hover"}`}
           >
             {seg.label}
           </button>

@@ -84,18 +84,19 @@ export default function PrepSheet() {
   const prev = index > 0 ? dayLines[index - 1] : undefined;
   const next = index >= 0 && index < dayLines.length - 1 ? dayLines[index + 1] : undefined;
   const lineUrl = (l: { eventId: string; lineId: string }) => `/events/${l.eventId}/lines/${l.lineId}${personQuery}`;
+  const prevUrl = prev ? lineUrl(prev) : undefined;
+  const nextUrl = next ? lineUrl(next) : undefined;
   const backUrl = from ?? `/jour/${date}${personQuery}`;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e)) return;
-      if (e.key === "ArrowLeft" && prev) navigate(lineUrl(prev), { state: { from } });
-      if (e.key === "ArrowRight" && next) navigate(lineUrl(next), { state: { from } });
+      if (e.key === "ArrowLeft" && prevUrl) navigate(prevUrl, { state: { from } });
+      if (e.key === "ArrowRight" && nextUrl) navigate(nextUrl, { state: { from } });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigate, prev, next, personQuery, from]);
+  }, [navigate, prevUrl, nextUrl, from]);
 
   // Keeps the screen on while the sheet is open, when the browser allows it.
   useEffect(() => {
@@ -141,8 +142,8 @@ export default function PrepSheet() {
     const dy = t.clientY - start.y;
     if (Math.abs(dx) < SWIPE_PX || Math.abs(dy) > Math.abs(dx) / 2) return;
     if (window.getSelection()?.toString()) return;
-    const target = dx < 0 ? next : prev;
-    if (target) navigate(lineUrl(target), { state: { from } });
+    const target = dx < 0 ? nextUrl : prevUrl;
+    if (target) navigate(target, { state: { from } });
   };
 
   const scrollToIngredients = () => {
@@ -265,13 +266,13 @@ export default function PrepSheet() {
             </Link>
             <div className="ml-auto flex shrink-0 items-center gap-1">
               {prev ? (
-                <Link to={lineUrl(prev)} state={{ from }} aria-label="Ligne précédente" className={ICON_BTN}><ChevronLeft className="h-5 w-5" /></Link>
+                <Link to={prevUrl} state={{ from }} aria-label="Ligne précédente" className={ICON_BTN}><ChevronLeft className="h-5 w-5" /></Link>
               ) : (
                 <span className={ICON_BTN} aria-hidden="true"><ChevronLeft className="h-5 w-5 opacity-30" /></span>
               )}
               <span className="text-sm tabular-nums text-muted-foreground">{index + 1}/{dayLines.length}</span>
               {next ? (
-                <Link to={lineUrl(next)} state={{ from }} aria-label="Ligne suivante" className={ICON_BTN}><ChevronRight className="h-5 w-5" /></Link>
+                <Link to={nextUrl} state={{ from }} aria-label="Ligne suivante" className={ICON_BTN}><ChevronRight className="h-5 w-5" /></Link>
               ) : (
                 <span className={ICON_BTN} aria-hidden="true"><ChevronRight className="h-5 w-5 opacity-30" /></span>
               )}

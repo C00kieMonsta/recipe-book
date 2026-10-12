@@ -35,7 +35,7 @@ function ymLabel(ym: string): string {
 }
 
 export default function WeekChecklist(props: WeekChecklistProps) {
-  const { items, open, onToggle, from, monday, prestationTypes, coveringList, busy } = props;
+  const { items, open, onToggle, from, coveringList } = props;
   const count = checklistCount(items);
   const state = { from };
   const notConfigured = items.find((i) => i.kind === "not_configured");
@@ -97,8 +97,6 @@ export default function WeekChecklist(props: WeekChecklistProps) {
         )}
         {notConfiguredRow}
       </ul>
-      {busy && <p className="sr-only">Enregistrement…</p>}
-      <span className="sr-only">{monday}</span>
     </section>
   );
 }
