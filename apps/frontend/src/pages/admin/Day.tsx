@@ -512,7 +512,7 @@ export default function Day() {
         ) : (
           shownGroups.map((group, i) => (
             <section key={group.key} className={i > 0 ? "mt-6 print-break" : "mt-4"}>
-              <header className="sticky top-0 z-10 bg-background py-2">
+              <header className="sticky top-14 z-[15] bg-background py-2 md:top-0">
                 <div className={`flex items-center justify-between gap-3 ${mode === "personne" ? "min-h-11" : ""}`}>
                   <h2 className="text-h3 min-w-0">{group.title}</h2>
                   <span className="shrink-0 text-base text-muted-foreground tabular-nums">{group.count}</span>

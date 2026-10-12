@@ -753,7 +753,7 @@ export default function EventDetail() {
 
   return (
     <div className="mx-auto max-w-doc">
-      <div className="no-print mb-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+      <div className="no-print mb-3 hidden flex-wrap items-center gap-x-2 gap-y-1 md:flex">
         <Link to={`/jour/${event.date}`} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-primary-soft pl-2 pr-3 text-base font-medium text-foreground hover:border-primary">
           <ChevronLeft className="h-5 w-5" /> {backLabel}
         </Link>

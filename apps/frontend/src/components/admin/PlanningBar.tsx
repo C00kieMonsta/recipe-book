@@ -6,7 +6,8 @@ import WeekPicker from "@/components/admin/WeekPicker";
 
 const ICON_BTN = "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-foreground hover:bg-hover";
 const TODAY_BTN = "inline-flex min-h-11 shrink-0 items-center rounded-lg px-2 text-base font-medium text-primary hover:bg-hover";
-const BACK_BTN = "inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-primary-soft pl-2 pr-3 text-base font-medium text-foreground hover:opacity-90";
+// Hidden on phones, where the top bar already carries the same back link.
+const BACK_BTN = "hidden md:inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-primary-soft pl-2 pr-3 text-base font-medium text-foreground hover:opacity-90";
 
 interface Common {
   // The seven dates of the week shown in the strip.
@@ -77,10 +78,11 @@ export default function PlanningBar(props: PlanningBarProps) {
     <Link to={props.todayHref} state={linkState} className={TODAY_BTN}>Aujourd'hui</Link>
   );
 
+  // Two siblings, not one wrapper: the strip sticks to the page, not to the bar.
   return (
-    <div className="no-print" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+    <>
       {/* Row 1: one line from md; on phones the switcher and "Aujourd'hui" drop to a second line */}
-      <div className="flex min-h-14 flex-wrap items-center gap-x-2 gap-y-1 md:flex-nowrap md:gap-x-3">
+      <div className="no-print flex min-h-14 flex-wrap items-center gap-x-2 gap-y-1 md:flex-nowrap md:gap-x-3" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {isWeek ? (
           <div className="flex shrink-0 items-center">
             <Link to={props.prevHref} state={linkState} aria-label="Semaine précédente" className={ICON_BTN}><ChevronLeft className="h-6 w-6" /></Link>
@@ -98,23 +100,23 @@ export default function PlanningBar(props: PlanningBarProps) {
             </div>
           </>
         )}
+        {phoneTrailing && <div className="ml-auto md:hidden">{phoneTrailing}</div>}
         {/* Second line on phones; from md its children join row 1 in the order given by md:order-* */}
-        <div className="flex min-h-11 w-full items-center gap-2 md:contents">
+        <div className="flex min-h-11 w-full flex-wrap items-center gap-2 md:contents">
           <div className="md:order-3">{switcher}</div>
           {todayLink && <div className="md:order-2">{todayLink}</div>}
           {isWeek && (
-            <div className="ml-auto min-w-0 md:order-1 md:ml-0">
+            <div className="ml-auto whitespace-nowrap md:order-1 md:ml-0">
               <WeekPicker from={props.range.from} to={props.range.to} value={props.range.value} onChange={props.range.onChange} />
             </div>
           )}
         </div>
         {right && <div className="ml-auto hidden xl:order-4 xl:block">{right}</div>}
-        {phoneTrailing && <div className="ml-auto md:hidden">{phoneTrailing}</div>}
       </div>
-      {below && <div className="xl:hidden">{below}</div>}
-      <div className="sticky top-0 z-20 -mx-4 bg-background px-4 py-1.5 md:static md:mx-0 md:px-0">
+      {below && <div className="no-print xl:hidden">{below}</div>}
+      <div className="no-print sticky top-0 z-20 -mx-4 bg-background px-4 py-1.5 md:static md:mx-0 md:px-0">
         <DayStrip dates={dates} counts={counts} today={today} selected={isWeek ? undefined : props.date} href={dayHref} state={linkState} />
       </div>
-    </div>
+    </>
   );
 }
