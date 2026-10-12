@@ -178,7 +178,7 @@ export default function AuReel() {
           />
         }
       />
-      <p className="mt-3 text-sm text-muted-foreground">Ce qui est facturé et ce qui est signé, mois par mois, face à l'objectif.</p>
+      <p className="mt-3 text-sm text-muted-foreground">Signé = prix par convive × convives de chaque événement du mois, facturé ou non, face à l'objectif mensuel (Je vise).</p>
 
       {notConfigured && <div className="mt-4"><Callout emoji="💶">{NOT_CONFIGURED}</Callout></div>}
       {error && <div className="mt-4"><Callout tone="danger">{error}</Callout></div>}

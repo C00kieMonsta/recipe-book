@@ -97,7 +97,9 @@ export default function EventEditor() {
   const people: Person[] = settings?.people?.filter((p) => p.active) ?? [];
 
   const pageTitle = isNew && !currentId ? "Nouvel événement" : name || "Modifier l'événement";
-  useBackLink({ to: retour ?? (currentId ? `/events/${currentId}` : "/events"), label: "Événements" });
+  const weekMatch = retour?.match(/^\/semaine\/\d{4}-W(\d{2})/);
+  const retourLabel = weekMatch ? `Semaine ${Number(weekMatch[1])}` : retour?.startsWith("/jour/") ? "Jour" : "Événements";
+  useBackLink({ to: retour ?? (currentId ? `/events/${currentId}` : "/events"), label: retourLabel });
   useTopTitle(pageTitle);
 
   const defaultVatFor = (types: PrestationTypeSetting[], key: string | undefined): VatRate | undefined =>
@@ -405,7 +407,7 @@ export default function EventEditor() {
   return (
     <div className="mx-auto max-w-doc">
       <PageHeader
-        breadcrumb={[{ label: "Événements", to: "/events" }, { label: isNew && !currentId ? "Nouveau" : name || "Événement" }]}
+        breadcrumb={[retour ? { label: retourLabel, to: retour } : { label: "Événements", to: "/events" }, { label: isNew && !currentId ? "Nouveau" : name || "Événement" }]}
         iconKey="evenement"
         title={pageTitle}
         meta={hint || undefined}
@@ -425,6 +427,8 @@ export default function EventEditor() {
               {clients.map((c) => <option key={c.clientId} value={c.clientId}>{c.name}</option>)}
               <option value={NEW_CLIENT}>Nouveau client…</option>
             </select>
+            <Link to="#" onClick={(e) => { e.preventDefault(); onClientChange(NEW_CLIENT); }} className="mt-1 inline-block text-sm text-primary hover:underline">+ Nouveau client</Link>
+            <p className="mt-1 text-sm text-muted-foreground">Choisir un client remplit le menu, les convives, le prix et l'équipe depuis sa semaine type.</p>
             {newClientOpen && (
               <div className="mt-3 rounded-lg bg-surface p-4">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -447,9 +451,11 @@ export default function EventEditor() {
               </div>
             )}
           </div>
-          {people.length > 0 && (
-            <div className="sm:col-span-2">
-              <FieldLabel>Équipe</FieldLabel>
+          <div className="sm:col-span-2">
+            <FieldLabel>Équipe</FieldLabel>
+            {people.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Aucune personne · <Link to="/settings#equipe" className="text-primary hover:underline">Ajouter dans Paramètres › Équipe</Link></p>
+            ) : (
               <div className="flex flex-wrap gap-2">
                 {people.map((p) => {
                   const on = assignedTo.includes(p.personId);
@@ -467,8 +473,8 @@ export default function EventEditor() {
                   );
                 })}
               </div>
-            </div>
-          )}
+            )}
+          </div>
           <div>
             <FieldLabel htmlFor="ev-prestation">
               <span className="inline-flex items-center gap-2">
@@ -525,7 +531,11 @@ export default function EventEditor() {
       </Section>
 
       <Section title="Menu" meta={recipes.length > 0 ? `${recipes.length} ligne${recipes.length > 1 ? "s" : ""}` : undefined}>
-        <SearchSelect options={recipeOptions} value="" onChange={addRecipe} placeholder="Ajouter une recette…" />
+        {allRecipes.length === 0 ? (
+          <p className="mt-1 text-sm text-muted-foreground">Aucune recette pour l'instant · <Link to="/recipes" className="text-primary hover:underline">Créer une recette</Link></p>
+        ) : (
+          <SearchSelect options={recipeOptions} value="" onChange={addRecipe} placeholder="Ajouter une recette…" />
+        )}
 
         {recipes.length > 0 && (
           <ul className="mt-4 divide-y divide-border">

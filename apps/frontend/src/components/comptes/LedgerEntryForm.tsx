@@ -140,7 +140,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [savedNumber, setSavedNumber] = useState<string | null>(null);
   const [createNext, setCreateNext] = useState(false);
-  // After "Ajouter une ligne pour l'autre taux" the next save creates a new entry.
+  // After "Même facture, autre taux de TVA" the next save creates a new entry.
   const target = createNext ? undefined : entry;
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((p) => ({ ...p, [k]: v }));
@@ -310,7 +310,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
       )}
       <span className="ml-auto flex flex-wrap items-center justify-end gap-2">
         {!ro && (
-          <Button variant="subtle" size="md" disabled={saving} onClick={() => void save(true)}>Ajouter une ligne pour l'autre taux</Button>
+          <Button variant="subtle" size="md" disabled={saving} onClick={() => void save(true)}>Même facture, autre taux de TVA</Button>
         )}
         <Button variant="default" size="md" onClick={onCancel}>Annuler</Button>
         <Button variant="primary" size="md" type="submit" form={FORM_ID} disabled={saving}>{saving ? "Enregistrement…" : "Enregistrer"}</Button>
@@ -360,7 +360,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
           <input id="le-date" type="date" className={field} value={f.date} readOnly={ro} onChange={(e) => set("date", e.target.value)} />
         </div>
         <div>
-          <FieldLabel htmlFor="le-number">{isSales ? "N° (Falco)" : "Réf."}{isCredit ? " · requis" : ""}</FieldLabel>
+          <FieldLabel htmlFor="le-number">{isSales ? "N° de facture" : "Réf."}{isCredit ? " · requis" : ""}</FieldLabel>
           <input id="le-number" className={field} value={f.number} readOnly={ro} onChange={(e) => set("number", e.target.value)} />
         </div>
         <div>
@@ -408,6 +408,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
       {eventOptions.length > 0 && (
         <div>
           <FieldLabel htmlFor="le-event-search">Événements{f.eventIds.length ? ` · ${f.eventIds.length} sélectionné${f.eventIds.length > 1 ? "s" : ""}` : ""}</FieldLabel>
+          <p className="mb-2 text-sm text-muted-foreground">Cochez l'événement couvert : il passe en Facturé et sort de À facturer.</p>
           {!ro && (
             <input id="le-event-search" className="input-field mb-2" placeholder="Rechercher un événement" value={eventQuery} onChange={(e) => setEventQuery(e.target.value)} />
           )}
@@ -530,7 +531,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
         </div>
         {isSales && (
           <div>
-            <FieldLabel htmlFor="le-km">KM</FieldLabel>
+            <FieldLabel htmlFor="le-km">Kilomètres facturés</FieldLabel>
             <input id="le-km" inputMode="decimal" className={`${field} text-right tabular-nums`} value={f.km} readOnly={ro} onChange={(e) => set("km", e.target.value)} />
           </div>
         )}

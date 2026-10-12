@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 export interface ToolbarProps {
   left?: ReactNode;
-  // DateNav or a similar group; wraps to a full second row on touch.
+  // DateNav or a similar group; wraps to a full second row on touch and under 768px.
   center?: ReactNode;
   right?: ReactNode;
   // Shown instead of `right` on touch screens (⋯ and the primary only).
@@ -16,9 +16,9 @@ export interface ToolbarProps {
 export default function Toolbar({ left, center, right, rightTouch, filters, className }: ToolbarProps) {
   return (
     <div className={cn("no-print", className)}>
-      <div className="flex h-10 items-center gap-1 border-b border-border touch:h-auto touch:min-h-12 touch:flex-wrap touch:gap-2">
+      <div className="flex h-10 items-center gap-1 border-b border-border max-md:h-auto max-md:min-h-12 max-md:flex-wrap touch:h-auto touch:min-h-12 touch:flex-wrap touch:gap-2">
         {left && <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">{left}</div>}
-        {center && <div className="ml-2 flex items-center gap-0.5 touch:order-last touch:ml-0 touch:w-full touch:pb-1">{center}</div>}
+        {center && <div className="ml-2 flex items-center gap-0.5 max-md:order-last max-md:ml-0 max-md:w-full touch:order-last touch:ml-0 touch:w-full touch:pb-1">{center}</div>}
         {right && <div className={cn("ml-auto flex items-center gap-0.5", rightTouch && "touch:hidden")}>{right}</div>}
         {rightTouch && <div className="ml-auto hidden items-center gap-0.5 touch:flex">{rightTouch}</div>}
       </div>

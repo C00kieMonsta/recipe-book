@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { CheckCircle2, EyeOff, MoreHorizontal, Printer, Share2, ShoppingCart, X } from "lucide-react";
+import { CheckCircle2, EyeOff, MoreHorizontal, Plus, Printer, Share2, ShoppingCart, X } from "lucide-react";
 import type { EventCostSnapshot, Ingredient, Person, PrepLine, PrepStatus, Recipe } from "@packages/types";
 import {
   addDays, buildCostSnapshot, calcRecipeCost, datesOfIsoWeek, filterByPerson, fmtQty, groupByPerson, groupByRecipe, isoWeekOf, longDayLabel,
@@ -19,7 +19,7 @@ import PersonChips, { PersonChip } from "@/components/admin/PersonChips";
 import PersonPicker from "@/components/admin/PersonPicker";
 import { Dot, StatusDot, STATUS_LABEL } from "@/components/admin/StatusDot";
 import {
-  Button, FilterButton, FilterChip, FilterGroup, IconButton, Menu, MenuCheck, MenuItem, MenuRadio, MenuSection, MenuSeparator,
+  Button, EmptyState, FilterButton, FilterChip, FilterGroup, IconButton, Menu, MenuCheck, MenuItem, MenuRadio, MenuSection, MenuSeparator,
   PageHeader, SectionToggle, SelectPill, StatusControl, useMenu,
 } from "@/components/ui";
 
@@ -243,7 +243,8 @@ export default function Day() {
     });
   }, [mode, visible, dayEvents, allLines, clientById, recipeById, settings, people]);
 
-  const shownGroups = groups.filter((g) => g.lines.length > 0);
+  // "Par personne" keeps empty groups so each person sees their own heading.
+  const shownGroups = mode === "personne" ? groups : groups.filter((g) => g.lines.length > 0);
   const personLines = visible(lines);
 
   // The prep sheet lands here with ?done=<lineId> after a line was ticked.
@@ -384,6 +385,7 @@ export default function Day() {
   const canFinish = safeDate < today && upcoming.length > 0;
   const finishLabel = `Terminer ${upcoming.length === 1 ? "l'événement" : `les ${upcoming.length} événements`}`;
   const personQuery = personne ? `?personne=${encodeURIComponent(personne)}` : "";
+  const newEventUrl = `/events/new?date=${safeDate}&retour=${encodeURIComponent(here)}`;
 
   const actionItems = (
     <>
@@ -511,9 +513,10 @@ export default function Day() {
               />
             </FilterButton>
             {moreMenu}
+            <Button variant="primary" size="sm" as={Link} to={newEventUrl} icon={<Plus />}>Nouvel événement</Button>
           </>
         )}
-        rightTouch={moreMenu}
+        rightTouch={<>{moreMenu}<IconButton variant="primary" size="sm" as={Link} to={newEventUrl} aria-label="Nouvel événement" title="Nouvel événement" icon={<Plus />} /></>}
         filters={filterChips}
         dates={weekDates}
         counts={counts}
@@ -527,14 +530,12 @@ export default function Day() {
         {error && <p className="mt-4 text-sm text-danger">{error}</p>}
         {loading && <p className="mt-6 text-sm text-muted-foreground">Chargement…</p>}
         {empty && !personne && (
-          <p className="mt-6 text-sm text-muted-foreground touch:text-base">
-            Aucune ligne à préparer ce jour. <Link to={`/events/new?date=${safeDate}&retour=${encodeURIComponent(here)}`} className="text-primary underline-offset-4 hover:underline">Créer un événement</Link>
-          </p>
+          <EmptyState message="Aucune ligne à préparer ce jour." action={{ label: "+ Nouvel événement", to: newEventUrl }} />
         )}
         {empty && personne && serviceEvents.length === 0 && (
-          <p className="mt-6 text-sm text-muted-foreground touch:text-base">Aucune ligne pour {personName(people, personne)} ce jour.</p>
+          <EmptyState message={`Aucune ligne pour ${personName(people, personne)} ce jour.`} action={{ label: "Toutes les personnes", to: `/jour/${safeDate}` }} />
         )}
-        {!loading && !error && lines.length > 0 && (personne ? personLines.length === 0 : shownGroups.length === 0) && (
+        {!loading && !error && lines.length > 0 && (personne ? personLines.length === 0 : groups.every((g) => g.lines.length === 0)) && (
           <p className="mt-6 text-sm text-muted-foreground touch:text-base">Tout est fait.</p>
         )}
 
@@ -563,9 +564,11 @@ export default function Day() {
                 </ul>
               </section>
             )}
-            <p className="no-print mt-6">
-              <Button variant="link" size="sm" as={Link} to={`/jour/${safeDate}${hideDone ? "?masquer=faites" : ""}`}>Toutes les personnes</Button>
-            </p>
+            {!(empty && serviceEvents.length === 0) && (
+              <p className="no-print mt-6">
+                <Button variant="link" size="sm" as={Link} to={`/jour/${safeDate}${hideDone ? "?masquer=faites" : ""}`}>Toutes les personnes</Button>
+              </p>
+            )}
           </>
         ) : (
           shownGroups.map((group, i) => (
@@ -578,7 +581,7 @@ export default function Day() {
                   </h2>
                   <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{group.count}</span>
                   {mode === "personne" && group.personId && (
-                    <IconButton size="sm" aria-label={`Partager la liste de ${group.title}`} className="no-print" onClick={() => share(group.personId ?? undefined)} icon={<Share2 />} />
+                    <Button variant="ghost" size="sm" aria-label={`Partager la liste de ${group.title}`} className="no-print" onClick={() => share(group.personId ?? undefined)} icon={<Share2 />}>Partager</Button>
                   )}
                   {mode === "personne" && group.personId === null && (
                     <GroupAssign people={activePeople} onChange={(next) => assignAll(group.lines, next)} />
@@ -587,7 +590,9 @@ export default function Day() {
                 {group.subtitle && <p className="text-sm text-muted-foreground">{group.subtitle}</p>}
               </header>
 
-              {mode !== "recette" ? (
+              {group.lines.length === 0 ? (
+                <p className="py-2 text-sm text-muted-foreground">Rien ce jour.</p>
+              ) : mode !== "recette" ? (
                 <ul>
                   {group.lines.map((line) => (
                     <LineRow
@@ -687,7 +692,7 @@ function LineAssign({ line, people, onChange }: LineAssignProps) {
           allowInherit
           onClose={() => setOpen(false)}
           align="right"
-          title="Attribuer la ligne"
+          title="Assigner la ligne"
         />
       )}
     </span>
@@ -708,7 +713,7 @@ function GroupAssign({ people, onChange }: { people: Person[]; onChange: (next: 
           onChange={(next) => { setValue(next); onChange(next); }}
           onClose={() => setOpen(false)}
           align="right"
-          title="Attribuer les lignes"
+          title="Assigner les lignes"
         />
       )}
     </span>

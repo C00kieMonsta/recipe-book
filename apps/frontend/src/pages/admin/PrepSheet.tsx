@@ -252,7 +252,7 @@ export default function PrepSheet() {
 
       {/* Header row: breadcrumb on the laptop, the back link on the phone; pager, ⋯ and Cuisiner on the right */}
       <div className="no-print flex min-h-11 items-center gap-1 pt-1 md:min-h-9 md:pt-0">
-        <Button variant="ghost" size="sm" as={Link} to={backUrl} icon={<ChevronLeft />} className="-ml-2 md:hidden">{dayLabel(date)}</Button>
+        <Button variant="ghost" size="sm" as={Link} to={backUrl} icon={<ChevronLeft />} className="-ml-2">{dayLabel(date)}</Button>
         <nav aria-label="Fil d'Ariane" className="hidden min-w-0 items-center gap-0.5 text-sm text-muted-foreground md:flex">
           <Link to={weekUrl} className={CRUMB}>Semaine {weekNumber}</Link>
           <span aria-hidden="true" className="px-0.5 text-icon">/</span>
@@ -261,16 +261,20 @@ export default function PrepSheet() {
           <span className="inline-flex h-6 min-w-0 items-center truncate px-1">{recipe.name}</span>
         </nav>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {prevUrl ? (
-            pagerLink(prevUrl, "Ligne précédente", <ChevronLeft />)
-          ) : (
-            <IconButton size="sm" disabled aria-label="Ligne précédente" icon={<ChevronLeft />} />
-          )}
-          <span className="px-0.5 text-sm tabular-nums text-muted-foreground">{index + 1}/{dayLines.length}</span>
-          {nextUrl ? (
-            pagerLink(nextUrl, "Ligne suivante", <ChevronRight />)
-          ) : (
-            <IconButton size="sm" disabled aria-label="Ligne suivante" icon={<ChevronRight />} />
+          {dayLines.length > 1 && (
+            <>
+              {prevUrl ? (
+                pagerLink(prevUrl, "Ligne précédente", <ChevronLeft />)
+              ) : (
+                <IconButton size="sm" disabled aria-label="Ligne précédente" icon={<ChevronLeft />} />
+              )}
+              <span title="Lignes du jour" className="px-0.5 text-sm tabular-nums text-muted-foreground">Ligne {index + 1} / {dayLines.length}</span>
+              {nextUrl ? (
+                pagerLink(nextUrl, "Ligne suivante", <ChevronRight />)
+              ) : (
+                <IconButton size="sm" disabled aria-label="Ligne suivante" icon={<ChevronRight />} />
+              )}
+            </>
           )}
           <ActionMenu items={menuItems} title={recipe.name} />
           <span className="ml-1 touch:hidden">{cookButton}</span>
@@ -294,7 +298,7 @@ export default function PrepSheet() {
             {activePeople && (
               <Property icon={User} label="Personne" kind="custom">
                 <span className="relative inline-flex">
-                  <PersonChips personIds={assignees} people={people} size="sm" inherited={!own} onClick={() => setPickerOpen((o) => !o)} label={assignees.length ? undefined : "Attribuer"} className="-ml-0.5" />
+                  <PersonChips personIds={assignees} people={people} size="sm" inherited={!own} onClick={() => setPickerOpen((o) => !o)} label={assignees.length ? undefined : "Assigner"} className="-ml-0.5" />
                   {assignees.length > 0 && <span className="ml-1 self-center text-base">{assignees.map((id) => people.find((p) => p.personId === id)?.name ?? id).join(", ")}</span>}
                   {pickerOpen && (
                     <PersonPicker
@@ -303,7 +307,7 @@ export default function PrepSheet() {
                       onChange={assign}
                       allowInherit
                       onClose={() => setPickerOpen(false)}
-                      title="Attribuer la ligne"
+                      title="Assigner la ligne"
                     />
                   )}
                 </span>
@@ -339,6 +343,7 @@ export default function PrepSheet() {
           size="xl"
           ticks={mep.ticked}
           onTick={tick}
+          tickHint="La ligne passe En cours au premier coche."
           scaleSteps={scaleSteps}
           showBase
           extra={(

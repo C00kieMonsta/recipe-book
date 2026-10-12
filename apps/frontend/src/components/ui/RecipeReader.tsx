@@ -16,6 +16,8 @@ export interface RecipeReaderProps {
   // Mise en place: ticked ingredient indexes and the toggle; without them the rows have no checkbox.
   ticks?: Set<number>;
   onTick?: (index: number) => void;
+  // Extra sentence appended to the mise en place caption.
+  tickHint?: string;
   // Scales the numbers written in the steps; off shows the base recipe text.
   scaleSteps?: boolean;
   // Shows the base value in muted text after each scaled number.
@@ -51,6 +53,7 @@ export default function RecipeReader({
   showCost = false,
   ticks,
   onTick,
+  tickHint,
   scaleSteps = true,
   showBase = false,
   extra,
@@ -68,6 +71,11 @@ export default function RecipeReader({
           <h2 className="text-h3">{onPortionsChange ? "Ingrédients" : `Ingrédients pour ${portions}`}</h2>
           {onPortionsChange && <Stepper value={portions} onChange={onPortionsChange} min={1} label="portions" />}
         </div>
+        {onTick && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Cochez les ingrédients pendant la mise en place{ratio !== 1 ? ` · quantités pour ${portions} portions (recette de base : ${recipe.portions})` : ""}.{tickHint ? ` ${tickHint}` : ""}
+          </p>
+        )}
         <ul className={`mt-2 ${textSize}`}>
           {recipe.ingredients.map((ri, i) => {
             const ing = ingredientById.get(ri.ingredientId);

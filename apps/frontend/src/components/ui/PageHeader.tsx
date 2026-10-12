@@ -11,6 +11,8 @@ export interface Breadcrumb {
 
 export interface PageHeaderProps {
   breadcrumb?: Breadcrumb[];
+  // Phones already show the back link in the top bar; set this to keep the breadcrumb there too.
+  breadcrumbOnPhone?: boolean;
   title: ReactNode;
   // Emoji before the title; `iconKey` reads it from page-icons.
   icon?: string;
@@ -24,13 +26,13 @@ export interface PageHeaderProps {
   className?: string;
 }
 
-export default function PageHeader({ breadcrumb, title, icon, iconKey, onTitleChange, titlePlaceholder, meta, properties, actions, className = "" }: PageHeaderProps) {
+export default function PageHeader({ breadcrumb, breadcrumbOnPhone = false, title, icon, iconKey, onTitleChange, titlePlaceholder, meta, properties, actions, className = "" }: PageHeaderProps) {
   const emoji = icon ?? (iconKey ? PAGE_ICONS[iconKey] : undefined);
   const editable = Boolean(onTitleChange) && typeof title === "string";
   return (
     <header className={cn("mb-4", className)}>
       {breadcrumb && breadcrumb.length > 0 && (
-        <nav aria-label="Fil d'Ariane" className="mb-3 flex flex-wrap items-center gap-0.5 text-sm text-muted-foreground">
+        <nav aria-label="Fil d'Ariane" className={cn("mb-3 flex-wrap items-center gap-0.5 text-sm text-muted-foreground", breadcrumbOnPhone ? "flex" : "hidden md:flex")}>
           {breadcrumb.map((crumb, i) => (
             <span key={`${crumb.label}-${i}`} className="flex items-center gap-0.5">
               {i > 0 && <span aria-hidden="true" className="px-0.5 text-icon">/</span>}

@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Plus, X, Copy, FileDown, FileSpreadsheet, GripVertical, Trash2, Printer, Calendar, ShoppingCart, Store } from "lucide-react";
 import type { GroceryList, GroceryListItem, Ingredient } from "@packages/types";
 import { UNITS_QTY, PRICE_TO_QTY_UNIT, fmtQtyText, isoWeekOf, parseIsoWeek } from "@packages/types";
 import { useToast } from "@/hooks/use-toast";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
 import { api } from "@/lib/api";
-import { rangeLabel } from "@/lib/dates";
+import { rangeLabel, todayIso } from "@/lib/dates";
 import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
 import {
   SupplierTag,
@@ -360,7 +360,7 @@ export default function GroceryListPage() {
           rows={savedLists}
           rowKey={(l) => l.listId}
           onRowClick={selectList}
-          empty={<EmptyState message="Aucune liste de courses. Générez une liste depuis la semaine ou créez-en une." action={{ label: "+ Nouvelle liste", onClick: startNewList }} />}
+          empty={<EmptyState message={<>Aucune liste de courses. <Link to={`/semaine/${isoWeekOf(todayIso())}`} className="text-primary hover:underline">Créer la liste de la semaine</Link> depuis la case « À faire avant la semaine », ou créez-en une à la main.</>} action={{ label: "+ Nouvelle liste", onClick: startNewList }} />}
           columns={[
             { key: "title", label: "Titre", render: (l) => <span className="font-medium">{l.title}</span> },
             { key: "range", label: "Période", width: "200px", render: (l) => (l.range ? rangeLabel(l.range.from, l.range.to) : "") },
@@ -415,7 +415,7 @@ export default function GroceryListPage() {
       />
 
       {items.length === 0 && !addingIng && (
-        <EmptyState message="Aucun ingrédient. Générez une liste depuis la semaine ou le jour, ou ajoutez manuellement." action={{ label: "+ Ajouter un ingrédient", onClick: () => setAddingIng(true) }} />
+        <EmptyState message="Aucun ingrédient. Les événements de cette période n'ont pas de recette au menu, ou ajoutez des ingrédients à la main." action={{ label: "+ Ajouter un ingrédient", onClick: () => setAddingIng(true) }} />
       )}
 
       {suppliers.map((supplier) => (

@@ -9,6 +9,8 @@ export interface PlanningBarProps {
   // Targets of the three view tabs; "Par personne" is hidden without a target.
   weekHref: string;
   dayHref: string;
+  // Day the "Jour" tab opens from the week, shown as "Jour · Lun 12".
+  dayTabLabel?: string;
   personHref?: string;
   // The period control.
   dateLabel: ReactNode;
@@ -37,14 +39,15 @@ export interface PlanningBarProps {
 
 // One toolbar row shared by the week and the day page, then the seven-day strip.
 export default function PlanningBar(props: PlanningBarProps) {
-  const { view, weekHref, dayHref, personHref, dateLabel, onPrev, onNext, onPick, pickValue, isToday, onToday, after, right, rightTouch, filters } = props;
+  const { view, weekHref, dayHref, dayTabLabel, personHref, dateLabel, onPrev, onNext, onPick, pickValue, isToday, onToday, after, right, rightTouch, filters } = props;
   const { dates, counts, today, selected, stripHref, linkState, onTouchStart, onTouchEnd } = props;
   const isWeek = view === "week";
 
   const tabs = [
     { key: "week", label: "Semaine", to: weekHref },
-    { key: "day", label: "Jour", to: dayHref },
-    ...(personHref ? [{ key: "personne", label: "Par personne", to: personHref }] : []),
+    // The suffix waits for lg: between 768 and 1024px the tabs would clip.
+    { key: "day", label: isWeek && dayTabLabel ? <>Jour<span className="hidden lg:inline"> · {dayTabLabel}</span></> : "Jour", to: dayHref },
+    ...(personHref ? [{ key: "personne", label: "Par personne", to: personHref, title: "Les lignes de chacun, pour un jour" }] : []),
   ];
 
   return (

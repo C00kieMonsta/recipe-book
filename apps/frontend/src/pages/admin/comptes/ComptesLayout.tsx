@@ -11,6 +11,12 @@ const TABS = [
   { key: "au-reel", to: "/comptes/au-reel", label: "Au réel" },
 ];
 
+const INTRO: Record<string, string> = {
+  journal: "Une ligne par facture, acompte, vente ou achat, classée par mois. Les autres onglets se calculent à partir du journal.",
+  "a-facturer": "Ce qu'il reste à faire : terminer les événements passés, créer les factures, encaisser les impayées.",
+  apercu: "L'année en un coup d'œil : chiffre d'affaires par mois, face à l'objectif et à l'année précédente.",
+};
+
 // Shared header and tabs; each page loads its own data with useReportInputs.
 export default function ComptesLayout() {
   const { pathname } = useLocation();
@@ -21,6 +27,7 @@ export default function ComptesLayout() {
     <div className="mx-auto max-w-wide">
       <PageHeader iconKey="comptabilite" title="Comptabilité" className="mb-2" />
       <Toolbar className="mb-4" left={<ViewTabs aria-label="Comptabilité" items={TABS} value={current} />} />
+      {INTRO[current] && <p className="-mt-2 mb-4 text-sm text-muted-foreground">{INTRO[current]}</p>}
       <Outlet context={context} />
     </div>
   );

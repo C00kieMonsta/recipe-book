@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ChevronRight, MoreHorizontal, Plus, Printer, Share2, ShoppingCart } from "lucide-react";
+import { ChevronRight, MoreHorizontal, Plus, Printer, Share2, ShoppingCart, UserPlus } from "lucide-react";
 import type { AppEvent, Client, EventRecipeLine, Person, PrepStatus, PrestationTypeSetting, WeekDay } from "@packages/types";
 import {
   addDays,
@@ -30,6 +30,7 @@ import { api } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { buildGroceryItems, groceryTitleFor } from "@/lib/grocery";
 import { fmtEur0, NEXT_STATUS, plural, usePlanningData } from "@/lib/use-planning-data";
+import { cn } from "@/lib/utils";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { useToast } from "@/hooks/use-toast";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
@@ -123,7 +124,7 @@ export default function Week() {
   };
 
   const [view, setView] = useLocalStorage<WeekView>("recipe-book:week-view", "lines");
-  const [checklistOpen, setChecklistOpen] = useLocalStorage<boolean>("recipe-book:checklist-open", typeof window !== "undefined" && window.innerWidth >= 1280);
+  const [checklistOpen, setChecklistOpen] = useLocalStorage<boolean>("recipe-book:checklist-open", true);
   const [sheet, setSheet] = useState<{ client: Client; guestCount: number } | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -135,6 +136,7 @@ export default function Week() {
   const dayRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const activePeople = useMemo(() => people.filter((p) => p.active), [people]);
+  const firstRun = !loading && recipes.length === 0 && events.length === 0 && activePeople.length === 0;
   const prestationTypes: PrestationTypeSetting[] = settings?.prestationTypes?.length ? settings.prestationTypes : DEFAULT_PRESTATION_TYPES;
 
   const weekEvents = useMemo(
@@ -308,10 +310,11 @@ export default function Week() {
   if (!valid) return <Navigate to={`/semaine/${isoWeekOf(today)}${search}`} replace />;
 
   const dayMeta = (d: WeekDay, short = false) => {
-    if (d.events.length === 0) return short ? "aucun" : "aucun événement";
-    const base = short ? `${d.events.length} · ${d.guests} conv.` : `${d.events.length} évén. · ${d.guests} conv.`;
-    return started && d.linesTotal > 0 ? `${base} · ${d.linesDone}/${d.linesTotal}` : base;
+    if (d.events.length === 0) return "aucun événement";
+    const base = `${d.events.length} évén. · ${d.guests} conv.`;
+    return started && d.linesTotal > 0 ? `${base} · ${d.linesDone}/${d.linesTotal} faites` : base;
   };
+  const dayTitle = (d: WeekDay) => `${d.events.length} événements · ${d.guests} convives${started && d.linesTotal ? ` · ${d.linesDone} lignes faites sur ${d.linesTotal}` : ""}`;
   const clientOf = (ev: AppEvent) => (ev.clientId ? clientById.get(ev.clientId) : undefined);
   const recipeName = (id: string) => recipeById.get(id)?.name ?? id;
   const hasPersonLine = (ev: AppEvent) => !selectedPerson || ev.recipes.some((l) => assigneesOf(l, ev).includes(selectedPerson));
@@ -322,12 +325,16 @@ export default function Week() {
   const showClientFilter = clientsConfigured && clientsThisWeek.length > 0;
   const showPersonFilter = activePeople.length > 0;
 
-  const doneFragment = started && weekTotals.linesTotal > 0
-    ? ` · ${weekTotals.linesDone} / ${plural(weekTotals.linesTotal, "ligne")} ${weekTotals.linesTotal === 1 ? "faite" : "faites"}`
-    : "";
+  const { linesDone, linesTotal } = weekTotals;
+  const doneFragment = started && linesTotal > 0 ? (
+    <>
+      <span className="hidden md:inline"> · {linesDone} {linesDone === 1 ? "ligne de préparation faite" : "lignes de préparation faites"} sur {linesTotal}</span>
+      <span className="md:hidden"> · {linesDone}/{linesTotal} lignes faites</span>
+    </>
+  ) : null;
   const monthLink = objective !== undefined
-    ? { to: `/comptes/apercu?year=${year}`, text: `Mois ${fmtEur0(monthSigned)} / ${fmtEur0(objective)}`, short: `Mois ${num0.format(monthSigned)} / ${fmtEur0(objective)}` }
-    : { to: "/settings#objectifs", text: `Mois ${fmtEur0(monthSigned)} · Définir l'objectif`, short: `Mois ${fmtEur0(monthSigned)} · Définir l'objectif` };
+    ? { to: `/comptes/apercu?year=${year}`, text: `Objectif du mois ${fmtEur0(monthSigned)} / ${fmtEur0(objective)}`, short: `Objectif ${num0.format(monthSigned)} / ${fmtEur0(objective)}` }
+    : { to: `/comptes/previsionnel?year=${year}`, text: "Définir l'objectif du mois", short: "Définir l'objectif du mois" };
 
   const filterGroups = (
     <>
@@ -362,7 +369,7 @@ export default function Week() {
         <MenuCheck checked={view === "events"} onChange={() => setView("events")}>Afficher les événements</MenuCheck>
       </MenuSection>
       <MenuSeparator />
-      <MenuItem icon={<ShoppingCart />} disabled={busy || loading} onSelect={() => createGrocery(filteredEvents)}>Courses de la semaine</MenuItem>
+      <MenuItem icon={<ShoppingCart />} disabled={busy || loading} onSelect={() => createGrocery(filteredEvents)}>Créer les courses de la semaine</MenuItem>
       <MenuItem icon={<Printer />} onSelect={() => print("week")}>Imprimer</MenuItem>
       <MenuItem icon={<Printer />} onSelect={() => print("person")}>Imprimer par personne</MenuItem>
       {activePeople.map((p) => (
@@ -405,11 +412,11 @@ export default function Week() {
   );
 
   const newButton = (
-    <Button variant="primary" size="sm" as={Link} to={newEventUrl(anchorDay)} icon={<Plus />}>Nouveau</Button>
+    <Button variant="primary" size="sm" as={Link} to={newEventUrl(anchorDay)} icon={<Plus />}>Nouvel événement</Button>
   );
   // The 44px tabs leave no room for the label on a phone.
   const newButtonTouch = (
-    <IconButton variant="primary" size="sm" as={Link} to={newEventUrl(anchorDay)} aria-label="Nouvel événement" icon={<Plus />} />
+    <IconButton variant="primary" size="sm" as={Link} to={newEventUrl(anchorDay)} aria-label="Nouvel événement" title="Nouvel événement" icon={<Plus />} />
   );
 
   const filterChips = filterCount > 0 ? (
@@ -427,8 +434,8 @@ export default function Week() {
         className="no-print"
         meta={(
           <span className="tabular-nums">
-            Signé {fmtEur0(weekTotals.signedRevenue)} · {weekTotals.guests} conv.{doneFragment} ·{" "}
-            <Link to={monthLink.to} state={state} className="inline-flex items-center gap-0.5 rounded hover:bg-hover hover:text-foreground touch:min-h-11">
+            <abbr title="Chiffre d'affaires HTVA des événements confirmés" className="no-underline">Signé</abbr> {fmtEur0(weekTotals.signedRevenue)} HTVA · {weekTotals.guests} <span className="hidden md:inline">convives</span><span className="md:hidden">conv.</span>{doneFragment} ·{" "}
+            <Link to={monthLink.to} state={state} className="inline-flex items-center gap-0.5 rounded text-primary hover:bg-hover touch:min-h-11">
               <span className="hidden md:inline">{monthLink.text}</span>
               <span className="md:hidden">{monthLink.short}</span>
               <ChevronRight className="h-4 w-4" aria-hidden="true" />
@@ -442,12 +449,13 @@ export default function Week() {
         view="week"
         weekHref={weekUrl(safeWeek)}
         dayHref={`/jour/${anchorDay}${personQuery}`}
+        dayTabLabel={anchorDay === today ? "Aujourd'hui" : dayLabel(anchorDay)}
         personHref={activePeople.length > 0 ? `/jour/${anchorDay}?mode=personne` : undefined}
         dateLabel={<><span className="hidden md:inline">Semaine {weekNo} · </span>{shortRange(dates[0], dates[6])}</>}
         onPrev={() => navigate(weekUrl(prevWeek))}
         onNext={() => navigate(weekUrl(nextWeek))}
         onPick={(d) => navigate(weekUrl(isoWeekOf(d)))}
-        pickValue={thursday}
+        pickValue={monday}
         isToday={safeWeek === todayWeek}
         onToday={() => navigate(weekUrl(todayWeek))}
         right={(
@@ -476,6 +484,7 @@ export default function Week() {
         <div className="no-print mt-3">
           <WeekChecklist
             items={checklist}
+            firstRun={firstRun}
             open={checklistOpen}
             onToggle={() => setChecklistOpen((o) => !o)}
             from={from}
@@ -506,7 +515,7 @@ export default function Week() {
               <div key={day.date} className={`group min-w-0 ${past ? "opacity-60" : ""}`}>
                 <div className="sticky top-0 z-10 bg-background pb-1">
                   <div className="flex items-start gap-1">
-                    <Link to={dayUrl(day.date)} state={state} className="min-w-0 flex-1 rounded px-1 hover:bg-hover">
+                    <Link to={dayUrl(day.date)} state={state} title={dayTitle(day)} className="min-w-0 flex-1 rounded px-1 hover:bg-hover">
                       <div className="flex h-7 items-center gap-1 text-sm font-semibold">
                         <span>{dayName}</span>
                         <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${isToday ? "bg-danger-solid text-white" : ""}`}>{dayNum}</span>
@@ -517,12 +526,14 @@ export default function Week() {
                   </div>
                   {dayPeople.length > 0 && (
                     <div className="flex h-7 items-center gap-0.5 px-1">
+                      <span className="mr-1 text-caption text-muted-foreground">Équipe</span>
                       {dayPeople.slice(0, 4).map((id) => (
                         <button
                           key={id}
                           type="button"
                           aria-pressed={selectedPerson === id}
                           aria-label={personName(people, id)}
+                          title={`Filtrer sur ${personName(people, id)}`}
                           onClick={() => setParam("personne", selectedPerson === id ? "" : id)}
                           className={`rounded-full ${selectedPerson === id ? "shadow-[0_0_0_2px_#2383e2]" : ""}`}
                         >
@@ -539,6 +550,8 @@ export default function Week() {
                     const title = shortEventName(ev, client);
                     const total = ev.recipes.length;
                     const done = doneCount(ev);
+                    // The "Assigner" button takes its own row; the column is too narrow for it next to the title.
+                    const unassigned = (ev.assignedTo ?? []).length === 0;
                     if (!hasPersonLine(ev)) {
                       return (
                         <Link key={ev.eventId} to={`/events/${ev.eventId}`} state={state} className="flex h-7 items-center rounded px-2 text-sm text-muted-foreground hover:bg-hover">
@@ -548,7 +561,7 @@ export default function Week() {
                     }
                     return (
                       <div key={ev.eventId}>
-                        <div className="flex rounded-lg bg-background shadow-card hover:bg-hover">
+                        <div className="flex flex-wrap rounded-lg bg-background shadow-card hover:bg-hover">
                           <Link to={`/events/${ev.eventId}`} state={state} className="min-w-0 flex-1 p-2">
                             <div className="text-sm font-medium line-clamp-2">{title}</div>
                             <div className="mt-0.5 text-caption text-muted-foreground">
@@ -561,8 +574,8 @@ export default function Week() {
                             )}
                           </Link>
                           {(ev.assignedTo?.length || canAssign) ? (
-                            <div className="pr-1 pt-0.5">
-                              <AssignChips value={ev.assignedTo ?? []} options={people} enabled={canAssign} onChange={(ids) => assignEvent(ev.eventId, ids)} title={title} />
+                            <div className={unassigned ? "w-full px-1 pb-1" : "pr-1 pt-0.5"}>
+                              <AssignChips value={ev.assignedTo ?? []} options={people} enabled={canAssign} onChange={(ids) => assignEvent(ev.eventId, ids)} title="Assigner l'événement" label={`Assigner ${title}`} />
                             </div>
                           ) : null}
                         </div>
@@ -579,9 +592,9 @@ export default function Week() {
                                   <Link to={prepUrl(ev.eventId, line.lineId)} state={state} title={recipeName(line.recipeId)} className={`min-w-0 flex-1 truncate rounded px-0.5 ${status === "done" ? "text-muted-foreground" : ""}`}>
                                     {recipeName(line.recipeId)}
                                   </Link>
-                                  {/* The event card already shows inherited people; a line chip means an override. */}
-                                  {own && (
-                                    <AssignChips value={line.assignedTo ?? []} options={people} enabled={canAssign} allowInherit max={2} onChange={(next) => assignLine(ev.eventId, line.lineId, next)} title={recipeName(line.recipeId)} />
+                                  {/* Inherited people are shown dimmed so every line has a click target. */}
+                                  {(own || ids.length > 0) && (
+                                    <AssignChips value={ids} picked={own ? ids : []} options={people} enabled={canAssign} inherited={!own} allowInherit max={2} onChange={(next) => assignLine(ev.eventId, line.lineId, next)} title="Assigner la ligne" label={`Assigner ${recipeName(line.recipeId)}`} />
                                   )}
                                   <span className={`pl-0.5 pr-1 tabular-nums ${status === "done" ? "text-muted-foreground" : "text-muted-foreground"}`}>{line.portions}</span>
                                 </li>
@@ -592,7 +605,7 @@ export default function Week() {
                       </div>
                     );
                   })}
-                  <Button variant="ghost" size="sm" as={Link} to={newEventUrl(day.date)} icon={<Plus />} className="reveal w-full justify-start text-muted-foreground">Nouveau</Button>
+                  <Button variant="ghost" size="sm" as={Link} to={newEventUrl(day.date)} icon={<Plus />} className="w-full justify-start text-muted-foreground">Nouvel événement</Button>
                 </div>
               </div>
             );
@@ -735,10 +748,14 @@ interface AssignChipsProps {
   className?: string;
   onChange: (next: string[]) => void;
   title: string;
+  label?: string;
+  // Ids ticked in the picker when they differ from the chips (inherited lines start from "Comme l'événement").
+  picked?: string[];
 }
 
 // Chips that open the picker in a fixed box, so the column does not clip it.
-function AssignChips({ value, options, enabled, inherited = false, allowInherit = false, max, className, onChange, title }: AssignChipsProps) {
+// With nobody assigned and assignment allowed, a ghost "Assigner" button replaces the chips.
+function AssignChips({ value, options, enabled, inherited = false, allowInherit = false, max, className, onChange, title, label, picked = value }: AssignChipsProps) {
   const anchor = useRef<HTMLSpanElement>(null);
   const [rect, setRect] = useState<{ top: number; left: number; right: number } | null>(null);
   const close = useCallback(() => setRect(null), []);
@@ -748,12 +765,17 @@ function AssignChips({ value, options, enabled, inherited = false, allowInherit 
     setRect(rect ? null : { top: r.bottom, left: r.left, right: r.right });
   };
   const alignRight = rect ? rect.left > window.innerWidth - 280 : false;
+  const showButton = enabled && value.length === 0 && !allowInherit;
   return (
     <span ref={anchor} className="inline-flex">
-      <PersonChips personIds={value} people={options} size="sm" inherited={inherited} max={max} className={className} onClick={enabled ? open : undefined} />
+      {showButton ? (
+        <Button variant="ghost" size="sm" icon={<UserPlus />} onClick={open} aria-label={label} aria-haspopup="dialog" className={cn("text-muted-foreground", className)}>Assigner</Button>
+      ) : (
+        <PersonChips personIds={value} people={options} size="sm" inherited={inherited} max={max} label={value.length === 0 ? label : undefined} className={className} onClick={enabled ? open : undefined} />
+      )}
       {rect && (
         <div style={{ position: "fixed", top: rect.top, left: alignRight ? rect.right : rect.left, width: 0, height: 0 }} className="z-50">
-          <PersonPicker value={value} options={options} onChange={onChange} allowInherit={allowInherit} onClose={close} title={title} align={alignRight ? "right" : "left"} />
+          <PersonPicker value={picked} options={options} onChange={onChange} allowInherit={allowInherit} onClose={close} title={title} align={alignRight ? "right" : "left"} />
         </div>
       )}
     </span>

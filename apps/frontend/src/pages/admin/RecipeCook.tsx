@@ -134,6 +134,7 @@ export default function RecipeCook() {
   const ratio = cookPortions / (recipe.portions || 1);
   const stepRatio = scaleSteps ? ratio : 1;
   const contextName = clientName || event?.contactName || event?.name || null;
+  const closeLabel = eventId && lineId ? "Fermer · retour à la fiche" : "Fermer";
   const subtitle = [`${cookPortions} portions`, contextName].filter(Boolean).join(" · ");
 
   const onTouchStart = (e: React.TouchEvent) => {
@@ -211,7 +212,7 @@ export default function RecipeCook() {
   return (
     <div className="fixed inset-0 flex flex-col bg-background select-text">
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-1 md:px-3">
-        <IconButton size="md" aria-label="Fermer" onClick={exit} icon={<X />} />
+        <IconButton size="md" aria-label={closeLabel} title={closeLabel} onClick={exit} icon={<X />} />
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-base font-semibold leading-tight">{recipe.name}</h1>
           {(contextName || cookPortions !== recipe.portions) && (
@@ -304,6 +305,9 @@ export default function RecipeCook() {
         <span className="text-sm font-normal text-muted-foreground">{cookPortions} portions</span>
       </button>
 
+      {isLast && eventId && lineId && (
+        <p className="px-3 pb-1 text-caption text-muted-foreground md:px-6">Terminer marque la ligne comme faite et revient à la journée. × quitte sans rien changer.</p>
+      )}
       <footer className="flex shrink-0 gap-2 border-t border-border px-3 py-2 md:px-6">
         <Button variant="default" size="lg" onClick={goPrev} disabled={step === 0} className="flex-1" icon={<ChevronLeft />}>Précédent</Button>
         {isLast ? (

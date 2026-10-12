@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import type { Person } from "@packages/types";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
 import Button from "@/components/ui/Button";
@@ -10,7 +11,7 @@ export interface PersonPickerProps {
   value: string[];
   options: Person[];
   onChange: (next: string[]) => void;
-  // Line context: the empty row reads "Comme l'événement" instead of "Personne".
+  // Line context: the empty row reads "Comme l'événement" instead of "Aucune personne".
   allowInherit?: boolean;
   // Renders a "Suivant" button, used by the AssignSheet walk.
   onNext?: () => void;
@@ -53,6 +54,12 @@ export default function PersonPicker({ value, options, onChange, allowInherit = 
 
   const rows = (
     <div role="group" aria-label={title}>
+      {active.length === 0 && (
+        <>
+          <p className="px-2 py-2 text-sm text-muted-foreground">Aucune personne active dans les paramètres.</p>
+          <Link to="/settings#equipe" className="block px-2 py-1 text-sm text-primary">Ajouter une personne</Link>
+        </>
+      )}
       {active.map((p) => (
         <Checkbox
           key={p.personId}
@@ -76,7 +83,7 @@ export default function PersonPicker({ value, options, onChange, allowInherit = 
         checked={value.length === 0}
         onChange={() => onChange([])}
         className={`${row} text-muted-foreground`}
-        label={allowInherit ? "Comme l'événement" : "Personne"}
+        label={allowInherit ? "Comme l'événement" : "Aucune personne"}
       />
       {onNext && (
         <div className={touch ? "px-4 pt-2" : "px-1 pt-1"}>

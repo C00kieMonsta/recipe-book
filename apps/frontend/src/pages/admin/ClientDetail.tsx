@@ -431,7 +431,7 @@ export default function ClientDetail() {
         </div>
       )}
 
-      <Section title="Semaine type" meta={isNew ? undefined : "Un modèle par jour de livraison"}>
+      <Section title="Semaine type" meta={isNew ? undefined : "Préremplit un nouvel événement créé pour ce client ce jour-là : menu, convives, prix, personne."}>
         {isNew ? (
           <p className="text-sm text-muted-foreground">Créez le client pour configurer sa semaine type.</p>
         ) : (

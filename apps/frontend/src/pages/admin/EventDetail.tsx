@@ -37,6 +37,7 @@ import {
   assigneesOf,
   isoWeekOf,
   personName,
+  addDays,
 } from "@packages/types";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -603,7 +604,7 @@ export default function EventDetail() {
     { label: "Modifier", onClick: () => navigate(`/events/${id}/edit`) },
     { label: "Reprendre le coût", onClick: retakeCost },
     { label: "Ajuster les portions aux convives", onClick: () => { setAdjustGuests(String(event.guestCount)); setDialog({ kind: "adjust" }); } },
-    { label: "Dupliquer", onClick: () => { setDuplicateDate(todayIso()); setDialog({ kind: "duplicate" }); } },
+    { label: "Dupliquer", onClick: () => { setDuplicateDate(addDays(event.date, 7)); setDialog({ kind: "duplicate" }); } },
     ...(event.clientId
       ? [{ label: "Enregistrer comme modèle", onClick: () => { setTemplateWeekday(weekdayOf(event.date)); setDialog({ kind: "template" }); } }]
       : []),
@@ -692,7 +693,7 @@ export default function EventDetail() {
               { label: "Monter", onClick: () => moveLine(group.course, index, -1), disabled: index === 0 },
               { label: "Descendre", onClick: () => moveLine(group.course, index, 1), disabled: index === group.lines.length - 1 },
               { label: "Modifier les portions", onClick: () => focusPortions(line.lineId) },
-              { label: "Attribuer", onClick: () => setPickerLineId(line.lineId) },
+              { label: "Assigner", onClick: () => setPickerLineId(line.lineId) },
               { label: "Note", onClick: () => setNoteLineId(line.lineId) },
               { kind: "separator" },
               { label: "Ouvrir la fiche", onClick: () => navigate(`/events/${id}/lines/${line.lineId}`) },
@@ -820,22 +821,30 @@ export default function EventDetail() {
           title="Menu"
           meta={`${event.recipes.length} ligne${event.recipes.length > 1 ? "s" : ""}`}
           action={
-            <Button variant="ghost" size="sm" icon={<Plus />} onClick={() => { setAddingRecipe((o) => !o); setTimeout(() => addRef.current?.querySelector("input")?.focus(), 50); }}>
-              Recette
-            </Button>
+            recipeOptions.length > 0 ? (
+              <Button variant="ghost" size="sm" icon={<Plus />} onClick={() => { setAddingRecipe((o) => !o); setTimeout(() => addRef.current?.querySelector("input")?.focus(), 50); }}>
+                Recette
+              </Button>
+            ) : undefined
           }
         >
-          {grouped.length === 0 && !addingRecipe && <EmptyState message="Aucune recette au menu." action={{ label: "+ Ajouter une recette", onClick: () => setAddingRecipe(true) }} />}
-          <div>{grouped.map(renderCourseBlock)}</div>
-          <div className="mt-2" ref={addRef}>
-            {addingRecipe ? (
-              <SearchSelect options={recipeOptions} value="" onChange={addRecipe} placeholder="Rechercher une recette…" autoFocus />
-            ) : (
-              <Button variant="subtle" size="sm" icon={<Plus />} onClick={() => setAddingRecipe(true)} className="-mx-1">
-                Ajouter une recette
-              </Button>
-            )}
-          </div>
+          {recipeOptions.length === 0 ? (
+            <EmptyState message="Aucune recette dans le catalogue pour l'instant." action={{ label: "+ Créer une recette", to: "/recipes" }} />
+          ) : (
+            <>
+              {grouped.length === 0 && !addingRecipe && <EmptyState message="Aucune recette au menu." action={{ label: "+ Ajouter une recette", onClick: () => setAddingRecipe(true) }} />}
+              <div>{grouped.map(renderCourseBlock)}</div>
+              <div className="mt-2" ref={addRef}>
+                {addingRecipe ? (
+                  <SearchSelect options={recipeOptions} value="" onChange={addRecipe} placeholder="Rechercher une recette…" autoFocus />
+                ) : (
+                  <Button variant="subtle" size="sm" icon={<Plus />} onClick={() => setAddingRecipe(true)} className="-mx-1">
+                    Ajouter une recette
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
         </Section>
       </div>
 
@@ -989,7 +998,7 @@ export default function EventDetail() {
         size="sm"
         footer={<DialogActions onCancel={() => setDialog(null)} onConfirm={duplicate} confirmLabel="Dupliquer" busy={busy} />}
       >
-        <FieldLabel htmlFor="duplicate-date">Date du nouvel événement</FieldLabel>
+        <FieldLabel htmlFor="duplicate-date">Date du nouvel événement (même jour, semaine suivante par défaut)</FieldLabel>
         <input id="duplicate-date" type="date" value={duplicateDate} onChange={(e) => setDuplicateDate(e.target.value)} className="input-field" />
       </Dialog>
 

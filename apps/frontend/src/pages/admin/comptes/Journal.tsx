@@ -5,6 +5,7 @@ import type { CreateLedgerEntryRequest, LedgerBook, LedgerEntry, MpSource, Patch
 import { clientLabel, fmtEur, isCommissionEntry, prefillForClientMonth, rawMaterialOfMonth, sumMoney } from "@packages/types";
 import { api } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
+import { plural } from "@/lib/use-planning-data";
 import { useReportInputs } from "@/lib/use-report-inputs";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
 import {
@@ -372,13 +373,14 @@ export default function Journal() {
 
   const statLine = (
     <p className="mt-3 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm text-muted-foreground tabular-nums">
+      <span>Ce mois ·</span>
       <span>Acomptes <span className="text-foreground">{fmtEur(sumMoney(acomptes.map((e) => e.totalTvac)))}</span></span>
       <span aria-hidden="true">·</span>
       <span>Commissions <span className="text-foreground">{fmtEur(sumMoney(commissions.map((e) => e.htva)))}</span> (hors CA)</span>
       <span aria-hidden="true">·</span>
       <span>À encaisser <span className="text-foreground">{fmtEur(encaisser.total)}</span></span>
       <span aria-hidden="true">·</span>
-      <span>{encaisser.count} non réglée{encaisser.count > 1 ? "s" : ""}</span>
+      <span>{plural(encaisser.count, "facture non réglée", "factures non réglées")}</span>
       {locked && monthClose?.lockedAt && <Tag colour="yellow" className="ml-1">Verrouillé le {fmtDateFr(monthClose.lockedAt.slice(0, 10))}</Tag>}
       {monthClose && !locked && monthClose.unlockedAt && <Tag colour="gray" className="ml-1">Déverrouillé le {fmtDateFr(monthClose.unlockedAt.slice(0, 10))}</Tag>}
     </p>
@@ -417,7 +419,7 @@ export default function Journal() {
       rows={shown}
       rowKey={(e) => e.entryId}
       onRowClick={(e) => setForm({ entry: e })}
-      empty={<EmptyState message={emptyText} />}
+      empty={<EmptyState message={emptyText} action={{ label: "+ Nouvelle ligne", onClick: openNew }} />}
       footer={
         book === "ventes"
           ? { label: "Total", tvac: fmtEur(sales.tvac), htva: fmtEur(sales.htva) }
@@ -439,7 +441,7 @@ export default function Journal() {
           />
         ))}
       </div>
-      {shown.length === 0 && <EmptyState message={emptyText} />}
+      {shown.length === 0 && <EmptyState message={emptyText} action={{ label: "+ Nouvelle ligne", onClick: openNew }} />}
       <div className="sticky bottom-0 -mx-4 mt-2 border-t border-divider bg-background px-4 py-2 text-sm tabular-nums">
         {book === "ventes" ? (
           <>

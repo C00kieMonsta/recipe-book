@@ -277,7 +277,7 @@ export default function Previsionnel() {
         left={<DateNav label={String(year)} onPrev={() => setYear(year - 1)} onNext={() => setYear(year + 1)} isToday={year === nowYear} onToday={() => setYear(nowYear)} todayLabel="Cette année" />}
         right={<span className="inline-flex items-center gap-1"><span className="text-sm text-muted-foreground">Scénario :</span>{scenarioPill}</span>}
       />
-      <p className="mt-3 text-sm text-muted-foreground">Un objectif par année et une liste de charges fixes; le seuil suit la formule du classeur.</p>
+      <p className="mt-3 text-sm text-muted-foreground">Un objectif par année et une liste de charges fixes ; le seuil de rentabilité est calculé à partir des charges.</p>
 
       {notConfigured && <div className="mt-4"><Callout emoji="💶">{NOT_CONFIGURED}</Callout></div>}
       {error && <div className="mt-4"><Callout tone="danger">{error}</Callout></div>}
@@ -548,7 +548,7 @@ export default function Previsionnel() {
             <MoneyTile flat label="ISoc prévu" value={fmtMoney(pv.isocPrevu)} sub={objective.smeReducedRate ? "taux réduit PME" : `taux ${fmtPct(objective.corporateTaxRate ?? 0.25, 0)}`} />
             <MoneyTile flat label="Marge nette après ISoc" value={fmtPct(pv.margeNetteApresIsoc)} sub="(résultat − ISoc) ÷ CA" />
           </div>
-          <p className="mt-3 text-sm text-muted-foreground tabular-nums">Objectif − seuil (formule du classeur) : {fmtMoney(pv.objectifMoinsSeuil)}</p>
+          <p className="mt-3 text-sm text-muted-foreground tabular-nums">Objectif − seuil : {fmtMoney(pv.objectifMoinsSeuil)}</p>
           {!objective.annualRevenue && <p className="mt-1 text-sm text-muted-foreground">Saisir le CA annuel pour obtenir le résultat prévu et l'ISoc.</p>}
           <p className="mt-1 text-sm text-muted-foreground">Mois actifs {objective.monthsActive} · objectif mensuel {fmtMoney(objective.monthsActive ? round2(objective.annualRevenue / objective.monthsActive) : undefined)}</p>
         </Section>

@@ -2,7 +2,7 @@ import type { AppEvent, Client, EventRecipeLine, Person, RecipeLookup, WeekDay }
 import { assigneesOf, longDayLabel, personInitials, shortEventName, sortEventLines } from "@packages/types";
 import { plural } from "@/lib/use-planning-data";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
-import { Button, Callout, Dialog, Sheet } from "@/components/ui";
+import { Button, Callout, Dialog, Sheet, Tag } from "@/components/ui";
 import { PersonChip } from "./PersonChips";
 
 export interface AssignSheetProps {
@@ -32,23 +32,30 @@ export default function AssignSheet({ days, people, clientById, recipeById, cour
   const unassigned = events.reduce((n, ev) => n + ev.recipes.filter((l) => assigneesOf(l, ev).length === 0).length, 0);
   const title = unassigned === 0 ? "Toutes les lignes ont une personne" : `${plural(unassigned, "ligne")} sans personne`;
 
+  const missingOf = (ev: AppEvent) => ev.recipes.filter((l) => assigneesOf(l, ev).length === 0).length;
+
   const toggleEvent = (ev: AppEvent, id: string) => onEvent(ev.eventId, toggled(ev.assignedTo ?? [], id));
   const toggleLine = (ev: AppEvent, line: EventRecipeLine, id: string) => onLine(ev.eventId, line.lineId, toggled(assigneesOf(line, ev), id));
 
   const body = (
     <>
+      <p className="text-sm text-muted-foreground">Chaque clic est enregistré tout de suite. Les boutons avec le prénom donnent tout l'événement ; les petits cercles changent une seule ligne.</p>
       {unassigned === 0 && <Callout tone="success" emoji="✅" title="Toutes les lignes ont une personne" />}
       {active.length === 0 && <p className="py-4 text-base text-muted-foreground">Aucune personne active dans les paramètres.</p>}
       {days.filter((d) => d.events.length > 0).map((day) => (
         <section key={day.date}>
           <h3 className="mt-2 text-sm font-medium text-muted-foreground">{longDayLabel(day.date)}</h3>
-          {day.events.map((ev) => {
+          {[...day.events].sort((a, b) => Number(missingOf(b) > 0) - Number(missingOf(a) > 0)).map((ev) => {
             const client = ev.clientId ? clientById.get(ev.clientId) : undefined;
             const eventIds = ev.assignedTo ?? [];
+            const missing = missingOf(ev);
             return (
               <div key={ev.eventId} className="mt-1">
                 <div className="flex min-h-8 flex-wrap items-center gap-2 touch:min-h-11">
-                  <span className="min-w-0 flex-1 text-sm font-medium touch:text-base">{shortEventName(ev, client)} · Tout l'événement</span>
+                  <span className="inline-flex min-w-0 flex-1 flex-wrap items-center gap-2 text-sm font-medium touch:text-base">
+                    <span>{shortEventName(ev, client)} · Tout l'événement</span>
+                    {missing > 0 && <Tag colour="red">{plural(missing, "ligne")} sans personne</Tag>}
+                  </span>
                   <div className="flex flex-wrap gap-1">
                     {active.map((p) => {
                       const on = eventIds.includes(p.personId);
@@ -115,14 +122,14 @@ export default function AssignSheet({ days, people, clientById, recipeById, cour
       <Sheet open onClose={onClose} title={title} aria-label="Assigner les lignes de la semaine" className="flex h-dvh max-h-dvh flex-col rounded-none">
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">{body}</div>
         <div className="flex justify-end border-t border-border px-4 pt-3">
-          <Button variant="primary" size="md" onClick={onClose}>Terminé</Button>
+          <Button variant="primary" size="md" onClick={onClose}>Fermer</Button>
         </div>
       </Sheet>
     );
   }
 
   return (
-    <Dialog open onClose={onClose} title={title} size="lg" aria-label="Assigner les lignes de la semaine" footer={<Button variant="primary" size="md" onClick={onClose}>Terminé</Button>}>
+    <Dialog open onClose={onClose} title={title} size="lg" aria-label="Assigner les lignes de la semaine" footer={<Button variant="primary" size="md" onClick={onClose}>Fermer</Button>}>
       {body}
     </Dialog>
   );
