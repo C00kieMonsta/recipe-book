@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation, Link } from "react-router-dom";
-import { ChevronUp, ChevronDown, GripVertical, Plus, X } from "lucide-react";
+import { ChevronLeft, ChevronUp, ChevronDown, GripVertical, Plus, X } from "lucide-react";
 import type {
   AppEvent,
   AppSettings,
@@ -260,6 +260,8 @@ export default function EventDetail() {
   if (loadError || !event || !id) return <div className="p-8 text-muted-foreground">Événement introuvable.</div>;
 
   const client = event.clientId ? clients.find((c) => c.clientId === event.clientId) : undefined;
+  const weekUrl = `/semaine/${isoWeekOf(event.date)}`;
+  const weekNumber = Number(isoWeekOf(event.date).slice(-2));
   const prestationLabel = event.prestationType ? prestationTypes.find((t) => t.key === event.prestationType)?.label ?? event.prestationType : undefined;
   const cost = calcEventCost(event, recipeCostById, recipePortionsById);
   const matieres = cost.rawMaterial + cost.extras.matiere;
@@ -751,9 +753,15 @@ export default function EventDetail() {
 
   return (
     <div className="mx-auto max-w-doc">
+      <div className="no-print mb-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <Link to={`/jour/${event.date}`} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-primary-soft pl-2 pr-3 text-base font-medium text-foreground hover:border-primary">
+          <ChevronLeft className="h-5 w-5" /> {backLabel}
+        </Link>
+        <Link to={weekUrl} className="inline-flex min-h-11 items-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Semaine {weekNumber}</Link>
+      </div>
       <PageHeader
         breadcrumb={[
-          { label: `Semaine ${Number(isoWeekOf(event.date).slice(-2))}`, to: `/semaine/${isoWeekOf(event.date)}` },
+          { label: `Semaine ${weekNumber}`, to: weekUrl },
           { label: dayMonthShortLabel(event.date), to: `/jour/${event.date}` },
           { label: event.name },
         ]}

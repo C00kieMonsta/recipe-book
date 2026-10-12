@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, MoreHorizontal, Plus, Printer, Share2, ShoppingCart, X } from "lucide-react";
+import { ChevronRight, MoreHorizontal, Plus, Printer, Share2, ShoppingCart, X } from "lucide-react";
 import type { AppEvent, Client, EventRecipeLine, Person, PrepStatus, PrestationTypeSetting, WeekDay } from "@packages/types";
 import {
   addDays,
@@ -37,8 +37,7 @@ import PersonChips from "@/components/admin/PersonChips";
 import PersonPicker from "@/components/admin/PersonPicker";
 import WeekChecklist from "@/components/admin/WeekChecklist";
 import AssignSheet from "@/components/admin/AssignSheet";
-import DayStrip from "@/components/admin/DayStrip";
-import WeekPicker from "@/components/admin/WeekPicker";
+import PlanningBar from "@/components/admin/PlanningBar";
 import { ActionMenu } from "@/components/ui";
 
 const ICON_BTN = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-foreground hover:bg-hover";
@@ -347,43 +346,43 @@ export default function Week() {
 
   return (
     <div className="h-[calc(100dvh-68px)] overflow-y-auto px-4 py-1 md:h-dvh xl:px-6 xl:py-4 print:h-auto print:overflow-visible">
-      {/* Header zone: nav, range and money; swipe changes the week on the phone */}
-      <div className="no-print" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        <div className="flex items-center gap-1 xl:min-h-14 xl:gap-4">
-          <div className="flex min-w-0 flex-1 items-center gap-1 xl:flex-none">
-            <Link to={weekUrl(prevWeek)} aria-label="Semaine précédente" className={ICON_BTN}><ChevronLeft className="h-6 w-6" /></Link>
-            <h1 className="min-w-0 flex-1 truncate text-center font-serif text-h2 xl:flex-none xl:text-h1">Semaine {weekNo}</h1>
-            <Link to={weekUrl(nextWeek)} aria-label="Semaine suivante" className={ICON_BTN}><ChevronRight className="h-6 w-6" /></Link>
-          </div>
-          <div className="hidden items-center gap-2 xl:flex">
-            <WeekPicker from={dates[0]} to={dates[6]} value={thursday} onChange={(d) => navigate(weekUrl(isoWeekOf(d)))} />
-            {safeWeek !== todayWeek && (
-              <Link to={weekUrl(todayWeek)} className="inline-flex min-h-11 items-center rounded-lg px-1 text-base text-primary hover:bg-hover">Aujourd'hui</Link>
-            )}
-          </div>
-          <div className="ml-auto hidden text-right text-sm xl:block">
+      {/* Navigation and strip, shared with the day page; swipe changes the week on the phone */}
+      <PlanningBar
+        view="week"
+        dates={dates}
+        counts={counts}
+        today={today}
+        weekNo={weekNo}
+        dayHref={dayUrl}
+        linkState={state}
+        prevHref={weekUrl(prevWeek)}
+        nextHref={weekUrl(nextWeek)}
+        todayHref={safeWeek !== todayWeek ? weekUrl(todayWeek) : undefined}
+        range={{ from: dates[0], to: dates[6], value: thursday, onChange: (d) => navigate(weekUrl(isoWeekOf(d))) }}
+        dayViewHref={`/jour/${todayInWeek ? today : monday}${search}`}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        right={(
+          <div className="text-right text-sm">
             <div className="font-semibold tabular-nums">Signé {fmtEur0(weekTotals.signedRevenue)} · {weekTotals.guests} conv.{doneFragment}</div>
             <Link to={monthLink.to} state={state} className="inline-flex items-center gap-0.5 tabular-nums text-muted-foreground hover:underline underline-offset-4">
               {monthLink.text} <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </Link>
           </div>
-          <button type="button" onClick={() => setMenuOpen(true)} aria-label="Actions" aria-haspopup="dialog" className={`${ICON_BTN} xl:hidden`}>
+        )}
+        phoneTrailing={(
+          <button type="button" onClick={() => setMenuOpen(true)} aria-label="Actions" aria-haspopup="dialog" className={ICON_BTN}>
             <MoreHorizontal className="h-5 w-5" />
           </button>
-        </div>
-
-        <div className="flex h-8 items-center gap-2 xl:hidden">
-          <WeekPicker from={dates[0]} to={dates[6]} value={thursday} onChange={(d) => navigate(weekUrl(isoWeekOf(d)))} />
-          {safeWeek !== todayWeek && (
-            <Link to={weekUrl(todayWeek)} onClick={() => todayInWeek && scrollToDay(today)} className="inline-flex min-h-11 items-center rounded-lg px-1 text-base text-primary hover:bg-hover">Aujourd'hui</Link>
-          )}
-        </div>
-        <div className="min-h-7 overflow-x-auto whitespace-nowrap text-sm tabular-nums xl:hidden">
-          <span className="font-semibold">Signé {fmtEur0(weekTotals.signedRevenue)} · {weekTotals.guests} conv.{doneFragment}</span>
-          <span className="text-muted-foreground"> · </span>
-          <Link to={monthLink.to} state={state} className="text-muted-foreground">{monthLink.short} ›</Link>
-        </div>
-      </div>
+        )}
+        below={(
+          <div className="min-h-7 overflow-x-auto whitespace-nowrap text-sm tabular-nums">
+            <span className="font-semibold">Signé {fmtEur0(weekTotals.signedRevenue)} · {weekTotals.guests} conv.{doneFragment}</span>
+            <span className="text-muted-foreground"> · </span>
+            <Link to={monthLink.to} state={state} className="text-muted-foreground">{monthLink.short} ›</Link>
+          </div>
+        )}
+      />
 
       {/* Controls row */}
       <div className="no-print hidden min-h-11 flex-wrap items-center justify-end gap-2 xl:flex">
@@ -536,12 +535,9 @@ export default function Week() {
         </div>
       )}
 
-      {/* Phone and tablet: the strip, then every day stacked */}
+      {/* Phone and tablet: every day stacked under the strip of the bar */}
       {!loading && (
         <div className="xl:hidden print:hidden">
-          <div className="sticky top-0 z-20 -mx-4 bg-background px-4 py-1.5">
-            <DayStrip dates={dates} counts={counts} today={today} onPick={scrollToDay} />
-          </div>
           <div className="divide-y divide-border">
             {plan.days.map((day) => {
               const isToday = day.date === today;

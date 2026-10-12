@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Check, CheckCircle2, ChevronLeft, ChevronRight, EyeOff, Printer, Share2, ShoppingCart, X } from "lucide-react";
+import { Check, CheckCircle2, ChevronRight, EyeOff, Printer, Share2, ShoppingCart, X } from "lucide-react";
 import type { EventCostSnapshot, Ingredient, Person, PrepLine, PrepStatus, Recipe } from "@packages/types";
 import {
-  addDays, buildCostSnapshot, calcRecipeCost, filterByPerson, fmtQty, groupByPerson, groupByRecipe, isoWeekOf, longDayLabel,
+  addDays, buildCostSnapshot, calcRecipeCost, datesOfIsoWeek, filterByPerson, fmtQty, groupByPerson, groupByRecipe, isoWeekOf, longDayLabel,
   parseIsoWeek, personName, prepLinesForDate, shortEventName,
 } from "@packages/types";
 import { api } from "@/lib/api";
@@ -13,6 +13,7 @@ import { NEXT_STATUS, plural, prestationLabel, usePlanningData } from "@/lib/use
 import { useToast } from "@/hooks/use-toast";
 import { clearMiseEnPlace } from "@/hooks/use-mise-en-place";
 import { useBackLink, useFullBleed } from "@/components/admin/AdminLayout";
+import PlanningBar from "@/components/admin/PlanningBar";
 import PersonChips from "@/components/admin/PersonChips";
 import PersonPicker from "@/components/admin/PersonPicker";
 import { Dot, StatusDot, STATUS_LABEL } from "@/components/admin/StatusDot";
@@ -29,6 +30,11 @@ const MODES: { value: Mode; label: string }[] = [
 
 const ICON_BTN = "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-foreground hover:bg-hover";
 const SWIPE_PX = 60;
+
+// A picker or menu is open; Escape belongs to it.
+function overlayOpen(): boolean {
+  return Boolean(document.querySelector('[role="dialog"], [role="menu"]'));
+}
 
 interface Group {
   key: string;
@@ -137,6 +143,15 @@ export default function Day() {
   const weekNumber = parseIsoWeek(week).week;
   const weekUrl = from ?? `/semaine/${week}${personne ? `?personne=${encodeURIComponent(personne)}` : ""}`;
   useBackLink({ to: weekUrl, label: `Semaine ${weekNumber}` });
+  const weekDates = useMemo(() => datesOfIsoWeek(week), [week]);
+  const counts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const e of events) {
+      const d = e.date.slice(0, 10);
+      if (d >= weekDates[0] && d <= weekDates[6]) c[d] = (c[d] ?? 0) + 1;
+    }
+    return c;
+  }, [events, weekDates]);
 
   const dayEvents = useMemo(() => events.filter((e) => e.date.slice(0, 10) === safeDate), [events, safeDate]);
   const allLines = useMemo(
@@ -231,13 +246,14 @@ export default function Day() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isTypingTarget(e)) return;
-      if (e.key === "ArrowLeft") navigate(dayUrl(addDays(safeDate, -1)));
-      if (e.key === "ArrowRight") navigate(dayUrl(addDays(safeDate, 1)));
+      if (isTypingTarget(e) || overlayOpen()) return;
+      if (e.key === "ArrowLeft") navigate(dayUrl(addDays(safeDate, -1)), { state: location.state });
+      if (e.key === "ArrowRight") navigate(dayUrl(addDays(safeDate, 1)), { state: location.state });
+      if (e.key === "Escape") navigate(weekUrl);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navigate, safeDate, dayUrl]);
+  }, [navigate, safeDate, dayUrl, weekUrl, location.state]);
 
   const onTouchStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
@@ -251,7 +267,7 @@ export default function Day() {
     const dx = t.clientX - start.x;
     const dy = t.clientY - start.y;
     if (Math.abs(dx) < SWIPE_PX || Math.abs(dy) > Math.abs(dx) / 2) return;
-    navigate(dayUrl(addDays(safeDate, dx < 0 ? 1 : -1)));
+    navigate(dayUrl(addDays(safeDate, dx < 0 ? 1 : -1)), { state: location.state });
   };
 
   const setStatus = useCallback(async (line: PrepLine, status: PrepStatus) => {
@@ -365,24 +381,31 @@ export default function Day() {
 
   return (
     <div
-      className="h-[calc(100dvh-68px)] overflow-y-auto px-4 pb-24 pt-4 md:h-dvh md:px-8 md:pt-8 print:h-auto print:overflow-visible"
+      className="h-[calc(100dvh-68px)] overflow-y-auto px-4 py-1 pb-24 md:h-dvh xl:px-6 xl:py-4 xl:pb-24 print:h-auto print:overflow-visible"
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      <div className="mx-auto max-w-doc">
-        <nav aria-label="Fil d'Ariane" className="no-print mb-2 flex items-center gap-4 text-sm text-muted-foreground">
-          <Link to={weekUrl} className="inline-flex min-h-6 items-center rounded hover:text-foreground hover:underline underline-offset-4">Semaine {weekNumber}</Link>
-          {safeDate !== today && (
-            <Link to={dayUrl(today)} className="inline-flex min-h-6 items-center rounded text-primary hover:underline underline-offset-4">Aujourd'hui</Link>
-          )}
-        </nav>
+      <PlanningBar
+        view="day"
+        date={safeDate}
+        dates={weekDates}
+        counts={counts}
+        today={today}
+        weekNo={weekNumber}
+        dayHref={dayUrl}
+        linkState={location.state}
+        weekHref={weekUrl}
+        prevHref={dayUrl(addDays(safeDate, -1))}
+        nextHref={dayUrl(addDays(safeDate, 1))}
+        todayHref={safeDate !== today ? dayUrl(today) : undefined}
+        right={<div className="text-right text-sm text-muted-foreground tabular-nums">{meta}</div>}
+      />
+      <div className="mx-auto mt-4 max-w-doc">
         <PageHeader
           title={title}
-          meta={meta}
+          meta={<span className="xl:hidden">{meta}</span>}
           actions={
             <div className="no-print flex w-full flex-nowrap items-center gap-2 md:w-auto">
-              <Link to={dayUrl(addDays(safeDate, -1))} aria-label="Jour précédent" className={ICON_BTN}><ChevronLeft className="h-6 w-6" /></Link>
-              <Link to={dayUrl(addDays(safeDate, 1))} aria-label="Jour suivant" className={ICON_BTN}><ChevronRight className="h-6 w-6" /></Link>
               {!personne && (
                 <>
                   <div role="group" aria-label="Regroupement" className="hidden shrink-0 rounded-lg border border-border bg-card p-0.5 md:inline-flex">

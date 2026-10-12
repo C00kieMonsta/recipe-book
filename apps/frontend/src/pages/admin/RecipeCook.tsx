@@ -101,6 +101,8 @@ export default function RecipeCook() {
     : event
       ? `/jour/${event.date.slice(0, 10)}${personQuery}`
       : `/recipes/${id}`);
+  // Matches the exitTo chain: prep sheet line, then the day, then the recipe.
+  const exitLabel = eventId && lineId ? "Fiche" : event ? "Jour" : "Recette";
   const exit = useCallback(() => navigate(exitTo), [navigate, exitTo]);
 
   useEffect(() => {
@@ -128,7 +130,7 @@ export default function RecipeCook() {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background p-6">
         <p className="text-lead text-muted-foreground">Recette introuvable.</p>
-        <button type="button" onClick={exit} className="inline-flex min-h-11 items-center rounded-lg border px-4 text-base font-medium hover:bg-hover">Quitter</button>
+        <button type="button" onClick={exit} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-primary-soft pl-2 pr-3 text-base font-medium text-foreground hover:border-primary"><ChevronLeft className="h-5 w-5" /> {exitLabel}</button>
       </div>
     );
   }
@@ -218,12 +220,8 @@ export default function RecipeCook() {
   return (
     <div className="fixed inset-0 flex flex-col bg-background select-text">
       <header className="flex h-16 shrink-0 items-center gap-3 border-b bg-card px-3 md:px-6">
-        <button
-          type="button"
-          onClick={exit}
-          className="flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-lg border px-2 text-base font-medium hover:bg-hover"
-        >
-          <X className="h-5 w-5" /> <span className="hidden sm:inline">Quitter</span>
+        <button type="button" onClick={exit} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-primary-soft pl-2 pr-3 text-base font-medium text-foreground hover:border-primary">
+          <ChevronLeft className="h-5 w-5" /> {exitLabel}
         </button>
         <div className="min-w-0 flex-1">
           <h1 className="truncate font-serif text-h2 leading-tight">{recipe.name}</h1>

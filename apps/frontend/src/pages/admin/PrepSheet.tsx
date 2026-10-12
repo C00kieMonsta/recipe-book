@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CalendarDays, Check, ChefHat, ChevronDown, ChevronLeft, ChevronRight, Pencil, Scale, SlidersHorizontal, Square } from "lucide-react";
 import type { PrepStatus } from "@packages/types";
-import { courseBucket, courseOf, filterByPerson, parseYmd, prepLinesForDate } from "@packages/types";
+import { courseBucket, courseOf, filterByPerson, isoWeekOf, parseYmd, prepLinesForDate } from "@packages/types";
 import { usePlanningData } from "@/lib/use-planning-data";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { useMiseEnPlace } from "@/hooks/use-mise-en-place";
@@ -15,6 +15,8 @@ import { ActionMenu, RecipeReader, StatusControl } from "@/components/ui";
 type ReaderSize = "lead" | "xl";
 
 const ICON_BTN = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-foreground hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent";
+const BACK_BTN = "inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-primary-soft pl-2 pr-3 text-base font-medium text-foreground hover:border-primary";
+const WEEK_LINK = "inline-flex min-h-11 items-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline";
 const SWIPE_PX = 60;
 
 const shortDay = new Intl.DateTimeFormat("fr-BE", { weekday: "short", day: "numeric", timeZone: "UTC" });
@@ -221,6 +223,8 @@ export default function PrepSheet() {
 
   const client = event.clientId ? clientById.get(event.clientId) : undefined;
   const who = client?.name ?? event.name;
+  const weekUrl = `/semaine/${isoWeekOf(date)}`;
+  const weekNumber = Number(isoWeekOf(date).slice(-2));
   const course = courseBucket(courseOf(line, recipe), courses);
   const photo = recipe.photos?.[0]?.url;
   const status: PrepStatus = line.prepStatus ?? "todo";
@@ -258,12 +262,9 @@ export default function PrepSheet() {
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto print:overflow-visible">
         <div className="mx-auto max-w-doc px-4 pb-8 pt-2 md:px-6 xl:grid xl:max-w-wide xl:grid-cols-[minmax(0,44rem)_280px] xl:justify-center xl:gap-10">
         <div className="min-w-0">
-          <div className="no-print flex min-h-11 items-center gap-1">
-            <Link to={backUrl} aria-label="Retour au jour" className={`${ICON_BTN} -ml-3`}><ChevronLeft className="h-6 w-6" /></Link>
-            <Link to={backUrl} className="inline-flex min-h-11 min-w-0 items-center gap-1 text-sm text-muted-foreground hover:text-foreground hover:underline underline-offset-4">
-              <span className="shrink-0 whitespace-nowrap">{dayShortLabel(date)} ·</span>
-              <span className="truncate">{who}</span>
-            </Link>
+          <div className="no-print flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Link to={backUrl} className={BACK_BTN}><ChevronLeft className="h-5 w-5" /> {dayShortLabel(date)}</Link>
+            <Link to={weekUrl} className={`${WEEK_LINK} order-last basis-full md:order-none md:basis-auto`}>Semaine {weekNumber}</Link>
             <div className="ml-auto flex shrink-0 items-center">
               {prevUrl ? (
                 <Link to={prevUrl} state={{ from }} aria-label="Ligne précédente" className={ICON_BTN}><ChevronLeft className="h-5 w-5" /></Link>
@@ -296,7 +297,7 @@ export default function PrepSheet() {
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-lead">
-            <span><b>{line.portions} portions</b> · {course}</span>
+            <span><b>{line.portions} portions</b> · {course} · {who}</span>
             {activePeople && (
               <span className="relative inline-flex">
                 <PersonChips personIds={assignees} people={people} size="md" inherited={!own} onClick={() => setPickerOpen((o) => !o)} label={assignees.length ? undefined : "Attribuer"} />
