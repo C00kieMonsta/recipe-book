@@ -29,9 +29,9 @@ export default function LoginPage() {
       <div className="card-elevated w-full max-w-md p-8 animate-fade-up">
         <div className="flex flex-col items-center mb-8">
           <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center mb-4">
-            <span className="font-serif text-h2 font-bold text-primary-foreground">A</span>
+            <span className="text-h2 font-bold text-primary-foreground">A</span>
           </div>
-          <h1 className="font-serif text-h2 font-bold">La Table d'Amélie</h1>
+          <h1 className="text-h2 font-bold">La Table d'Amélie</h1>
           <p className="text-base text-muted-foreground mt-1">Connexion</p>
         </div>
 

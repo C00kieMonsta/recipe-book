@@ -35,7 +35,7 @@ export default function PageHeader({ breadcrumb, title, meta, actions, className
       )}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="font-serif text-h1 md:text-h1-lg">{title}</h1>
+          <h1 className="text-h1 md:text-h1-lg">{title}</h1>
           {meta && <div className="mt-1 text-base text-muted-foreground">{meta}</div>}
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}

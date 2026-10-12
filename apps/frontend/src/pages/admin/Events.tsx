@@ -86,7 +86,7 @@ export default function Events() {
               type="button"
               onClick={() => { setFilter(f.key); setPage(1); }}
               aria-pressed={filter === f.key}
-              className={`min-h-11 rounded-full border px-4 text-sm font-medium transition-colors ${filter === f.key ? "border-foreground bg-foreground text-background" : "border-border bg-card hover:bg-hover"}`}
+              className={`min-h-11 rounded-sm border px-4 text-sm font-medium transition-colors ${filter === f.key ? "border-foreground bg-active font-medium text-foreground" : "border-border bg-card hover:bg-hover"}`}
             >
               {f.label}
             </button>
@@ -115,7 +115,7 @@ export default function Events() {
       {paginatedItems.length === 0 ? (
         <p className="py-12 text-center text-base text-muted-foreground">Aucun événement</p>
       ) : (
-        <div className="divide-y divide-border/60">
+        <div className="divide-y divide-border">
           {paginatedItems.map((ev) => (
             <ListRow
               key={ev.eventId}

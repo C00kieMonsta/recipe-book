@@ -38,7 +38,7 @@ export default function MoneyTile({ label, value, sub, progress, to, className =
             <div className="h-1 rounded-full bg-primary" style={{ width: `${pct(progress.value, progress.max)}%` }} />
             {progress.ticks?.map((tick) => (
               <div key={tick.label} className="absolute top-0" style={{ left: `${pct(tick.value, progress.max)}%` }}>
-                <div className="-mt-1 h-3 w-px bg-foreground/60" />
+                <div className="-mt-1 h-3 w-px bg-divider" />
                 <div className="absolute left-0 mt-0.5 -translate-x-1/2 whitespace-nowrap text-caption text-muted-foreground">
                   {tick.label}
                 </div>

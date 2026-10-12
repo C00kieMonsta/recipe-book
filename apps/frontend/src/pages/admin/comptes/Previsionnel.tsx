@@ -378,7 +378,7 @@ export default function Previsionnel() {
             </SectionToggle>
 
             <SectionToggle title="Objectif par prestation" storageKey="previsionnel-prestations" defaultOpen>
-              <div className="divide-y divide-border/60">
+              <div className="divide-y divide-border">
                 {types.map((t) => {
                   const row = prestationRow(t.key);
                   return (
@@ -404,7 +404,7 @@ export default function Previsionnel() {
             </SectionToggle>
 
             <SectionToggle title="Investissements" storageKey="previsionnel-investments" defaultOpen>
-              <div className="divide-y divide-border/60">
+              <div className="divide-y divide-border">
                 {(objective.investments ?? []).map((inv, i) => (
                   <div key={i} className="flex flex-wrap items-center gap-2 py-2">
                     <input aria-label="Intitulé" className="input-field min-h-11 flex-1" value={inv.label} onChange={(e) => { const list = [...(objective.investments ?? [])]; list[i] = { ...inv, label: e.target.value }; patchObjective({ investments: list }); }} />
@@ -449,7 +449,7 @@ export default function Previsionnel() {
                 </thead>
                 <tbody>
                   {charges.map((c) => (
-                    <tr key={c.chargeId} className="border-t border-border/60">
+                    <tr key={c.chargeId} className="border-t border-border">
                       <td>
                         <input aria-label="Intitulé" className="input-field input-compact min-h-11 w-44" value={c.label} onChange={(e) => patchCharge(c.chargeId, { label: e.target.value })} />
                         {!inResultOf(c) && <div className="mt-1"><Tag variant="neutral">hors résultat</Tag></div>}

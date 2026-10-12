@@ -332,7 +332,7 @@ export default function GroceryListPage() {
                 onClick={() => selectList(l)}
                 title={l.title}
                 subtitle={[`${l.items.length} ingr.`, checkedCount > 0 ? `${checkedCount} cochés` : null, date].filter(Boolean).join(" · ")}
-                className={isActive ? "bg-primary-soft hover:bg-primary-soft" : ""}
+                className={isActive ? "bg-selected hover:bg-selected" : ""}
               />
             );
           })
@@ -451,7 +451,7 @@ export default function GroceryListPage() {
           {suppliers.map((supplier) => (
             <section
               key={supplier}
-              className={`mb-4 rounded-lg border transition-colors ${dropSupplier === supplier ? "border-primary bg-primary-soft/40" : "border-border/60"}`}
+              className={`mb-4 rounded-lg border transition-colors ${dropSupplier === supplier ? "border-primary bg-selected" : "border-border"}`}
               onDragOver={(e) => { e.preventDefault(); setDropSupplier(supplier); }}
               onDragLeave={() => setDropSupplier(null)}
               onDrop={(e) => { e.preventDefault(); handleDrop(supplier); }}
@@ -476,7 +476,7 @@ export default function GroceryListPage() {
                       className={`${dragIdx === gIdx ? "opacity-40" : ""} ${g.checked ? "opacity-60" : ""}`}
                     >
                       <div className="flex min-h-12 items-center gap-2 pr-2">
-                        <span className="pointer:flex hidden w-6 shrink-0 cursor-grab items-center justify-center self-stretch text-muted-foreground/50" aria-hidden="true">
+                        <span className="pointer:flex hidden w-6 shrink-0 cursor-grab items-center justify-center self-stretch text-placeholder" aria-hidden="true">
                           <GripVertical className="h-4 w-4" />
                         </span>
                         <button
@@ -497,7 +497,7 @@ export default function GroceryListPage() {
                           type="button"
                           onClick={() => toggleRow(key)}
                           aria-expanded={open}
-                          className={`min-h-11 shrink-0 rounded-lg border px-3 text-sm font-medium transition-colors ${open ? "border-primary bg-primary-soft" : "hover:bg-hover"}`}
+                          className={`min-h-11 shrink-0 rounded-lg border px-3 text-sm font-medium transition-colors ${open ? "border-primary bg-selected" : "hover:bg-hover"}`}
                         >
                           Stock
                         </button>
@@ -571,7 +571,7 @@ export default function GroceryListPage() {
         {mobileShowList || !editing ? (
           <div className="flex flex-1 flex-col overflow-hidden">
             <div className="border-b px-4 py-3">
-              <h1 className="font-serif text-h2">Listes de courses</h1>
+              <h1 className="text-h2">Listes de courses</h1>
             </div>
             {sidebar}
           </div>

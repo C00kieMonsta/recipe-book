@@ -1,51 +1,133 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 30 30% 97%;   --foreground: 20 20% 13%;
-    --card: 30 40% 99%;         --card-foreground: 20 20% 13%;
-    --popover: 30 40% 99%;      --popover-foreground: 20 20% 13%;
-    --surface: 30 20% 94%;      /* sidebar, tiles; foreground 14.21:1 */
-    --hover: 30 15% 93%;        /* row hover */
-    --muted: 30 15% 93%;        --muted-foreground: 20 10% 38%;   /* 5.85:1 on background, 6.09:1 on card */
-    --primary: 25 55% 41%;      --primary-foreground: 0 0% 100%;  /* 4.98:1 with white; 4.67:1 as text on background, 4.86:1 on card */
-    --primary-soft: 25 60% 93%; /* foreground on it 13.80:1; primary on it only 4.26:1, see rule below */
-    --secondary: 30 25% 90%;    --secondary-foreground: 20 25% 25%;
-    --accent: 25 60% 60%;       --accent-foreground: 20 20% 13%;  /* 6.10:1; accent is a tint, dark text only (white would be 2.64:1); unused today */
-    --success: 150 35% 30%;     --success-soft: 150 30% 92%;      /* 6.19:1 on background, 5.68:1 on its tint */
-    --warning: 35 75% 34%;      --warning-soft: 40 80% 92%;       /* 4.81:1, 4.54:1 on its tint */
-    --info: 210 30% 38%;        --info-soft: 210 40% 93%;         /* 6.04:1, 5.46:1 on its tint */
-    --destructive: 0 60% 42%;   --destructive-foreground: 0 0% 100%; --destructive-soft: 0 70% 94%;  /* 6.33:1, 5.59:1 on its tint */
-    --border: 30 20% 88%;       --input: 30 20% 80%;  --ring: 25 55% 41%;
-    --radius: 0.625rem;
-    --sidebar-background: 30 20% 94%;  --sidebar-foreground: 20 20% 13%;
-    --sidebar-primary: 25 55% 41%;     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 25 60% 90%;      --sidebar-accent-foreground: 20 20% 13%;  /* 12.93:1 */
-    --sidebar-border: 30 20% 86%;      --sidebar-ring: 25 55% 41%;
+    /* Surfaces */
+    --background: #ffffff;
+    --sidebar: #f7f7f5;
+    --sidebar-hover: rgba(55, 53, 47, 0.06);
+    --sidebar-active: rgba(55, 53, 47, 0.08);
+    --surface: #f7f7f5;                 /* stat rows, cook ingredient pane, sheet header */
+    --callout: #f1f1ef;                 /* callout block */
+    --muted: #f1f1ef;                   /* gray tag, thumbnails, avatar circles */
+    --input-bg: rgba(242, 241, 238, 0.6);
+    --hover: rgba(55, 53, 47, 0.08);
+    --active: rgba(55, 53, 47, 0.08);   /* pressed state, current pagination page */
+    --selected: rgba(35, 131, 226, 0.07);
+    --overlay: rgba(15, 15, 15, 0.6);
+
+    /* Text */
+    --foreground: #37352f;
+    --muted-foreground: #787774;        /* rgba(55,53,47,0.65) on white */
+    --placeholder: rgba(55, 53, 47, 0.4);
+    --icon: rgba(55, 53, 47, 0.45);     /* chevrons, drag handles, toolbar glyphs */
+
+    /* Lines */
+    --border: rgba(55, 53, 47, 0.09);   /* hairline: row dividers, toolbar bottom, cards */
+    --divider: rgba(55, 53, 47, 0.16);  /* stronger: table head, footer totals, outlined buttons */
+    --input: rgba(55, 53, 47, 0.16);
+
+    /* Primary */
+    --primary: #2383e2;
+    --primary-hover: #0077d4;
+    --primary-foreground: #ffffff;
+    --link: #2383e2;
+
+    /* Semantic (text / tint) */
+    --success: #448361;  --success-soft: #edf3ec;
+    --warning: #d9730d;  --warning-soft: #fbecdd;
+    --info: #337ea9;     --info-soft: #e7f3f8;
+    --danger: #d44c47;   --danger-soft: #fdebec;  --danger-solid: #eb5757;
+
+    /* Pastel tags (bg / fg) */
+    --tag-gray-bg: #f1f1ef;    --tag-gray-fg: #32302c;
+    --tag-brown-bg: #f4eeee;   --tag-brown-fg: #64473a;
+    --tag-orange-bg: #fbecdd;  --tag-orange-fg: #d9730d;
+    --tag-yellow-bg: #fbf3db;  --tag-yellow-fg: #dfab01;
+    --tag-green-bg: #edf3ec;   --tag-green-fg: #448361;
+    --tag-blue-bg: #e7f3f8;    --tag-blue-fg: #337ea9;
+    --tag-purple-bg: #f6f3f9;  --tag-purple-fg: #9065b0;
+    --tag-pink-bg: #faf1f5;    --tag-pink-fg: #c14c8a;
+    --tag-red-bg: #fdebec;     --tag-red-fg: #d44c47;
+
+    /* Prep status (dot colour; the pill uses the tag pairs) */
+    --status-todo: rgba(55, 53, 47, 0.45);   /* hollow circle stroke */
+    --status-doing: #337ea9;                 /* filled, pill = tag-blue */
+    --status-done: #448361;                  /* filled + white check, pill = tag-green */
+
+    /* Shape */
+    --radius: 6px;                           /* controls */
+    --radius-tag: 3px;
+    --radius-menu: 6px;
+    --radius-dialog: 10px;
+    --radius-sheet: 12px;
+
+    /* Shadows */
+    --shadow-hairline: 0 0 0 1px rgba(55, 53, 47, 0.09);
+    --shadow-outline: 0 0 0 1px rgba(55, 53, 47, 0.16);
+    --shadow-input: inset 0 0 0 1px rgba(55, 53, 47, 0.16);
+    --shadow-card: rgba(15, 15, 15, 0.1) 0 0 0 1px, rgba(15, 15, 15, 0.1) 0 2px 4px;
+    --shadow-menu: rgba(15, 15, 15, 0.05) 0 0 0 1px, rgba(15, 15, 15, 0.1) 0 3px 6px, rgba(15, 15, 15, 0.2) 0 9px 24px;
+    --shadow-dialog: rgba(15, 15, 15, 0.05) 0 0 0 1px, rgba(15, 15, 15, 0.1) 0 5px 10px, rgba(15, 15, 15, 0.2) 0 15px 40px;
+    --shadow-ring: rgba(35, 131, 226, 0.57) 0 0 0 1px inset, rgba(35, 131, 226, 0.14) 0 0 0 3px;
+
+    /* Type */
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+
+    /* Sizes */
+    --control-sm: 28px;    /* toolbar controls, menu rows, desktop */
+    --control-md: 32px;    /* buttons with text, inputs in forms, desktop */
+    --control-lg: 36px;    /* primary action, login button, desktop */
+    --control-touch: 44px; /* every control on (hover: none) */
+    --sidebar-w: 240px;
+    --topbar-h: 44px;
   }
 }
 
 @layer base {
-  html { font-size: 16px; }
+  html { font-size: 16px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   * { @apply border-border; }
-  body { @apply bg-background text-foreground font-sans antialiased text-base; }
+  body { @apply bg-background text-foreground font-sans text-base; }
+  ::placeholder { color: var(--placeholder); }
+  ::selection { background: rgba(35, 131, 226, 0.28); }
+  h1, h2, h3 { @apply font-semibold; }
+  a { color: inherit; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  select { background-color: transparent; }
 }
 
 @layer components {
-  .card-elevated { @apply bg-card rounded-xl border border-border/60; }   /* tiles and gallery cards only */
-  .input-field { @apply w-full px-3 py-2.5 border border-input rounded-lg text-base bg-card focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none; }
-  .input-compact { @apply px-2 py-1.5 text-sm; }
-  .reveal { @apply pointer:opacity-0 pointer:group-hover:opacity-100 touch:opacity-70; }
-  .table { @apply w-full text-sm tabular-nums; }                           /* plain tables, see rules below */
-  .table th, .table td { @apply min-h-11 px-3 py-2.5 text-left align-middle; }
-  .table tfoot td { @apply font-semibold border-t border-border; }
-  .animate-fade-up { animation: fadeUp 0.6s ease-out forwards; }
-  .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
-  .rail-label { @apply block w-full text-center text-caption leading-tight; }   /* label under the icon in the 84px sidebar rail */
+  /* Old names kept so the 34 card callers and 147 input callers compile on day one. */
+  .card { @apply rounded-lg bg-background shadow-card; }
+  .card-elevated { @apply card; }
+  .input-field { @apply h-8 w-full rounded-lg bg-input-bg px-2 text-sm shadow-input outline-none placeholder:text-placeholder focus:shadow-ring touch:h-11 touch:text-base; }
+  textarea.input-field { @apply h-auto min-h-20 py-1.5 leading-normal; }
+  select.input-field {
+    @apply appearance-none pr-7 bg-no-repeat bg-[length:12px_12px] bg-[right_8px_center];
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23787774' stroke-width='2'><path d='m6 9 6 6 6-6'/></svg>");
+  }
+  .input-compact { @apply h-7 text-sm; }
+  /* Hover-revealed actions; always visible on touch. */
+  .reveal { @apply pointer:opacity-0 pointer:group-hover:opacity-100 pointer:group-focus-within:opacity-100 pointer:focus-visible:opacity-100 touch:opacity-100; }
+  /* Database row. */
+  .row { @apply flex min-h-9 items-center gap-2 rounded px-2 text-sm hover:bg-hover touch:min-h-11 touch:text-base; }
+  /* Inline-editable value: hover background, no border. */
+  .prop-value { @apply -mx-1.5 cursor-text rounded px-1.5 hover:bg-hover; }
+  /* Callout block. */
+  .callout { @apply rounded-lg bg-callout px-4 py-3; }
+  /* Database table. */
+  .table { @apply w-full text-sm tabular-nums; }
+  .table th { @apply h-9 border-b border-divider px-2 text-left align-middle text-sm font-medium text-muted-foreground; }
+  .table td { @apply h-9 border-b border-border px-2 align-middle touch:h-11; }
+  .table tbody tr:hover td { background: var(--hover); }
+  .table tfoot td { @apply border-b-0 border-t border-divider font-semibold; }
+  .animate-pop { animation: pop 120ms ease-out forwards; }
+  .animate-fade-in { animation: fadeIn 150ms ease-out forwards; }
+  .animate-fade-up { animation: fadeIn 150ms ease-out forwards; }   /* alias for the 13 old callers */
+  .animate-sheet { animation: sheetUp 200ms ease-out forwards; }
+  .rail-label { display: none; }                                       /* rail removed */
 }
 
 @page { margin: 12mm; }
@@ -54,8 +136,9 @@
   aside, nav, .no-print { display: none !important; }
   body { font-size: 12pt; }
   .print-break { break-before: page; }
-  [aria-haspopup="dialog"] .border-dashed { display: none !important; }   /* empty assignment chips */
+  [aria-haspopup="dialog"] .border-dashed { display: none !important; }
 }
 
-@keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pop { from { opacity: 0; transform: translateY(-2px) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }

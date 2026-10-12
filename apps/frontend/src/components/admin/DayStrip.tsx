@@ -32,7 +32,7 @@ export default function DayStrip({ dates, counts, today, selected, href, state, 
             state={state}
             aria-label={longDay.format(parseYmd(date))}
             aria-current={isSelected ? "page" : isToday ? "date" : undefined}
-            className={`relative flex min-h-11 flex-col items-center justify-center rounded-lg leading-none ${isToday ? "bg-primary-soft" : "hover:bg-hover"} ${isSelected ? "font-semibold after:absolute after:inset-x-2 after:bottom-0 after:h-[3px] after:rounded-full after:bg-primary" : ""}`}
+            className={`relative flex min-h-11 flex-col items-center justify-center rounded-lg leading-none ${isToday ? "bg-selected" : "hover:bg-hover"} ${isSelected ? "font-semibold after:absolute after:inset-x-2 after:bottom-0 after:h-[3px] after:rounded-full after:bg-primary" : ""}`}
           >
             <span className={`text-caption leading-none ${isSelected ? "text-foreground" : "text-muted-foreground"}`}>{LETTERS[i]}</span>
             <span className="text-base font-semibold leading-none tabular-nums">{Number(date.slice(8, 10))}</span>

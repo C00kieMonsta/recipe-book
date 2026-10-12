@@ -326,9 +326,9 @@ export default function RecipeDetail() {
       )}
 
       {deleteConfirm && (
-        <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setDeleteConfirm(false)}>
+        <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50" onClick={() => setDeleteConfirm(false)}>
           <div className="bg-card rounded-2xl p-7 max-w-sm w-[92%] shadow-xl animate-fade-up text-center" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-serif text-h3 mb-2">Confirmer la suppression</h3>
+            <h3 className="text-h3 mb-2">Confirmer la suppression</h3>
             <p className="text-muted-foreground text-base mb-6">Cette action est irréversible.</p>
             <div className="flex gap-3 justify-center">
               <button onClick={() => setDeleteConfirm(false)} className={BTN_OUTLINE}>Annuler</button>
@@ -380,7 +380,7 @@ export default function RecipeDetail() {
             aria-pressed={readerSize === "xl"}
             aria-label="Agrandir le texte"
             title="Taille du texte"
-            className={`${BTN_OUTLINE} min-w-11 px-3 font-serif ${readerSize === "xl" ? "bg-primary-soft" : ""}`}
+            className={`${BTN_OUTLINE} min-w-11 px-3 ${readerSize === "xl" ? "bg-selected" : ""}`}
           >
             Aa
           </button>
@@ -438,8 +438,8 @@ export default function RecipeDetail() {
           <EditableText
             value={recipe.name}
             onSave={(v) => saveRecipeField({ name: v })}
-            className="font-serif text-h1 mb-2"
-            inputClassName="font-serif text-h1 mb-2 w-full border-b-2 border-primary bg-transparent outline-none"
+            className="text-h1 mb-2"
+            inputClassName="text-h1 mb-2 w-full border-b-2 border-primary bg-transparent outline-none"
           />
           <EditableText
             value={recipe.description || ""}
@@ -482,7 +482,7 @@ export default function RecipeDetail() {
             <ol className="space-y-2">
               {recipe.techniques.map((t, i) => (
                 <li key={i} className="group flex gap-2 sm:gap-3 items-start text-base leading-relaxed">
-                  <span className="w-7 h-7 rounded-full bg-primary-soft text-foreground flex items-center justify-center text-sm font-semibold shrink-0 mt-0.5">{i + 1}</span>
+                  <span className="w-7 h-7 rounded-full bg-muted text-foreground flex items-center justify-center text-sm font-semibold shrink-0 mt-0.5">{i + 1}</span>
                   {editingStep === i ? (
                     <div className="flex-1 flex flex-col gap-2">
                       <textarea

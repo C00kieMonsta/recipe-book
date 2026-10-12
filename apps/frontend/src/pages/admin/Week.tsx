@@ -395,7 +395,7 @@ export default function Week() {
               type="button"
               aria-pressed={view === v}
               onClick={() => setView(v)}
-              className={`min-h-10 rounded-md px-3 text-base font-medium ${view === v ? "bg-foreground text-background" : "text-muted-foreground hover:bg-hover"}`}
+              className={`min-h-10 rounded-md px-3 text-base font-medium ${view === v ? "bg-active font-medium text-foreground" : "text-muted-foreground hover:bg-hover"}`}
             >
               {v === "lines" ? "Lignes" : "Événements"}
             </button>
@@ -439,7 +439,7 @@ export default function Week() {
             const dayPeople = plan.peopleByDay[day.date] ?? [];
             return (
               <div key={day.date} className="min-w-0 max-h-[calc(100dvh-300px)] overflow-y-auto rounded-lg">
-                <div className={`relative sticky top-0 z-10 min-h-[72px] rounded-lg px-2 py-1.5 ${isToday ? "bg-primary-soft" : "bg-background"}`}>
+                <div className={`relative sticky top-0 z-10 min-h-[72px] rounded-lg px-2 py-1.5 ${isToday ? "bg-selected" : "bg-background"}`}>
                   <Link to={dayUrl(day.date)} state={state} className="block min-w-0 rounded hover:underline underline-offset-4">
                     <div className="pr-9 text-h3">{dayLabel(day.date)}</div>
                     <div className={`truncate text-sm ${isToday ? "" : "text-muted-foreground"}`}>{dayMeta(day, true)}</div>
@@ -544,7 +544,7 @@ export default function Week() {
               const empty = day.events.length === 0;
               return (
                 <section key={day.date} ref={(el) => { dayRefs.current[day.date] = el; }} className="scroll-mt-14">
-                  <div className={`sticky top-[56px] z-10 -mx-4 flex min-h-12 items-center gap-2 px-4 ${isToday ? "bg-primary-soft" : "bg-background"}`}>
+                  <div className={`sticky top-[56px] z-10 -mx-4 flex min-h-12 items-center gap-2 px-4 ${isToday ? "bg-selected" : "bg-background"}`}>
                     <Link to={dayUrl(day.date)} state={state} className="flex min-h-12 min-w-0 flex-1 items-center gap-2">
                       <span className="w-16 shrink-0 text-base font-medium">{dayLabel(day.date)}</span>
                       <span className={`min-w-0 truncate text-sm ${empty ? "text-muted-foreground" : isToday ? "" : "text-muted-foreground"}`}>
@@ -606,7 +606,7 @@ export default function Week() {
 
       {/* Print */}
       <div className="hidden print:block">
-        <h1 className="font-serif text-h1">Semaine {weekNo} · {rangeLabel(dates[0], dates[6])}</h1>
+        <h1 className="text-h1">Semaine {weekNo} · {rangeLabel(dates[0], dates[6])}</h1>
         {printMode === "week" ? (
           <WeekPrint days={plan.days} people={people} courses={courses} recipeById={recipeById} clientOf={clientOf} dayMeta={dayMeta} />
         ) : (
@@ -616,7 +616,7 @@ export default function Week() {
 
       {/* Phone menu sheet */}
       {menuOpen && (
-        <div className="fixed inset-0 z-50 flex items-end bg-foreground/30 xl:hidden" role="presentation" onClick={() => setMenuOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-end bg-overlay xl:hidden" role="presentation" onClick={() => setMenuOpen(false)}>
           <div role="dialog" aria-label="Actions" onClick={(e) => e.stopPropagation()} className="w-full rounded-t-2xl bg-card p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-xl animate-fade-up">
             <div className="flex items-center justify-between px-3 py-1">
               <span className="text-base font-semibold">Semaine {weekNo}</span>
@@ -655,7 +655,7 @@ export default function Week() {
 
       {/* Create week sheet */}
       {sheet && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/30 p-4 md:items-center" onClick={() => !busy && setSheet(null)}>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-overlay p-4 md:items-center" onClick={() => !busy && setSheet(null)}>
           <form
             className="card-elevated w-full max-w-md p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}

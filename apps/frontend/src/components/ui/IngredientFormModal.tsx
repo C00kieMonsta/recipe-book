@@ -37,9 +37,9 @@ export default function IngredientFormModal({ ingredient, supplierNames, onSave,
   }, [isCreate, form.name, existingKeys]);
 
   return (
-    <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={onCancel}>
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50" onClick={onCancel}>
       <div className="bg-card rounded-2xl p-7 max-w-lg w-[92%] max-h-[90vh] overflow-auto shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
-        <h2 className="font-serif text-h2 mb-4">{isCreate ? "Nouvel ingrédient" : "Modifier l'ingrédient"}</h2>
+        <h2 className="text-h2 mb-4">{isCreate ? "Nouvel ingrédient" : "Modifier l'ingrédient"}</h2>
 
         <FieldLabel htmlFor="ingredient-name" className="mt-3">Nom</FieldLabel>
         <input id="ingredient-name" className="input-field" value={form.name || ""} onChange={(e) => u("name", e.target.value)} autoFocus />
@@ -86,7 +86,7 @@ export default function IngredientFormModal({ ingredient, supplierNames, onSave,
         <div className="flex justify-between mt-6 gap-2 flex-wrap">
           <div>
             {onDelete && (
-              <button type="button" onClick={onDelete} className="inline-flex items-center gap-1.5 min-h-11 px-3 border border-destructive/40 text-destructive rounded-lg text-sm font-medium">
+              <button type="button" onClick={onDelete} className="inline-flex items-center gap-1.5 min-h-11 px-3 border shadow-outline text-danger text-destructive rounded-lg text-sm font-medium">
                 <Trash2 className="h-4 w-4" /> Supprimer
               </button>
             )}

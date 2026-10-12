@@ -132,12 +132,12 @@ export default function Clients() {
           {clients.length === 0 ? "Aucun client pour l'instant." : "Aucun client ne correspond."}
         </p>
       ) : (
-        <div className="mt-4 divide-y divide-border/60">{active.map(row)}</div>
+        <div className="mt-4 divide-y divide-border">{active.map(row)}</div>
       )}
 
       {archived.length > 0 && (
         <SectionToggle title={`Archivés (${archived.length})`} storageKey="clients-archived">
-          <div className="divide-y divide-border/60">{archived.map(row)}</div>
+          <div className="divide-y divide-border">{archived.map(row)}</div>
         </SectionToggle>
       )}
     </div>

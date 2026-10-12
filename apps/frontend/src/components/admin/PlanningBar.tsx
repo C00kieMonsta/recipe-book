@@ -7,7 +7,7 @@ import WeekPicker from "@/components/admin/WeekPicker";
 const ICON_BTN = "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-foreground hover:bg-hover";
 const TODAY_BTN = "inline-flex min-h-11 shrink-0 items-center rounded-lg px-2 text-base font-medium text-primary hover:bg-hover";
 // Hidden on phones, where the top bar already carries the same back link.
-const BACK_BTN = "hidden md:inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-primary-soft pl-2 pr-3 text-base font-medium text-foreground hover:opacity-90";
+const BACK_BTN = "hidden md:inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-muted pl-2 pr-3 text-base font-medium text-foreground hover:opacity-90";
 
 interface Common {
   // The seven dates of the week shown in the strip.
@@ -63,7 +63,7 @@ export default function PlanningBar(props: PlanningBarProps) {
       type="button"
       aria-pressed={active}
       onClick={active ? undefined : onClick}
-      className={`min-h-11 rounded-md px-3 text-base font-medium ${active ? "bg-foreground text-background" : "text-muted-foreground hover:bg-hover"}`}
+      className={`min-h-11 rounded-md px-3 text-base font-medium ${active ? "bg-active font-medium text-foreground" : "text-muted-foreground hover:bg-hover"}`}
     >
       {label}
     </button>
@@ -86,7 +86,7 @@ export default function PlanningBar(props: PlanningBarProps) {
         {isWeek ? (
           <div className="flex shrink-0 items-center">
             <Link to={props.prevHref} state={linkState} aria-label="Semaine précédente" className={ICON_BTN}><ChevronLeft className="h-6 w-6" /></Link>
-            <h1 className="whitespace-nowrap px-1 font-serif text-h2">Semaine {weekNo}</h1>
+            <h1 className="whitespace-nowrap px-1 text-h2">Semaine {weekNo}</h1>
             <Link to={props.nextHref} state={linkState} aria-label="Semaine suivante" className={ICON_BTN}><ChevronRight className="h-6 w-6" /></Link>
           </div>
         ) : (

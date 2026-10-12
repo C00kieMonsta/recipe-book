@@ -415,7 +415,7 @@ export default function Day() {
                         type="button"
                         aria-pressed={mode === m.value}
                         onClick={() => setParam("mode", m.value === "evenement" ? null : m.value)}
-                        className={`min-h-10 whitespace-nowrap rounded-md px-3 text-base font-medium ${mode === m.value ? "bg-foreground text-background" : "text-muted-foreground hover:bg-hover"}`}
+                        className={`min-h-10 whitespace-nowrap rounded-md px-3 text-base font-medium ${mode === m.value ? "bg-active font-medium text-foreground" : "text-muted-foreground hover:bg-hover"}`}
                       >
                         {m.label}
                       </button>

@@ -460,7 +460,7 @@ export default function EventEditor() {
                       type="button"
                       aria-pressed={on}
                       onClick={() => setAssignedTo(on ? assignedTo.filter((id) => id !== p.personId) : [...assignedTo, p.personId])}
-                      className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-3 pl-1.5 text-base ${on ? "border-primary bg-primary-soft font-medium" : "border-border hover:bg-hover"}`}
+                      className={`inline-flex min-h-11 items-center gap-2 rounded-sm border px-3 pl-1.5 text-base ${on ? "border-primary bg-selected font-medium" : "border-border hover:bg-hover"}`}
                     >
                       <PersonChip personId={p.personId} people={people} size="md" />
                       {p.name}

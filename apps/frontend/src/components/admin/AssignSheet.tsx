@@ -36,7 +36,7 @@ export default function AssignSheet({ days, people, clientById, recipeById, cour
   const toggleLine = (ev: AppEvent, line: EventRecipeLine, id: string) => onLine(ev.eventId, line.lineId, toggled(assigneesOf(line, ev), id));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-foreground/30 md:items-center md:p-4" role="presentation" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-overlay md:items-center md:p-4" role="presentation" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
@@ -72,7 +72,7 @@ export default function AssignSheet({ days, people, clientById, recipeById, cour
                               aria-pressed={on}
                               title={p.name}
                               onClick={() => toggleEvent(ev, p.personId)}
-                              className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border pl-1 pr-3 text-base ${on ? "border-primary bg-primary-soft" : "border-input bg-card hover:bg-hover"}`}
+                              className={`inline-flex min-h-11 items-center gap-1.5 rounded-sm border pl-1 pr-3 text-base ${on ? "border-primary bg-selected" : "border-input bg-card hover:bg-hover"}`}
                             >
                               <PersonChip personId={p.personId} people={people} size="md" />
                               {p.name}
@@ -106,7 +106,7 @@ export default function AssignSheet({ days, people, clientById, recipeById, cour
                                     onClick={() => toggleLine(ev, line, p.personId)}
                                     className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg ${on ? (own ? "" : "opacity-50") : "opacity-40 hover:opacity-100"} hover:bg-hover`}
                                   >
-                                    <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-caption font-semibold leading-none ${on ? "bg-primary-soft text-foreground" : "border border-dashed border-muted-foreground text-muted-foreground"}`}>
+                                    <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-caption font-semibold leading-none ${on ? "bg-selected text-foreground" : "border border-dashed border-muted-foreground text-muted-foreground"}`}>
                                       {personInitials(p)}
                                     </span>
                                   </button>

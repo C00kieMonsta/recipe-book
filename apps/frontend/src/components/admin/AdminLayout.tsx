@@ -1,6 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Navigate, Outlet, useOutletContext } from "react-router-dom";
+import { ChevronsRight } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useLocalStorage } from "@/hooks/use-local-storage";
+import { IconButton } from "@/components/ui/Button";
 import AdminSidebar from "./AdminSidebar";
 
 export interface BackTo {
@@ -15,16 +18,19 @@ export interface AdminLayoutContext {
   setHideChrome: (on: boolean) => void;
   backTo: BackTo | null;
   setBackTo: (backTo: BackTo | null) => void;
+  topTitle: string | null;
+  setTopTitle: (title: string | null) => void;
 }
 
 export interface ChromeState {
   hideChrome: boolean;
   fullBleed: boolean;
   backTo: BackTo | null;
+  topTitle: string | null;
 }
 
 // Read by the sidebar and top bar; pages write through the outlet context hooks below.
-export const ChromeContext = createContext<ChromeState>({ hideChrome: false, fullBleed: false, backTo: null });
+export const ChromeContext = createContext<ChromeState>({ hideChrome: false, fullBleed: false, backTo: null, topTitle: null });
 
 export function useChrome(): ChromeState {
   return useContext(ChromeContext);
@@ -59,30 +65,53 @@ export function useBackLink(backTo: BackTo | null) {
   }, [to, label, setBackTo]);
 }
 
+// Pages call this to show their title centred in the phone top bar while mounted.
+export function useTopTitle(title: string) {
+  const { setTopTitle } = useOutletContext<AdminLayoutContext>();
+  useEffect(() => {
+    setTopTitle(title || null);
+    return () => setTopTitle(null);
+  }, [title, setTopTitle]);
+}
+
+const SIDEBAR_KEY = "recipe-book:sidebar-collapsed";
+
 export default function AdminLayout() {
   const { isAuthenticated } = useAuth();
   const [fullBleed, setFullBleedState] = useState(false);
   const [hideChrome, setHideChromeState] = useState(false);
   const [backTo, setBackToState] = useState<BackTo | null>(null);
+  const [topTitle, setTopTitleState] = useState<string | null>(null);
+  const [collapsedPref, setCollapsedPref] = useLocalStorage<boolean | null>(SIDEBAR_KEY, null);
+  const collapsed = collapsedPref === true;
   const setFullBleed = useCallback((on: boolean) => setFullBleedState(on), []);
   const setHideChrome = useCallback((on: boolean) => setHideChromeState(on), []);
   const setBackTo = useCallback((next: BackTo | null) => setBackToState(next), []);
+  const setTopTitle = useCallback((next: string | null) => setTopTitleState(next), []);
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
+  const padding = fullBleed ? "px-4 pb-8 md:px-6 md:pt-6" : "px-4 pb-8 md:px-12 md:pt-10 xl:px-24";
+  const phoneTop = hideChrome ? "pt-0" : "pt-[56px]";
+
   return (
-    <ChromeContext.Provider value={{ hideChrome, fullBleed, backTo }}>
+    <ChromeContext.Provider value={{ hideChrome, fullBleed, backTo, topTitle }}>
       <div className="flex min-h-screen">
-        <AdminSidebar hidden={hideChrome} />
-        <main
-          className={`flex-1 min-w-0 bg-background overflow-auto ${hideChrome ? "pt-0" : "pt-[68px] md:pt-0"} ${
-            fullBleed ? "" : "px-4 pb-4 md:px-8 md:pb-8 md:pt-8"
-          }`}
-        >
+        <AdminSidebar hidden={hideChrome} collapsed={collapsed} onCollapse={() => setCollapsedPref(true)} />
+        {!hideChrome && collapsed && (
+          <IconButton
+            size="sm"
+            aria-label="Afficher le menu"
+            className="fixed left-2 top-2 z-30 hidden md:inline-flex"
+            onClick={() => setCollapsedPref(false)}
+            icon={<ChevronsRight />}
+          />
+        )}
+        <main className={`flex-1 min-w-0 bg-background ${phoneTop} ${padding}`}>
           <Outlet
-            context={{ fullBleed, setFullBleed, hideChrome, setHideChrome, backTo, setBackTo } satisfies AdminLayoutContext}
+            context={{ fullBleed, setFullBleed, hideChrome, setHideChrome, backTo, setBackTo, topTitle, setTopTitle } satisfies AdminLayoutContext}
           />
         </main>
       </div>

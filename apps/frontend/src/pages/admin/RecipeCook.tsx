@@ -124,13 +124,13 @@ export default function RecipeCook() {
   const ingredientById = useMemo(() => new Map(ingredients.map((i) => [i.ingredientId, i])), [ingredients]);
 
   if (loading) {
-    return <div className="fixed inset-0 bg-background flex items-center justify-center text-h2 font-serif text-muted-foreground">Chargement…</div>;
+    return <div className="fixed inset-0 bg-background flex items-center justify-center text-h2 text-muted-foreground">Chargement…</div>;
   }
   if (error || !recipe) {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background p-6">
         <p className="text-lead text-muted-foreground">Recette introuvable.</p>
-        <button type="button" onClick={exit} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-primary-soft pl-2 pr-3 text-base font-medium text-foreground hover:border-primary"><ChevronLeft className="h-5 w-5" /> {exitLabel}</button>
+        <button type="button" onClick={exit} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-muted pl-2 pr-3 text-base font-medium text-foreground hover:border-primary"><ChevronLeft className="h-5 w-5" /> {exitLabel}</button>
       </div>
     );
   }
@@ -220,11 +220,11 @@ export default function RecipeCook() {
   return (
     <div className="fixed inset-0 flex flex-col bg-background select-text">
       <header className="flex h-16 shrink-0 items-center gap-3 border-b bg-card px-3 md:px-6">
-        <button type="button" onClick={exit} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-primary-soft pl-2 pr-3 text-base font-medium text-foreground hover:border-primary">
+        <button type="button" onClick={exit} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-muted pl-2 pr-3 text-base font-medium text-foreground hover:border-primary">
           <ChevronLeft className="h-5 w-5" /> {exitLabel}
         </button>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate font-serif text-h2 leading-tight">{recipe.name}</h1>
+          <h1 className="truncate text-h2 leading-tight">{recipe.name}</h1>
           {(contextName || cookPortions !== recipe.portions) && (
             <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
           )}
@@ -255,7 +255,7 @@ export default function RecipeCook() {
         >
           {totalSteps === 0 ? (
             <div className="mx-auto max-w-doc">
-              <p className="font-serif text-cook">Pas d'étapes</p>
+              <p className="text-cook">Pas d'étapes</p>
               <p className="mt-2 text-lead text-muted-foreground">Cette recette n'a pas encore d'étapes de préparation.</p>
             </div>
           ) : (
@@ -267,7 +267,7 @@ export default function RecipeCook() {
                     <span className="font-semibold">{step}.</span> <StepText step={prevStep} ratio={stepRatio} />
                   </p>
                 )}
-                <p className="whitespace-pre-wrap font-serif text-cook text-foreground">
+                <p className="whitespace-pre-wrap text-cook text-foreground">
                   <span className="mr-2 text-muted-foreground">{step + 1}.</span>
                   <StepText step={recipe.techniques[step]} ratio={stepRatio} />
                 </p>
@@ -284,7 +284,7 @@ export default function RecipeCook() {
                           type="button"
                           onClick={() => setStep(i)}
                           aria-current={current ? "step" : undefined}
-                          className={`flex w-full gap-4 rounded-lg text-left transition-colors ${current ? "font-serif text-cook md:text-cook-lg text-foreground" : "text-lead text-muted-foreground hover:text-foreground"}`}
+                          className={`flex w-full gap-4 rounded-lg text-left transition-colors ${current ? "text-cook md:text-cook-lg text-foreground" : "text-lead text-muted-foreground hover:text-foreground"}`}
                         >
                           <span className={`shrink-0 tabular-nums ${current ? "" : "pt-0.5"}`}>{i + 1}.</span>
                           <span className="min-w-0 flex-1 whitespace-pre-wrap"><StepText step={t} ratio={stepRatio} /></span>
@@ -330,7 +330,7 @@ export default function RecipeCook() {
       </footer>
 
       {sheetOpen && (
-        <div className="fixed inset-0 z-50 flex items-end bg-foreground/30 md:hidden" onClick={() => setSheetOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-end bg-overlay md:hidden" onClick={() => setSheetOpen(false)}>
           <div
             role="dialog"
             aria-label="Ingrédients"

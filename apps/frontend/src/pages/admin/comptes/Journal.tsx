@@ -41,7 +41,7 @@ function money(n: number): string {
 // Full-screen sheet on phones, centred dialog on larger screens.
 function Sheet({ children, onClose, wide }: { children: ReactNode; onClose: () => void; wide?: boolean }) {
   return (
-    <div className="fixed inset-0 z-50 bg-card md:flex md:items-center md:justify-center md:bg-foreground/30 md:backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-card md:flex md:items-center md:justify-center md:bg-overlay md:" onClick={onClose}>
       <div
         className={`h-full w-full overflow-auto p-4 md:h-auto md:max-h-[90vh] md:rounded-2xl md:bg-card md:p-7 md:shadow-xl ${wide ? "md:w-[92%] md:max-w-3xl" : "md:w-[92%] md:max-w-lg"}`}
         onClick={(e) => e.stopPropagation()}
@@ -258,7 +258,7 @@ export default function Journal() {
             type="button"
             role="tab"
             aria-selected={book === b}
-            className={`min-h-10 rounded-md px-4 text-base ${book === b ? "bg-primary-soft font-medium" : "text-muted-foreground hover:text-foreground"}`}
+            className={`min-h-10 rounded-md px-4 text-base ${book === b ? "bg-selected font-medium" : "text-muted-foreground hover:text-foreground"}`}
             onClick={() => setParam({ book: b, filtre: null, kind: null, type: null })}
           >
             {b === "ventes" ? "Ventes" : "Achats"}
@@ -316,7 +316,7 @@ export default function Journal() {
         </thead>
         <tbody>
           {shown.map((e) => (
-            <tr key={e.entryId} className="cursor-pointer border-t border-border/60 hover:bg-hover" onClick={() => setForm({ entry: e })}>
+            <tr key={e.entryId} className="cursor-pointer border-t border-border hover:bg-hover" onClick={() => setForm({ entry: e })}>
               <td className="whitespace-nowrap">{e.number ?? ""}</td>
               <td className="whitespace-nowrap">{fmtDateFr(e.date)}</td>
               <td>
@@ -395,7 +395,7 @@ export default function Journal() {
         </thead>
         <tbody>
           {shown.map((e) => (
-            <tr key={e.entryId} className="cursor-pointer border-t border-border/60 hover:bg-hover" onClick={() => setForm({ entry: e })}>
+            <tr key={e.entryId} className="cursor-pointer border-t border-border hover:bg-hover" onClick={() => setForm({ entry: e })}>
               <td className="whitespace-nowrap">{fmtDateFr(e.date)}</td>
               <td className="font-medium">{e.label}</td>
               <td>{kindLabel(e)}</td>
@@ -500,7 +500,7 @@ export default function Journal() {
             key={c.key}
             type="button"
             aria-pressed={filter === c.key}
-            className={`min-h-11 rounded-full border px-4 text-base ${filter === c.key ? "border-primary bg-primary-soft font-medium" : "border-border hover:bg-hover"}`}
+            className={`min-h-11 rounded-sm border px-4 text-base ${filter === c.key ? "border-primary bg-selected font-medium" : "border-border hover:bg-hover"}`}
             onClick={() => setParam({ filtre: c.key === "tous" ? null : c.key, kind: null })}
           >
             {c.label}
@@ -510,7 +510,7 @@ export default function Journal() {
           <button
             type="button"
             aria-pressed="true"
-            className="inline-flex min-h-11 items-center gap-2 rounded-full border border-primary bg-primary-soft px-4 text-base font-medium"
+            className="inline-flex min-h-11 items-center gap-2 rounded-sm border border-primary bg-selected px-4 text-base font-medium"
             onClick={() => setParam({ type: null })}
           >
             Type : {typeParam ? prestationLabel(settings, typeParam) : "Sans type"}
@@ -626,11 +626,11 @@ function LockDialog({
 
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="font-serif text-h2">Verrouiller {monthLabel(ym)}</h2>
+      <h2 className="text-h2">Verrouiller {monthLabel(ym)}</h2>
       <p className="text-base text-muted-foreground">Coût matières premières retenu pour le mois. Les montants, dates, numéros et types deviennent en lecture seule.</p>
       <div className="flex flex-col gap-1">
         {options.map((o) => (
-          <label key={o.key} className={`flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 ${source === o.key ? "border-primary bg-primary-soft" : "border-border"}`}>
+          <label key={o.key} className={`flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 ${source === o.key ? "border-primary bg-selected" : "border-border"}`}>
             <span className="flex items-center gap-3 text-base">
               <input type="radio" name="mp-source" className="h-5 w-5" checked={source === o.key} onChange={() => setSource(o.key)} />
               {o.label}
@@ -683,7 +683,7 @@ function UnlockDialog({ ym, onDone, onCancel }: { ym: string; onDone: () => void
 
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="font-serif text-h2">Déverrouiller {monthLabel(ym)}</h2>
+      <h2 className="text-h2">Déverrouiller {monthLabel(ym)}</h2>
       <div>
         <label htmlFor="unlock-reason" className="mb-1 block text-base font-medium">Raison</label>
         <textarea id="unlock-reason" className="input-field" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />

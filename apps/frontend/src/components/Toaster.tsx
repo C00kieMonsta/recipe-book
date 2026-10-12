@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { IconButton } from "@/components/ui/Button";
 
 export function Toaster() {
   const { toasts, dismiss } = useToast();
@@ -8,22 +9,21 @@ export function Toaster() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 max-w-sm">
+    <div className="fixed bottom-4 right-4 z-[100] flex max-w-sm flex-col gap-2">
       {toasts.map((toast) => (
         <div
           key={toast.id}
+          role="status"
           className={cn(
-            "card-elevated px-4 py-3 flex items-start gap-3 animate-fade-up",
-            toast.variant === "destructive" && "border-destructive/50 bg-destructive/5",
+            "flex items-start gap-2 rounded-lg bg-background py-2 pl-3 pr-1 text-sm shadow-dialog animate-pop",
+            toast.variant === "destructive" && "text-danger",
           )}
         >
-          <p className="text-sm font-medium flex-1">{toast.title}</p>
-          <button
-            onClick={() => dismiss(toast.id)}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="min-w-0 flex-1 py-1">
+            <p className="font-medium">{toast.title}</p>
+            {toast.description && <p className="text-muted-foreground">{toast.description}</p>}
+          </div>
+          <IconButton size="sm" aria-label="Fermer" onClick={() => dismiss(toast.id)} icon={<X />} />
         </div>
       ))}
     </div>

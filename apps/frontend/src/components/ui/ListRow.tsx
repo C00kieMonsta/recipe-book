@@ -13,7 +13,7 @@ export interface ListRowProps {
 
 export default function ListRow({ leading, title, subtitle, trailing, onClick, to, className = "" }: ListRowProps) {
   const interactive = Boolean(to || onClick);
-  const base = `flex w-full items-center gap-3 min-h-12 py-3 px-3 rounded-lg text-left ${interactive ? "hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40" : ""} ${className}`;
+  const base = `flex w-full items-center gap-3 min-h-12 py-3 px-3 rounded-lg text-left ${interactive ? "hover:bg-hover focus-visible:outline-none focus-visible:shadow-ring" : ""} ${className}`;
 
   const content = (
     <>

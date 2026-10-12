@@ -266,7 +266,7 @@ export default function Apercu() {
                 </thead>
                 <tbody>
                   {report.ap.rows.map((r: ApercuRow) => (
-                    <tr key={r.ym} className="cursor-pointer border-t border-border/60 hover:bg-hover" onClick={() => navigate(`/comptes/journal?ym=${r.ym}`)}>
+                    <tr key={r.ym} className="cursor-pointer border-t border-border hover:bg-hover" onClick={() => navigate(`/comptes/journal?ym=${r.ym}`)}>
                       <td><Link to={`/comptes/journal?ym=${r.ym}`} className="font-medium">{monthLabel(r.ym)}</Link></td>
                       <td className="text-right">{fmtMoney(r.caN1.amount)}{r.caN1.source === "saisi" && r.caN1.amount !== undefined && <SaisiTag note={r.caN1.note} />}</td>
                       <td className="text-right">{fmtMoney(r.caN.amount)}{r.caN.source === "saisi" && r.caN.amount !== undefined && <SaisiTag note={r.caN.note} />}</td>
@@ -321,7 +321,7 @@ export default function Apercu() {
                   {report.mx.rows.map((r: MixRow) => {
                     const to = `/comptes/journal?ym=${report.focusYm}&type=${encodeURIComponent(r.type ?? "")}`;
                     return (
-                      <tr key={r.type ?? "sans"} className="cursor-pointer border-t border-border/60 hover:bg-hover" onClick={() => navigate(to)}>
+                      <tr key={r.type ?? "sans"} className="cursor-pointer border-t border-border hover:bg-hover" onClick={() => navigate(to)}>
                         <td><Link to={to} className="font-medium">{r.type ? (typeLabel.get(r.type) ?? r.label) : r.label}</Link></td>
                         <td className="text-right">{fmtMoney(r.caN1)}{r.caN1Source === "saisi" && <SaisiTag note={settings?.yearActuals?.[String(year - 1)]?.note} />}</td>
                         <td className="text-right">{fmtPct(r.shareN1)}</td>
@@ -351,7 +351,7 @@ export default function Apercu() {
           </Section>
 
           <SectionToggle title="Comparaison par période" storageKey="apercu-periodes">
-            <div className="divide-y divide-border/60">
+            <div className="divide-y divide-border">
               {report.ap.periodComparison.map((p) => (
                 <div key={`${p.from}-${p.to}`} className="py-3">
                   <div className="text-base font-medium">{rangeLabel(`${year}-${p.from}`, `${year}-${p.to}`)}</div>

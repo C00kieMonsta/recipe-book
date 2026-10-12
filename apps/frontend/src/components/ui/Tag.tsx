@@ -12,7 +12,7 @@ export interface TagProps {
 // Text on a tint is the dark role colour; the primary tint uses foreground (see REDESIGN.md section 4).
 const VARIANT_CLASS: Record<TagVariant, string> = {
   neutral: "bg-muted text-foreground",
-  primary: "bg-primary-soft text-foreground",
+  primary: "bg-muted text-foreground",
   success: "bg-success-soft text-success",
   warning: "bg-warning-soft text-warning",
   info: "bg-info-soft text-info",
@@ -38,7 +38,7 @@ export default function Tag({ variant = "neutral", tint, children, className = "
   const style: CSSProperties | undefined = tint ? { backgroundColor: softTint(tint) } : undefined;
   const colour = tint ? "text-foreground" : VARIANT_CLASS[variant];
   return (
-    <span className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-sm font-medium ${colour} ${className}`} style={style}>
+    <span className={`inline-flex items-center whitespace-nowrap rounded-sm px-2.5 py-0.5 text-sm font-medium ${colour} ${className}`} style={style}>
       {children}
     </span>
   );

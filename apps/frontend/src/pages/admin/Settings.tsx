@@ -1239,9 +1239,9 @@ export default function Settings() {
 
       {/* ── Dialogs ── */}
       {confirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 backdrop-blur-sm" onClick={() => setConfirm(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay" onClick={() => setConfirm(null)}>
           <div className="w-[92%] max-w-sm rounded-2xl bg-card p-7 text-center shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
-            <h3 className="mb-2 font-serif text-h3">Confirmer la suppression</h3>
+            <h3 className="mb-2 text-h3">Confirmer la suppression</h3>
             <p className="mb-6 text-base text-muted-foreground">{confirm.message}</p>
             <div className="flex justify-center gap-3">
               <button type="button" onClick={() => setConfirm(null)} className={btnSecondary}>Annuler</button>
@@ -1258,9 +1258,9 @@ export default function Settings() {
       )}
 
       {rename && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 backdrop-blur-sm" onClick={skipRename}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay" onClick={skipRename}>
           <div className="w-[92%] max-w-sm rounded-2xl bg-card p-7 text-center shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
-            <h3 className="mb-2 font-serif text-h3">Renommer aussi sur {rename.count} ligne{rename.count > 1 ? "s" : ""} d'événement ?</h3>
+            <h3 className="mb-2 text-h3">Renommer aussi sur {rename.count} ligne{rename.count > 1 ? "s" : ""} d'événement ?</h3>
             <p className="mb-6 text-base text-muted-foreground">
               « {rename.from} » devient « {rename.to} » sur {rename.events.length} événement{rename.events.length > 1 ? "s" : ""}. Les événements sont mis à jour tout de suite.
             </p>

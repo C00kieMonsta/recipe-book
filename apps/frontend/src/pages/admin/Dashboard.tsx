@@ -159,7 +159,7 @@ export default function Dashboard() {
       <section className="card-elevated p-5 mb-6">
         <div className="flex flex-wrap justify-between items-center gap-3 mb-5">
           <div>
-            <h2 className="font-serif text-lg font-bold">Performance mensuelle</h2>
+            <h2 className="text-lg font-bold">Performance mensuelle</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
               {year} · Revenu {fmt(yearRevenue)} · {taxMode ? "Marge nette" : "Marge"} <span className={yearMargin >= 0 ? "text-green-600" : "text-destructive"}>{fmt(yearMargin)}</span>
             </p>
@@ -220,7 +220,7 @@ export default function Dashboard() {
 
       <section className="card-elevated">
         <div className="flex justify-between items-center p-5 pb-3">
-          <h2 className="font-serif text-lg font-bold">Événements récents</h2>
+          <h2 className="text-lg font-bold">Événements récents</h2>
           <button onClick={() => navigate("/events")} className="flex items-center gap-1 text-xs text-primary font-medium hover:underline">
             Voir tout <ChevronRight className="h-3.5 w-3.5" />
           </button>
@@ -249,7 +249,7 @@ export default function Dashboard() {
                 <td className={`px-3 py-2.5 text-right tabular-nums font-semibold ${netMargin(ev.margin, ev.date) >= 0 ? "text-green-600" : "text-destructive"}`}>{fmt(netMargin(ev.margin, ev.date))}</td>
                 <td className={`px-3 py-2.5 text-right tabular-nums ${ev.marginPct >= 0 ? "text-green-600" : "text-destructive"}`}>{ev.revenue > 0 ? ((netMargin(ev.margin, ev.date) / ev.revenue) * 100).toFixed(1) : "0.0"}%</td>
                 <td className="px-3 py-2.5">
-                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${ev.status === "upcoming" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>
+                  <span className={`px-2 py-0.5 rounded-sm text-[11px] font-semibold ${ev.status === "upcoming" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>
                     {ev.status === "upcoming" ? "À venir" : "Terminé"}
                   </span>
                 </td>
@@ -270,7 +270,7 @@ export default function Dashboard() {
           <div className="flex justify-between items-center p-5 pb-3">
             <div className="flex items-center gap-2">
               <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-              <h2 className="font-serif text-lg font-bold">Listes de courses</h2>
+              <h2 className="text-lg font-bold">Listes de courses</h2>
             </div>
             <button onClick={() => navigate("/grocery-list")} className="flex items-center gap-1 text-xs text-primary font-medium hover:underline">
               Nouvelle liste <ChevronRight className="h-3.5 w-3.5" />
@@ -281,7 +281,7 @@ export default function Dashboard() {
               <button
                 key={list.listId}
                 onClick={() => navigate(`/grocery-list?id=${list.listId}`)}
-                className="text-left p-4 rounded-lg border border-border/60 hover:border-primary/40 hover:bg-muted/30 transition-colors"
+                className="text-left p-4 rounded-lg border border-border hover:border-primary/40 hover:bg-muted/30 transition-colors"
               >
                 <p className="font-semibold text-sm truncate">{list.title}</p>
                 <p className="text-xs text-muted-foreground mt-1">

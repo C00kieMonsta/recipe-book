@@ -64,7 +64,7 @@ export function EditableText({ value, onSave, className, inputClassName, placeho
 
   return (
     <div
-      className={`${className} cursor-pointer rounded px-1 -mx-1 hover:bg-muted/50 transition-colors ${!value && placeholder ? "text-muted-foreground/50 italic" : ""}`}
+      className={`${className} cursor-pointer rounded px-1 -mx-1 hover:bg-hover transition-colors ${!value && placeholder ? "text-placeholder italic" : ""}`}
       onClick={() => setEditing(true)}
     >
       {value || placeholder || "–"}
@@ -102,10 +102,10 @@ export function EditableInlineText({ value, onSave, placeholder }: {
 
   return (
     <strong
-      className="text-foreground cursor-pointer hover:bg-muted/50 rounded px-0.5 transition-colors"
+      className="text-foreground cursor-pointer hover:bg-hover rounded px-0.5 transition-colors"
       onClick={() => setEditing(true)}
     >
-      {value || <span className="text-muted-foreground/50 font-normal italic">{placeholder || "–"}</span>}
+      {value || <span className="text-placeholder font-normal italic">{placeholder || "–"}</span>}
     </strong>
   );
 }
@@ -149,7 +149,7 @@ export function EditableInlineNum({ value, onSave, suffix, min }: {
 
   return (
     <strong
-      className="text-foreground cursor-pointer hover:bg-muted/50 rounded px-0.5 transition-colors tabular-nums"
+      className="text-foreground cursor-pointer hover:bg-hover rounded px-0.5 transition-colors tabular-nums"
       onClick={() => setEditing(true)}
     >
       {value}{suffix || ""}
@@ -175,7 +175,7 @@ export function EditableType({ value, options, onSave }: { value: string; option
         onClick={() => setOpen(!open)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="inline-flex items-center whitespace-nowrap rounded-full bg-primary-soft px-3 py-1 text-sm font-medium text-foreground transition-opacity hover:opacity-80"
+        className="inline-flex items-center whitespace-nowrap rounded-sm bg-muted px-3 py-1 text-sm font-medium text-foreground transition-opacity hover:opacity-80"
       >
         {value}
       </button>
@@ -205,7 +205,7 @@ export function EditableStatus({ value, onSave }: { value: "upcoming" | "complet
     <button
       type="button"
       onClick={toggle}
-      className={`mb-2 inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-sm font-medium transition-opacity hover:opacity-80 ${value === "upcoming" ? "bg-info-soft text-info" : "bg-success-soft text-success"}`}
+      className={`mb-2 inline-flex items-center whitespace-nowrap rounded-sm px-2.5 py-0.5 text-sm font-medium transition-opacity hover:opacity-80 ${value === "upcoming" ? "bg-info-soft text-info" : "bg-success-soft text-success"}`}
     >
       {value === "upcoming" ? "À venir" : "Terminé"}
     </button>

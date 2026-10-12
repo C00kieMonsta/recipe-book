@@ -615,7 +615,7 @@ export default function EventDetail() {
     const isDropHere = dropTarget?.course === group.course && dropTarget.lineId === null;
     const body = (
       <div
-        className={`rounded-lg transition-colors ${isDropHere ? "bg-primary-soft/40" : ""}`}
+        className={`rounded-lg transition-colors ${isDropHere ? "bg-selected" : ""}`}
         onDragOver={canDrag ? (e) => { e.preventDefault(); setDropTarget({ course: group.course, lineId: null }); } : undefined}
         onDrop={canDrag ? (e) => { e.preventDefault(); handleDrop({ course: group.course, lineId: null }); } : undefined}
       >
@@ -626,7 +626,7 @@ export default function EventDetail() {
           return (
             <div
               key={line.lineId}
-              className={`border-b border-border/60 last:border-b-0 ${dragId === line.lineId ? "opacity-40" : ""} ${isDropBefore ? "border-t-2 border-t-primary" : ""}`}
+              className={`border-b border-border last:border-b-0 ${dragId === line.lineId ? "opacity-40" : ""} ${isDropBefore ? "border-t-2 border-t-primary" : ""}`}
               onDragOver={canDrag ? (e) => { e.preventDefault(); e.stopPropagation(); setDropTarget({ course: group.course, lineId: line.lineId }); } : undefined}
               onDrop={canDrag ? (e) => { e.preventDefault(); e.stopPropagation(); handleDrop({ course: group.course, lineId: line.lineId }); } : undefined}
             >
@@ -754,7 +754,7 @@ export default function EventDetail() {
   return (
     <div className="mx-auto max-w-doc">
       <div className="no-print mb-3 hidden flex-wrap items-center gap-x-2 gap-y-1 md:flex">
-        <Link to={`/jour/${event.date}`} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-primary-soft pl-2 pr-3 text-base font-medium text-foreground hover:border-primary">
+        <Link to={`/jour/${event.date}`} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-muted pl-2 pr-3 text-base font-medium text-foreground hover:border-primary">
           <ChevronLeft className="h-5 w-5" /> {backLabel}
         </Link>
         <Link to={weekUrl} className="inline-flex min-h-11 items-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Semaine {weekNumber}</Link>
@@ -769,8 +769,8 @@ export default function EventDetail() {
           <EditableText
             value={event.name}
             onSave={(v) => { if (v.trim()) saveField({ name: v.trim() }); }}
-            className="font-serif text-h1 md:text-h1-lg"
-            inputClassName="w-full border-b-2 border-primary bg-transparent font-serif text-h1 outline-none md:text-h1-lg"
+            className="text-h1 md:text-h1-lg"
+            inputClassName="w-full border-b-2 border-primary bg-transparent text-h1 outline-none md:text-h1-lg"
           />
         }
         meta={
@@ -807,7 +807,7 @@ export default function EventDetail() {
                       type="button"
                       aria-pressed={on}
                       onClick={() => toggleEventPerson(p.personId)}
-                      className={`inline-flex min-h-11 items-center gap-2 rounded-full border pl-1.5 pr-3 text-base ${on ? "border-primary bg-primary-soft font-medium text-foreground" : "border-border text-foreground hover:bg-hover"}`}
+                      className={`inline-flex min-h-11 items-center gap-2 rounded-sm border pl-1.5 pr-3 text-base ${on ? "border-primary bg-selected font-medium text-foreground" : "border-border text-foreground hover:bg-hover"}`}
                     >
                       <PersonChip personId={p.personId} people={people} size="md" />
                       {p.name}
@@ -876,7 +876,7 @@ export default function EventDetail() {
         ) : (
           <div>
             {event.extraCosts.map((ec, i) => (
-              <div key={i} className="flex min-h-14 flex-wrap items-center gap-2 border-b border-border/60 py-1 last:border-b-0">
+              <div key={i} className="flex min-h-14 flex-wrap items-center gap-2 border-b border-border py-1 last:border-b-0">
                 <span className="min-w-[8rem] flex-1 text-base">
                   <EditableInlineText value={ec.label} onSave={(v) => { if (v.trim()) updateExtraCost(i, { label: v.trim() }); }} />
                 </span>
@@ -940,7 +940,7 @@ export default function EventDetail() {
                         <PaidPopover entry={e} onSaved={loadEntries} align="right" trigger={<Tag variant="warning">À encaisser ▾</Tag>} />
                       )
                     }
-                    className="border-b border-border/60 last:border-b-0"
+                    className="border-b border-border last:border-b-0"
                   />
                 ))}
               </div>
@@ -1091,7 +1091,7 @@ function InlineContact({ value, onSave, placeholder, inputMode }: { value: strin
     <button
       type="button"
       onClick={() => setEditing(true)}
-      className={`rounded px-0.5 text-left hover:bg-muted/50 ${value ? "font-semibold text-foreground" : "no-print text-muted-foreground"}`}
+      className={`rounded px-0.5 text-left hover:bg-hover ${value ? "font-semibold text-foreground" : "no-print text-muted-foreground"}`}
     >
       {value || placeholder}
     </button>
@@ -1118,9 +1118,9 @@ function LineNote({ value, onSave, onCancel }: { value: string; onSave: (v: stri
 
 function Dialog({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay" onClick={onClose}>
       <div role="dialog" aria-modal="true" className="w-[92%] max-w-sm rounded-2xl bg-card p-6 text-center shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-3 font-serif text-h3">{title}</h3>
+        <h3 className="mb-3 text-h3">{title}</h3>
         {children}
       </div>
     </div>

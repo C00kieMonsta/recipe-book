@@ -44,7 +44,7 @@ export default function Stepper({ value, onChange, min = 1, label, className = "
           onFocus={(e) => e.target.select()}
           onBlur={commit}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
-          className="min-h-11 w-16 rounded-lg border border-input bg-card text-center text-base font-semibold tabular-nums outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+          className="min-h-11 w-16 rounded-lg border border-input bg-card text-center text-base font-semibold tabular-nums outline-none focus:border-primary focus:shadow-ring"
         />
         <button type="button" className={BTN} onClick={() => set(value + 1)} aria-label="Plus">
           <Plus className="h-5 w-5" />

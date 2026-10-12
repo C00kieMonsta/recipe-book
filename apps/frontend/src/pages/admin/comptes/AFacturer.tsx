@@ -26,7 +26,7 @@ function ddmm(date: string): string {
 // One line of text on the left, a full-width button on the phone and an inline one on the laptop.
 function Row({ children, action }: { children: ReactNode; action: ReactNode }) {
   return (
-    <div className="flex flex-col gap-2 border-b border-border/60 py-3 last:border-b-0 md:flex-row md:items-center md:gap-4">
+    <div className="flex flex-col gap-2 border-b border-border py-3 last:border-b-0 md:flex-row md:items-center md:gap-4">
       <div className="min-w-0 flex-1 text-base">{children}</div>
       <div className="shrink-0">{action}</div>
     </div>

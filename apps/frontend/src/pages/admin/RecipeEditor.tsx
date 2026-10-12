@@ -169,7 +169,7 @@ export default function RecipeEditor() {
         </button>
       </div>
 
-      <h1 className="font-serif text-h1 md:text-h1-lg">{isNew ? "Nouvelle recette" : "Modifier la recette"}</h1>
+      <h1 className="text-h1 md:text-h1-lg">{isNew ? "Nouvelle recette" : "Modifier la recette"}</h1>
 
       <Section title="Informations">
         <FieldLabel htmlFor="recipe-name">Nom</FieldLabel>
@@ -199,7 +199,7 @@ export default function RecipeEditor() {
           {form.photos.map((photo, idx) => (
             <div key={idx} className="relative w-40 rounded-lg overflow-hidden border">
               <img src={photo.url} alt={photo.label} className="w-full h-28 object-cover" />
-              <button onClick={() => update("photos", form.photos.filter((_, i) => i !== idx))} aria-label="Retirer la photo" className="absolute top-1 right-1 flex h-8 w-8 items-center justify-center rounded-full bg-foreground/70 text-background"><X className="h-4 w-4" /></button>
+              <button onClick={() => update("photos", form.photos.filter((_, i) => i !== idx))} aria-label="Retirer la photo" className="absolute top-1 right-1 flex h-8 w-8 items-center justify-center rounded-full bg-overlay text-background"><X className="h-4 w-4" /></button>
               <input className="w-full border-t px-2 py-1.5 text-sm text-center bg-transparent outline-none" value={photo.label} onChange={(e) => { const u = [...form.photos]; u[idx] = { ...u[idx], label: e.target.value }; update("photos", u); }} placeholder="Légende…" />
             </div>
           ))}
@@ -224,7 +224,7 @@ export default function RecipeEditor() {
         )}
         {form.techniques.map((t, i) => (
           <div key={i} className="flex gap-2 mb-2">
-            <span className="w-7 h-7 rounded-full bg-primary-soft text-foreground flex items-center justify-center text-sm font-semibold shrink-0 mt-2">{i + 1}</span>
+            <span className="w-7 h-7 rounded-full bg-muted text-foreground flex items-center justify-center text-sm font-semibold shrink-0 mt-2">{i + 1}</span>
             <textarea
               className="input-field flex-1 min-h-[50px]"
               value={t}

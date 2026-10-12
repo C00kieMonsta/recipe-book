@@ -15,7 +15,7 @@ import { ActionMenu, RecipeReader, StatusControl } from "@/components/ui";
 type ReaderSize = "lead" | "xl";
 
 const ICON_BTN = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-foreground hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent";
-const BACK_BTN = "inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-primary-soft pl-2 pr-3 text-base font-medium text-foreground hover:border-primary";
+const BACK_BTN = "inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-border bg-muted pl-2 pr-3 text-base font-medium text-foreground hover:border-primary";
 const WEEK_LINK = "inline-flex min-h-11 items-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline";
 const SWIPE_PX = 60;
 
@@ -254,7 +254,7 @@ export default function PrepSheet() {
         <button
           type="button"
           onClick={scrollToIngredients}
-          className="no-print fixed left-1/2 top-2 z-20 inline-flex min-h-11 -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card px-4 text-base font-medium shadow-lg md:hidden"
+          className="no-print fixed left-1/2 top-2 z-20 inline-flex min-h-11 -translate-x-1/2 items-center gap-1 rounded-lg border border-border bg-card px-4 text-base font-medium shadow-lg md:hidden"
         >
           Ingrédients <ChevronDown className="h-4 w-4" />
         </button>
@@ -283,7 +283,7 @@ export default function PrepSheet() {
                 aria-label="Taille du texte"
                 title={size === "xl" ? "Texte normal" : "Texte plus grand"}
                 onClick={() => setSize(size === "xl" ? "lead" : "xl")}
-                className={`${ICON_BTN} font-serif ${size === "xl" ? "bg-muted" : ""}`}
+                className={`${ICON_BTN} ${size === "xl" ? "bg-muted" : ""}`}
               >
                 <span className="text-lead font-semibold">Aa</span>
               </button>
@@ -293,7 +293,7 @@ export default function PrepSheet() {
 
           <div className="mt-2 flex items-center gap-3">
             {photo && <img src={photo} alt="" className="h-16 w-16 shrink-0 rounded-lg object-cover" />}
-            <h1 className="min-w-0 font-serif text-h1">{recipe.name}</h1>
+            <h1 className="min-w-0 text-h1">{recipe.name}</h1>
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-lead">

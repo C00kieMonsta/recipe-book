@@ -366,8 +366,8 @@ export default function ClientDetail() {
               else setForm((p) => ({ ...p, name: client?.name ?? p.name }));
             }}
             placeholder="Nom du client"
-            className="font-serif text-h1 md:text-h1-lg"
-            inputClassName="input-field font-serif text-h1"
+            className="text-h1 md:text-h1-lg"
+            inputClassName="input-field text-h1"
           />
         }
         meta={
@@ -480,7 +480,7 @@ export default function ClientDetail() {
         {isNew ? (
           <p className="text-base text-muted-foreground">Créez le client pour configurer sa semaine type.</p>
         ) : (
-          <div className="divide-y divide-border/60">
+          <div className="divide-y divide-border">
             {WEEKDAYS.map((w) => {
               const dayTemplates = templates.filter((t) => t.weekday === w.value);
               const isEditingHere = editing?.weekday === w.value;
@@ -550,7 +550,7 @@ export default function ClientDetail() {
           {clientEvents.length === 0 ? (
             <p className="mt-2 text-base text-muted-foreground">Aucun événement pour ce client.</p>
           ) : (
-            <div className="mt-1 divide-y divide-border/60">
+            <div className="mt-1 divide-y divide-border">
               {clientEvents.map((ev) => {
                 const inv = invoiceNumberByEvent.get(ev.eventId);
                 return (
@@ -580,7 +580,7 @@ export default function ClientDetail() {
           {clientEntries.length === 0 ? (
             <p className="mt-2 text-base text-muted-foreground">Aucune écriture pour ce client.</p>
           ) : (
-            <div className="mt-1 divide-y divide-border/60">
+            <div className="mt-1 divide-y divide-border">
               {clientEntries.map((e) => (
                 <ListRow
                   key={e.entryId}
@@ -690,7 +690,7 @@ function EventPicker({ events, clientId, onPick, onClose }: {
       {list.length === 0 ? (
         <p className="mt-2 text-base text-muted-foreground">Aucun événement.</p>
       ) : (
-        <div className="mt-1 divide-y divide-border/60">
+        <div className="mt-1 divide-y divide-border">
           {list.map((ev) => (
             <ListRow key={ev.eventId} title={ev.name} subtitle={`${longDayLabel(ev.date)} · ${ev.guestCount} convives · ${ev.recipes.length} recettes`} onClick={() => onPick(ev)} />
           ))}
@@ -769,7 +769,7 @@ function TemplateEditor({ template: t, recipes, courses, prestationTypes, onChan
       <div className="mt-5">
         <FieldLabel>Recettes</FieldLabel>
         {t.recipes.length > 0 && (
-          <ul className="divide-y divide-border/60">
+          <ul className="divide-y divide-border">
             {t.recipes.map((l, i) => (
               <li key={`${l.recipeId}-${i}`} className="flex flex-wrap items-center gap-2 py-2">
                 <span className="min-w-0 flex-1 truncate text-base">{recipeById.get(l.recipeId)?.name ?? "Recette inconnue"}</span>

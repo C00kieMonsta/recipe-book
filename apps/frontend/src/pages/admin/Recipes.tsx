@@ -180,19 +180,19 @@ export default function Recipes() {
         {paginatedItems.map((r) => {
           const cost = calcRecipeCost(r, ingredients);
           return (
-            <button key={r.recipeId} onClick={() => navigate(`/recipes/${r.recipeId}`)} className="card-elevated overflow-hidden text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+            <button key={r.recipeId} onClick={() => navigate(`/recipes/${r.recipeId}`)} className="card-elevated overflow-hidden text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:shadow-ring">
               {r.photos?.[0]?.url ? (
                 <img src={r.photos[0].url} alt={r.name} className="aspect-[3/2] w-full object-cover" />
               ) : (
-                <div className="flex h-40 items-center justify-center bg-primary-soft">
+                <div className="flex h-40 items-center justify-center bg-muted">
                   <BookOpen className="h-12 w-12 text-primary" />
                 </div>
               )}
               <div className="p-4">
                 <Tag variant="primary">{r.type}</Tag>
-                <h3 className="mt-2 font-serif text-h2">{r.name}</h3>
+                <h3 className="mt-2 text-h2">{r.name}</h3>
                 {r.description && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{r.description}</p>}
-                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-border/60 pt-3 text-sm text-muted-foreground">
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-3 text-sm text-muted-foreground">
                   <span>{r.portions} portions</span>
                   <span>{r.ingredients.length} ingrédients</span>
                   <span>Coût HT {fmt(cost)}</span>
@@ -237,7 +237,7 @@ function Thumb({ recipe }: { recipe: Recipe }) {
   const url = recipe.photos?.[0]?.url;
   if (url) return <img src={url} alt="" className="h-16 w-16 rounded-lg object-cover" />;
   return (
-    <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-primary-soft">
+    <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-muted">
       <BookOpen className="h-7 w-7 text-primary" />
     </div>
   );
@@ -249,7 +249,7 @@ function ChipBtn({ children, active, onClick }: { children: React.ReactNode; act
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-colors ${active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:bg-hover"}`}
+      className={`inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-sm border px-4 text-sm font-medium transition-colors ${active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:bg-hover"}`}
     >
       {children}
     </button>
@@ -258,7 +258,7 @@ function ChipBtn({ children, active, onClick }: { children: React.ReactNode; act
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-card rounded-2xl p-7 max-w-2xl w-[94%] max-h-[90vh] overflow-auto shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
         {children}
       </div>
@@ -346,7 +346,7 @@ function RecipeImport({ existingNames, onImport, onCancel }: {
 
   return (
     <div>
-      <h2 className="font-serif text-h2 mb-1">Importer des recettes</h2>
+      <h2 className="text-h2 mb-1">Importer des recettes</h2>
       <p className="text-base text-muted-foreground mb-5">Formats acceptés : CSV ou JSON. Les recettes existantes sont ignorées.</p>
 
       {step === "upload" && (

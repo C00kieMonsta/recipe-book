@@ -89,7 +89,7 @@ function SourceMpDialog({ row, existing, purchases, onClose, onSaved }: {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/40 p-0 md:items-center md:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-overlay p-0 md:items-center md:p-4" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-labelledby="mp-title" className="max-h-[90vh] w-full max-w-doc overflow-y-auto rounded-t-xl bg-card p-5 md:rounded-xl" onClick={(e) => e.stopPropagation()}>
         <h2 id="mp-title" className="text-h3">Source MP · {monthLabel(row.ym)}</h2>
         <p className="mt-1 text-base text-muted-foreground">Le coût matières du mois vient de la source choisie ici.</p>
@@ -109,7 +109,7 @@ function SourceMpDialog({ row, existing, purchases, onClose, onSaved }: {
         {purchases.length === 0 ? (
           <p className="mt-1 text-base text-muted-foreground">Aucun achat MP dans le journal pour ce mois.</p>
         ) : (
-          <div className="mt-1 divide-y divide-border/60">
+          <div className="mt-1 divide-y divide-border">
             {purchases.map((p) => (
               <ListRow key={p.entryId} title={p.label} subtitle={`${dayLabel(p.date)}${p.supplier ? ` · ${p.supplier}` : ""}`} trailing={<span className="tabular-nums">{fmtEur(p.htva)}</span>} to={`/comptes/journal?book=achats&ym=${row.ym}`} />
             ))}
@@ -253,7 +253,7 @@ export default function Resultats() {
               </thead>
               <tbody>
                 {st.months.map((r) => (
-                  <tr key={r.ym} className="border-t border-border/60 align-top">
+                  <tr key={r.ym} className="border-t border-border align-top">
                     <td className="sticky left-0 bg-background"><Link to={`/comptes/journal?ym=${r.ym}`} className="inline-flex min-h-11 items-center font-medium hover:underline">{monthName(r.ym)}</Link></td>
                     <td className="text-right">{fmtEur(r.ca)}</td>
                     <td className="text-right">{mpCell(r)}<div className="text-right">{mpNote(r)}</div></td>

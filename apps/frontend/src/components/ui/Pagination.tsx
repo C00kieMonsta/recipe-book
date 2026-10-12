@@ -41,7 +41,7 @@ export default function Pagination({ page, totalPages, total, onPage, onPrev, on
               onClick={() => onPage(p)}
               aria-label={`Page ${p}`}
               aria-current={p === page ? "page" : undefined}
-              className={`${BTN} ${p === page ? "bg-foreground text-background" : "hover:bg-hover"}`}
+              className={`${BTN} ${p === page ? "bg-active font-medium text-foreground" : "hover:bg-hover"}`}
             >
               {p}
             </button>

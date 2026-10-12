@@ -26,7 +26,7 @@ export function PersonChip({ personId, people, size = "md", className = "" }: Pe
       title={name}
       aria-label={name}
       role="img"
-      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-primary-soft font-semibold leading-none ${
+      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-muted font-semibold leading-none ${
         person ? "text-foreground" : "text-muted-foreground"
       } ${SIZE[size]} ${className}`}
     >

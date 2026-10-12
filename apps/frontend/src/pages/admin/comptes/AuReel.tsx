@@ -98,7 +98,7 @@ export default function AuReel() {
       const parts = [dayLabel(r.date), KIND_LABEL[r.entryKind] ?? r.entryKind, type ?? "Sans type"];
       if (linked.length) parts.push(linked.join(", "));
       return (
-        <div key={`e-${r.entryId}`} className="border-b border-border/60">
+        <div key={`e-${r.entryId}`} className="border-b border-border">
           <ListRow
             title={r.label}
             subtitle={parts.join(" · ")}
@@ -132,7 +132,7 @@ export default function AuReel() {
       </>
     );
     return (
-      <div key={`v-${r.eventId}`} className="border-b border-border/60">
+      <div key={`v-${r.eventId}`} className="border-b border-border">
         <div className="flex items-center gap-3">
           <ListRow
             className="min-w-0 flex-1"

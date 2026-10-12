@@ -201,7 +201,7 @@ export default function Ingredients() {
       {deleteConfirm && (
         <Modal onClose={() => setDeleteConfirm(null)}>
           <div className="text-center py-2">
-            <h3 className="font-serif text-h3 mb-2">Confirmer la suppression</h3>
+            <h3 className="text-h3 mb-2">Confirmer la suppression</h3>
             <p className="text-muted-foreground text-base mb-6">Cette action est irréversible.</p>
             <div className="flex gap-3 justify-center">
               <button onClick={() => setDeleteConfirm(null)} className="min-h-11 px-4 border rounded-lg text-sm font-medium">Annuler</button>
@@ -227,7 +227,7 @@ function FilterChip({ active, onClick, color, children }: { active: boolean; onC
   return (
     <button
       onClick={onClick}
-      className={`min-h-10 px-3 rounded-full text-sm font-medium border transition-colors ${active ? "bg-foreground text-background border-foreground" : "bg-card hover:bg-hover"}`}
+      className={`min-h-10 px-3 rounded-sm text-sm font-medium border transition-colors ${active ? "bg-active font-medium text-foreground border-foreground" : "bg-card hover:bg-hover"}`}
       style={!active && color ? { borderLeftColor: color, borderLeftWidth: 3 } : undefined}
     >
       {children}
@@ -245,7 +245,7 @@ function Th({ children, onClick, active, dir, className = "" }: { children: Reac
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-card rounded-2xl p-7 max-w-lg w-[92%] max-h-[90vh] overflow-auto shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>{children}</div>
     </div>
   );
@@ -291,7 +291,7 @@ function CsvImport({ existingIngredients, onImport, onCancel }: { existingIngred
 
   return (
     <div className="sm:min-w-[480px]">
-      <h2 className="font-serif text-h2 mb-1">Importer des ingrédients</h2>
+      <h2 className="text-h2 mb-1">Importer des ingrédients</h2>
       <p className="text-sm text-muted-foreground mb-5">Format CSV : <code className="bg-muted px-1.5 py-0.5 rounded text-caption">nom ; prix_htva ; unite ; fournisseur ; commentaire</code></p>
       {step === "upload" && (
         <>

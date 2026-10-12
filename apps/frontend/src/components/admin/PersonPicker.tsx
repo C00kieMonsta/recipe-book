@@ -93,7 +93,7 @@ export default function PersonPicker({ value, options, onChange, allowInherit = 
 
   if (touch) {
     return (
-      <div className="fixed inset-0 z-50 flex items-end bg-foreground/30" role="presentation">
+      <div className="fixed inset-0 z-50 flex items-end bg-overlay" role="presentation">
         <div ref={ref} role="dialog" aria-label={title} className={`w-full rounded-t-2xl bg-card p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-xl animate-fade-up ${className}`}>
           <div className="flex items-center justify-between px-3 py-1">
             <span className="text-base font-semibold">{title}</span>

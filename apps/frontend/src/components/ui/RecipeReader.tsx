@@ -33,7 +33,7 @@ export function StepText({ step, ratio, showBase }: { step: string; ratio: numbe
           <span key={i}>{part}</span>
         ) : (
           <span key={i} className="whitespace-nowrap">
-            <mark className="rounded bg-primary-soft px-0.5 text-inherit">{part.to}</mark>
+            <mark className="rounded bg-tag-yellow-bg px-0.5 text-inherit">{part.to}</mark>
             {showBase && <span className="text-sm text-muted-foreground"> ({part.from})</span>}
           </span>
         ),
@@ -113,7 +113,7 @@ export default function RecipeReader({
           <ol className={`mt-3 space-y-5 ${textSize} leading-relaxed`}>
             {recipe.techniques.map((step, i) => (
               <li key={i} className="flex gap-4 select-text">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-soft text-sm font-semibold text-foreground">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground">
                   {i + 1}
                 </span>
                 <p className="min-w-0 flex-1 whitespace-pre-wrap pt-0.5">
@@ -145,7 +145,7 @@ export default function RecipeReader({
                 {recipe.ingredients.map((ri, i) => {
                   const ing = ingredientById.get(ri.ingredientId);
                   return (
-                    <tr key={`${ri.ingredientId}-${i}`} className="border-t border-border/60">
+                    <tr key={`${ri.ingredientId}-${i}`} className="border-t border-border">
                       <td>{ing?.name ?? "Ingrédient inconnu"}</td>
                       <td className="text-right">{ri.qty} {ri.unit}</td>
                       <td className="text-right">{ri.lossPct || 0}</td>

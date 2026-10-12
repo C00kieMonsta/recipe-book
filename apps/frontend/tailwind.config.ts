@@ -3,66 +3,86 @@ import plugin from "tailwindcss/plugin";
 
 export default {
   darkMode: ["class"],
-  content: ["./index.html", "./src/**/*.{ts,tsx}", "../../packages/ui/src/**/*.{ts,tsx}"],
+  content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
-    container: {
-      center: true,
-      padding: "2rem",
-      screens: { "2xl": "1400px" },
-    },
+    container: { center: true, padding: "2rem", screens: { "2xl": "1400px" } },
     extend: {
       fontFamily: {
-        sans: ["DM Sans", "-apple-system", "sans-serif"],
-        serif: ["Playfair Display", "Georgia", "serif"],
+        sans: ["-apple-system", "BlinkMacSystemFont", '"Segoe UI"', "Helvetica", "Arial", "sans-serif", '"Apple Color Emoji"', '"Segoe UI Emoji"'],
       },
       fontSize: {
-        caption: ["13px", "1.4"],
-        sm: ["14px", "1.5"],
-        base: ["16px", "1.6"],
-        lead: ["18px", "1.6"],
-        h3: ["20px", { lineHeight: "1.3", fontWeight: "600" }],
-        h2: ["24px", "1.25"],
-        h1: ["32px", "1.15"],
-        "h1-lg": ["40px", "1.1"],
+        caption: ["12px", "1.4"],                                       // counters, gallery meta, strip letters
+        sm: ["14px", "1.5"],                                            // database rows, toolbar, property names, tags
+        base: ["16px", "1.5"],                                          // page body
+        lead: ["18px", "1.5"],                                          // prep sheet reader
+        h3: ["20px", { lineHeight: "1.3", fontWeight: "600" }],         // section heading
+        h2: ["24px", { lineHeight: "1.3", fontWeight: "600" }],         // dialog title, login brand
+        h1: ["30px", { lineHeight: "1.2", fontWeight: "700" }],         // page title, phone
+        "h1-lg": ["40px", { lineHeight: "1.2", fontWeight: "700" }],    // page title, desktop
         cook: ["28px", "1.4"],
         "cook-lg": ["36px", "1.35"],
       },
-      maxWidth: { doc: "44rem", wide: "72rem" },
-      spacing: { block: "2.5rem" },
+      maxWidth: { doc: "44rem", wide: "76rem" },
+      spacing: { block: "2rem", sidebar: "240px", topbar: "44px" },
       colors: {
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        surface: "hsl(var(--surface))",
-        hover: "hsl(var(--hover))",
-        primary: { DEFAULT: "hsl(var(--primary))", foreground: "hsl(var(--primary-foreground))", soft: "hsl(var(--primary-soft))" },
-        secondary: { DEFAULT: "hsl(var(--secondary))", foreground: "hsl(var(--secondary-foreground))" },
-        success: { DEFAULT: "hsl(var(--success))", soft: "hsl(var(--success-soft))" },
-        warning: { DEFAULT: "hsl(var(--warning))", soft: "hsl(var(--warning-soft))" },
-        info: { DEFAULT: "hsl(var(--info))", soft: "hsl(var(--info-soft))" },
-        destructive: { DEFAULT: "hsl(var(--destructive))", foreground: "hsl(var(--destructive-foreground))", soft: "hsl(var(--destructive-soft))" },
-        muted: { DEFAULT: "hsl(var(--muted))", foreground: "hsl(var(--muted-foreground))" },
-        accent: { DEFAULT: "hsl(var(--accent))", foreground: "hsl(var(--accent-foreground))" },
-        popover: { DEFAULT: "hsl(var(--popover))", foreground: "hsl(var(--popover-foreground))" },
-        card: { DEFAULT: "hsl(var(--card))", foreground: "hsl(var(--card-foreground))" },
+        background: "var(--background)",
+        foreground: "var(--foreground)",
         sidebar: {
-          DEFAULT: "hsl(var(--sidebar-background))",
-          foreground: "hsl(var(--sidebar-foreground))",
-          primary: "hsl(var(--sidebar-primary))",
-          "primary-foreground": "hsl(var(--sidebar-primary-foreground))",
-          accent: "hsl(var(--sidebar-accent))",
-          "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
-          border: "hsl(var(--sidebar-border))",
-          ring: "hsl(var(--sidebar-ring))",
+          DEFAULT: "var(--sidebar)", hover: "var(--sidebar-hover)", active: "var(--sidebar-active)",
+          foreground: "var(--foreground)", border: "var(--border)",                  // old names
+          accent: "var(--sidebar-active)", "accent-foreground": "var(--foreground)",  // old names
+          primary: "var(--primary)", "primary-foreground": "var(--primary-foreground)", ring: "var(--primary)",
+        },
+        surface: "var(--surface)",
+        callout: "var(--callout)",
+        muted: { DEFAULT: "var(--muted)", foreground: "var(--muted-foreground)" },
+        "input-bg": "var(--input-bg)",
+        hover: "var(--hover)",
+        active: "var(--active)",
+        selected: "var(--selected)",
+        overlay: "var(--overlay)",
+        placeholder: "var(--placeholder)",
+        icon: "var(--icon)",
+        border: "var(--border)",
+        divider: "var(--divider)",
+        input: "var(--input)",
+        ring: "var(--primary)",
+        primary: { DEFAULT: "var(--primary)", hover: "var(--primary-hover)", foreground: "var(--primary-foreground)", soft: "var(--selected)" },
+        link: "var(--link)",
+        success: { DEFAULT: "var(--success)", soft: "var(--success-soft)" },
+        warning: { DEFAULT: "var(--warning)", soft: "var(--warning-soft)" },
+        info: { DEFAULT: "var(--info)", soft: "var(--info-soft)" },
+        danger: { DEFAULT: "var(--danger)", soft: "var(--danger-soft)", solid: "var(--danger-solid)" },
+        destructive: { DEFAULT: "var(--danger)", foreground: "#ffffff", soft: "var(--danger-soft)" },   // old name
+        secondary: { DEFAULT: "var(--muted)", foreground: "var(--foreground)" },                       // old name
+        accent: { DEFAULT: "var(--selected)", foreground: "var(--primary)" },                           // old name
+        popover: { DEFAULT: "var(--background)", foreground: "var(--foreground)" },                     // old name
+        card: { DEFAULT: "var(--background)", foreground: "var(--foreground)" },                        // old name
+        status: { todo: "var(--status-todo)", doing: "var(--status-doing)", done: "var(--status-done)" },
+        tag: {
+          "gray-bg": "var(--tag-gray-bg)",     "gray-fg": "var(--tag-gray-fg)",
+          "brown-bg": "var(--tag-brown-bg)",   "brown-fg": "var(--tag-brown-fg)",
+          "orange-bg": "var(--tag-orange-bg)", "orange-fg": "var(--tag-orange-fg)",
+          "yellow-bg": "var(--tag-yellow-bg)", "yellow-fg": "var(--tag-yellow-fg)",
+          "green-bg": "var(--tag-green-bg)",   "green-fg": "var(--tag-green-fg)",
+          "blue-bg": "var(--tag-blue-bg)",     "blue-fg": "var(--tag-blue-fg)",
+          "purple-bg": "var(--tag-purple-bg)", "purple-fg": "var(--tag-purple-fg)",
+          "pink-bg": "var(--tag-pink-bg)",     "pink-fg": "var(--tag-pink-fg)",
+          "red-bg": "var(--tag-red-bg)",       "red-fg": "var(--tag-red-fg)",
         },
       },
-      borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+      // Old callers: rounded-lg on controls becomes 6px, rounded-md 4px, rounded-xl 8px, rounded-2xl 10px.
+      borderRadius: { sm: "3px", DEFAULT: "4px", md: "4px", lg: "6px", xl: "8px", "2xl": "10px", "3xl": "12px" },
+      boxShadow: {
+        hairline: "var(--shadow-hairline)",
+        outline: "var(--shadow-outline)",
+        input: "var(--shadow-input)",
+        card: "var(--shadow-card)",
+        menu: "var(--shadow-menu)",
+        dialog: "var(--shadow-dialog)",
+        ring: "var(--shadow-ring)",
       },
+      transitionDuration: { DEFAULT: "100ms" },
     },
   },
   plugins: [

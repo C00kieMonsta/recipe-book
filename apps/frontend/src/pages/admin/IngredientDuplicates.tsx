@@ -248,7 +248,7 @@ export default function IngredientDuplicates() {
         <div className="mb-6 rounded-lg bg-destructive-soft px-4 py-3 text-base text-destructive">{loadError}</div>
       )}
 
-      <section className="rounded-xl border border-border/60 bg-card p-4">
+      <section className="rounded-xl border border-border bg-card p-4">
         <h2 className="text-h3">Comparer deux ingrédients</h2>
         <p className="mt-1 text-sm text-muted-foreground">Construit un groupe manuel à partir de deux ingrédients de votre choix.</p>
         <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
@@ -278,7 +278,7 @@ export default function IngredientDuplicates() {
               {g.manual && <Tag variant="info">Groupe manuel</Tag>}
             </div>
 
-            <div className="mt-3 rounded-xl border border-border/60 bg-card px-3">
+            <div className="mt-3 rounded-xl border border-border bg-card px-3">
               {g.members.map((m) => {
                 const isSurvivor = m.ingredientId === survivor.ingredientId;
                 const mismatch = !isSurvivor && !sameFamily(m.unit, survivor.unit);

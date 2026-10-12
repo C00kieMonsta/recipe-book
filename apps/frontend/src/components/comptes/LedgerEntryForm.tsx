@@ -297,7 +297,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
       noValidate
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-serif text-h2">{title}</h2>
+        <h2 className="text-h2">{title}</h2>
         {locked && <Tag variant="warning">Mois verrouillé</Tag>}
         {savedNumber !== null && <Tag variant="success">Ligne {savedNumber || "sans numéro"} enregistrée, ajoutez l'autre taux</Tag>}
       </div>
@@ -312,7 +312,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
               type="button"
               disabled={ro}
               onClick={() => setF((p) => ({ ...p, book: b, kind: b === "ventes" ? "facture" : "mp" }))}
-              className={`min-h-11 rounded-lg border px-4 text-base ${f.book === b ? "border-primary bg-primary-soft font-medium" : "border-border bg-card"}`}
+              className={`min-h-11 rounded-lg border px-4 text-base ${f.book === b ? "border-primary bg-selected font-medium" : "border-border bg-card"}`}
             >
               {b === "ventes" ? "Ventes" : "Achats"}
             </button>
