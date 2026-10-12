@@ -51,13 +51,19 @@ export function waitForAnchor(name: string, timeoutMs: number): Promise<HTMLElem
   return waitForAnyAnchor([name], timeoutMs);
 }
 
-export function waitForAnyAnchor(names: string[], timeoutMs: number): Promise<HTMLElement | null> {
+const LOADED_GRACE = 300;
+
+// With a loadedMark, the wait ends a few hundred ms after the page shows it without the anchor.
+export function waitForAnyAnchor(names: string[], timeoutMs: number, loadedMark?: string): Promise<HTMLElement | null> {
   return new Promise((resolve) => {
     const started = performance.now();
+    let loadedAt: number | null = null;
     const tick = () => {
       const el = findAnyAnchor(names);
       if (el) { resolve(el); return; }
-      if (performance.now() - started >= timeoutMs) { resolve(null); return; }
+      const now = performance.now();
+      if (loadedMark && loadedAt === null && findAnchor(loadedMark)) loadedAt = now;
+      if (now - started >= timeoutMs || (loadedAt !== null && now - loadedAt >= LOADED_GRACE)) { resolve(null); return; }
       requestAnimationFrame(tick);
     };
     tick();
@@ -107,10 +113,6 @@ export default function Tour({ step, index, total, phase, rect, anchor, phone, o
     ro.observe(el);
     return () => ro.disconnect();
   }, [index, phase, phone]);
-
-  useEffect(() => {
-    panelRef.current?.focus({ preventScroll: true });
-  }, [index, phase]);
 
   // The anchor is described by the card body while spotlighted.
   useEffect(() => {
@@ -199,6 +201,11 @@ export default function Tour({ step, index, total, phase, rect, anchor, phone, o
       hidden = true;
     }
   }
+
+  // A hidden element refuses focus, so wait for the visible render.
+  useEffect(() => {
+    if (!hidden) panelRef.current?.focus({ preventScroll: true });
+  }, [index, phase, hidden]);
 
   const card = (
     <div

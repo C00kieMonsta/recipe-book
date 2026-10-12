@@ -15,6 +15,8 @@ export interface TourStep {
   phone?: { anchor?: string; title?: string; body?: string };
   // Fired after navigation and before the anchor wait, for pages that must open something (the checklist).
   before?: () => void;
+  // data-tour value that shows once the page has loaded; the wait gives up early when it is visible without the anchor.
+  loadedMark?: string;
 }
 
 export interface TourContext {
@@ -81,6 +83,7 @@ export const TOUR_STEPS: TourStep[] = [
     key: "assign",
     route: "/semaine",
     anchor: "assign",
+    loadedMark: "week-checklist",
     title: "Attribuer le travail",
     body: "Les initiales sur une carte sont les personnes de Paramètres › Équipe. Cliquez-les pour attribuer l'événement ou une seule ligne. « Assigner » dans la liste À faire traite toute la semaine.",
     fallbackBody: "Les personnes de Paramètres › Équipe reçoivent le travail, par événement ou par ligne, depuis la carte de l'événement ou « Assigner » dans la liste À faire. L'onglet Par personne d'un jour montre la liste de chacun.",

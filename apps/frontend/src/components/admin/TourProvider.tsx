@@ -142,7 +142,7 @@ export function TourProvider({ children }: { children: ReactNode }): JSX.Element
     step.before?.();
     const resolvedNull = typeof step.route !== "string" && route === null;
     const names = resolvedNull ? [] : anchorNames(step, phoneRef.current);
-    const el = names.length > 0 ? await waitForAnyAnchor(names, ANCHOR_TIMEOUT) : null;
+    const el = names.length > 0 ? await waitForAnyAnchor(names, ANCHOR_TIMEOUT, step.loadedMark) : null;
     if (runId.current !== id) return;
     // The page may have mounted after the first call.
     if (navigated && el) step.before?.();
@@ -194,8 +194,9 @@ export function TourProvider({ children }: { children: ReactNode }): JSX.Element
     setPhase("loading");
     setAnchorEl(null);
     setRect(null);
-    const names = anchorNames(TOUR_STEPS[indexRef.current], phoneRef.current);
-    (names.length > 0 ? waitForAnyAnchor(names, ANCHOR_TIMEOUT) : Promise.resolve(null)).then((el) => {
+    const step = TOUR_STEPS[indexRef.current];
+    const names = anchorNames(step, phoneRef.current);
+    (names.length > 0 ? waitForAnyAnchor(names, ANCHOR_TIMEOUT, step.loadedMark) : Promise.resolve(null)).then((el) => {
       if (runId.current !== id) return;
       settle(el);
     });
