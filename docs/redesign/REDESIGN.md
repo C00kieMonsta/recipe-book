@@ -1019,6 +1019,8 @@ Things the draft had, cut or deferred by the critique, kept here so the develope
 | `openAiKeySet`, Paramètres "Intelligence artificielle", `/health aiEnabled` | moved to slice 6 | she supplies a key |
 | `tsconfig.scripts.json` and `type-check:scripts` for a backend scripts directory | moot without the runner | a script directory is created |
 
+| Team link without login (`/equipe/:token/jour/:date`, token in settings compared with `crypto.timingSafeEqual`, read-only planning data with prices stripped, `PATCH` limited to `prepStatus`) | deferred by the planning iteration (docs/redesign/02-planning-iteration.md, section 4.8); staff phones use the house login with "Rester connecté sur cet appareil" and the bookmark `/jour/aujourdhui?personne=<id>` | a person who is not the owner needs the list on a phone the owner never logged in, or prices must be hidden from staff |
+
 ## 12. Critique log
 
 | Finding | Applied | Reason |

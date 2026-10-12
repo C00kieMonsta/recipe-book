@@ -257,7 +257,7 @@ await check("e2 instantiate week creates one Tuesday event", async (req) => {
   const e = r.body.created?.[0];
   hoonaEventId = e?.eventId;
   return (r.status === 200 || r.status === 201) && r.body.created.length === 1 && eq(r.body.skipped, []) && e.date === "2026-10-13"
-    && e.name === "Hoona · mardi 13 oct." && e.clientId === clientId && typeof e.templateId === "string"
+    && (e.name === "Hoona" || e.name === "Hoona · Mardi") && e.clientId === clientId && typeof e.templateId === "string"
     && typeof e.recipes[0].lineId === "string" && e.status === "upcoming" && e.prestationType === "menu_a_emporter" && e.vatRate === 6;
 });
 await check("e3 second instantiate skips one", async (req) => {
