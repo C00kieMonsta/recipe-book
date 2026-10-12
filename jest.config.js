@@ -28,11 +28,6 @@ const config = {
       setupFilesAfterEnv: ["<rootDir>/test/setup.ts"],
       moduleNameMapper: {
         "^@/(.*)$": "<rootDir>/src/$1",
-        "^@packages/utils/(.*)$": path.resolve(
-          __dirname,
-          "packages/utils/src/$1"
-        ),
-        "^@packages/utils$": path.resolve(__dirname, "packages/utils/src"),
         "^../test/(.*)$": "<rootDir>/test/$1"
       },
       moduleDirectories: ["node_modules", path.resolve(__dirname, "packages")]
@@ -72,33 +67,6 @@ const config = {
       },
       transformIgnorePatterns: ["node_modules/(?!(react-resizable-panels)/)"],
       extensionsToTreatAsEsm: [".ts", ".tsx"]
-    },
-    // Utils package configuration
-    {
-      displayName: "utils",
-      testEnvironment: "node",
-      rootDir: path.resolve(__dirname, "packages/utils"),
-      testMatch: [
-        "<rootDir>/src/**/__tests__/**/*.ts",
-        "<rootDir>/src/**/?(*.)+(spec|test).ts"
-      ],
-      transform: {
-        "^.+\\.ts$": [
-          "ts-jest",
-          {
-            tsconfig: path.resolve(__dirname, "packages/utils/tsconfig.json")
-          }
-        ]
-      },
-      moduleFileExtensions: ["ts", "js", "json"],
-      collectCoverageFrom: [
-        "src/**/*.ts",
-        "!src/**/*.d.ts",
-        "!src/**/*.spec.ts",
-        "!src/**/*.test.ts"
-      ],
-      coverageDirectory: path.resolve(__dirname, "coverage/utils"),
-      moduleDirectories: ["node_modules", path.resolve(__dirname, "packages")]
     },
     // Core-client package uses Vitest, not Jest - excluded from Jest config
     // Types package configuration
