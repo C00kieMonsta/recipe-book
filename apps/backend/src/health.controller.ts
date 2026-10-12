@@ -1,7 +1,8 @@
 import { Controller, Get } from "@nestjs/common";
 import { ConfigService } from "./config/config.service";
 
-@Controller("health")
+// Served at /health for the EC2 check and at /api/health for the browser through the API distribution.
+@Controller(["health", "api/health"])
 export class HealthController {
   constructor(private config: ConfigService) {}
 

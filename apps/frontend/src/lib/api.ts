@@ -24,8 +24,8 @@ import type {
 } from "@packages/types";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
-// The health route sits outside the api prefix.
-const HEALTH_URL = `${API_BASE.replace(/\/api\/?$/, "")}/health`;
+// The health route is also served under the api prefix so it goes through the same distribution path as the API.
+const HEALTH_URL = `${API_BASE.replace(/\/$/, "")}/health`;
 const TOKEN_KEY = "admin_token";
 
 export class ApiError extends Error {
