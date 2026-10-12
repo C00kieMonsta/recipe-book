@@ -222,6 +222,15 @@ The backend connects to real AWS DynamoDB by default. To use DynamoDB Local inst
 | `scripts/setup-route53.sh` | DNS configuration |
 | `scripts/attach-cert-cloudfront.sh` | Attach ACM certificate to CloudFront |
 
+## Provisioning the clients and ledger tables on an existing deployment
+
+```bash
+./scripts/provision-new-tables.sh production prod eu-north-1
+git push origin main
+```
+
+The script creates `ta-clients-prod` and `ta-ledger-prod` with point-in-time recovery, writes the `CLIENTS_TABLE` and `LEDGER_TABLE` SSM parameters and refreshes the instance role policy; it is safe to re-run. The deploy workflow then rewrites `apps/backend/.env` from SSM and restarts the API; `GET /health` reports both tables as `true`.
+
 ## Local smoke test
 
 `scripts/smoke-local.mjs` exercises every endpoint against DynamoDB Local (Java 17, jar from AWS). Start DynamoDB Local on port 8000, create the tables with `scripts/dynamodb-local-tables.sh http://localhost:8000 local`, build the backend, then start the API from a directory with no `.env` and every variable inline (`DDB_ENDPOINT=http://localhost:8000`, the seven `*_TABLE` names with the `-local` suffix, fake AWS keys, `S3_BUCKET`, `ADMIN_CREDENTIALS` with a bcrypt hash for the smoke password, `JWT_SECRET`, `PORT=3101`). Then run `node scripts/smoke-local.mjs`. The script prints PASS or FAIL per check and exits 1 on any failure.
