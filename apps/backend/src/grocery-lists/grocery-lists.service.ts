@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "crypto";
-import type { GroceryList } from "@packages/types";
+import type { CreateGroceryListRequest, GroceryList, UpdateGroceryListRequest } from "@packages/types";
 import { DdbService } from "../shared/ddb.service";
 
 @Injectable()
@@ -27,12 +27,14 @@ export class GroceryListsService {
     return item;
   }
 
-  async create(data: { title: string; items?: GroceryList["items"] }): Promise<GroceryList> {
+  async create(data: CreateGroceryListRequest): Promise<GroceryList> {
     const now = new Date().toISOString();
     const list: GroceryList = {
       listId: randomUUID(),
       title: data.title,
       items: data.items ?? [],
+      ...(data.eventIds && { eventIds: data.eventIds }),
+      ...(data.range && { range: data.range }),
       createdAt: now,
       updatedAt: now,
     };
@@ -40,7 +42,7 @@ export class GroceryListsService {
     return list;
   }
 
-  async update(listId: string, fields: Partial<Pick<GroceryList, "title" | "items">>): Promise<GroceryList> {
+  async update(listId: string, fields: UpdateGroceryListRequest): Promise<GroceryList> {
     await this.getOrFail(listId);
     await this.ddb.update(this.table, { listId }, { ...fields, updatedAt: new Date().toISOString() });
     return this.getOrFail(listId);
