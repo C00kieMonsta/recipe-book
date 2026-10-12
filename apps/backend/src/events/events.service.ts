@@ -20,6 +20,15 @@ const definedEntries = <T extends object>(obj: T): Partial<T> =>
 const fillLineIds = (lines: IncomingLine[]): EventRecipeLine[] =>
   lines.map((l) => ({ ...l, lineId: l.lineId ?? randomUUID() }));
 
+const isConditionFailure = (err: unknown) => (err as { name?: string }).name === "ConditionalCheckFailedException";
+
+// Strictly later than the previous stamp so two writes in one millisecond never share it.
+const nextStamp = (previous?: string): string => {
+  const now = new Date().toISOString();
+  if (!previous || now > previous || Number.isNaN(Date.parse(previous))) return now;
+  return new Date(Date.parse(previous) + 1).toISOString();
+};
+
 @Injectable()
 export class EventsService {
   private get table() { return this.ddb.tables.events; }
@@ -47,7 +56,7 @@ export class EventsService {
     const { costSnapshot, ...rest } = data;
     const event: AppEvent = {
       eventId: randomUUID(),
-      ...rest,
+      ...(Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null)) as typeof rest),
       recipes: fillLineIds(data.recipes),
       ...(costSnapshot && { costSnapshot: { ...costSnapshot, takenAt: now } }),
       nameLower: data.name.toLowerCase(),
@@ -74,41 +83,62 @@ export class EventsService {
   }
 
   async addLine(eventId: string, line: AddEventLineRequest): Promise<AppEvent> {
-    const stored = await this.getOrFail(eventId);
-    return this.writeLines(eventId, [...stored.recipes, { ...line, lineId: randomUUID() }]);
+    return this.withFreshEvent(eventId, (stored) =>
+      this.writeLines(stored, [...stored.recipes, { ...line, lineId: randomUUID() }]));
   }
 
   async patchLine(eventId: string, lineId: string, patch: PatchEventLineRequest): Promise<AppEvent> {
-    const stored = await this.getOrFail(eventId);
-    const index = stored.recipes.findIndex((l) => l.lineId === lineId);
-    if (index === -1) throw new NotFoundException("Line not found");
-    const recipes = stored.recipes.map((l, i) => (i === index ? { ...l, ...definedEntries(patch) } : l));
-    return this.writeLines(eventId, recipes);
+    return this.withFreshEvent(eventId, (stored) => {
+      const index = stored.recipes.findIndex((l) => l.lineId === lineId);
+      if (index === -1) throw new NotFoundException("Line not found");
+      const recipes = stored.recipes.map((l, i) => (i === index ? { ...l, ...definedEntries(patch) } : l));
+      return this.writeLines(stored, recipes);
+    });
   }
 
   async putLines(eventId: string, body: PutEventLinesRequest): Promise<AppEvent> {
-    const stored = await this.getOrFail(eventId);
-    const byId = new Map(stored.recipes.map((l) => [l.lineId, l]));
-    const missing = body.lines.filter((l) => !byId.has(l.lineId)).map((l) => l.lineId);
-    if (missing.length > 0 || body.lines.length !== stored.recipes.length) {
-      throw new ConflictException({ code: "LINES_CHANGED", missing });
-    }
-    const recipes = body.lines.map((l) => ({
-      ...(byId.get(l.lineId) as EventRecipeLine),
-      ...(l.course !== undefined && { course: l.course }),
-    }));
-    return this.writeLines(eventId, recipes);
+    return this.withFreshEvent(eventId, (stored) => {
+      const byId = new Map(stored.recipes.map((l) => [l.lineId, l]));
+      const missing = body.lines.filter((l) => !byId.has(l.lineId)).map((l) => l.lineId);
+      if (missing.length > 0 || body.lines.length !== stored.recipes.length) {
+        throw new ConflictException({ code: "LINES_CHANGED", missing });
+      }
+      const recipes = body.lines.map((l) => ({
+        ...(byId.get(l.lineId) as EventRecipeLine),
+        ...(l.course !== undefined && { course: l.course }),
+      }));
+      return this.writeLines(stored, recipes);
+    });
   }
 
   async removeLine(eventId: string, lineId: string): Promise<AppEvent> {
-    const stored = await this.getOrFail(eventId);
-    if (!stored.recipes.some((l) => l.lineId === lineId)) throw new NotFoundException("Line not found");
-    return this.writeLines(eventId, stored.recipes.filter((l) => l.lineId !== lineId));
+    return this.withFreshEvent(eventId, (stored) => {
+      if (!stored.recipes.some((l) => l.lineId === lineId)) throw new NotFoundException("Line not found");
+      return this.writeLines(stored, stored.recipes.filter((l) => l.lineId !== lineId));
+    });
   }
 
-  private async writeLines(eventId: string, recipes: EventRecipeLine[]): Promise<AppEvent> {
-    await this.ddb.update(this.table, { eventId }, { recipes, updatedAt: new Date().toISOString() });
-    return this.getOrFail(eventId);
+  // Runs op on a fresh read and retries once when another write moved updatedAt in between.
+  private async withFreshEvent(eventId: string, op: (stored: AppEvent) => Promise<AppEvent>): Promise<AppEvent> {
+    for (let attempt = 0; ; attempt++) {
+      const stored = await this.getOrFail(eventId);
+      try {
+        return await op(stored);
+      } catch (err) {
+        if (!isConditionFailure(err)) throw err;
+        if (attempt >= 1) throw new ConflictException({ code: "LINES_CHANGED", missing: [] });
+      }
+    }
+  }
+
+  // Writes the array only when updatedAt still matches the read the lines were computed from.
+  private async writeLines(stored: AppEvent, recipes: EventRecipeLine[]): Promise<AppEvent> {
+    const guard = stored.updatedAt
+      ? { condition: "#ua = :expected", names: { "#ua": "updatedAt" }, values: { ":expected": stored.updatedAt } }
+      : { condition: "attribute_not_exists(#ua)", names: { "#ua": "updatedAt" } };
+    const updates = { recipes, updatedAt: nextStamp(stored.updatedAt) };
+    await this.ddb.update(this.table, { eventId: stored.eventId }, updates, guard);
+    return this.getOrFail(stored.eventId);
   }
 
   // Keeps stored line fields the editor did not send; unknown ids get a fresh one; absent lines are dropped.
@@ -124,7 +154,7 @@ export class EventsService {
   // Backfills lineId on events written before the field existed, once per event.
   private async withLineIds(event: AppEvent): Promise<AppEvent> {
     const lines = (event.recipes ?? []) as IncomingLine[];
-    if (lines.every((l) => l.lineId)) return event;
+    if (lines.every((l) => l.lineId)) return { ...event, recipes: lines as EventRecipeLine[] };
     const recipes = fillLineIds(lines);
     try {
       await this.ddb.update(this.table, { eventId: event.eventId }, { recipes }, {
@@ -132,7 +162,7 @@ export class EventsService {
         names: { "#r": "recipes", "#lid": "lineId" },
       });
     } catch (err) {
-      if ((err as { name?: string }).name !== "ConditionalCheckFailedException") throw err;
+      if (!isConditionFailure(err)) throw err;
       const fresh = (await this.ddb.get(this.table, { eventId: event.eventId })) as AppEvent | null;
       return fresh ?? { ...event, recipes };
     }

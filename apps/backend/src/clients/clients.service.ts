@@ -100,9 +100,10 @@ export class ClientsService {
   ): Promise<{ created: AppEvent[]; skipped: string[] }> {
     const client = await this.getOrFail(clientId);
     const events = await this.scanEvents();
-    const existing = new Set(
-      events.filter((e) => e.clientId === clientId && e.templateId).map((e) => `${e.templateId}|${e.date}`),
-    );
+    const mine = events.filter((e) => e.clientId === clientId);
+    const existing = new Set(mine.filter((e) => e.templateId).map((e) => `${e.templateId}|${e.date}`));
+    // A hand-made event of this client on a date counts as that day being covered.
+    const datesTaken = new Set(mine.filter((e) => !e.templateId).map((e) => e.date.slice(0, 10)));
     const created: AppEvent[] = [];
     const skipped: string[] = [];
 
@@ -110,7 +111,7 @@ export class ClientsService {
       const weekday = isoWeekday(date);
       for (const template of client.templates.filter((t) => t.weekday === weekday)) {
         const key = `${template.templateId}|${date}`;
-        if (existing.has(key)) {
+        if (existing.has(key) || datesTaken.has(date)) {
           skipped.push(key);
           continue;
         }
@@ -167,6 +168,7 @@ export class ClientsService {
         ...(line.notes !== undefined && { notes: line.notes }),
       })),
       extraCosts: template.extraCosts,
+      ...(template.notes !== undefined && { notes: template.notes }),
       sellingPricePerGuest: template.sellingPricePerGuest,
       prestationType: template.prestationType ?? client.defaultPrestationType,
       vatRate: template.vatRate ?? client.defaultVatRate,

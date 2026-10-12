@@ -38,6 +38,7 @@ export class LedgerService {
   }
 
   async create(body: CreateLedgerEntryRequest): Promise<LedgerEntry> {
+    await this.assertOpen(body.date.slice(0, 7));
     const now = new Date().toISOString();
     const entry: LedgerEntry = {
       ...body,
@@ -54,6 +55,7 @@ export class LedgerService {
   async replace(entryId: string, body: CreateLedgerEntryRequest): Promise<LedgerEntry> {
     const stored = await this.getOrFail(entryId);
     if (stored.locked) throw new ConflictException(LOCKED);
+    await this.assertOpen(body.date.slice(0, 7));
     const entry: LedgerEntry = {
       ...body,
       entryId: stored.entryId,
@@ -113,9 +115,16 @@ export class LedgerService {
     const monthCloses = { ...(settings.monthCloses ?? {}) };
     const previous: MonthClose = { ...(monthCloses[ym] ?? { mpSource: "calcule" }) };
     delete previous.lockedAt;
-    monthCloses[ym] = { ...previous, unlockedAt: now, note: reason };
+    const note = previous.note ? `${previous.note} · Déverrouillé : ${reason}` : `Déverrouillé : ${reason}`;
+    monthCloses[ym] = { ...previous, unlockedAt: now, note };
     await this.settings.update({ monthCloses });
     return { unlocked: entries.length };
+  }
+
+  // A locked month refuses new entries and entries moved into it.
+  private async assertOpen(ym: string): Promise<void> {
+    const settings = await this.settings.get();
+    if (settings.monthCloses?.[ym]?.lockedAt) throw new ConflictException(LOCKED);
   }
 
   private async monthEntries(ym: string): Promise<LedgerEntry[]> {

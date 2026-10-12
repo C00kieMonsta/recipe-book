@@ -59,6 +59,16 @@ export class DdbService {
     await this.client.send(new PutCommand({ TableName: table, Item: item }));
   }
 
+  // Throws ConditionalCheckFailedException when a row with that key already exists.
+  async putIfAbsent(table: string, item: Record<string, unknown>, keyAttr: string) {
+    await this.client.send(new PutCommand({
+      TableName: table,
+      Item: item,
+      ConditionExpression: "attribute_not_exists(#pk)",
+      ExpressionAttributeNames: { "#pk": keyAttr },
+    }));
+  }
+
   async update(
     table: string,
     key: Record<string, string>,

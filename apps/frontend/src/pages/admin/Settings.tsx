@@ -895,7 +895,7 @@ export default function Settings() {
             <NumInput
               id="obj-mp"
               value={obj.rawMaterialPct === undefined ? undefined : round2(obj.rawMaterialPct * 100)}
-              placeholder={String(DEFAULT_RAW_MATERIAL_PCT * 100)}
+              placeholder={String(round2(DEFAULT_RAW_MATERIAL_PCT * 100))}
               min={0}
               onChange={(v) => setObj({ rawMaterialPct: v === undefined ? undefined : Math.round(v * 100) / 10000 })}
             />
@@ -905,7 +905,7 @@ export default function Settings() {
             <NumInput
               id="obj-isoc"
               value={obj.corporateTaxRate === undefined ? undefined : round2(obj.corporateTaxRate * 100)}
-              placeholder={String(DEFAULT_TAX_RATE * 100)}
+              placeholder={String(round2(DEFAULT_TAX_RATE * 100))}
               min={0}
               onChange={(v) => setObj({ corporateTaxRate: v === undefined ? undefined : Math.round(v * 100) / 10000 })}
             />

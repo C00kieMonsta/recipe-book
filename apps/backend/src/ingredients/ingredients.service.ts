@@ -5,6 +5,7 @@ import type {
   DuplicateMember,
   GroceryList,
   GroceryListItem,
+  ImportIngredientRow,
   Ingredient,
   Recipe,
   RecipeIngredient,
@@ -25,7 +26,6 @@ export type MergeResult =
 
 export interface ImportIngredientsResult { created: number; updated: number; unmatched: string[] }
 
-export type ImportIngredientRow = { nom: string; prix_htva: number; unite: string; fournisseur: string; commentaire?: string };
 
 // Finds an ingredient by name: exact nameLower, then normalized name, then normalized alias.
 export class IngredientLookup {
@@ -168,7 +168,10 @@ export class IngredientsService {
   }
 
   async update(ingredientId: string, fields: Partial<Ingredient>): Promise<Ingredient> {
-    await this.getOrFail(ingredientId);
+    const stored = await this.getOrFail(ingredientId);
+    if (fields.unit && PRICE_TO_QTY_UNIT[fields.unit] !== PRICE_TO_QTY_UNIT[stored.unit]) {
+      await this.assertUnused(ingredientId, "UNIT_IN_USE");
+    }
     const updates: Record<string, unknown> = {
       ...fields,
       updatedAt: new Date().toISOString(),
@@ -187,12 +190,17 @@ export class IngredientsService {
   }
 
   async delete(ingredientId: string): Promise<void> {
+    await this.assertUnused(ingredientId, "IN_USE");
+    await this.ddb.delete(this.table, { ingredientId });
+  }
+
+  // 409 with the recipe names when any recipe line references the ingredient.
+  private async assertUnused(ingredientId: string, code: "IN_USE" | "UNIT_IN_USE"): Promise<void> {
     const recipes = await this.scanRecipes();
     const names = recipes
       .filter((r) => (r.ingredients ?? []).some((l) => l.ingredientId === ingredientId))
       .map((r) => r.name);
-    if (names.length > 0) throw new ConflictException({ code: "IN_USE", recipes: names });
-    await this.ddb.delete(this.table, { ingredientId });
+    if (names.length > 0) throw new ConflictException({ code, recipes: names });
   }
 
   async batchPut(ingredients: Ingredient[]): Promise<void> {
@@ -289,7 +297,7 @@ export class IngredientsService {
       if (key) aliases.add(key);
       for (const a of row.aliases ?? []) aliases.add(a);
     }
-    const mergedFrom = new Set([...(survivor.mergedFrom ?? []), ...ids]);
+    const mergedFrom = new Set([...(survivor.mergedFrom ?? []), ...mergedRows.map((r) => r.ingredientId)]);
     await this.ddb.update(this.table, { ingredientId: survivorId }, {
       aliases: [...aliases],
       mergedFrom: [...mergedFrom],
@@ -317,8 +325,7 @@ export class IngredientsService {
 
       const match = lookup.find(name);
       if (match) {
-        const rowUnit = row.unite as Ingredient["unit"];
-        if (PRICE_TO_QTY_UNIT[rowUnit] !== PRICE_TO_QTY_UNIT[match.unit]) {
+        if (PRICE_TO_QTY_UNIT[row.unite] !== PRICE_TO_QTY_UNIT[match.unit]) {
           unmatched.push(name);
           continue;
         }
@@ -338,7 +345,7 @@ export class IngredientsService {
           name,
           nameLower,
           price: row.prix_htva,
-          unit: row.unite as Ingredient["unit"],
+          unit: row.unite,
           supplier: row.fournisseur,
           comment: row.commentaire,
           createdAt: now,

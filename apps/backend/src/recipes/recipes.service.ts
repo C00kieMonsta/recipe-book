@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "crypto";
-import type { Recipe, RecipeIngredient } from "@packages/types";
+import type { ImportRecipeIngredient, Recipe, RecipeIngredient } from "@packages/types";
 import { DdbService } from "../shared/ddb.service";
 import { S3Service } from "../shared/s3.service";
 import { IngredientLookup, IngredientsService } from "../ingredients/ingredients.service";
@@ -93,7 +93,7 @@ export class RecipesService {
         recipeIngredients.push({
           ingredientId: match.ingredientId,
           qty: ri.qty,
-          unit: (ri.unit || "g") as RecipeIngredient["unit"],
+          unit: ri.unit ?? "g",
           lossPct: 0,
         });
       }
@@ -128,12 +128,6 @@ export class RecipesService {
 
     return { created, skipped, unmatchedIngredients: [...unmatchedSet] };
   }
-}
-
-export interface ImportRecipeIngredient {
-  name: string;
-  qty: number;
-  unit?: string;
 }
 
 export interface ImportRecipeRow {

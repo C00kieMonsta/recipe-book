@@ -41,17 +41,23 @@ export class SettingsService {
     return withDefaults((item ?? {}) as Partial<AppSettings>);
   }
 
-  // Shallow merge: a record such as objectives is replaced whole by what the client sends.
+  // Writes only the keys given, so a save from one tab keeps sections saved by another.
+  // A record such as objectives is still replaced whole by what the client sends.
   async update(fields: SettingsUpdate): Promise<AppSettings> {
-    const current = await this.get();
     const given = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
-    const updated: AppSettings = {
-      ...current,
-      ...given,
-      settingsId: GLOBAL_ID,
-      updatedAt: new Date().toISOString(),
-    };
-    await this.ddb.put(this.table, updated as unknown as Record<string, unknown>);
-    return updated;
+    const updatedAt = new Date().toISOString();
+    const key = { settingsId: GLOBAL_ID };
+    const current = await this.ddb.get(this.table, key);
+    if (!current) {
+      const item = withDefaults({ ...given, updatedAt }) as unknown as Record<string, unknown>;
+      try {
+        await this.ddb.putIfAbsent(this.table, item, "settingsId");
+        return this.get();
+      } catch (err) {
+        if ((err as { name?: string }).name !== "ConditionalCheckFailedException") throw err;
+      }
+    }
+    await this.ddb.update(this.table, key, { ...given, updatedAt });
+    return this.get();
   }
 }

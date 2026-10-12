@@ -7,12 +7,14 @@ type Item = Record<string, unknown>;
 type UpdateCall = { table: string; key: Record<string, string>; fields: Item; options: UpdateOptions };
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+const conditionFailure = () => Object.assign(new Error("cond"), { name: "ConditionalCheckFailedException" });
 
 class FakeDdb {
   tables = { events: "events", ingredients: "", recipes: "", settings: "", groceryLists: "" };
   store = new Map<string, Map<string, Item>>();
   updates: UpdateCall[] = [];
-  failNextUpdateWith?: Error;
+  failUpdatesWith: Error[] = [];
+  beforeUpdate?: (call: UpdateCall) => void;
 
   rows(table: string) {
     if (!this.store.has(table)) this.store.set(table, new Map());
@@ -32,15 +34,15 @@ class FakeDdb {
   }
 
   async update(table: string, key: Record<string, string>, fields: Item, options: UpdateOptions = {}) {
-    this.updates.push({ table, key, fields: clone(fields), options });
-    if (this.failNextUpdateWith) {
-      const err = this.failNextUpdateWith;
-      this.failNextUpdateWith = undefined;
-      throw err;
-    }
+    const call = { table, key, fields: clone(fields), options };
+    this.updates.push(call);
+    this.beforeUpdate?.(call);
+    const queued = this.failUpdatesWith.shift();
+    if (queued) throw queued;
     const id = Object.values(key)[0];
     const item = this.rows(table).get(id);
-    if (!item) throw Object.assign(new Error("missing"), { name: "ConditionalCheckFailedException" });
+    if (!item) throw conditionFailure();
+    if (options.condition === "#ua = :expected" && item.updatedAt !== options.values?.[":expected"]) throw conditionFailure();
     for (const [k, v] of Object.entries(fields)) {
       if (v === undefined) continue;
       if (v === null) delete item[k];
@@ -123,7 +125,7 @@ describe("EventsService", () => {
 
     it("re-reads the item when the backfill condition fails", async () => {
       await ddb.put("events", baseEvent({ recipes: [{ recipeId: "r1", portions: 2 }] }));
-      ddb.failNextUpdateWith = Object.assign(new Error("cond"), { name: "ConditionalCheckFailedException" });
+      ddb.failUpdatesWith.push(conditionFailure());
       const stored = baseEvent({ recipes: [{ lineId: "winner", recipeId: "r1", portions: 2 }] });
       ddb.rows("events").set("e1", stored);
 
@@ -133,7 +135,7 @@ describe("EventsService", () => {
 
     it("rethrows other update errors", async () => {
       await ddb.put("events", baseEvent({ recipes: [{ recipeId: "r1", portions: 2 }] }));
-      ddb.failNextUpdateWith = new Error("boom");
+      ddb.failUpdatesWith.push(new Error("boom"));
       await expect(service.get("e1")).rejects.toThrow("boom");
     });
 
@@ -260,6 +262,57 @@ describe("EventsService", () => {
     it("patchLine merges the patch and keeps the rest", async () => {
       const event = await service.patchLine("e1", "b", { prepStatus: "doing", portions: 10 });
       expect(event.recipes[1]).toEqual({ lineId: "b", recipeId: "r2", portions: 10, notes: "spicy", prepStatus: "doing" });
+    });
+
+    it("writeLines guards on the updatedAt it read and bumps it", async () => {
+      const event = await service.patchLine("e1", "a", { notes: "x" });
+      expect(ddb.updates).toHaveLength(1);
+      expect(ddb.updates[0].options).toEqual({
+        condition: "#ua = :expected",
+        names: { "#ua": "updatedAt" },
+        values: { ":expected": "2026-01-01T00:00:00.000Z" },
+      });
+      expect(event.updatedAt > "2026-01-01T00:00:00.000Z").toBe(true);
+    });
+
+    it("patchLine retries once when updatedAt moved under it", async () => {
+      // The phone ticks line a between the laptop's read and its write.
+      ddb.beforeUpdate = () => {
+        const row = ddb.rows("events").get("e1") as Item;
+        row.recipes = (row.recipes as Item[]).map((l) => (l.lineId === "a" ? { ...l, prepStatus: "doing" } : l));
+        row.updatedAt = "2026-01-02T00:00:00.000Z";
+        ddb.beforeUpdate = undefined;
+      };
+      const event = await service.patchLine("e1", "b", { notes: "mild" });
+      expect(ddb.updates).toHaveLength(2);
+      expect(ddb.updates[1].options?.values).toEqual({ ":expected": "2026-01-02T00:00:00.000Z" });
+      expect(event.recipes[0].prepStatus).toBe("doing");
+      expect(event.recipes[1].notes).toBe("mild");
+    });
+
+    it("line writes 409 LINES_CHANGED when the event keeps moving", async () => {
+      let n = 0;
+      ddb.beforeUpdate = () => {
+        const row = ddb.rows("events").get("e1") as Item;
+        row.updatedAt = `2026-01-0${++n + 1}T00:00:00.000Z`;
+      };
+      const call = service.removeLine("e1", "c");
+      await expect(call).rejects.toBeInstanceOf(ConflictException);
+      await call.catch((err: ConflictException) => {
+        expect(err.getResponse()).toEqual({ code: "LINES_CHANGED", missing: [] });
+      });
+      expect(ddb.updates).toHaveLength(2);
+      expect((await service.getOrFail("e1")).recipes).toHaveLength(3);
+    });
+
+    it("line endpoints work on an event stored without a recipes attribute", async () => {
+      const bare = baseEvent({ eventId: "e2" });
+      delete bare.recipes;
+      await ddb.put("events", bare);
+      expect((await service.getOrFail("e2")).recipes).toEqual([]);
+      const event = await service.addLine("e2", { recipeId: "r1", portions: 1 });
+      expect(event.recipes).toHaveLength(1);
+      await expect(service.removeLine("e2", "nope")).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("patchLine 404s on an unknown line", async () => {

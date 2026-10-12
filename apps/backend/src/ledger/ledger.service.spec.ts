@@ -129,6 +129,27 @@ describe("LedgerService", () => {
     expect(patched.label).toBe("Buffet Dupont");
   });
 
+  it("unlockMonth appends the reason after the lock note", async () => {
+    await service.create(sale({ date: "2026-10-05" }));
+    await service.lockMonth({ ym: "2026-10", note: "clôture" });
+    await service.unlockMonth({ ym: "2026-10", reason: "facture oubliée" });
+    expect(settings.settings.monthCloses?.["2026-10"]?.note).toBe("clôture · Déverrouillé : facture oubliée");
+  });
+
+  it("create and replace into a locked month return 409 LOCKED", async () => {
+    const nov = await service.create(sale({ date: "2026-11-05" }));
+    await service.lockMonth({ ym: "2026-10" });
+    const createErr = await service.create(sale({ date: "2026-10-20" })).catch((e) => e);
+    expect(createErr).toBeInstanceOf(ConflictException);
+    expect((createErr as ConflictException).getResponse()).toMatchObject({ code: "LOCKED" });
+    const moveErr = await service.replace(nov.entryId, sale({ date: "2026-10-20" })).catch((e) => e);
+    expect(moveErr).toBeInstanceOf(ConflictException);
+    expect((await service.getOrFail(nov.entryId)).ym).toBe("2026-11");
+    expect(await service.list()).toHaveLength(1);
+    await service.unlockMonth({ ym: "2026-10", reason: "oubli" });
+    expect((await service.create(sale({ date: "2026-10-20" }))).ym).toBe("2026-10");
+  });
+
   it("remove deletes an unlocked entry", async () => {
     const created = await service.create(sale());
     await service.remove(created.entryId);
@@ -165,7 +186,7 @@ describe("LedgerService", () => {
     expect(close?.mpSource).toBe("achats");
     expect(close?.lockedAt).toBeUndefined();
     expect(close?.unlockedAt).toBeTruthy();
-    expect(close?.note).toBe("facture oubliée");
+    expect(close?.note).toBe("Déverrouillé : facture oubliée");
     const replaced = await service.replace(oct.entryId, sale({ label: "après déverrouillage" }));
     expect(replaced.label).toBe("après déverrouillage");
   });

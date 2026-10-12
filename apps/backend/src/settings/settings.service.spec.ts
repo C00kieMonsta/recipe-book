@@ -49,6 +49,13 @@ class FakeDdb {
     this.rows(table).set(this.keyOf(table, item), structuredClone(item));
   }
 
+  async putIfAbsent(table: string, item: Item) {
+    if (this.rows(table).has(this.keyOf(table, item))) {
+      throw Object.assign(new Error("exists"), { name: "ConditionalCheckFailedException" });
+    }
+    await this.put(table, item);
+  }
+
   async update(table: string, key: Record<string, string>, fields: Item, _options: UpdateOptions = {}) {
     const rows = this.rows(table);
     const id = this.keyOf(table, key);
@@ -158,9 +165,9 @@ describe("SettingsService.get", () => {
 });
 
 describe("SettingsService.update", () => {
-  it("keeps the keys it was not given and writes the merged item", async () => {
+  it("keeps the keys it was not given and writes only the given ones", async () => {
     const { ddb, service } = build();
-    ddb.seed("settings", {
+    const seed = {
       settingsId: "global",
       recipeCategories: ["Buffet"],
       suppliers: [{ name: "Barn" }],
@@ -168,7 +175,8 @@ describe("SettingsService.update", () => {
       objectives: { "2026": { annualRevenue: 50000, monthsActive: 10 } },
       monthCloses: { "2026-09": { mpSource: "achats" } },
       company: { name: "Table d'Amélie", vatNumber: "BE0123", address: "Rue X" },
-    });
+    };
+    ddb.seed("settings", seed);
 
     const result = await service.update({
       courses: ["Entrée", "Plat"],
@@ -185,8 +193,26 @@ describe("SettingsService.update", () => {
     expect(result.updatedAt).not.toBe("2026-01-01T00:00:00.000Z");
 
     const stored = ddb.raw("settings", GLOBAL_KEY) as unknown as AppSettings;
-    expect(stored).toEqual(result);
+    expect(stored).toEqual({
+      ...seed,
+      courses: ["Entrée", "Plat"],
+      monthCloses: { "2026-10": { mpSource: "saisi", rawMaterial: 1200 } },
+      updatedAt: result.updatedAt,
+    });
     expect(await service.get()).toEqual(result);
+  });
+
+  it("a save from a stale draft keeps a section another tab saved meanwhile", async () => {
+    const { service } = build();
+    await service.update({ courses: ["Plat"], ignoredDuplicateGroups: [] });
+    await service.update({ ignoredDuplicateGroups: ["oeuf"] });
+    await service.update({ monthCloses: { "2026-10": { mpSource: "achats", lockedAt: "2026-11-01T00:00:00.000Z" } } });
+
+    const result = await service.update({ courses: ["Plat", "Dessert"], objectives: {} });
+
+    expect(result.courses).toEqual(["Plat", "Dessert"]);
+    expect(result.ignoredDuplicateGroups).toEqual(["oeuf"]);
+    expect(result.monthCloses["2026-10"]?.lockedAt).toBe("2026-11-01T00:00:00.000Z");
   });
 
   it("creates the item from defaults when none exists", async () => {

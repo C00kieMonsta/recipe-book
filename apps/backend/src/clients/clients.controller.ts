@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, BadRequestException, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Delete, Param, Body, BadRequestException, HttpCode, UseGuards } from "@nestjs/common";
 import { AdminGuard } from "../auth/admin.guard";
 import {
   createClientSchema,
@@ -44,6 +44,7 @@ export class ClientsController {
   }
 
   @Post(":id/instantiate")
+  @HttpCode(200)
   async instantiate(@Param("id") id: string, @Body() body: unknown) {
     const parsed = instantiateSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -51,6 +52,7 @@ export class ClientsController {
   }
 
   @Post(":id/link-events")
+  @HttpCode(200)
   async linkEvents(@Param("id") id: string, @Body() body: unknown) {
     const parsed = linkEventsSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);

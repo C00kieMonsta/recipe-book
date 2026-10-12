@@ -2,10 +2,13 @@ import { Controller, Get, Post, Patch, Delete, Param, Body, Query, Res, BadReque
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { AdminGuard } from "../auth/admin.guard";
-import { createRecipeRequestSchema, updateRecipeRequestSchema } from "@packages/types";
-import { RecipesService, type ImportRecipeRow, type ImportRecipeIngredient } from "./recipes.service";
+import { z } from "zod";
+import { createRecipeRequestSchema, importRecipeIngredientSchema, updateRecipeRequestSchema } from "@packages/types";
+import { RecipesService, type ImportRecipeRow } from "./recipes.service";
 import { S3Service } from "../shared/s3.service";
 import { randomUUID } from "crypto";
+
+const importIngredientsSchema = z.array(importRecipeIngredientSchema);
 
 const parseNum = (v: unknown): number => {
   if (v === undefined || v === null || v === "") return 0;
@@ -43,13 +46,15 @@ function mapRow(row: Record<string, string>): ImportRecipeRow | null {
 function mapJsonRow(row: Record<string, unknown>): ImportRecipeRow | null {
   const name = (String(row.name || "")).trim();
   if (!name) return null;
+  const ingredients = importIngredientsSchema.safeParse(row.ingredients ?? []);
+  if (!ingredients.success) throw new BadRequestException({ recipe: name, issues: ingredients.error.issues });
   return {
     name,
     type: String(row.type || "Buffet"),
     portions: Number(row.portions) || 1,
     portionWeight: Number(row.portionWeight) || 150,
     description: String(row.description || ""),
-    ingredients: (row.ingredients as ImportRecipeIngredient[]) || [],
+    ingredients: ingredients.data,
     coeffSP: Number(row.coeffSP) || 4,
     coeffTA: Number(row.coeffTA) || 3,
     tvaSP: Number(row.tvaSP) || 12,

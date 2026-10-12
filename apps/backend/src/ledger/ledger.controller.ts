@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -11,6 +12,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { z } from "zod";
 import {
   createLedgerEntrySchema,
   lockMonthSchema,
@@ -20,6 +22,8 @@ import {
 import { AdminGuard } from "../auth/admin.guard";
 import { LedgerService } from "./ledger.service";
 
+const yearQuerySchema = z.string().regex(/^\d{4}$/).optional();
+
 @UseGuards(AdminGuard)
 @Controller("admin/ledger")
 export class LedgerController {
@@ -27,10 +31,13 @@ export class LedgerController {
 
   @Get()
   async list(@Query("year") year?: string) {
-    return this.ledger.list(year || undefined);
+    const parsed = yearQuerySchema.safeParse(year || undefined);
+    if (!parsed.success) throw new BadRequestException("year doit être une année sur 4 chiffres");
+    return this.ledger.list(parsed.data);
   }
 
   @Post("lock")
+  @HttpCode(200)
   async lock(@Body() body: unknown) {
     const parsed = lockMonthSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -38,6 +45,7 @@ export class LedgerController {
   }
 
   @Post("unlock")
+  @HttpCode(200)
   async unlock(@Body() body: unknown) {
     const parsed = unlockMonthSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);

@@ -97,6 +97,7 @@ const hoona: CreateClientRequest = {
       prestationType: "buffet",
       recipes: [{ recipeId: "lasagne", portions: 20 }],
       extraCosts: [],
+      notes: "Livrer avant 11h",
     },
   ],
   active: true,
@@ -186,6 +187,21 @@ describe("ClientsService", () => {
     expect(jeudi.templateId).toBe("tpl-jeudi");
     expect(jeudi.prestationType).toBe("buffet");
     expect(jeudi.vatRate).toBe(12);
+    expect(jeudi.notes).toBe("Livrer avant 11h");
+    expect("notes" in mardi).toBe(false);
+  });
+
+  it("instantiate skips a date where the client already has a hand-made event", async () => {
+    const { service, events } = setup();
+    const client = await service.create(hoona);
+    await events.create({
+      name: "Hoona manuel", date: "2026-10-13", guestCount: 10, recipes: [], extraCosts: [],
+      sellingPricePerGuest: 0, status: "upcoming", clientId: client.clientId,
+    });
+    const result = await service.instantiate(client.clientId, { dates: week });
+    expect(result.created.map((e) => e.date)).toEqual(["2026-10-15"]);
+    expect(result.skipped).toEqual([`${client.templates[0].templateId}|2026-10-13`]);
+    expect(await events.getAll()).toHaveLength(2);
   });
 
   it("instantiate scales portions on a guest override", async () => {
