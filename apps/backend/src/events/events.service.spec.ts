@@ -315,6 +315,21 @@ describe("EventsService", () => {
       await expect(service.removeLine("e2", "nope")).rejects.toBeInstanceOf(NotFoundException);
     });
 
+    it("patchLine sets assignedTo and clears it with an empty list", async () => {
+      const set = await service.patchLine("e1", "b", { assignedTo: ["kristoff"] });
+      expect(set.recipes[1]).toEqual({ lineId: "b", recipeId: "r2", portions: 3, notes: "spicy", assignedTo: ["kristoff"] });
+      const cleared = await service.patchLine("e1", "b", { assignedTo: [] });
+      expect(cleared.recipes[1]).toEqual({ lineId: "b", recipeId: "r2", portions: 3, notes: "spicy", assignedTo: [] });
+      const untouched = await service.patchLine("e1", "b", { notes: "mild" });
+      expect(untouched.recipes[1].assignedTo).toEqual([]);
+    });
+
+    it("putLines keeps assignedTo through a reorder", async () => {
+      await service.patchLine("e1", "c", { assignedTo: ["amelie", "kristoff"] });
+      const event = await service.putLines("e1", { lines: [{ lineId: "c", course: "Plat" }, { lineId: "a" }, { lineId: "b" }] });
+      expect(event.recipes[0]).toEqual({ lineId: "c", recipeId: "r3", portions: 4, course: "Plat", assignedTo: ["amelie", "kristoff"] });
+    });
+
     it("patchLine 404s on an unknown line", async () => {
       await expect(service.patchLine("e1", "zz", { portions: 1 })).rejects.toBeInstanceOf(NotFoundException);
     });

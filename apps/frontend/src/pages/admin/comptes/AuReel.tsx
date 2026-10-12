@@ -1,8 +1,8 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { AuReelRow } from "@packages/types";
-import { DEFAULT_PRESTATION_TYPES, auReel, auReelYear, fmtEur } from "@packages/types";
+import { DEFAULT_PRESTATION_TYPES, auReel, auReelYear, fmtEur, invoicedEventIds } from "@packages/types";
 import { api } from "@/lib/api";
 import { dayLabel, monthLabel } from "@/lib/dates";
 import { useReportInputs } from "@/lib/use-report-inputs";
@@ -56,7 +56,7 @@ export default function AuReel() {
   const [ym, setYm] = useYmParam();
   const year = Number(ym.slice(0, 4));
   const { toast } = useToast();
-  const { inputs, events, settings, loading, notConfigured, error, reload } = useReportInputs(year);
+  const { inputs, events, entries, settings, loading, notConfigured, error, reload } = useReportInputs(year);
 
   const typeLabel = useMemo(() => {
     const map = new Map<string, string>();
@@ -65,11 +65,14 @@ export default function AuReel() {
   }, [settings]);
 
   const eventName = useMemo(() => new Map(events.map((e) => [e.eventId, e.name])), [events]);
+  const invoiced = useMemo(() => invoicedEventIds(entries), [entries]);
 
   const month = useMemo(() => (inputs ? auReel(ym, inputs) : null), [inputs, ym]);
   const yearSummary = useMemo(() => (inputs ? auReelYear(year, inputs) : null), [inputs, year]);
 
   const objective = settings?.objectives?.[String(year)];
+  // Event whose "ajouter des heures" link was tapped; the first saved value creates hoursSpent.
+  const [hoursFor, setHoursFor] = useState<string | null>(null);
 
   const saveEvent = async (eventId: string, patch: { hoursSpent?: number; notes?: string }) => {
     try {
@@ -113,22 +116,40 @@ export default function AuReel() {
     const parts = [dayLabel(r.date), type ?? "Sans type"];
     if (detail) parts.push(detail);
     if (ev && ev.name !== r.label) parts.push(ev.name);
+    const toInvoice = r.status === "completed" && !invoiced.has(r.eventId);
+    const fields = (
+      <>
+        <span className="inline-flex min-h-11 items-center gap-1">
+          {r.hours === undefined && hoursFor !== r.eventId ? (
+            <button type="button" className="text-primary hover:underline" onClick={() => setHoursFor(r.eventId)}>ajouter des heures</button>
+          ) : (
+            <>Heures <EditableInlineNum value={r.hours ?? 0} min={0} suffix=" h" onSave={(v) => { setHoursFor(null); saveEvent(r.eventId, { hoursSpent: v }); }} /></>
+          )}
+        </span>
+        <span className="inline-flex min-h-11 items-center gap-1">
+          Observations <EditableInlineText value={r.notes ?? ""} placeholder="ajouter" onSave={(v) => saveEvent(r.eventId, { notes: v })} />
+        </span>
+      </>
+    );
     return (
       <div key={`v-${r.eventId}`} className="border-b border-border/60">
-        <ListRow
-          title={r.label}
-          subtitle={parts.join(" · ")}
-          trailing={<><span className="text-base tabular-nums">{fmtEur(r.htva)}</span>{tags}</>}
-          to={`/events/${r.eventId}`}
-        />
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 px-3 pb-3 text-base text-muted-foreground">
-          <span className="inline-flex min-h-11 items-center gap-1">
-            Heures <EditableInlineNum value={r.hours ?? 0} min={0} suffix=" h" onSave={(v) => saveEvent(r.eventId, { hoursSpent: v })} />
-          </span>
-          <span className="inline-flex min-h-11 items-center gap-1">
-            Observations <EditableInlineText value={r.notes ?? ""} placeholder="ajouter" onSave={(v) => saveEvent(r.eventId, { notes: v })} />
-          </span>
+        <div className="flex items-center gap-3">
+          <ListRow
+            className="min-w-0 flex-1"
+            title={r.label}
+            subtitle={parts.join(" · ")}
+            trailing={
+              <>
+                <span className="text-base tabular-nums">{fmtEur(r.htva)}</span>
+                {toInvoice && <Tag variant="warning">à facturer</Tag>}
+                {tags}
+              </>
+            }
+            to={toInvoice ? `/events/${r.eventId}?facturer=1` : `/events/${r.eventId}`}
+          />
+          <div className="hidden shrink-0 items-center gap-x-6 pr-3 text-base text-muted-foreground md:flex">{fields}</div>
         </div>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 px-3 pb-3 text-base text-muted-foreground md:hidden">{fields}</div>
       </div>
     );
   };
@@ -144,7 +165,7 @@ export default function AuReel() {
         actions={
           <>
             <button type="button" className={navBtn} aria-label="Mois précédent" onClick={() => setYm(shiftYm(ym, -1))}><ChevronLeft className="h-5 w-5" /></button>
-            <input type="month" aria-label="Mois" className="input-field min-h-11 w-auto" value={ym} onChange={(e) => { if (/^\d{4}-\d{2}$/.test(e.target.value)) setYm(e.target.value); }} />
+            <span className="inline-flex min-h-11 min-w-[9rem] items-center justify-center text-base font-medium capitalize" aria-live="polite">{monthLabel(ym)}</span>
             <button type="button" className={navBtn} aria-label="Mois suivant" onClick={() => setYm(shiftYm(ym, 1))}><ChevronRight className="h-5 w-5" /></button>
           </>
         }

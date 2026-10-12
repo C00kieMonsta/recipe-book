@@ -1,21 +1,22 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
+import { getToken, setToken as storeToken } from "@/lib/api";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
-const TOKEN_KEY = "admin_token";
 
 interface AuthContextType {
   isAuthenticated: boolean;
   token: string | null;
-  login: (email: string, password: string) => Promise<boolean>;
+  // persist keeps the token in localStorage so the phone stays signed in.
+  login: (email: string, password: string, persist?: boolean) => Promise<boolean>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => sessionStorage.getItem(TOKEN_KEY));
+  const [token, setToken] = useState<string | null>(() => getToken());
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string, persist = false): Promise<boolean> => {
     try {
       const res = await fetch(`${API_BASE}/admin/auth/login`, {
         method: "POST",
@@ -28,7 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await res.json();
       if (!data.token) return false;
 
-      sessionStorage.setItem(TOKEN_KEY, data.token);
+      storeToken(data.token, persist);
       setToken(data.token);
       return true;
     } catch {
@@ -37,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    sessionStorage.removeItem(TOKEN_KEY);
+    storeToken(null);
     setToken(null);
   };
 

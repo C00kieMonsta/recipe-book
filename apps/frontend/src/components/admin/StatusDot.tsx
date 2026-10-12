@@ -1,7 +1,7 @@
 import type { PrepStatus } from "@packages/types";
 import { Check } from "lucide-react";
 
-export const STATUS_LABEL: Record<PrepStatus, string> = { todo: "À préparer", doing: "En cours", done: "Fait" };
+export const STATUS_LABEL: Record<PrepStatus, string> = { todo: "À faire", doing: "En cours", done: "Fait" };
 
 const DOT: Record<PrepStatus, string> = {
   todo: "border-2 border-muted-foreground bg-transparent",

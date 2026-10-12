@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
+import { Check } from "lucide-react";
 import type { Recipe, Ingredient } from "@packages/types";
-import { scaleQty, calcIngredientLineCost, calcRecipeCost } from "@packages/types";
+import { calcIngredientLineCost, calcRecipeCost, fmtQty, scaleQtyNumber, scaleStepText } from "@packages/types";
 import { fmt } from "@/lib/recipe-helpers";
 import Stepper from "./Stepper";
 import SectionToggle from "./SectionToggle";
@@ -12,8 +13,33 @@ export interface RecipeReaderProps {
   onPortionsChange?: (portions: number) => void;
   size?: "lead" | "xl";
   showCost?: boolean;
+  // Mise en place: ticked ingredient indexes and the toggle; without them the rows have no checkbox.
+  ticks?: Set<number>;
+  onTick?: (index: number) => void;
+  // Scales the numbers written in the steps; off shows the base recipe text.
+  scaleSteps?: boolean;
+  // Shows the base value in muted text after each scaled number.
+  showBase?: boolean;
   extra?: ReactNode;
   className?: string;
+}
+
+export function StepText({ step, ratio, showBase }: { step: string; ratio: number; showBase?: boolean }) {
+  const { parts } = scaleStepText(step, ratio);
+  return (
+    <>
+      {parts.map((part, i) =>
+        typeof part === "string" ? (
+          <span key={i}>{part}</span>
+        ) : (
+          <span key={i} className="whitespace-nowrap">
+            <mark className="rounded bg-primary-soft px-0.5 text-inherit">{part.to}</mark>
+            {showBase && <span className="text-sm text-muted-foreground"> ({part.from})</span>}
+          </span>
+        ),
+      )}
+    </>
+  );
 }
 
 export default function RecipeReader({
@@ -23,32 +49,48 @@ export default function RecipeReader({
   onPortionsChange,
   size = "lead",
   showCost = false,
+  ticks,
+  onTick,
+  scaleSteps = true,
+  showBase = false,
   extra,
   className = "",
 }: RecipeReaderProps) {
   const ratio = portions / (recipe.portions || 1);
   const textSize = size === "xl" ? "text-xl" : "text-lead";
   const totalCost = calcRecipeCost(recipe, ingredientById);
+  const stepRatio = scaleSteps ? ratio : 1;
 
   return (
     <div className={className}>
       <section>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-h3">Ingrédients</h2>
-          {onPortionsChange ? (
-            <Stepper value={portions} onChange={onPortionsChange} min={1} label="portions" />
-          ) : (
-            <span className="text-base text-muted-foreground">pour {portions} portions</span>
-          )}
+          <h2 className="text-h3">{onPortionsChange ? "Ingrédients" : `Ingrédients pour ${portions}`}</h2>
+          {onPortionsChange && <Stepper value={portions} onChange={onPortionsChange} min={1} label="portions" />}
         </div>
         <ul className={`mt-3 divide-y divide-border ${textSize}`}>
           {recipe.ingredients.map((ri, i) => {
             const ing = ingredientById.get(ri.ingredientId);
+            const q = fmtQty(scaleQtyNumber(ri.qty, ratio), ri.unit);
+            const ticked = ticks?.has(i) ?? false;
             return (
-              <li key={`${ri.ingredientId}-${i}`} className="flex min-h-12 items-baseline justify-between gap-4 py-2">
-                <span className="min-w-0 flex-1">{ing?.name ?? "Ingrédient inconnu"}</span>
-                <span className="shrink-0 whitespace-nowrap font-semibold tabular-nums">
-                  {scaleQty(ri.qty, ratio)} <span className="font-normal text-muted-foreground">{ri.unit}</span>
+              <li key={`${ri.ingredientId}-${i}`} className={`flex min-h-12 items-center gap-3 ${ticked ? "text-muted-foreground" : ""}`}>
+                {onTick && (
+                  <button
+                    type="button"
+                    onClick={() => onTick(i)}
+                    aria-pressed={ticked}
+                    aria-label={`${ing?.name ?? "Ingrédient"} : ${ticked ? "coché" : "à cocher"}`}
+                    className="no-print -ml-2 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg hover:bg-hover"
+                  >
+                    <span className={`inline-flex h-6 w-6 items-center justify-center rounded border-2 ${ticked ? "border-success bg-success text-primary-foreground" : "border-input"}`}>
+                      {ticked && <Check className="h-4 w-4" strokeWidth={3} />}
+                    </span>
+                  </button>
+                )}
+                <span className="min-w-0 flex-1 py-2">{ing?.name ?? "Ingrédient inconnu"}</span>
+                <span className="shrink-0 whitespace-nowrap py-2 font-semibold tabular-nums">
+                  {q.value} <span className="font-normal text-muted-foreground">{q.unit}</span>
                 </span>
               </li>
             );
@@ -58,6 +100,13 @@ export default function RecipeReader({
 
       <section className="mt-block">
         <h2 className="text-h3">Préparation</h2>
+        {ratio !== 1 && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            {scaleSteps
+              ? `Quantités adaptées pour ${portions} portions (recette de base : ${recipe.portions})`
+              : `Quantités de la recette de base (${recipe.portions} portions)`}
+          </p>
+        )}
         {recipe.techniques.length === 0 ? (
           <p className="mt-3 text-base text-muted-foreground">Aucune étape.</p>
         ) : (
@@ -67,7 +116,9 @@ export default function RecipeReader({
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-soft text-sm font-semibold text-foreground">
                   {i + 1}
                 </span>
-                <p className="min-w-0 flex-1 whitespace-pre-wrap pt-0.5">{step}</p>
+                <p className="min-w-0 flex-1 whitespace-pre-wrap pt-0.5">
+                  <StepText step={step} ratio={stepRatio} showBase={showBase} />
+                </p>
               </li>
             ))}
           </ol>

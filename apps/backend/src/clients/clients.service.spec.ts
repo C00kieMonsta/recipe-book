@@ -1,6 +1,6 @@
 import { ConflictException } from "@nestjs/common";
 import type { Client, CreateClientRequest } from "@packages/types";
-import { ClientsService, isoWeekday } from "./clients.service";
+import { ClientsService, eventNameFor, isoWeekday } from "./clients.service";
 import { EventsService } from "../events/events.service";
 import type { DdbService } from "../shared/ddb.service";
 
@@ -98,6 +98,7 @@ const hoona: CreateClientRequest = {
       recipes: [{ recipeId: "lasagne", portions: 20 }],
       extraCosts: [],
       notes: "Livrer avant 11h",
+      assignedTo: ["kristoff"],
     },
   ],
   active: true,
@@ -117,6 +118,16 @@ describe("isoWeekday", () => {
   it("maps Monday to 1 and Sunday to 7", () => {
     expect(isoWeekday("2026-10-12")).toBe(1);
     expect(isoWeekday("2026-10-18")).toBe(7);
+  });
+});
+
+describe("eventNameFor", () => {
+  it("uses the client name alone when the template is named after its weekday", () => {
+    expect(eventNameFor({ name: "Hoona" }, { name: "Mardi" })).toBe("Hoona");
+    expect(eventNameFor({ name: "Hoona" }, { name: " jeudi " })).toBe("Hoona");
+  });
+  it("appends the template name otherwise", () => {
+    expect(eventNameFor({ name: "Hoona" }, { name: "Lunch" })).toBe("Hoona · Lunch");
   });
 });
 
@@ -167,7 +178,8 @@ describe("ClientsService", () => {
     expect(result.created.map((e) => e.date)).toEqual(["2026-10-13", "2026-10-15"]);
 
     const mardi = result.created[0];
-    expect(mardi.name).toBe("Hoona · mardi 13 oct.");
+    expect(mardi.name).toBe("Hoona");
+    expect("assignedTo" in mardi).toBe(false);
     expect(mardi.clientId).toBe(client.clientId);
     expect(mardi.templateId).toBe(client.templates[0].templateId);
     expect(mardi.guestCount).toBe(30);
@@ -188,7 +200,18 @@ describe("ClientsService", () => {
     expect(jeudi.prestationType).toBe("buffet");
     expect(jeudi.vatRate).toBe(12);
     expect(jeudi.notes).toBe("Livrer avant 11h");
+    expect(jeudi.assignedTo).toEqual(["kristoff"]);
     expect("notes" in mardi).toBe(false);
+  });
+
+  it("instantiate names the event after the client and the template when the template is not a weekday", async () => {
+    const { service } = setup();
+    const client = await service.create({
+      ...hoona,
+      templates: [{ name: "Lunch", weekday: 2, guestCount: 10, sellingPricePerGuest: 12, recipes: [], extraCosts: [] }],
+    });
+    const result = await service.instantiate(client.clientId, { dates: ["2026-10-13"] });
+    expect(result.created[0].name).toBe("Hoona · Lunch");
   });
 
   it("instantiate skips a date where the client already has a hand-made event", async () => {

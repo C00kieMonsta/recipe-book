@@ -91,6 +91,16 @@ export const companySettingsSchema = z
   })
   .strict();
 
+export const personSchema = z
+  .object({
+    personId: z.string().regex(/^[a-z0-9-]{1,40}$/),
+    name: z.string().min(1).max(60).trim(),
+    initials: z.string().trim().min(1).max(3).optional(),
+    active: z.boolean(),
+  })
+  .strict();
+export type PersonRequest = z.infer<typeof personSchema>;
+
 export const updateSettingsRequestSchema = z.object({
   recipeCategories: z.array(z.string().min(1).trim()).min(1).optional(),
   suppliers: z.array(settingsSupplierSchema).optional(),
@@ -103,5 +113,6 @@ export const updateSettingsRequestSchema = z.object({
   ledgerStartYm: yearMonth.optional(),
   company: companySettingsSchema.optional(),
   ignoredDuplicateGroups: z.array(z.string()).optional(),
+  people: z.array(personSchema).max(30).optional(),
 });
 export type UpdateSettingsRequest = z.infer<typeof updateSettingsRequestSchema>;

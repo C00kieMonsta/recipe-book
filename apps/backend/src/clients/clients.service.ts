@@ -11,17 +11,16 @@ import type {
   UpdateClientRequest,
   Weekday,
 } from "@packages/types";
+import { isWeekdayLabel } from "@packages/types";
 import { DdbService } from "../shared/ddb.service";
 import { EventsService } from "../events/events.service";
 
 type TemplateInput = CreateClientRequest["templates"][number];
 
-const eventName = new Intl.DateTimeFormat("fr-BE", {
-  weekday: "long",
-  day: "numeric",
-  month: "short",
-  timeZone: "UTC",
-});
+// The client name alone when the template is only named after its weekday; the date shows elsewhere.
+export function eventNameFor(client: Pick<Client, "name">, template: Pick<ClientTemplate, "name">): string {
+  return isWeekdayLabel(template.name) ? client.name : `${client.name} · ${template.name.trim()}`;
+}
 
 // ISO weekday of a YYYY-MM-DD date, Monday = 1 and Sunday = 7.
 export function isoWeekday(date: string): Weekday {
@@ -154,9 +153,8 @@ export class ClientsService {
   ): CreateEventRequest {
     const guests = guestCount ?? template.guestCount;
     const ratio = guests / template.guestCount;
-    const label = eventName.format(new Date(`${date}T00:00:00Z`));
     return {
-      name: `${client.name} · ${label}`,
+      name: eventNameFor(client, template),
       date,
       clientId: client.clientId,
       templateId: template.templateId,
@@ -169,6 +167,7 @@ export class ClientsService {
       })),
       extraCosts: template.extraCosts,
       ...(template.notes !== undefined && { notes: template.notes }),
+      ...(template.assignedTo && { assignedTo: template.assignedTo }),
       sellingPricePerGuest: template.sellingPricePerGuest,
       prestationType: template.prestationType ?? client.defaultPrestationType,
       vatRate: template.vatRate ?? client.defaultVatRate,

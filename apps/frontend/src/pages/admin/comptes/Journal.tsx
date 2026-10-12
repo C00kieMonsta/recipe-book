@@ -52,7 +52,8 @@ function Sheet({ children, onClose, wide }: { children: ReactNode; onClose: () =
   );
 }
 
-function PaidPopover({ entry, onSaved }: { entry: LedgerEntry; onSaved: () => void }) {
+// Two-field "Réglé" popover shared with the event page and À facturer; the trigger defaults to the journal tag.
+export function PaidPopover({ entry, onSaved, trigger, align = "left" }: { entry: LedgerEntry; onSaved: () => void; trigger?: ReactNode; align?: "left" | "right" }) {
   const [open, setOpen] = useState(false);
   const [paid, setPaid] = useState(entry.paid);
   const [method, setMethod] = useState<string>(entry.paymentMethod ?? "");
@@ -79,11 +80,11 @@ function PaidPopover({ entry, onSaved }: { entry: LedgerEntry; onSaved: () => vo
 
   return (
     <div className="relative" onClick={(e) => e.stopPropagation()}>
-      <button type="button" className="inline-flex min-h-11 items-center" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <Tag variant={entry.paid ? "success" : "warning"}>{entry.paid ? "Réglé" : "Non réglé"}</Tag>
+      <button type="button" className="inline-flex min-h-11 items-center" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="dialog">
+        {trigger ?? <Tag variant={entry.paid ? "success" : "warning"}>{entry.paid ? "Réglé" : "Non réglé"}</Tag>}
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-64 rounded-xl border border-border bg-card p-3 shadow-lg">
+        <div className={`absolute top-full z-30 mt-1 w-64 rounded-xl border border-border bg-card p-3 text-left shadow-lg ${align === "right" ? "right-0" : "left-0"}`}>
           <label className="flex min-h-11 items-center gap-2 text-base">
             <input type="checkbox" className="h-5 w-5" checked={paid} onChange={(e) => { setPaid(e.target.checked); if (e.target.checked && !paidAt) setPaidAt(todayIso()); }} />
             Réglé
@@ -355,7 +356,7 @@ export default function Journal() {
             <td className="text-right">{fmtEur(sales.totalCa)}</td>
             <td colSpan={8} />
           </tr>
-          {sales.byType.map((t) => (
+          {sales.byType.filter((t) => t.amount !== 0).map((t) => (
             <tr key={t.label} className="font-normal text-muted-foreground">
               <td colSpan={4} className="!font-normal !border-t-0 pl-6">{t.label}</td>
               <td className="!border-t-0" />
@@ -463,7 +464,7 @@ export default function Journal() {
   );
 
   const rail = (
-    <aside className="flex flex-col gap-3 lg:w-72 lg:shrink-0">
+    <aside className="grid grid-cols-1 gap-3 sm:grid-cols-3 2xl:flex 2xl:w-72 2xl:shrink-0 2xl:flex-col">
       <RailTile label="Acomptes du mois" value={fmtEur(sumMoney(acomptes.map((e) => e.totalTvac)))} sub={`${acomptes.length} acompte${acomptes.length > 1 ? "s" : ""}`} />
       <RailTile label="Commissions" value={fmtEur(sumMoney(commissions.map((e) => e.htva)))} sub="hors CA" />
       <RailTile label="À encaisser" value={fmtEur(encaisser.total)} sub={`${encaisser.count} ligne${encaisser.count > 1 ? "s" : ""} non réglée${encaisser.count > 1 ? "s" : ""}`} />
@@ -536,7 +537,7 @@ export default function Journal() {
       {loading ? (
         <p className="mt-6 text-base text-muted-foreground">Chargement…</p>
       ) : (
-        <div className="mt-4 flex flex-col gap-6 lg:flex-row">
+        <div className="mt-4 flex flex-col gap-6 2xl:flex-row">
           <div className="min-w-0 flex-1">
             <div className="hidden md:block">{book === "ventes" ? salesTable : purchaseTable}</div>
             <div className="md:hidden">{cards}</div>

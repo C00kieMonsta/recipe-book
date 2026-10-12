@@ -2,6 +2,7 @@ import type { AppEvent, EventExtraCost } from "../entities/event";
 import type { Ingredient } from "../entities/ingredient";
 import type { Recipe, RecipeIngredient } from "../entities/recipe";
 import {
+  buildCostSnapshot,
   calcEventCost,
   calcIngredientLineCost,
   calcLinesRawMaterial,
@@ -185,5 +186,30 @@ describe("calcEventCost", () => {
   it("total uses the actual cost when set, like today's EventEditor", () => {
     const ev = event({ recipes: lines, actualCost: 100, extraCosts: [{ label: "x", amount: 25, kind: "transport" }] });
     expect(calcEventCost(ev, costs, portions).total).toBeCloseTo(125);
+  });
+});
+
+describe("buildCostSnapshot", () => {
+  it("freezes unit costs per line, the raw material and the extras total", () => {
+    const event = {
+      recipes: [
+        { lineId: "a", recipeId: "r1", portions: 30 },
+        { lineId: "b", recipeId: "r2", portions: 10 },
+        { lineId: "c", recipeId: "unknown", portions: 5 },
+      ],
+      extraCosts: [{ label: "Livraison", amount: 10.005 }, { label: "Extra", amount: 5 }],
+    };
+    const snapshot = buildCostSnapshot(event, new Map([["r1", 40], ["r2", 7.5]]), new Map([["r1", 10], ["r2", 4]]));
+    expect(snapshot.lines).toEqual([
+      { lineId: "a", recipeId: "r1", portions: 30, unitCost: 4 },
+      { lineId: "b", recipeId: "r2", portions: 10, unitCost: 1.875 },
+      { lineId: "c", recipeId: "unknown", portions: 5, unitCost: 0 },
+    ]);
+    expect(snapshot.rawMaterial).toBe(138.75);
+    expect(snapshot.extrasTotal).toBe(15.01);
+    expect("takenAt" in snapshot).toBe(false);
+  });
+  it("handles an event without lines", () => {
+    expect(buildCostSnapshot({ recipes: [], extraCosts: [] }, new Map(), new Map())).toEqual({ rawMaterial: 0, extrasTotal: 0, lines: [] });
   });
 });

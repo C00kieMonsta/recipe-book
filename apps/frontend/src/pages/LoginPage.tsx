@@ -9,13 +9,14 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const success = await login(email, password);
+    const success = await login(email, password, remember);
     if (success) {
       navigate("/");
     } else {
@@ -53,6 +54,15 @@ export default function LoginPage() {
               </button>
             </div>
           </div>
+          <label className="flex min-h-11 items-center gap-3 text-base">
+            <input
+              type="checkbox"
+              className="h-5 w-5 rounded border-input accent-primary"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+            />
+            Rester connecté sur cet appareil
+          </label>
           <button type="submit" className="w-full min-h-11 bg-primary text-primary-foreground rounded-lg text-base font-semibold shadow-sm hover:opacity-90 transition-opacity">
             Se connecter
           </button>

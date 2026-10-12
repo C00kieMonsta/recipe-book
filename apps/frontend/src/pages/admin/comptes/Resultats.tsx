@@ -234,10 +234,10 @@ export default function Resultats() {
         <>
           {/* Desktop table */}
           <div className="hidden overflow-x-auto md:block">
-            <table className="table">
+            <table className="table min-w-[1100px]">
               <thead>
                 <tr className="text-muted-foreground">
-                  <th>Mois</th>
+                  <th className="sticky left-0 bg-background">Mois</th>
                   <th className="text-right">CA HTVA</th>
                   <th className="text-right">Coûts MP</th>
                   <th className="text-right">Marge brute</th>
@@ -254,7 +254,7 @@ export default function Resultats() {
               <tbody>
                 {st.months.map((r) => (
                   <tr key={r.ym} className="border-t border-border/60 align-top">
-                    <td><Link to={`/comptes/journal?ym=${r.ym}`} className="inline-flex min-h-11 items-center font-medium hover:underline">{monthName(r.ym)}</Link></td>
+                    <td className="sticky left-0 bg-background"><Link to={`/comptes/journal?ym=${r.ym}`} className="inline-flex min-h-11 items-center font-medium hover:underline">{monthName(r.ym)}</Link></td>
                     <td className="text-right">{fmtEur(r.ca)}</td>
                     <td className="text-right">{mpCell(r)}<div className="text-right">{mpNote(r)}</div></td>
                     <td className="text-right">{signed(r.margeBrute)}</td>
@@ -271,7 +271,7 @@ export default function Resultats() {
               </tbody>
               <tfoot>
                 <tr>
-                  <td>Total année</td>
+                  <td className="sticky left-0 bg-background">Total année</td>
                   <td className="text-right">{fmtEur(st.annual.ca)}</td>
                   <td className="text-right">{fmtEur(st.annual.mp)}</td>
                   <td className="text-right">{signed(st.annual.margeBrute)}</td>
@@ -287,20 +287,20 @@ export default function Resultats() {
                   <td className={`text-right ${st.annual.resultatNet < 0 ? "text-destructive" : ""}`}>{signed(st.annual.resultatNet)}</td>
                 </tr>
                 <tr className="text-muted-foreground">
-                  <td className="font-normal">MP / CA</td>
+                  <td className="sticky left-0 bg-background font-normal">MP / CA</td>
                   <td /><td className="text-right font-normal">{fmtPct(st.ratios.mpSurCa)}</td><td colSpan={9} />
                 </tr>
                 <tr className="text-muted-foreground">
-                  <td className="font-normal">Marge brute / CA</td>
+                  <td className="sticky left-0 bg-background font-normal">Marge brute / CA</td>
                   <td /><td /><td className="text-right font-normal">{fmtPct(st.ratios.margeBruteSurCa)}</td><td colSpan={8} />
                 </tr>
                 <tr className="text-muted-foreground">
-                  <td className="font-normal">Charges fixes / CA</td>
+                  <td className="sticky left-0 bg-background font-normal">Charges fixes / CA</td>
                   <td colSpan={4} /><td className="text-right font-normal">{fmtPct(st.ratios.chargesFixesSurCa)}</td><td colSpan={6} />
                 </tr>
                 {st.simulation && (
                   <tr className="border-t border-border">
-                    <td><span className="flex flex-col gap-1"><span>Simulation</span>{scenarioPicker}</span></td>
+                    <td className="sticky left-0 bg-background"><span className="flex flex-col gap-1"><span>Simulation</span>{scenarioPicker}</span></td>
                     <td className="text-right">{fmtEur(st.simulation.ca)}</td>
                     <td className="text-right">{fmtEur(st.simulation.mp)}</td>
                     <td className="text-right">{signed(st.simulation.margeBrute)}</td>

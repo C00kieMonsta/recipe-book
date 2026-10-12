@@ -1,12 +1,21 @@
 import type { AppEvent, EventRecipeLine } from "../entities/event";
+import type { Person } from "../entities/settings";
 import { DEFAULT_COURSES } from "../entities/settings";
 import {
+  assigneesOf,
   courseIndex,
+  filterByPerson,
   groupByCourse,
+  groupByPerson,
   groupByRecipe,
+  isWeekdayLabel,
   monthSignedRevenue,
+  personInitials,
+  personName,
   prepLinesForDate,
+  shortEventName,
   signedRevenue,
+  slugifyPersonId,
   sortEventLines,
   weekPlan,
   type RecipeLookup,
@@ -171,5 +180,112 @@ describe("signedRevenue and weekPlan", () => {
     ];
     expect(monthSignedRevenue(events, "2026-10")).toBe(3);
     expect(monthSignedRevenue(events, "2026-09")).toBe(0);
+  });
+});
+
+const people: Person[] = [
+  { personId: "amelie", name: "Amélie", active: true },
+  { personId: "kristoff", name: "Kristoff", initials: "KR", active: true },
+  { personId: "jo", name: "Jo", active: false },
+];
+
+describe("assigneesOf", () => {
+  it("uses the line list when set, else the event list, else nothing", () => {
+    expect(assigneesOf({ assignedTo: ["jo"] }, { assignedTo: ["amelie"] })).toEqual(["jo"]);
+    expect(assigneesOf({ assignedTo: [] }, { assignedTo: ["amelie"] })).toEqual(["amelie"]);
+    expect(assigneesOf({}, { assignedTo: ["amelie"] })).toEqual(["amelie"]);
+    expect(assigneesOf({}, {})).toEqual([]);
+  });
+});
+
+describe("person helpers", () => {
+  it("personName falls back to the id", () => {
+    expect(personName(people, "kristoff")).toBe("Kristoff");
+    expect(personName(people, "ghost")).toBe("ghost");
+  });
+  it("personInitials uses the given initials or the first two letters", () => {
+    expect(personInitials(people[0])).toBe("AM");
+    expect(personInitials(people[1])).toBe("KR");
+    expect(personInitials({ name: "élodie", initials: "  " })).toBe("ÉL");
+  });
+  it("slugifyPersonId strips accents, replaces symbols and suffixes on collision", () => {
+    expect(slugifyPersonId("Kristoff", [])).toBe("kristoff");
+    expect(slugifyPersonId("Amélie Van Acker", [])).toBe("amelie-van-acker");
+    expect(slugifyPersonId("Jo", ["jo"])).toBe("jo-2");
+    expect(slugifyPersonId("Jo", ["jo", "jo-2"])).toBe("jo-3");
+    expect(slugifyPersonId("!!!", [])).toBe("personne");
+    expect(slugifyPersonId("a".repeat(50), [])).toHaveLength(40);
+  });
+  it("isWeekdayLabel matches the French weekday names", () => {
+    expect(isWeekdayLabel("Mardi")).toBe(true);
+    expect(isWeekdayLabel(" lundi ")).toBe(true);
+    expect(isWeekdayLabel("Lunch")).toBe(false);
+  });
+});
+
+describe("shortEventName", () => {
+  const hoona = { name: "Hoona" };
+  it("returns the client name for a template event", () => {
+    expect(shortEventName({ name: "Hoona · Lunch", templateId: "t" }, hoona)).toBe("Hoona");
+  });
+  it("returns the client name for the generated date name", () => {
+    expect(shortEventName({ name: "Hoona · mardi 13 oct." }, hoona)).toBe("Hoona");
+    expect(shortEventName({ name: "Hoona · mardi 13 octobre" }, hoona)).toBe("Hoona");
+  });
+  it("keeps a hand-written name or one without a client", () => {
+    expect(shortEventName({ name: "Hoona · Lunch" }, hoona)).toBe("Hoona · Lunch");
+    expect(shortEventName({ name: "Mariage Dupont" }, hoona)).toBe("Mariage Dupont");
+    expect(shortEventName({ name: "Hoona · mardi 13 oct.", templateId: "t" })).toBe("Hoona · mardi 13 oct.");
+  });
+});
+
+describe("groupByPerson and filterByPerson", () => {
+  const events = [
+    event({ eventId: "a", date: "2026-10-13", assignedTo: ["kristoff"], recipes: [line("quiche"), line("tarte", { assignedTo: ["amelie", "kristoff"] })] }),
+    event({ eventId: "b", date: "2026-10-13", recipes: [line("poulet"), line("quiche", { assignedTo: ["ghost"] })] }),
+  ];
+  const lines = prepLinesForDate(events, recipeById, new Map(), DEFAULT_COURSES, "2026-10-13");
+
+  it("prep lines carry the effective assignees and whether they own them", () => {
+    const quicheA = lines.find((l) => l.eventId === "a" && l.recipeId === "quiche");
+    const tarte = lines.find((l) => l.recipeId === "tarte");
+    const poulet = lines.find((l) => l.recipeId === "poulet");
+    expect(quicheA).toMatchObject({ assignedTo: ["kristoff"], ownAssignment: false });
+    expect(tarte).toMatchObject({ assignedTo: ["amelie", "kristoff"], ownAssignment: true });
+    expect(poulet).toMatchObject({ assignedTo: [], ownAssignment: false });
+  });
+
+  it("groups in settings order, unknown ids after, Sans personne last, a shared line in both", () => {
+    const groups = groupByPerson(lines, people);
+    expect(groups.map((g) => [g.personId, g.name, g.lines.map((l) => l.recipeId)])).toEqual([
+      ["amelie", "Amélie", ["tarte"]],
+      ["kristoff", "Kristoff", ["quiche", "tarte"]],
+      ["ghost", "ghost", ["quiche"]],
+      [null, "Sans personne", ["poulet"]],
+    ]);
+  });
+
+  it("drops empty groups", () => {
+    expect(groupByPerson([], people)).toEqual([]);
+  });
+
+  it("filterByPerson keeps the lines of one person", () => {
+    expect(filterByPerson(lines, "amelie").map((l) => l.recipeId)).toEqual(["tarte"]);
+    expect(filterByPerson(lines, "nobody")).toEqual([]);
+  });
+});
+
+describe("weekPlan.peopleByDay", () => {
+  it("lists distinct effective assignees per day in settings order", () => {
+    const events = [
+      event({ eventId: "a", date: "2026-10-13", assignedTo: ["kristoff"], recipes: [line("quiche"), line("tarte", { assignedTo: ["amelie"] })] }),
+      event({ eventId: "b", date: "2026-10-13", recipes: [line("poulet", { assignedTo: ["zed", "kristoff"] })] }),
+      event({ eventId: "c", date: "2026-10-14", assignedTo: ["jo"], recipes: [] }),
+    ];
+    const plan = weekPlan(events, "2026-10-12", people);
+    expect(plan.peopleByDay["2026-10-13"]).toEqual(["amelie", "kristoff", "zed"]);
+    expect(plan.peopleByDay["2026-10-14"]).toEqual(["jo"]);
+    expect(plan.peopleByDay["2026-10-12"]).toEqual([]);
+    expect(Object.keys(plan.peopleByDay)).toHaveLength(7);
   });
 });

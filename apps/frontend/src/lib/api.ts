@@ -24,6 +24,8 @@ import type {
 } from "@packages/types";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
+// The health route sits outside the api prefix.
+const HEALTH_URL = `${API_BASE.replace(/\/api\/?$/, "")}/health`;
 const TOKEN_KEY = "admin_token";
 
 export class ApiError extends Error {
@@ -37,12 +39,20 @@ export class ApiError extends Error {
   }
 }
 
-function getToken(): string | null {
-  return sessionStorage.getItem(TOKEN_KEY);
+// A device that chose "Rester connecté" keeps the token in localStorage; the tab-only token stays in sessionStorage.
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY) ?? sessionStorage.getItem(TOKEN_KEY);
+}
+
+export function setToken(token: string | null, persist = false) {
+  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+  if (!token) return;
+  (persist ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
 }
 
 function handleUnauthorized() {
-  sessionStorage.removeItem(TOKEN_KEY);
+  setToken(null);
   window.location.href = "/login";
 }
 
@@ -143,6 +153,11 @@ export interface LinkEventsResponse { linked: number }
 export interface LockMonthResponse { locked: number }
 export interface UnlockMonthResponse { unlocked: number }
 
+export interface HealthResponse {
+  status: string;
+  tables: { clients: boolean; ledger: boolean };
+}
+
 export interface CreateGroceryListRequest {
   title: string;
   items?: GroceryList["items"];
@@ -152,6 +167,9 @@ export interface CreateGroceryListRequest {
 
 // ── API ─────────────────────────────────────────────────────────────────────
 export const api = {
+  health: {
+    get: async (): Promise<HealthResponse> => parseResponse<HealthResponse>(await fetch(HEALTH_URL)),
+  },
   ingredients: {
     list: cached("ingredients", () => request<Ingredient[]>("/admin/ingredients")),
     get: (id: string) => request<Ingredient>(`/admin/ingredients/${id}`),

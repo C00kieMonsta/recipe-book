@@ -81,6 +81,16 @@ export interface CompanySettings {
   constitutedOn?: string;
 }
 
+export interface Person {
+  // Slug of the name at creation, never changes.
+  personId: string;
+  name: string;
+  // 1 to 3 characters, defaults to the first two letters upper case.
+  initials?: string;
+  // false hides the person from pickers and filters, keeps old assignments readable.
+  active: boolean;
+}
+
 export interface AppSettings {
   settingsId: "global";
   recipeCategories: string[];
@@ -95,6 +105,7 @@ export interface AppSettings {
   ledgerStartYm?: string;
   company?: CompanySettings;
   ignoredDuplicateGroups?: string[];
+  people?: Person[];
 }
 
 export const DEFAULT_RECIPE_CATEGORIES = [

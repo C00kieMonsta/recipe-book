@@ -4,9 +4,9 @@ import type { LedgerEntry, SalesKind } from "../entities/ledger";
 import type { AppSettings, FixedCharge, MonthClose, MpSource, YearObjective } from "../entities/settings";
 import { DEFAULT_PRESTATION_TYPES } from "../entities/settings";
 import { calcEventCost } from "./costing";
-import { ymOf } from "./dates";
+import { parseYmd, ymOf } from "./dates";
 import { round2, sumMoney } from "./money";
-import { signedRevenue } from "./planning";
+import { shortEventName, signedRevenue } from "./planning";
 
 // Everything the Comptabilité pages need; every figure is derived from this at render time.
 export interface ReportInputs {
@@ -815,5 +815,102 @@ export function auReelYear(year: number, inputs: ReportInputs): AuReelYear {
     totalHeures: months.reduce((n, m) => n + m.totalHeures, 0),
     annualRevenue,
     ecart: annualRevenue !== undefined ? round2(annualRevenue - totalSigne) : undefined,
+  };
+}
+
+export interface AFacturerEvent {
+  eventId: string;
+  label: string;
+  date: string;
+  htva: number;
+  acomptesHtva: number;
+  prestationType?: string;
+}
+
+export interface AFacturerMonth {
+  clientId: string;
+  clientName: string;
+  ym: string;
+  eventIds: string[];
+  htva: number;
+}
+
+export interface AFacturer {
+  // Upcoming events dated before today and not yet invoiced.
+  toClose: AppEvent[];
+  // Completed, uninvoiced events of one-off clients, oldest first.
+  toInvoice: AFacturerEvent[];
+  // Completed, uninvoiced events of monthly clients grouped by month, past months only.
+  toInvoiceMonthly: AFacturerMonth[];
+  // Invoice entries not yet paid, oldest first.
+  unpaid: (LedgerEntry & { daysOutstanding: number })[];
+  totals: { toInvoiceHtva: number; unpaidTvac: number };
+}
+
+const DAY_MS = 86_400_000;
+const byDate = <T extends { date: string }>(a: T, b: T) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+
+export function daysBetween(from: string, to: string): number {
+  return Math.round((parseYmd(to).getTime() - parseYmd(from).getTime()) / DAY_MS);
+}
+
+export function aFacturer(inputs: Pick<ReportInputs, "events" | "entries" | "clients">, today: string): AFacturer {
+  const { events, entries, clients = [] } = inputs;
+  const invoiced = invoicedEventIds(entries);
+  const clientById = new Map(clients.map((c) => [c.clientId, c]));
+  const clientOf = (e: AppEvent) => (e.clientId ? clientById.get(e.clientId) : undefined);
+
+  const toClose = events
+    .filter((e) => e.status === "upcoming" && e.date.slice(0, 10) < today && !invoiced.has(e.eventId))
+    .sort(byDate);
+
+  const uninvoiced = events.filter((e) => e.status === "completed" && !invoiced.has(e.eventId)).sort(byDate);
+
+  const acomptesByEvent = new Map<string, number>();
+  for (const entry of entries) {
+    if (entry.book !== "ventes" || entry.kind !== "acompte") continue;
+    for (const id of entry.eventIds ?? []) acomptesByEvent.set(id, sumMoney([acomptesByEvent.get(id) ?? 0, entry.htva]));
+  }
+
+  const toInvoice: AFacturerEvent[] = uninvoiced
+    .filter((e) => clientOf(e)?.invoicing !== "mensuelle")
+    .map((e) => ({
+      eventId: e.eventId,
+      label: shortEventName(e, clientOf(e)),
+      date: e.date,
+      htva: signedRevenue(e),
+      acomptesHtva: acomptesByEvent.get(e.eventId) ?? 0,
+      ...(e.prestationType && { prestationType: e.prestationType }),
+    }));
+
+  const currentYm = ymOf(today);
+  const months = new Map<string, AFacturerMonth>();
+  for (const e of uninvoiced) {
+    const client = clientOf(e);
+    if (!client || client.invoicing !== "mensuelle") continue;
+    const ym = ymOf(e.date);
+    if (ym >= currentYm) continue;
+    const key = `${client.clientId}|${ym}`;
+    const group = months.get(key) ?? { clientId: client.clientId, clientName: client.name, ym, eventIds: [], htva: 0 };
+    group.eventIds.push(e.eventId);
+    group.htva = sumMoney([group.htva, signedRevenue(e)]);
+    months.set(key, group);
+  }
+  const toInvoiceMonthly = [...months.values()].sort((a, b) => (a.ym < b.ym ? -1 : a.ym > b.ym ? 1 : a.clientName.localeCompare(b.clientName)));
+
+  const unpaid = entries
+    .filter((e) => isInvoiceEntry(e) && !e.paid)
+    .sort(byDate)
+    .map((e) => ({ ...e, daysOutstanding: Math.max(0, daysBetween(e.date, today)) }));
+
+  return {
+    toClose,
+    toInvoice,
+    toInvoiceMonthly,
+    unpaid,
+    totals: {
+      toInvoiceHtva: sumMoney([...toInvoice.map((e) => e.htva), ...toInvoiceMonthly.map((m) => m.htva)]),
+      unpaidTvac: sumMoney(unpaid.map((e) => e.totalTvac)),
+    },
   };
 }

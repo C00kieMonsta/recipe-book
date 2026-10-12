@@ -1,6 +1,8 @@
 import type { AppEvent, EventExtraCost, ExtraCostKind } from "../entities/event";
 import type { Ingredient } from "../entities/ingredient";
 import type { Recipe, RecipeIngredient } from "../entities/recipe";
+import type { CostSnapshotRequest } from "../dto/events";
+import { round2 } from "./money";
 
 // Ingredients priced per kg or per litre are stored in g and ml, hence the per-1000 rule.
 export function calcIngredientLineCost(ri: RecipeIngredient, ing: Ingredient): number {
@@ -82,4 +84,21 @@ export function calcEventCost(
   const extras = extrasByKind(ev.extraCosts);
   const total = rawMaterial + sumExtraCosts(ev.extraCosts);
   return { rawMaterial, extras, total };
+}
+
+// The figures frozen on an event when it is closed; takenAt is stamped by the server.
+export function buildCostSnapshot(
+  event: Pick<AppEvent, "recipes" | "extraCosts">,
+  recipeCostById: Map<string, number>,
+  recipePortionsById: Map<string, number>,
+): CostSnapshotRequest {
+  const lines = (event.recipes ?? []).map((l) => {
+    const unitCost = (recipeCostById.get(l.recipeId) ?? 0) / (recipePortionsById.get(l.recipeId) ?? 1);
+    return { lineId: l.lineId, recipeId: l.recipeId, portions: l.portions, unitCost };
+  });
+  return {
+    rawMaterial: round2(lines.reduce((s, l) => s + l.unitCost * l.portions, 0)),
+    extrasTotal: round2(sumExtraCosts(event.extraCosts)),
+    lines,
+  };
 }

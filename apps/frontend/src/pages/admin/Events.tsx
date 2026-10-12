@@ -2,9 +2,9 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Search } from "lucide-react";
 import type { AppEvent, Client, PrestationTypeSetting } from "@packages/types";
+import { fmtEur } from "@packages/types";
 import { api } from "@/lib/api";
 import { dayMonthShortLabel } from "@/lib/dates";
-import { fmt } from "@/lib/recipe-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { usePagination } from "@/hooks/use-pagination";
 import { PageHeader, ListRow, StatusTag, Pagination } from "@/components/ui";
@@ -125,7 +125,7 @@ export default function Events() {
               className="rounded-none"
               trailing={
                 <>
-                  <span className="text-base font-medium tabular-nums">{fmt(ev.sellingPricePerGuest * ev.guestCount)}</span>
+                  <span className="text-base font-medium tabular-nums">{fmtEur(ev.sellingPricePerGuest * ev.guestCount)}</span>
                   <StatusTag status={ev.status} />
                 </>
               }

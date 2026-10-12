@@ -8,7 +8,7 @@ export interface StatusControlProps {
 }
 
 const SEGMENTS: { value: PrepStatus; label: string; active: string }[] = [
-  { value: "todo", label: "À préparer", active: "bg-foreground text-background" },
+  { value: "todo", label: "À faire", active: "bg-foreground text-background" },
   { value: "doing", label: "En cours", active: "bg-warning text-primary-foreground" },
   { value: "done", label: "Fait", active: "bg-success text-primary-foreground" },
 ];

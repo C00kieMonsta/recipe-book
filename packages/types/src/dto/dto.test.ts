@@ -3,8 +3,8 @@ import { money, moneyNonnegative } from "./primitives";
 import { putEventLinesSchema, updateEventRequestSchema, addEventLineSchema, patchEventLineSchema } from "./events";
 import { importIngredientRowSchema, mergeIngredientsSchema } from "./ingredients";
 import { importRecipeIngredientSchema } from "./recipes";
-import { createClientSchema, updateClientSchema } from "./clients";
-import { updateSettingsRequestSchema } from "./settings";
+import { clientTemplateSchema, createClientSchema, templateLineSchema, updateClientSchema } from "./clients";
+import { personSchema, updateSettingsRequestSchema } from "./settings";
 
 const sale = {
   book: "ventes" as const,
@@ -83,6 +83,18 @@ describe("event schemas", () => {
     expect(r.success).toBe(true);
     if (r.success) expect(r.data.clientId).toBeNull();
   });
+  it("assignedTo is accepted on the event, on a line and on a line patch", () => {
+    const r = updateEventRequestSchema.safeParse({
+      assignedTo: ["kristoff"],
+      recipes: [{ lineId: "l1", recipeId: "r", portions: 1, assignedTo: ["amelie", "kristoff"] }],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.recipes?.[0].assignedTo).toEqual(["amelie", "kristoff"]);
+    expect(addEventLineSchema.safeParse({ recipeId: "r", portions: 2, assignedTo: [] }).success).toBe(true);
+    expect(patchEventLineSchema.safeParse({ assignedTo: [] }).success).toBe(true);
+    expect(patchEventLineSchema.safeParse({ assignedTo: [""] }).success).toBe(false);
+    expect(patchEventLineSchema.safeParse({ assignedTo: Array.from({ length: 11 }, (_, i) => `p${i}`) }).success).toBe(false);
+  });
 });
 
 describe("other schemas", () => {
@@ -105,6 +117,24 @@ describe("other schemas", () => {
     expect(r.success).toBe(true);
     if (r.success) expect(r.data).toMatchObject({ templates: [], active: true });
     expect(updateClientSchema.safeParse({ foo: 1 }).success).toBe(false);
+  });
+  it("template accepts assignedTo, template lines do not", () => {
+    const tpl = { name: "Mardi", weekday: 2, guestCount: 10, sellingPricePerGuest: 12, assignedTo: ["kristoff"] };
+    const r = clientTemplateSchema.safeParse(tpl);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.assignedTo).toEqual(["kristoff"]);
+    expect(templateLineSchema.safeParse({ recipeId: "r", portions: 1, assignedTo: ["kristoff"] }).success).toBe(false);
+  });
+  it("person schema and settings.people", () => {
+    expect(personSchema.safeParse({ personId: "kristoff", name: "Kristoff", active: true }).success).toBe(true);
+    expect(personSchema.safeParse({ personId: "kristoff", name: "Kristoff", initials: "KR", active: false }).success).toBe(true);
+    expect(personSchema.safeParse({ personId: "Kristoff", name: "Kristoff", active: true }).success).toBe(false);
+    expect(personSchema.safeParse({ personId: "kristoff", name: "Kristoff", initials: "KRIS", active: true }).success).toBe(false);
+    expect(personSchema.safeParse({ personId: "kristoff", name: "Kristoff" }).success).toBe(false);
+    expect(personSchema.safeParse({ personId: "kristoff", name: "Kristoff", active: true, extra: 1 }).success).toBe(false);
+    const r = updateSettingsRequestSchema.safeParse({ people: [{ personId: "amelie", name: "Amélie", active: true }] });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.people?.[0].personId).toBe("amelie");
   });
   it("settings accept the new keys", () => {
     const r = updateSettingsRequestSchema.safeParse({

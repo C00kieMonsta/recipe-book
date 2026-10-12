@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Plus, Search } from "lucide-react";
 import type { AppEvent, Client, PrestationTypeSetting } from "@packages/types";
 import { DEFAULT_PRESTATION_TYPES, fmtEur } from "@packages/types";
@@ -120,9 +120,10 @@ export default function Clients() {
       </div>
 
       {notConfigured && (
-        <p className="mt-4 rounded-lg bg-warning-soft px-4 py-3 text-base text-warning">
-          Clients non configurés : la table ta-clients n'existe pas encore sur le serveur.
-        </p>
+        <div className="mt-4 rounded-lg bg-warning-soft px-4 py-3 text-base text-warning">
+          <p>Clients non configurés : la table ta-clients n'existe pas encore sur le serveur.</p>
+          <Link to="/settings#apropos" className="mt-1 inline-flex min-h-11 items-center font-medium hover:underline">Paramètres ›</Link>
+        </div>
       )}
       {loading ? (
         <p className="mt-6 text-base text-muted-foreground">Chargement…</p>

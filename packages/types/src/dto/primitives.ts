@@ -11,3 +11,4 @@ export const money = z.number().refine(twoDecimals, "2 décimales max");
 // A refined schema has no .nonnegative(), so the nonnegative variant is built here.
 export const moneyNonnegative = z.number().nonnegative().refine(twoDecimals, "2 décimales max");
 export const vatRate = z.union([z.literal(0), z.literal(6), z.literal(12), z.literal(21)]);
+export const personIds = z.array(z.string().min(1).max(40)).max(10);

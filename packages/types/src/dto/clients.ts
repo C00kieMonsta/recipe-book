@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { isoDate, moneyNonnegative, vatRate } from "./primitives";
+import { isoDate, moneyNonnegative, personIds, vatRate } from "./primitives";
 import { eventExtraCostSchema, eventRecipeLineSchema } from "./events";
 
 export const templateLineSchema = eventRecipeLineSchema
-  .omit({ lineId: true, prepStatus: true, prepDate: true })
+  .omit({ lineId: true, prepStatus: true, prepDate: true, assignedTo: true })
   .strict();
 export type TemplateLineRequest = z.infer<typeof templateLineSchema>;
 
@@ -19,6 +19,7 @@ export const clientTemplateSchema = z
     recipes: z.array(templateLineSchema).default([]),
     extraCosts: z.array(eventExtraCostSchema).default([]),
     notes: z.string().optional(),
+    assignedTo: personIds.optional(),
   })
   .strict();
 export type ClientTemplateRequest = z.infer<typeof clientTemplateSchema>;

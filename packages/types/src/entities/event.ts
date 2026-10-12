@@ -11,6 +11,8 @@ export interface EventRecipeLine {
   notes?: string;
   prepStatus?: PrepStatus;
   prepDate?: string;
+  // personIds; absent or [] inherits the event.
+  assignedTo?: string[];
 }
 
 export type ExtraCostKind = "matiere" | "personnel" | "location" | "transport" | "autre";
@@ -60,4 +62,6 @@ export interface AppEvent {
   vatRate?: VatRate;
   hoursSpent?: number;
   costSnapshot?: EventCostSnapshot;
+  // personIds, the default for its lines.
+  assignedTo?: string[];
 }

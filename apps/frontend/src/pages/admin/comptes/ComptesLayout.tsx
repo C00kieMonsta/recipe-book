@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui";
 
 const TABS = [
   { to: "/comptes/journal", label: "Journal" },
+  { to: "/comptes/a-facturer", label: "À facturer" },
   { to: "/comptes/apercu", label: "Aperçu" },
   { to: "/comptes/resultats", label: "Compte de résultats" },
   { to: "/comptes/previsionnel", label: "Prévisionnel" },

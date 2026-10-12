@@ -238,7 +238,7 @@ export default function Apercu() {
               sub={`Seuil annuel ${fmtEur(report.pv.seuilAnnuel)}`}
               to={`/comptes/previsionnel?year=${year}`}
             />
-            <MoneyTile label="À encaisser" value={fmtEur(report.unpaidTvac)} sub={`${report.unpaidCount} ${report.unpaidCount > 1 ? "lignes impayées" : "ligne impayée"} · TVAC`} to="/comptes/journal" />
+            <MoneyTile label="À encaisser" value={fmtEur(report.unpaidTvac)} sub={`${report.unpaidCount} ${report.unpaidCount > 1 ? "lignes impayées" : "ligne impayée"} · TVAC`} to="/comptes/a-facturer#impayes" />
             <MoneyTile label="Marge brute du mois" value={fmtPct(report.margeBrutePct)} sub={monthLabel(report.focusYm)} to={`/comptes/resultats?year=${year}`} />
           </div>
 

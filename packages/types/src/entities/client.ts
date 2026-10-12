@@ -21,6 +21,8 @@ export interface ClientTemplate {
   recipes: TemplateLine[];
   extraCosts: EventExtraCost[];
   notes?: string;
+  // Copied onto the event by instantiate.
+  assignedTo?: string[];
 }
 
 export type ClientKind = "entreprise" | "particulier";

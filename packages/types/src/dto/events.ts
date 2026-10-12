@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isoDate, moneyNonnegative, vatRate } from "./primitives";
+import { isoDate, moneyNonnegative, personIds, vatRate } from "./primitives";
 
 export const eventRecipeLineSchema = z
   .object({
@@ -10,6 +10,7 @@ export const eventRecipeLineSchema = z
     notes: z.string().trim().max(500).optional(),
     prepStatus: z.enum(["todo", "doing", "done"]).optional(),
     prepDate: isoDate.optional(),
+    assignedTo: personIds.optional(),
   })
   .strict();
 
@@ -59,6 +60,7 @@ export const createEventRequestSchema = z.object({
   vatRate: vatRate.nullish(),
   hoursSpent: z.number().nonnegative().optional(),
   costSnapshot: costSnapshotSchema.optional(),
+  assignedTo: personIds.optional(),
 });
 export type CreateEventRequest = z.infer<typeof createEventRequestSchema>;
 

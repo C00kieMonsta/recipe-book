@@ -1,7 +1,9 @@
 import type { AppEvent } from "../entities/event";
 import type { LedgerEntry } from "../entities/ledger";
 import type { AppSettings, FixedCharge } from "../entities/settings";
+import type { Client } from "../entities/client";
 import {
+  aFacturer,
   apercu,
   auReel,
   auReelYear,
@@ -557,5 +559,74 @@ describe("auReel", () => {
     expect(y.months).toHaveLength(12);
     expect(y).toMatchObject({ totalSigne: 7597.5, totalHeures: 15, annualRevenue: 160000, ecart: 152402.5 });
     expect(auReelYear(2026, inputs()).ecart).toBeUndefined();
+  });
+});
+
+describe("aFacturer", () => {
+  const today = "2026-10-18";
+  const client = (partial: Partial<Client> & Pick<Client, "clientId" | "name">): Client => ({
+    nameLower: partial.name.toLowerCase(),
+    templates: [],
+    active: true,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    ...partial,
+  });
+  const hoona = client({ clientId: "hoona", name: "Hoona", invoicing: "mensuelle" });
+  const dupont = client({ clientId: "dupont", name: "Dupont", invoicing: "par_evenement" });
+
+  it("puts a completed event of a monthly client in one monthly row and never in the event list", () => {
+    const events = [
+      event({ eventId: "s1", date: "2026-09-01", clientId: "hoona", guestCount: 30, sellingPricePerGuest: 14 }),
+      event({ eventId: "s2", date: "2026-09-08", clientId: "hoona", guestCount: 30, sellingPricePerGuest: 14 }),
+      event({ eventId: "o1", date: "2026-10-06", clientId: "hoona", guestCount: 30, sellingPricePerGuest: 14 }),
+    ];
+    const r = aFacturer({ events, entries: [], clients: [hoona] }, today);
+    expect(r.toInvoice).toEqual([]);
+    expect(r.toInvoiceMonthly).toEqual([{ clientId: "hoona", clientName: "Hoona", ym: "2026-09", eventIds: ["s1", "s2"], htva: 840 }]);
+    expect(r.totals.toInvoiceHtva).toBe(840);
+  });
+
+  it("keeps an event with only an acompte in toInvoice with acomptesHtva filled", () => {
+    const events = [event({ eventId: "m", date: "2026-10-17", name: "Mariage Dupont", clientId: "dupont", guestCount: 60, sellingPricePerGuest: 55, prestationType: "chef_a_domicile" })];
+    const entries = [entry({ date: "2026-09-01", kind: "acompte", htva: 446, eventIds: ["m"] })];
+    const r = aFacturer({ events, entries, clients: [dupont] }, today);
+    expect(r.toInvoice).toEqual([
+      { eventId: "m", label: "Mariage Dupont", date: "2026-10-17", htva: 3300, acomptesHtva: 446, prestationType: "chef_a_domicile" },
+    ]);
+    expect(r.totals.toInvoiceHtva).toBe(3300);
+  });
+
+  it("drops an event listed in a facture entry's eventIds", () => {
+    const events = [
+      event({ eventId: "billed", date: "2026-10-01", guestCount: 10, sellingPricePerGuest: 100 }),
+      event({ eventId: "open", date: "2026-10-02", guestCount: 10, sellingPricePerGuest: 100 }),
+    ];
+    const entries = [entry({ date: "2026-10-05", kind: "facture", htva: 1000, eventIds: ["billed"] })];
+    const r = aFacturer({ events, entries, clients: [] }, today);
+    expect(r.toInvoice.map((e) => e.eventId)).toEqual(["open"]);
+  });
+
+  it("leaves an upcoming past event with a facture entry out of toClose", () => {
+    const events = [
+      event({ eventId: "billed", date: "2026-10-01", status: "upcoming" }),
+      event({ eventId: "stale", date: "2026-10-02", status: "upcoming" }),
+      event({ eventId: "future", date: "2026-10-30", status: "upcoming" }),
+    ];
+    const entries = [entry({ date: "2026-10-05", kind: "facture", htva: 200, eventIds: ["billed"] })];
+    const r = aFacturer({ events, entries, clients: [] }, today);
+    expect(r.toClose.map((e) => e.eventId)).toEqual(["stale"]);
+  });
+
+  it("lists unpaid invoices oldest first with their age and sums TVAC", () => {
+    const entries = [
+      entry({ date: "2026-09-30", htva: 843, totalTvac: 893.5, kind: "comptoir" }),
+      entry({ date: "2026-09-26", htva: 1000, totalTvac: 1092 }),
+      entry({ date: "2026-09-01", htva: 1, paid: true }),
+      entry({ date: "2026-09-02", htva: 1, kind: "acompte" }),
+    ];
+    const r = aFacturer({ events: [], entries, clients: [] }, today);
+    expect(r.unpaid.map((e) => [e.date, e.daysOutstanding])).toEqual([["2026-09-26", 22], ["2026-09-30", 18]]);
+    expect(r.totals.unpaidTvac).toBe(1985.5);
   });
 });
