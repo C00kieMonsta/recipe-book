@@ -59,8 +59,8 @@ export type CreateLedgerEntryRequest = z.infer<typeof createLedgerEntrySchema>;
 export const patchLedgerEntrySchema = z
   .object({
     paid: z.boolean(),
-    paymentMethod: paymentMethodSchema,
-    paidAt: isoDate,
+    paymentMethod: paymentMethodSchema.nullable(),
+    paidAt: isoDate.nullable(),
     description: z.string().trim(),
   })
   .partial()

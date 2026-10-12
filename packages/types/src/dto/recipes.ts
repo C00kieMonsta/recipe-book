@@ -41,6 +41,15 @@ export type CreateRecipeRequest = z.infer<typeof createRecipeRequestSchema>;
 export const updateRecipeRequestSchema = createRecipeRequestSchema.partial();
 export type UpdateRecipeRequest = z.infer<typeof updateRecipeRequestSchema>;
 
+export const importRecipeIngredientSchema = z
+  .object({
+    name: z.string().min(1),
+    qty: z.number().nonnegative(),
+    unit: z.enum(UNITS_QTY).optional(),
+  })
+  .strip();
+export type ImportRecipeIngredient = z.infer<typeof importRecipeIngredientSchema>;
+
 export const listRecipesQuerySchema = z.object({
   q: z.string().optional(),
   type: z.string().optional(),

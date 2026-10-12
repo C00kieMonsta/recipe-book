@@ -152,7 +152,6 @@ function companyHeader(settings: AppSettings): Cell[][] {
 
 const YEAR_DATA_START = 7; // 1-based row of the first entry on the annual sheet
 const YEAR_TOTAL_ROW = 140;
-const THERMOMIX_OFFSET = 5;
 
 export interface YearSheetLayout {
   totalRow: number;
@@ -160,9 +159,10 @@ export interface YearSheetLayout {
   acomptesRow: number;
 }
 
-export function yearSheetLayout(caCount: number): YearSheetLayout {
+export function yearSheetLayout(caCount: number, typeRows: number): YearSheetLayout {
   const totalRow = Math.max(YEAR_TOTAL_ROW, YEAR_DATA_START + caCount);
-  const thermomixRow = totalRow + THERMOMIX_OFFSET;
+  // Per-type totals sit under TOTAL, then two blank rows.
+  const thermomixRow = totalRow + 1 + typeRows + 2;
   // 1 title row, 12 months, "pas de tva", "total thermomix", 2 blank rows.
   return { totalRow, thermomixRow, acomptesRow: thermomixRow + 17 };
 }
@@ -309,13 +309,14 @@ export function buildLedgerWorkbook(year: number, inputs: ReportInputs): LedgerW
   }
 
   const ca = yearEntries.filter(isCaEntry).sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
-  const layout = yearSheetLayout(ca.length);
+  const types = typeBlock(ca, settings, `Total CA ${year}`);
+  const layout = yearSheetLayout(ca.length, types.length);
   const annual = XLSX.utils.aoa_to_sheet(companyHeader(settings), opts);
   XLSX.utils.sheet_add_aoa(annual, [[...WORKBOOK_HEADER]], { origin: "A5" });
   XLSX.utils.sheet_add_aoa(annual, [[HTVA_NOTE]], { origin: "E6" });
   if (ca.length) XLSX.utils.sheet_add_aoa(annual, ca.map((e) => caRow(e, settings)), { origin: `A${YEAR_DATA_START}`, ...opts });
   XLSX.utils.sheet_add_aoa(annual, [totalRow(ca, true)], { origin: `A${layout.totalRow}` });
-  XLSX.utils.sheet_add_aoa(annual, typeBlock(ca, settings, `Total CA ${year}`), { origin: `A${layout.totalRow + 1}` });
+  XLSX.utils.sheet_add_aoa(annual, types, { origin: `A${layout.totalRow + 1}` });
   XLSX.utils.sheet_add_aoa(annual, thermomixBlock(year, yearEntries), { origin: `A${layout.thermomixRow}` });
   XLSX.utils.sheet_add_aoa(annual, acomptesBlock(yearEntries, events, clients), { origin: `A${layout.acomptesRow}`, ...opts });
   applyFormats(annual, new Set([1, 3, 4, 5, 6, 7]));
@@ -384,9 +385,11 @@ export function exportMonthCsv(ym: string, entries: LedgerEntry[], settings: Pic
     );
   }
   const sales = rows.filter((e) => e.book === "ventes");
-  const t = salesTotals(sales, settings);
+  // TOTAL covers CA lines only, like the workbook sheet; commissions get their own line.
+  const t = salesTotals(sales.filter(isCaEntry), settings);
   lines.push(["", "", "", "", "TOTAL", csvNumber(t.tvac), csvNumber(t.htva), csvNumber(t.vat6), csvNumber(t.vat12), csvNumber(t.vat21)].join(";"));
   lines.push(["", "", "", "", `Total CA ${ym.slice(5, 7)}/${ym.slice(0, 4)}`, "", csvNumber(t.totalCa)].join(";"));
+  lines.push(["", "", "", "", "Commissions (hors CA)", "", csvNumber(salesTotals(sales, settings).commissions)].join(";"));
   return `﻿${lines.join("\r\n")}\r\n`;
 }
 

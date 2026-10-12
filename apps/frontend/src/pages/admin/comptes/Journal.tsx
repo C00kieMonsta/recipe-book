@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Download, FileText, Lock, LockOpen, Plus, X } from "lucide-react";
 import type { CreateLedgerEntryRequest, LedgerBook, LedgerEntry, MpSource, PatchLedgerEntryRequest, PaymentMethod } from "@packages/types";
-import { clientLabel, fmtEur, isCommissionEntry, prefillForClientMonth, rawMaterialOfMonth } from "@packages/types";
+import { clientLabel, fmtEur, isCommissionEntry, prefillForClientMonth, rawMaterialOfMonth, sumMoney } from "@packages/types";
 import { api } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { useReportInputs } from "@/lib/use-report-inputs";
@@ -464,8 +464,8 @@ export default function Journal() {
 
   const rail = (
     <aside className="flex flex-col gap-3 lg:w-72 lg:shrink-0">
-      <RailTile label="Acomptes du mois" value={fmtEur(acomptes.reduce((n, e) => n + e.totalTvac, 0))} sub={`${acomptes.length} acompte${acomptes.length > 1 ? "s" : ""}`} />
-      <RailTile label="Commissions" value={fmtEur(commissions.reduce((n, e) => n + e.htva, 0))} sub="hors CA" />
+      <RailTile label="Acomptes du mois" value={fmtEur(sumMoney(acomptes.map((e) => e.totalTvac)))} sub={`${acomptes.length} acompte${acomptes.length > 1 ? "s" : ""}`} />
+      <RailTile label="Commissions" value={fmtEur(sumMoney(commissions.map((e) => e.htva)))} sub="hors CA" />
       <RailTile label="À encaisser" value={fmtEur(encaisser.total)} sub={`${encaisser.count} ligne${encaisser.count > 1 ? "s" : ""} non réglée${encaisser.count > 1 ? "s" : ""}`} />
       {book === "achats" && persons.map((p) => (
         <div key={p.personName} className="card-elevated p-4">

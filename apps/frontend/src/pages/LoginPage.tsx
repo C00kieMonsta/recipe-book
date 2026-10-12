@@ -17,7 +17,7 @@ export default function LoginPage() {
     e.preventDefault();
     const success = await login(email, password);
     if (success) {
-      navigate("/recipes");
+      navigate("/");
     } else {
       toast({ title: "Identifiants invalides", variant: "destructive" });
     }

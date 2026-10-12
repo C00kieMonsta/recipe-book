@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Plus, Search } from "lucide-react";
 import type { AppEvent, Client, PrestationTypeSetting } from "@packages/types";
 import { api } from "@/lib/api";
-import { dayLabel } from "@/lib/dates";
+import { dayMonthShortLabel } from "@/lib/dates";
 import { fmt } from "@/lib/recipe-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { usePagination } from "@/hooks/use-pagination";
@@ -55,7 +55,7 @@ export default function Events() {
   const subtitleFor = (ev: AppEvent) => {
     const client = ev.clientId ? clientById.get(ev.clientId)?.name : undefined;
     const prestation = ev.prestationType ? prestationLabel.get(ev.prestationType) ?? ev.prestationType : undefined;
-    return [dayLabel(ev.date), `${ev.guestCount} conv.`, client ?? ev.contactName, prestation]
+    return [dayMonthShortLabel(ev.date), `${ev.guestCount} conv.`, client ?? ev.contactName, prestation]
       .filter(Boolean)
       .join(" · ");
   };

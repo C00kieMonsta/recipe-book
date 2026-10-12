@@ -101,6 +101,8 @@ export default function Week() {
     [weekEvents, selectedClient],
   );
   const plan = useMemo(() => weekPlan(filteredEvents, monday), [filteredEvents, monday]);
+  // The money strip always describes the whole week, whatever client chip is selected.
+  const weekTotals = useMemo(() => weekPlan(weekEvents, monday), [weekEvents, monday]);
   const monthSigned = useMemo(() => monthSignedRevenue(events, ym), [events, ym]);
   const objective = objectifMensuel(settings?.objectives?.[year], ym);
   const ledgerCa = entries.length ? ledgerCaOfMonth(entries, ym) : undefined;
@@ -253,7 +255,7 @@ export default function Week() {
 
       {/* Money strip */}
       <div className="no-print mt-4 flex gap-3 overflow-x-auto pb-1 xl:grid xl:grid-cols-3 xl:overflow-visible">
-        <MoneyTile className="min-w-[220px] flex-1" label="Signé cette semaine" value={fmtEur0(plan.signedRevenue)} sub={`${plan.guests} convives`} />
+        <MoneyTile className="min-w-[220px] flex-1" label="Signé cette semaine" value={fmtEur0(weekTotals.signedRevenue)} sub={`${weekTotals.guests} convives`} />
         <MoneyTile
           className="min-w-[220px] flex-1"
           label="Signé ce mois"
@@ -265,7 +267,7 @@ export default function Week() {
             ? { value: monthSigned, max: objective, ticks: ledgerCa !== undefined ? [{ label: "Facturé", value: ledgerCa }] : undefined }
             : undefined}
         />
-        <MoneyTile className="min-w-[220px] flex-1" label="Préparation" value={`${plan.linesDone} / ${plan.linesTotal}`} sub="lignes faites" />
+        <MoneyTile className="min-w-[220px] flex-1" label="Préparation" value={`${weekTotals.linesDone} / ${weekTotals.linesTotal}`} sub="lignes faites" />
       </div>
       {!ledgerConfigured && (
         <p className="no-print mt-2 text-sm text-muted-foreground">Comptabilité non configurée : la table ta-ledger n'existe pas encore</p>

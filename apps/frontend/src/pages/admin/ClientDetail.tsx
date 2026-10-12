@@ -18,7 +18,7 @@ import type {
   VatRate,
   Weekday,
 } from "@packages/types";
-import { DEFAULT_COURSES, DEFAULT_PRESTATION_TYPES, VAT_RATES, fmtEur } from "@packages/types";
+import { DEFAULT_COURSES, DEFAULT_PRESTATION_TYPES, VAT_RATES, fmtEur, round2 } from "@packages/types";
 import { ApiError, api } from "@/lib/api";
 import { dayMonthLabel, longDayLabel, todayIso, ymOf } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
@@ -122,7 +122,7 @@ function toTemplatePayload(t: ClientTemplate): ClientTemplateRequest {
     name: t.name.trim() || "Sans nom",
     weekday: t.weekday,
     guestCount: Math.max(1, Math.round(t.guestCount || 1)),
-    sellingPricePerGuest: Math.max(0, t.sellingPricePerGuest || 0),
+    sellingPricePerGuest: round2(Math.max(0, t.sellingPricePerGuest || 0)),
     prestationType: t.prestationType || undefined,
     vatRate: t.vatRate,
     recipes: t.recipes.map((l) => ({
@@ -133,7 +133,7 @@ function toTemplatePayload(t: ClientTemplate): ClientTemplateRequest {
     })),
     extraCosts: t.extraCosts
       .filter((c) => c.label.trim())
-      .map((c) => ({ label: c.label.trim(), amount: Math.max(0, c.amount || 0), kind: c.kind })),
+      .map((c) => ({ label: c.label.trim(), amount: round2(Math.max(0, c.amount || 0)), kind: c.kind })),
     notes: t.notes || undefined,
   };
 }
@@ -355,7 +355,11 @@ export default function ClientDetail() {
         title={
           <EditableText
             value={form.name}
-            onSave={(v) => update({ name: v })}
+            onSave={(v) => {
+              const name = v.trim();
+              if (name) update({ name });
+              else setForm((p) => ({ ...p, name: client?.name ?? p.name }));
+            }}
             placeholder="Nom du client"
             className="font-serif text-h1 md:text-h1-lg"
             inputClassName="input-field font-serif text-h1"
@@ -444,7 +448,7 @@ export default function ClientDetail() {
           </div>
           <div>
             <FieldLabel htmlFor="c-price">Prix par convive (€)</FieldLabel>
-            <input id="c-price" type="number" inputMode="decimal" min={0} step="0.01" className="input-field" value={form.defaultPricePerGuest ?? ""} onChange={(e) => update({ defaultPricePerGuest: parseNum(e.target.value) })} />
+            <input id="c-price" type="number" inputMode="decimal" min={0} step="0.01" className="input-field" value={form.defaultPricePerGuest ?? ""} onChange={(e) => { const n = parseNum(e.target.value); update({ defaultPricePerGuest: n === undefined ? undefined : round2(n) }); }} />
           </div>
           <div>
             <FieldLabel htmlFor="c-guests">Convives par défaut</FieldLabel>

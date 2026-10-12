@@ -38,10 +38,11 @@ export const listIngredientsQuerySchema = z.object({
 });
 export type ListIngredientsQuery = z.infer<typeof listIngredientsQuerySchema>;
 
+// Import rows come from a CSV, so the unit goes through the same aliases as the form.
 export const importIngredientRowSchema = z.object({
   nom: z.string().min(1).trim(),
-  prix_htva: z.number().nonnegative(),
-  unite: z.enum(UNITS_PRICE).default("€/kg"),
+  prix_htva: priceSchema,
+  unite: priceUnitSchema.default("€/kg"),
   fournisseur: z.string().trim().default(""),
   commentaire: z.string().trim().optional(),
 });

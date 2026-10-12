@@ -35,7 +35,7 @@ import {
 } from "@packages/types";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { dayLabel, longDayLabel, dayMonthLabel, weekdayOf, todayIso } from "@/lib/dates";
+import { dayMonthShortLabel, longDayLabel, dayMonthLabel, weekdayOf, todayIso } from "@/lib/dates";
 import {
   PageHeader,
   Section,
@@ -664,7 +664,7 @@ export default function EventDetail() {
       <PageHeader
         breadcrumb={[
           { label: "Événements", to: "/events" },
-          { label: `${client?.name ?? event.name} · ${dayLabel(event.date)}` },
+          { label: `${client?.name ?? event.name} · ${dayMonthShortLabel(event.date)}` },
         ]}
         title={
           <EditableText
@@ -695,7 +695,7 @@ export default function EventDetail() {
               {billing === "facture" && <StatusTag status="invoiced" label={invoiceNumber ? `Facturé n° ${invoiceNumber}` : "Facturé"} />}
               {billing === "acompte_recu" && <StatusTag status="deposit" />}
               {billing === "paye" && <StatusTag status="paid" label={lastPaidAt ? `Payé le ${dayMonthLabel(lastPaidAt)}` : "Payé"} />}
-              {!event.prestationType && <Tag variant="warning">Type de prestation manquant</Tag>}
+              {!event.prestationType && <Tag variant="danger">Type de prestation manquant</Tag>}
             </div>
           </div>
         }
@@ -835,7 +835,7 @@ export default function EventDetail() {
                     key={billingForm}
                     initial={prefill.entry}
                     kind={billingForm}
-                    eventOptions={[{ eventId: event.eventId, label: `${event.name} · ${dayLabel(event.date)}` }]}
+                    eventOptions={[{ eventId: event.eventId, label: `${event.name} · ${dayMonthShortLabel(event.date)}` }]}
                     clientOptions={clients.map((c) => ({ clientId: c.clientId, name: c.name }))}
                     onSaved={() => {
                       setBillingForm(null);

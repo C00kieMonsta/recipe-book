@@ -26,6 +26,7 @@ export default function RecipeCook() {
   const [clientName, setClientName] = useState<string | null>(null);
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [cookPortions, setCookPortions] = useState(0);
   const [ticked, setTicked] = useState<Set<number>>(new Set());
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -40,7 +41,7 @@ export default function RecipeCook() {
         setIngredients(i);
         setCookPortions(Number(portionsParam) || r.portions);
       })
-      .catch(() => toast({ title: "Recette introuvable", variant: "destructive" }))
+      .catch(() => { setError(true); toast({ title: "Recette introuvable", variant: "destructive" }); })
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -107,14 +108,24 @@ export default function RecipeCook() {
 
   const ingredientById = useMemo(() => new Map(ingredients.map((i) => [i.ingredientId, i])), [ingredients]);
 
-  if (loading || !recipe) {
+  if (loading) {
     return <div className="fixed inset-0 bg-background flex items-center justify-center text-h2 font-serif text-muted-foreground">Chargement…</div>;
+  }
+  if (error || !recipe) {
+    return (
+      <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background p-6">
+        <p className="text-lead text-muted-foreground">Recette introuvable.</p>
+        <button type="button" onClick={() => navigate(-1)} className="inline-flex min-h-11 items-center rounded-lg border px-4 text-base font-medium hover:bg-hover">Quitter</button>
+      </div>
+    );
   }
 
   const ratio = cookPortions / (recipe.portions || 1);
   const contextName = clientName || event?.contactName || event?.name || null;
 
   const onTouchStart = (e: React.TouchEvent) => {
+    const el = e.target as HTMLElement;
+    if (el.closest("textarea, input, select")) { touchStart.current = null; return; }
     const t = e.touches[0];
     touchStart.current = { x: t.clientX, y: t.clientY };
   };
@@ -126,6 +137,7 @@ export default function RecipeCook() {
     const dx = t.clientX - start.x;
     const dy = t.clientY - start.y;
     if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) < Math.abs(dy)) return;
+    if (window.getSelection()?.toString()) return;
     if (dx < 0) goNext(); else goPrev();
   };
 
@@ -142,8 +154,7 @@ export default function RecipeCook() {
     setMarking(true);
     try {
       await api.events.lines.patch(eventId, lineId, { prepStatus: "done" });
-      toast({ title: "Préparation marquée faite" });
-      navigate(`/jour/${event.date}`);
+      navigate(`/jour/${event.date}?done=${lineId}`);
     } catch {
       toast({ title: "Erreur lors de la mise à jour", variant: "destructive" });
       setMarking(false);

@@ -37,9 +37,10 @@ interface Draft {
   prestationTypes: DraftPrestationType[];
   suppliers: SettingsSupplier[];
   fixedCharges: FixedCharge[];
-  objectives: Record<string, YearObjective>;
+  objectives: Record<string, Partial<YearObjective>>;
   yearActuals: Record<string, YearActuals>;
   company: CompanySettings;
+  ledgerStartYm?: string;
   ignoredDuplicateGroups: string[];
 }
 
@@ -84,10 +85,6 @@ function chargeInResult(c: FixedCharge): boolean {
   return c.inResult ?? c.category !== "remboursement";
 }
 
-function emptyObjective(): YearObjective {
-  return { annualRevenue: 0, monthsActive: DEFAULT_MONTHS_ACTIVE };
-}
-
 function fromSettings(s: AppSettings): Draft {
   return {
     recipeCategories: s.recipeCategories?.length ? s.recipeCategories : DEFAULT_RECIPE_CATEGORIES,
@@ -98,6 +95,7 @@ function fromSettings(s: AppSettings): Draft {
     objectives: s.objectives ?? {},
     yearActuals: s.yearActuals ?? {},
     company: s.company ?? { name: "", vatNumber: "", address: "" },
+    ledgerStartYm: s.ledgerStartYm,
     ignoredDuplicateGroups: s.ignoredDuplicateGroups ?? [],
   };
 }
@@ -109,7 +107,7 @@ function cleanRecord(rec: Record<string, number | undefined> | undefined): Recor
   return out;
 }
 
-function cleanObjective(o: YearObjective): YearObjective {
+function cleanObjective(o: Partial<YearObjective>): YearObjective {
   const monthsActive = Math.min(12, Math.max(1, Math.round(o.monthsActive || DEFAULT_MONTHS_ACTIVE)));
   return {
     annualRevenue: round2(o.annualRevenue || 0),
@@ -246,6 +244,8 @@ export default function Settings() {
   const [confirm, setConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [rename, setRename] = useState<{ from: string; to: string; count: number; events: AppEvent[] } | null>(null);
   const [renaming, setRenaming] = useState(false);
+  const [pendingRenames, setPendingRenames] = useState<{ from: string; to: string }[]>([]);
+  const renameQueue = useRef<{ queue: { from: string; to: string }[]; events: AppEvent[] }>({ queue: [], events: [] });
   const [pasteText, setPasteText] = useState("");
   const currentYear = String(new Date().getFullYear());
   const [objYear, setObjYear] = useState(currentYear);
@@ -330,11 +330,23 @@ export default function Settings() {
         objectives,
         yearActuals,
         company,
+        ledgerStartYm: draft.ledgerStartYm || undefined,
         ignoredDuplicateGroups: draft.ignoredDuplicateGroups,
       });
       setDraft(fromSettings(updated));
       setDirty(false);
       toast({ title: "Paramètres enregistrés" });
+      const pending = pendingRenames;
+      setPendingRenames([]);
+      if (pending.length > 0) {
+        try {
+          const events = await api.events.list();
+          renameQueue.current = { queue: pending, events };
+          offerNextRename();
+        } catch {
+          // The events list is only needed for the optional rename.
+        }
+      }
     } catch (e) {
       toast({ title: (e as Error).message || "Erreur", variant: "destructive" });
     } finally {
@@ -342,20 +354,36 @@ export default function Settings() {
     }
   };
 
-  // ── Course rename on event lines ──
-  const checkCourseRename = async (to: string) => {
+  // ── Course rename on event lines, offered after the settings are saved ──
+  const queueCourseRename = (to: string) => {
     const from = courseFocusName.current;
     courseFocusName.current = "";
     const target = to.trim();
     if (!from || !target || from === target) return;
-    try {
-      const events = await api.events.list();
-      const affected = events.filter((ev) => ev.recipes.some((l) => l.course === from));
+    setPendingRenames((prev) => {
+      const next = prev.map((p) => (p.to === from ? { ...p, to: target } : p)).filter((p) => p.from !== from);
+      next.push({ from, to: target });
+      return next.filter((p) => p.from !== p.to);
+    });
+  };
+
+  const offerNextRename = () => {
+    const q = renameQueue.current;
+    while (q.queue.length > 0) {
+      const { from, to } = q.queue.shift()!;
+      const affected = q.events.filter((ev) => ev.recipes.some((l) => l.course === from));
       const count = affected.reduce((n, ev) => n + ev.recipes.filter((l) => l.course === from).length, 0);
-      if (count > 0) setRename({ from, to: target, count, events: affected });
-    } catch {
-      // The events list is only needed for the optional rename.
+      if (count > 0) {
+        setRename({ from, to, count, events: affected });
+        return;
+      }
     }
+    setRename(null);
+  };
+
+  const skipRename = () => {
+    if (renaming) return;
+    offerNextRename();
   };
 
   const applyRename = async () => {
@@ -369,7 +397,11 @@ export default function Settings() {
         done += 1;
       }
       toast({ title: `${rename.count} ligne${rename.count > 1 ? "s" : ""} renommée${rename.count > 1 ? "s" : ""} sur ${done} événement${done > 1 ? "s" : ""}` });
-      setRename(null);
+      renameQueue.current.events = renameQueue.current.events.map((ev) => ({
+        ...ev,
+        recipes: ev.recipes.map((l) => (l.course === rename.from ? { ...l, course: rename.to } : l)),
+      }));
+      offerNextRename();
     } catch (e) {
       toast({ title: `${(e as Error).message || "Erreur"} (${done}/${rename.events.length} événements mis à jour)`, variant: "destructive" });
     } finally {
@@ -388,9 +420,9 @@ export default function Settings() {
   }
 
   // ── Derived values ──
-  const obj = draft.objectives[objYear] ?? emptyObjective();
+  const obj: Partial<YearObjective> = draft.objectives[objYear] ?? {};
   const setObj = (p: Partial<YearObjective>) =>
-    patch((d) => ({ ...d, objectives: { ...d.objectives, [objYear]: { ...(d.objectives[objYear] ?? emptyObjective()), ...p } } }));
+    patch((d) => ({ ...d, objectives: { ...d.objectives, [objYear]: { ...(d.objectives[objYear] ?? {}), ...p } } }));
   const prevObj = draft.objectives[String(Number(objYear) - 1)];
 
   const act: YearActuals = draft.yearActuals[actYear] ?? {};
@@ -504,7 +536,7 @@ export default function Settings() {
                 value={course}
                 placeholder="Nom de la catégorie…"
                 onFocus={() => { courseFocusName.current = course.trim(); }}
-                onBlur={(e) => void checkCourseRename(e.target.value)}
+                onBlur={(e) => queueCourseRename(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                 onChange={(e) => patch((d) => ({ ...d, courses: d.courses.map((c, j) => (j === i ? e.target.value : c)) }))}
               />
@@ -772,11 +804,11 @@ export default function Settings() {
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
             <FieldLabel htmlFor="obj-revenue">CA annuel HTVA</FieldLabel>
-            <NumInput id="obj-revenue" value={obj.annualRevenue} min={0} onChange={(v) => setObj({ annualRevenue: v ?? 0 })} />
+            <NumInput id="obj-revenue" value={obj.annualRevenue} min={0} placeholder="0" onChange={(v) => setObj({ annualRevenue: v })} />
           </div>
           <div>
             <FieldLabel htmlFor="obj-months">Mois actifs</FieldLabel>
-            <NumInput id="obj-months" value={obj.monthsActive} min={1} step={1} onChange={(v) => setObj({ monthsActive: v ?? DEFAULT_MONTHS_ACTIVE })} />
+            <NumInput id="obj-months" value={obj.monthsActive} min={1} step={1} placeholder={String(DEFAULT_MONTHS_ACTIVE)} onChange={(v) => setObj({ monthsActive: v })} />
           </div>
         </div>
 
@@ -862,7 +894,8 @@ export default function Settings() {
             <FieldLabel htmlFor="obj-mp">% matières premières</FieldLabel>
             <NumInput
               id="obj-mp"
-              value={round2((obj.rawMaterialPct ?? DEFAULT_RAW_MATERIAL_PCT) * 100)}
+              value={obj.rawMaterialPct === undefined ? undefined : round2(obj.rawMaterialPct * 100)}
+              placeholder={String(DEFAULT_RAW_MATERIAL_PCT * 100)}
               min={0}
               onChange={(v) => setObj({ rawMaterialPct: v === undefined ? undefined : Math.round(v * 100) / 10000 })}
             />
@@ -871,7 +904,8 @@ export default function Settings() {
             <FieldLabel htmlFor="obj-isoc">Taux ISoc %</FieldLabel>
             <NumInput
               id="obj-isoc"
-              value={round2((obj.corporateTaxRate ?? DEFAULT_TAX_RATE) * 100)}
+              value={obj.corporateTaxRate === undefined ? undefined : round2(obj.corporateTaxRate * 100)}
+              placeholder={String(DEFAULT_TAX_RATE * 100)}
               min={0}
               onChange={(v) => setObj({ corporateTaxRate: v === undefined ? undefined : Math.round(v * 100) / 10000 })}
             />
@@ -893,11 +927,11 @@ export default function Settings() {
           </div>
           <div>
             <FieldLabel htmlFor="obj-treasury">Mois de trésorerie</FieldLabel>
-            <NumInput id="obj-treasury" value={obj.treasuryMonths ?? DEFAULT_TREASURY_MONTHS} min={0} onChange={(v) => setObj({ treasuryMonths: v })} />
+            <NumInput id="obj-treasury" value={obj.treasuryMonths} placeholder={String(DEFAULT_TREASURY_MONTHS)} min={0} onChange={(v) => setObj({ treasuryMonths: v })} />
           </div>
           <div>
             <FieldLabel htmlFor="obj-saving">Épargne mensuelle</FieldLabel>
-            <NumInput id="obj-saving" value={obj.treasurySavingPerMonth ?? 0} min={0} onChange={(v) => setObj({ treasurySavingPerMonth: v })} />
+            <NumInput id="obj-saving" value={obj.treasurySavingPerMonth} placeholder="0" min={0} onChange={(v) => setObj({ treasurySavingPerMonth: v })} />
           </div>
         </div>
 
@@ -1037,6 +1071,11 @@ export default function Settings() {
             <FieldLabel htmlFor="co-date">Date de constitution</FieldLabel>
             <input id="co-date" type="date" className="input-field" value={draft.company.constitutedOn ?? ""} onChange={(e) => patch((d) => ({ ...d, company: { ...d.company, constitutedOn: e.target.value || undefined } }))} />
           </div>
+          <div>
+            <FieldLabel htmlFor="co-ledger-start">Début du journal</FieldLabel>
+            <input id="co-ledger-start" type="month" className="input-field" value={draft.ledgerStartYm ?? ""} onChange={(e) => patch((d) => ({ ...d, ledgerStartYm: e.target.value || undefined }))} />
+            <p className="mt-1 text-sm text-muted-foreground">Les mois avant cette date lisent les Années précédentes.</p>
+          </div>
         </div>
       </Section>
 
@@ -1084,14 +1123,14 @@ export default function Settings() {
       )}
 
       {rename && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 backdrop-blur-sm" onClick={() => !renaming && setRename(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 backdrop-blur-sm" onClick={skipRename}>
           <div className="w-[92%] max-w-sm rounded-2xl bg-card p-7 text-center shadow-xl animate-fade-up" onClick={(e) => e.stopPropagation()}>
             <h3 className="mb-2 font-serif text-h3">Renommer aussi sur {rename.count} ligne{rename.count > 1 ? "s" : ""} d'événement ?</h3>
             <p className="mb-6 text-base text-muted-foreground">
               « {rename.from} » devient « {rename.to} » sur {rename.events.length} événement{rename.events.length > 1 ? "s" : ""}. Les événements sont mis à jour tout de suite.
             </p>
             <div className="flex justify-center gap-3">
-              <button type="button" disabled={renaming} onClick={() => setRename(null)} className={btnSecondary}>Non</button>
+              <button type="button" disabled={renaming} onClick={skipRename} className={btnSecondary}>Non</button>
               <button type="button" disabled={renaming} onClick={() => void applyRename()} className={btnPrimary}>
                 {renaming ? "Mise à jour…" : "Renommer"}
               </button>

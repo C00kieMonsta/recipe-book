@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Download } from "lucide-react";
-import type { IncomeRow, LedgerEntry, MonthClose, MpSource, Scenario } from "@packages/types";
+import type { IncomeRow, LedgerEntry, MonthClose, MpSource, Scenario, YearObjective } from "@packages/types";
 import { fmtEur, incomeStatement, round2 } from "@packages/types";
 import { api } from "@/lib/api";
 import { dayLabel, monthLabel } from "@/lib/dates";
@@ -150,6 +150,18 @@ export default function Resultats() {
   const taxRate = objective?.corporateTaxRate ?? 0.25;
 
   const pickScenario = (s: Scenario) => { setScenario(s); writeScenario(s); };
+
+  const saveTax = async (patch: Partial<YearObjective>) => {
+    try {
+      // Re-read so objectives of other years saved elsewhere are kept.
+      const fresh = await api.settings.get();
+      const current = fresh.objectives?.[String(year)] ?? { annualRevenue: 0, monthsActive: 10 };
+      await api.settings.update({ objectives: { ...fresh.objectives, [String(year)]: { ...current, ...patch } } });
+      reload();
+    } catch (e) {
+      toast({ title: ledgerErrorMessage(e), variant: "destructive" });
+    }
+  };
 
   const onExport = () => {
     if (!inputs) return;
@@ -369,8 +381,18 @@ export default function Resultats() {
 
           <p className="mt-3 text-base text-muted-foreground">Impôts : le total annuel est calculé sur le résultat cumulé, pas additionné.</p>
 
-          <Section title={`Taux ISoc ${fmtPct(taxRate, 0)}`} meta={objective?.smeReducedRate ? "taux réduit PME activé" : undefined} action={<Link to={`/comptes/previsionnel?year=${year}`} className="inline-flex min-h-11 items-center text-base text-primary hover:underline">Modifier dans le Prévisionnel</Link>}>
-            <p className="max-w-doc text-base text-muted-foreground">{ISOC_HELP}</p>
+          <Section title={`Taux ISoc ${fmtPct(taxRate, 0)}`} meta={objective?.smeReducedRate ? "taux réduit PME activé" : undefined} action={<Link to={`/comptes/previsionnel?year=${year}`} className="inline-flex min-h-11 items-center text-base text-primary hover:underline">Objectif dans le Prévisionnel</Link>}>
+            <div className="flex flex-wrap items-end gap-4">
+              <div>
+                <FieldLabel htmlFor="res-isoc">Taux ISoc</FieldLabel>
+                <NumericInput value={round2(taxRate * 100)} min={0} onChange={(v) => void saveTax({ corporateTaxRate: Math.min(1, v / 100) })} className="input-field min-h-11 w-24 text-right tabular-nums" suffix="%" />
+              </div>
+              <label className="flex min-h-11 cursor-pointer items-center gap-3 text-base">
+                <input type="checkbox" className="h-5 w-5" checked={Boolean(objective?.smeReducedRate)} onChange={(e) => void saveTax({ smeReducedRate: e.target.checked || undefined })} />
+                Taux réduit PME
+              </label>
+            </div>
+            <p className="mt-3 max-w-doc text-base text-muted-foreground">{ISOC_HELP}</p>
           </Section>
         </>
       )}

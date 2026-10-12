@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Search, Plus, Upload, ArrowUpDown, Check, FileSpreadsheet, ChevronRight, Copy } from "lucide-react";
 import type { Ingredient } from "@packages/types";
 import { DEFAULT_SUPPLIERS } from "@packages/types";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { fmt, supplierColor } from "@/lib/recipe-helpers";
 import { usePagination } from "@/hooks/use-pagination";
@@ -73,7 +73,15 @@ export default function Ingredients() {
 
   const deleteIngredient = async (id: string) => {
     try { await api.ingredients.delete(id); setDeleteConfirm(null); setEditing(null); load(); toast({ title: "Ingrédient supprimé" }); }
-    catch (e) { toast({ title: (e as Error).message || "Erreur lors de la suppression", variant: "destructive" }); }
+    catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        const names = (e.body as { recipes?: string[] } | null)?.recipes ?? [];
+        const shown = names.slice(0, 5).join(", ") + (names.length > 5 ? "…" : "");
+        toast({ title: `Utilisé dans ${names.length} recette${names.length > 1 ? "s" : ""} : ${shown}`, variant: "destructive" });
+      } else {
+        toast({ title: (e as Error).message || "Erreur lors de la suppression", variant: "destructive" });
+      }
+    }
   };
 
   const exportExcel = () => {

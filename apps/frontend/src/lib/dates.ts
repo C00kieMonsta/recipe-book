@@ -18,6 +18,15 @@ export {
   rangeLabel,
   weekLabel,
 } from "@packages/types";
+import { parseYmd } from "@packages/types";
+
+const shortDayMonth = new Intl.DateTimeFormat("fr-BE", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+
+// "Mar 13 oct"
+export function dayMonthShortLabel(date: string): string {
+  const s = shortDayMonth.format(parseYmd(date)).replace(/\./g, "");
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : String(n);

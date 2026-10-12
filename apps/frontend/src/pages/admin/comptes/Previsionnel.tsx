@@ -167,13 +167,17 @@ export default function Previsionnel() {
   const [chargesDirty, setChargesDirty] = useState(false);
   const [saving, setSaving] = useState<"objective" | "charges" | null>(null);
 
+  // A year change always loads that year's objective; a settings reload keeps unsaved edits.
   useEffect(() => {
-    if (!settings) return;
-    setObjective(settings.objectives?.[String(year)] ?? DEFAULT_OBJECTIVE);
-    setCharges(settings.fixedCharges ?? []);
+    setObjective(settings?.objectives?.[String(year)] ?? DEFAULT_OBJECTIVE);
     setObjectiveDirty(false);
-    setChargesDirty(false);
-  }, [settings, year]);
+  }, [year]);
+  useEffect(() => {
+    if (settings && !objectiveDirty) setObjective(settings.objectives?.[String(year)] ?? DEFAULT_OBJECTIVE);
+  }, [settings]);
+  useEffect(() => {
+    if (settings && !chargesDirty) setCharges(settings.fixedCharges ?? []);
+  }, [settings]);
 
   const nowYear = new Date().getFullYear();
   const years = useMemo(() => {
@@ -230,7 +234,10 @@ export default function Previsionnel() {
     if (!settings) return;
     setSaving("objective");
     try {
-      await api.settings.update({ objectives: { ...settings.objectives, [String(year)]: cleanObjective(objective) } });
+      // Re-read so objectives of other years saved elsewhere are kept.
+      const fresh = await api.settings.get();
+      await api.settings.update({ objectives: { ...fresh.objectives, [String(year)]: cleanObjective(objective) } });
+      setObjectiveDirty(false);
       toast({ title: `Objectif ${year} enregistré` });
       reload();
     } catch (e) {
@@ -245,6 +252,7 @@ export default function Previsionnel() {
     setSaving("charges");
     try {
       await api.settings.update({ fixedCharges: cleanCharges(charges) });
+      setChargesDirty(false);
       toast({ title: "Charges enregistrées" });
       reload();
     } catch (e) {

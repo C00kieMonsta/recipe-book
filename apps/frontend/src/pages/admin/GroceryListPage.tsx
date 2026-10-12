@@ -42,10 +42,13 @@ export default function GroceryListPage() {
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
   const initialized = useRef(false);
   const savingRef = useRef(false);
+  const dirtyRef = useRef(false);
+  const listId = list?.listId ?? null;
 
   const autoSave = useCallback(async (listId: string, t: string, i: GroceryListItem[]) => {
     if (savingRef.current) return;
     savingRef.current = true;
+    dirtyRef.current = false;
     setSaving(true);
     try {
       const updated = await api.groceryLists.update(listId, { title: t, items: i });
@@ -58,6 +61,7 @@ export default function GroceryListPage() {
   const createAndSave = useCallback(async (t: string, i: GroceryListItem[]) => {
     if (savingRef.current) return;
     savingRef.current = true;
+    dirtyRef.current = false;
     setSaving(true);
     try {
       const created = await api.groceryLists.create({ title: t, items: i });
@@ -70,17 +74,14 @@ export default function GroceryListPage() {
 
   useEffect(() => {
     if (!initialized.current) return;
-    if (!editing) return;
+    if (!editing || !dirtyRef.current || saving) return;
     clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(() => {
-      if (list) {
-        autoSave(list.listId, title, items);
-      } else {
-        createAndSave(title, items);
-      }
+      if (listId) autoSave(listId, title, items);
+      else createAndSave(title, items);
     }, 800);
     return () => clearTimeout(autoSaveTimer.current);
-  }, [title, items, list, editing, autoSave, createAndSave]);
+  }, [title, items, listId, editing, saving, autoSave, createAndSave]);
 
   useEffect(() => {
     const init = async () => {
@@ -124,12 +125,16 @@ export default function GroceryListPage() {
     items.findIndex((g) => g.ingredientId === item.ingredientId && g.unit === item.unit);
 
   const patchItem = (idx: number, patch: Partial<GroceryListItem>) => {
+    dirtyRef.current = true;
     const next = [...items];
     next[idx] = { ...next[idx], ...patch };
     setItems(next);
   };
 
-  const removeItem = (idx: number) => setItems(items.filter((_, i) => i !== idx));
+  const removeItem = (idx: number) => {
+    dirtyRef.current = true;
+    setItems(items.filter((_, i) => i !== idx));
+  };
 
   const toggleRow = (key: string) => {
     setOpenRows((prev) => {
@@ -147,6 +152,7 @@ export default function GroceryListPage() {
   };
 
   const addItemFromIngredient = (ing: Ingredient, q: number, unit: string) => {
+    dirtyRef.current = true;
     setItems((prev) => [...prev, {
       ingredientId: ing.ingredientId,
       name: ing.name,
@@ -181,12 +187,16 @@ export default function GroceryListPage() {
   };
 
   const selectList = (l: GroceryList) => {
+    clearTimeout(autoSaveTimer.current);
+    dirtyRef.current = false;
     setList(l); setTitle(l.title); setItems(l.items);
     setSearchParams({ id: l.listId }, { replace: true });
     setEditing(true); setMobileShowList(false); setOpenRows(new Set());
   };
 
   const startNewList = () => {
+    clearTimeout(autoSaveTimer.current);
+    dirtyRef.current = false;
     setList(null); setTitle("Nouvelle liste"); setItems([]);
     setSearchParams({}, { replace: true });
     setEditing(true); setMobileShowList(false); setOpenRows(new Set());
@@ -198,6 +208,7 @@ export default function GroceryListPage() {
     if (!confirm(`Supprimer « ${list.title} » ?`)) return;
     // Cancel the pending autosave so it cannot resurrect the deleted list.
     clearTimeout(autoSaveTimer.current);
+    dirtyRef.current = false;
     setEditing(false);
     setList(null);
     setItems([]);
@@ -354,7 +365,7 @@ export default function GroceryListPage() {
               <input
                 className="w-full border-b-2 border-primary bg-transparent text-h3 outline-none"
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => { dirtyRef.current = true; setTitle(e.target.value); }}
                 onBlur={() => setEditingTitle(false)}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setEditingTitle(false); }}
                 autoFocus
@@ -568,6 +579,12 @@ export default function GroceryListPage() {
         <IngredientFormModal
           ingredient={{ name: creatingIngredient, price: 0, unit: "€/kg", supplier: settingsSuppliers[0] || "" }}
           supplierNames={settingsSuppliers}
+          existing={allIngredients}
+          onUseExisting={(ing) => {
+            setNewIngId(ing.ingredientId);
+            setNewIngUnit(PRICE_TO_QTY_UNIT[ing.unit] || "g");
+            setCreatingIngredient(null);
+          }}
           onSave={handleCreateIngredient}
           onCancel={() => setCreatingIngredient(null)}
         />

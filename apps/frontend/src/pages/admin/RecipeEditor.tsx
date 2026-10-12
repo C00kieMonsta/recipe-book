@@ -43,8 +43,8 @@ export default function RecipeEditor() {
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [creatingIngredient, setCreatingIngredient] = useState<string | null>(null);
-  const [supplierNames] = useState(() => DEFAULT_SUPPLIERS.map((s) => s.name));
+  const [creatingIngredient, setCreatingIngredient] = useState<{ name: string; row: number } | null>(null);
+  const [supplierNames, setSupplierNames] = useState(() => DEFAULT_SUPPLIERS.map((s) => s.name));
 
   const [form, setForm] = useState<FormState>({
     name: "", type: "Buffet", portions: 1, portionWeight: 150, description: "",
@@ -60,6 +60,7 @@ export default function RecipeEditor() {
         ]);
         setAllIngredients(ings);
         setCategories(settings?.recipeCategories?.length ? settings.recipeCategories : DEFAULT_RECIPE_CATEGORIES);
+        if (settings?.suppliers?.length) setSupplierNames(settings.suppliers.map((x) => x.name));
         if (!isNew && id) {
           const recipe = await api.recipes.get(id);
           setForm({
@@ -100,10 +101,19 @@ export default function RecipeEditor() {
     });
   };
 
+  const assignToRow = (row: number, ing: Ingredient) =>
+    setForm((p) => {
+      if (!p.ingredients[row]) return p;
+      const a = [...p.ingredients];
+      a[row] = { ...a[row], ingredientId: ing.ingredientId, unit: PRICE_TO_QTY_UNIT[ing.unit] || "g" };
+      return { ...p, ingredients: a };
+    });
+
   const handleCreateIngredient = async (data: Partial<Ingredient>) => {
     try {
       const created = await api.ingredients.create(data);
       setAllIngredients((prev) => [...prev, created]);
+      if (creatingIngredient) assignToRow(creatingIngredient.row, created);
       setCreatingIngredient(null);
       toast({ title: "Ingrédient créé" });
     } catch {
@@ -284,7 +294,7 @@ export default function RecipeEditor() {
             <tbody>
               {form.ingredients.map((ri, i) => (
                 <tr key={i} className="border-b border-border/30">
-                  <td className="!px-1"><SearchSelect options={allIngredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))} value={ri.ingredientId} onChange={(v) => { const ing = allIngredients.find((ig) => ig.ingredientId === v); const updates: Partial<RecipeIngredient> = { ingredientId: v }; if (ing) updates.unit = PRICE_TO_QTY_UNIT[ing.unit]; const a = [...form.ingredients]; a[i] = { ...a[i], ...updates }; update("ingredients", a); }} placeholder="Rechercher…" onCreateNew={(name) => setCreatingIngredient(name)} /></td>
+                  <td className="!px-1"><SearchSelect options={allIngredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))} value={ri.ingredientId} onChange={(v) => { const ing = allIngredients.find((ig) => ig.ingredientId === v); const updates: Partial<RecipeIngredient> = { ingredientId: v }; if (ing) updates.unit = PRICE_TO_QTY_UNIT[ing.unit]; const a = [...form.ingredients]; a[i] = { ...a[i], ...updates }; update("ingredients", a); }} placeholder="Rechercher…" onCreateNew={(name) => setCreatingIngredient({ name, row: i })} /></td>
                   <td className="!px-1"><NumericInput className="input-field text-right w-full" value={ri.qty} onChange={(v) => updateIngLine(i, "qty", v)} /></td>
                   <td className="!px-1"><select className="input-field w-full" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)}>{UNITS_QTY.map((u) => <option key={u}>{u}</option>)}</select></td>
                   <td className="!px-1"><NumericInput className="input-field text-right w-full" value={ri.lossPct} onChange={(v) => updateIngLine(i, "lossPct", v)} /></td>
@@ -321,8 +331,10 @@ export default function RecipeEditor() {
 
       {creatingIngredient !== null && (
         <IngredientFormModal
-          ingredient={{ name: creatingIngredient, price: 0, unit: "€/kg", supplier: supplierNames[0] || "" }}
+          ingredient={{ name: creatingIngredient.name, price: 0, unit: "€/kg", supplier: supplierNames[0] || "" }}
           supplierNames={supplierNames}
+          existing={allIngredients}
+          onUseExisting={(ing) => { assignToRow(creatingIngredient.row, ing); setCreatingIngredient(null); }}
           onSave={handleCreateIngredient}
           onCancel={() => setCreatingIngredient(null)}
         />

@@ -150,7 +150,7 @@ export default function RecipeDetail() {
   const [newIng, setNewIng] = useState<RecipeIngredient>({ ingredientId: "", qty: 0, unit: "g", lossPct: 0 });
   const [creatingIngredient, setCreatingIngredient] = useState<string | null>(null);
   const [viewingIngredient, setViewingIngredient] = useState<Ingredient | null>(null);
-  const [supplierNames] = useState(() => DEFAULT_SUPPLIERS.map((s) => s.name));
+  const [supplierNames, setSupplierNames] = useState(() => DEFAULT_SUPPLIERS.map((s) => s.name));
   const [portions, setPortions] = useState(0);
   const [readerSize, setReaderSize] = useLocalStorage<ReaderSize>("recipe-book:reader-size", "lead");
   const newStepRef = useRef<HTMLTextAreaElement>(null);
@@ -158,7 +158,13 @@ export default function RecipeDetail() {
   useEffect(() => {
     if (!id) return;
     Promise.all([api.recipes.get(id), api.ingredients.list(), api.settings.get().catch(() => null)])
-      .then(([r, i, s]) => { setRecipe(r); setIngredients(i); setPortions(r.portions); if (s?.recipeCategories?.length) setCategories(s.recipeCategories); })
+      .then(([r, i, s]) => {
+        setRecipe(r);
+        setIngredients(i);
+        setPortions(r.portions);
+        if (s?.recipeCategories?.length) setCategories(s.recipeCategories);
+        if (s?.suppliers?.length) setSupplierNames(s.suppliers.map((x) => x.name));
+      })
       .catch(() => toast({ title: "Recette introuvable", variant: "destructive" }))
       .finally(() => setLoading(false));
   }, [id]);
@@ -178,6 +184,7 @@ export default function RecipeDetail() {
     try {
       const updated = await api.recipes.update(id, patch);
       setRecipe(updated);
+      if (patch.portions !== undefined) setPortions(updated.portions);
     } catch {
       toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" });
     }
@@ -227,7 +234,7 @@ export default function RecipeDetail() {
         pricing: structuredClone(recipe.pricing || DEFAULT_PRICING),
       });
       toast({ title: "Recette dupliquée" });
-      navigate(`/recipes/${created.recipeId}/edit`);
+      navigate(`/recipes/${created.recipeId}?mode=edit`);
     } catch {
       toast({ title: "Erreur lors de la duplication", variant: "destructive" });
     }
@@ -299,6 +306,11 @@ export default function RecipeDetail() {
         <IngredientFormModal
           ingredient={{ name: creatingIngredient, price: 0, unit: "€/kg", supplier: supplierNames[0] || "" }}
           supplierNames={supplierNames}
+          existing={ingredients}
+          onUseExisting={(ing) => {
+            setNewIng((p) => ({ ...p, ingredientId: ing.ingredientId, unit: PRICE_TO_QTY_UNIT[ing.unit] || "g" }));
+            setCreatingIngredient(null);
+          }}
           onSave={handleCreateIngredient}
           onCancel={() => setCreatingIngredient(null)}
         />

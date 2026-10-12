@@ -1,7 +1,8 @@
 import { createLedgerEntrySchema, patchLedgerEntrySchema, lockMonthSchema } from "./ledger";
 import { money, moneyNonnegative } from "./primitives";
 import { putEventLinesSchema, updateEventRequestSchema, addEventLineSchema, patchEventLineSchema } from "./events";
-import { mergeIngredientsSchema } from "./ingredients";
+import { importIngredientRowSchema, mergeIngredientsSchema } from "./ingredients";
+import { importRecipeIngredientSchema } from "./recipes";
 import { createClientSchema, updateClientSchema } from "./clients";
 import { updateSettingsRequestSchema } from "./settings";
 
@@ -51,6 +52,7 @@ describe("createLedgerEntrySchema", () => {
   it("patch and lock schemas", () => {
     expect(patchLedgerEntrySchema.safeParse({ paid: true }).success).toBe(true);
     expect(patchLedgerEntrySchema.safeParse({ label: "x" }).success).toBe(false);
+    expect(patchLedgerEntrySchema.safeParse({ paid: false, paidAt: null, paymentMethod: null }).success).toBe(true);
     expect(lockMonthSchema.safeParse({ ym: "2026-10", mpSource: "saisi" }).success).toBe(false);
     expect(lockMonthSchema.safeParse({ ym: "2026-10", mpSource: "saisi", rawMaterial: 10 }).success).toBe(true);
   });
@@ -76,12 +78,27 @@ describe("event schemas", () => {
     if (r.success) expect(r.data.recipes?.[0].prepStatus).toBe("doing");
     expect(updateEventRequestSchema.safeParse({ vatRate: 7 }).success).toBe(false);
   });
+  it("update accepts null to clear client, template, prestation and VAT", () => {
+    const r = updateEventRequestSchema.safeParse({ clientId: null, templateId: null, prestationType: null, vatRate: null });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.clientId).toBeNull();
+  });
 });
 
 describe("other schemas", () => {
   it("merge refuses survivor in mergedIds", () => {
     expect(mergeIngredientsSchema.safeParse({ survivorId: "a", mergedIds: ["a"] }).success).toBe(false);
     expect(mergeIngredientsSchema.safeParse({ survivorId: "a", mergedIds: ["b"] }).success).toBe(true);
+  });
+  it("import rows normalise the unit and reject a bad one", () => {
+    const r = importIngredientRowSchema.safeParse({ nom: " Oeufs ", prix_htva: "0,35", unite: "piece", fournisseur: "Vds", _status: "new" });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data).toEqual({ nom: "Oeufs", prix_htva: 0.35, unite: "€/pièce", fournisseur: "Vds" });
+    expect(importIngredientRowSchema.safeParse({ nom: "X", prix_htva: 1, unite: "tonne", fournisseur: "" }).success).toBe(false);
+    expect(importIngredientRowSchema.safeParse({ prix_htva: 1 }).success).toBe(false);
+    expect(importRecipeIngredientSchema.safeParse({ name: "Oeuf", qty: 2, unit: "pièce" }).success).toBe(true);
+    expect(importRecipeIngredientSchema.safeParse({ name: "Oeuf", qty: 2, unit: "kg" }).success).toBe(false);
+    expect(importRecipeIngredientSchema.safeParse({ qty: 2 }).success).toBe(false);
   });
   it("client defaults", () => {
     const r = createClientSchema.safeParse({ name: "Hoona" });

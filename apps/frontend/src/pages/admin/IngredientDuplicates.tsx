@@ -158,6 +158,7 @@ export default function IngredientDuplicates() {
         removeGroup(g.id);
         api.ingredients.list().then(setIngredients).catch(() => {});
         api.recipes.list().then(setRecipes).catch(() => {});
+        api.groceryLists.list().then(setLists).catch(() => {});
       } else {
         patch(g.id, () => ({ merging: false, failures: res.failures }));
         toast({ title: `${res.recipesUpdated} recettes et ${res.listsUpdated} listes mises à jour, ${res.failures.length} échecs`, variant: "destructive" });

@@ -135,6 +135,9 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [savedNumber, setSavedNumber] = useState<string | null>(null);
+  const [createNext, setCreateNext] = useState(false);
+  // After "Ajouter une ligne pour l'autre taux" the next save creates a new entry.
+  const target = createNext ? undefined : entry;
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((p) => ({ ...p, [k]: v }));
   const isSales = f.book === "ventes";
@@ -159,7 +162,8 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
     setF((p) => ({ ...p, vatRate: rate, htva: txt(htva), tva: txt(vatAmount) }));
   };
   const onKind = (kind: string) => {
-    setF((p) => ({ ...p, kind, paid: kind === "acompte" ? true : p.paid, vatRate: kind === "commission" ? 0 : p.vatRate }));
+    setF((p) => ({ ...p, kind, paid: kind === "acompte" ? true : p.paid }));
+    if (kind === "commission") onRate(0);
   };
   const onPrestationType = (key: string) => {
     const rate = types.find((t) => t.key === key)?.defaultVatRate;
@@ -232,6 +236,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(f.date)) return "La date est requise.";
     if (!identityOk) return "HTVA + TVA doit égaler TVAC (écart de 0,01 toléré).";
     if (isCredit && !f.number.trim()) return "Le numéro est requis pour une note de crédit.";
+    if (isSales && f.kind === "commission" && num(f.tva) !== 0) return "Une commission n'a pas de TVA.";
     if (f.paid && f.paidAt && !/^\d{4}-\d{2}-\d{2}$/.test(f.paidAt)) return "La date d'encaissement est invalide.";
     return null;
   };
@@ -243,11 +248,11 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
     setError(null);
     try {
       let saved: LedgerEntry;
-      if (locked && entry) {
-        saved = await api.ledger.patch(entry.entryId, patchBody());
+      if (locked && target) {
+        saved = await api.ledger.patch(target.entryId, patchBody());
       } else {
         const body = buildBody();
-        saved = entry ? await api.ledger.replace(entry.entryId, body) : await api.ledger.create(body);
+        saved = target ? await api.ledger.replace(target.entryId, body) : await api.ledger.create(body);
         // Purchases carry no paid flag on create, so payment fields go through PATCH.
         if (body.book === "achats" && (f.paid || f.paymentMethod || f.paidAt)) saved = await api.ledger.patch(saved.entryId, patchBody());
       }
@@ -256,6 +261,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
         const other = otherRate(f.vatRate);
         setSavedNumber(f.number);
         setF((p) => ({ ...p, vatRate: other, tvac: "", htva: "", tva: "" }));
+        setCreateNext(true);
       }
     } catch (e) {
       setError(ledgerErrorMessage(e));
@@ -265,12 +271,12 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
   };
 
   const remove = async () => {
-    if (!entry || !onDeleted) return;
+    if (!target || !onDeleted) return;
     setSaving(true);
     setError(null);
     try {
-      await api.ledger.delete(entry.entryId);
-      onDeleted(entry.entryId);
+      await api.ledger.delete(target.entryId);
+      onDeleted(target.entryId);
     } catch (e) {
       setError(ledgerErrorMessage(e));
     } finally {
@@ -282,7 +288,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
   const field = `input-field ${ro ? "bg-muted text-muted-foreground" : ""}`;
   const kinds = isSales ? SALES_KINDS : PURCHASE_KINDS;
   const kindLabelOf = (k: string) => (isSales ? SALES_KIND_LABEL[k as SalesKind] : PURCHASE_KIND_LABEL[k as PurchaseKind]);
-  const title = entry ? "Modifier la ligne" : props.kind === "acompte" ? "Enregistrer un acompte" : props.kind === "facture" ? "Créer la facture" : "Nouvelle ligne";
+  const title = target ? "Modifier la ligne" : props.kind === "acompte" ? "Enregistrer un acompte" : props.kind === "facture" ? "Créer la facture" : "Nouvelle ligne";
 
   return (
     <form
@@ -507,9 +513,9 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
         )}
       </div>
 
-      {entry && (
+      {target && (
         <p className="text-sm text-muted-foreground">
-          Créée le {fmtDateFr(entry.createdAt.slice(0, 10))}{entry.updatedAt !== entry.createdAt ? `, modifiée le ${fmtDateFr(entry.updatedAt.slice(0, 10))}` : ""}
+          Créée le {fmtDateFr(target.createdAt.slice(0, 10))}{target.updatedAt !== target.createdAt ? `, modifiée le ${fmtDateFr(target.updatedAt.slice(0, 10))}` : ""}
         </p>
       )}
 
@@ -527,7 +533,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
         <button type="button" className="min-h-11 rounded-lg px-4 text-base text-muted-foreground hover:bg-hover" onClick={onCancel}>
           Annuler
         </button>
-        {entry && onDeleted && !ro && (
+        {target && onDeleted && !ro && (
           <div className="ml-auto flex items-center gap-2">
             {confirmDelete ? (
               <>

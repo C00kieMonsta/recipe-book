@@ -173,7 +173,7 @@ export default function Apercu() {
     const inYear = income.months.filter((m) => m.ym.startsWith(yearPrefix));
     const focusYm = currentYm.startsWith(yearPrefix) ? currentYm : (inYear.filter((m) => m.ca > 0).pop()?.ym ?? `${year}-12`);
     const focus = income.months.find((m) => m.ym === focusYm);
-    const unpaid = entries.filter((e) => isCaEntry(e) && !e.paid);
+    const unpaid = entries.filter((e) => isCaEntry(e) && !e.paid && e.ym.startsWith(yearPrefix));
     return {
       ap, mx, pv,
       focusYm,
@@ -319,7 +319,7 @@ export default function Apercu() {
                 </thead>
                 <tbody>
                   {report.mx.rows.map((r: MixRow) => {
-                    const to = `/comptes/journal?type=${encodeURIComponent(r.type ?? "")}`;
+                    const to = `/comptes/journal?ym=${report.focusYm}&type=${encodeURIComponent(r.type ?? "")}`;
                     return (
                       <tr key={r.type ?? "sans"} className="cursor-pointer border-t border-border/60 hover:bg-hover" onClick={() => navigate(to)}>
                         <td><Link to={to} className="font-medium">{r.type ? (typeLabel.get(r.type) ?? r.label) : r.label}</Link></td>

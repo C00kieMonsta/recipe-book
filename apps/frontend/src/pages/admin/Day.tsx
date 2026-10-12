@@ -262,12 +262,12 @@ export default function Day() {
 
         {error && <p className="mt-4 text-base text-destructive">{error}</p>}
         {loading && <p className="mt-6 text-base text-muted-foreground">Chargement…</p>}
-        {!loading && lines.length === 0 && (
+        {!loading && !error && lines.length === 0 && (
           <p className="mt-6 text-base text-muted-foreground">
             Aucune ligne à préparer ce jour. <Link to={`/events/new?date=${safeDate}`} className="text-primary underline-offset-4 hover:underline">Créer un événement</Link>
           </p>
         )}
-        {!loading && lines.length > 0 && shownGroups.length === 0 && (
+        {!loading && !error && lines.length > 0 && shownGroups.length === 0 && (
           <p className="mt-6 text-base text-muted-foreground">Tout est fait.</p>
         )}
 
@@ -316,7 +316,7 @@ export default function Day() {
 
       {notice && (
         <div role="status" className="no-print fixed bottom-4 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 card-elevated px-4 py-3 shadow-xl">
-          <span className="min-w-0 flex-1 text-base font-medium">{notice.name} faite</span>
+          <span className="min-w-0 flex-1 text-base font-medium">Fait : {notice.name}</span>
           {notice.next ? (
             <Link to={prepUrl(notice.next)} className="inline-flex min-h-11 items-center rounded-lg bg-primary px-4 text-base font-medium text-primary-foreground hover:opacity-90">
               Suivante

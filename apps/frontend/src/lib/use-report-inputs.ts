@@ -18,7 +18,7 @@ export interface ReportData {
   reload: () => void;
 }
 
-/** Loads everything the Comptabilité pages and the event billing section need for one year. */
+/** Loads everything the Comptabilité pages and the event billing section need for one year; ledger entries cover N, N-1 and N-2. */
 export function useReportInputs(year: string | number): ReportData {
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [events, setEvents] = useState<AppEvent[]>([]);
@@ -37,12 +37,15 @@ export function useReportInputs(year: string | number): ReportData {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    const yearStr = String(year);
-    Promise.all([
-      api.ledger.list(yearStr).catch((e: unknown) => {
+    const y = Number(year);
+    // Prior-year figures and the invoice prefill read N-1 and N-2 from the same array.
+    const ledgerYear = (yr: number) =>
+      api.ledger.list(String(yr)).catch((e: unknown) => {
         if (e instanceof ApiError && e.status === 503) { setNotConfigured(true); return [] as LedgerEntry[]; }
         throw e;
-      }),
+      });
+    Promise.all([
+      Promise.all([y, y - 1, y - 2].map(ledgerYear)).then((lists) => lists.flat()),
       api.events.list(),
       api.recipes.list(),
       api.ingredients.list(),
