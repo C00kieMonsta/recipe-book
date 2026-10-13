@@ -42,9 +42,9 @@ export const TOUR_STEPS: TourStep[] = [
     key: "week-checklist",
     route: "/semaine",
     anchor: "week-checklist",
-    title: "À faire avant la semaine",
-    body: "Le dimanche, cette liste dit ce qui manque : personnes à attribuer, courses, prix, factures impayées. Le lien bleu à droite corrige chaque point. Chaque clic est enregistré tout de suite.",
-    firstRunBody: "Tant que le carnet est vide, cette case liste les cinq étapes pour démarrer. Ensuite, chaque semaine, elle dit ce qui manque : personnes à attribuer, courses, prix, factures impayées. Le lien bleu à droite corrige chaque point.",
+    title: "Ce qui manque pour la semaine",
+    body: "Cette case liste ce qui manque avant de lancer la semaine : personnes, courses, prix, factures. Elle se remplit toute seule ; le lien bleu à droite règle chaque point.",
+    firstRunBody: "Tant que le carnet est vide, cette case liste les cinq étapes pour démarrer. Ensuite elle dit chaque semaine ce qui manque ; le lien bleu à droite règle chaque point.",
     before: () => window.dispatchEvent(new CustomEvent(OPEN_CHECKLIST_EVENT)),
   },
   {
@@ -88,11 +88,11 @@ export const TOUR_STEPS: TourStep[] = [
     anchor: "assign",
     loadedMark: "week-checklist",
     title: "Attribuer le travail",
-    body: "Les initiales sur une carte sont les personnes de Paramètres › Équipe. Cliquez-les pour attribuer l'événement ou une seule ligne. « Assigner » dans la liste À faire traite toute la semaine.",
-    fallbackBody: "Les personnes de Paramètres › Équipe reçoivent le travail, par événement ou par ligne, depuis la carte de l'événement ou « Assigner » dans la liste À faire. L'onglet Par personne d'un jour montre la liste de chacun.",
+    body: "Les initiales sur une carte sont les personnes de Paramètres › Équipe. Cliquez-les pour attribuer l'événement ou une seule ligne. « Choisir qui fait quoi » dans la case Ce qui manque traite toute la semaine.",
+    fallbackBody: "Les personnes de Paramètres › Équipe reçoivent le travail, par événement ou par ligne, depuis la carte de l'événement ou « Choisir qui fait quoi » dans la case Ce qui manque. L'onglet Par personne d'un jour montre la liste de chacun.",
     phone: {
       anchor: "planning-tabs",
-      body: "Pour attribuer, utilisez « Assigner » dans la liste À faire avant la semaine. Pour voir ce que chacun doit faire, ouvrez un jour puis l'onglet Par personne.",
+      body: "Pour attribuer, utilisez « Choisir qui fait quoi » dans la case Ce qui manque. Pour voir ce que chacun doit faire, ouvrez un jour puis l'onglet Par personne.",
     },
   },
   {

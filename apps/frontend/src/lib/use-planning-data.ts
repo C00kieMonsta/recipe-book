@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AppEvent, AppSettings, Client, GroceryList, Ingredient, LedgerEntry, Person, PrepStatus, Recipe } from "@packages/types";
+import type { AddEventTaskRequest, AppEvent, AppSettings, Client, GroceryList, Ingredient, LedgerEntry, PatchEventTaskRequest, Person, PrepStatus, Recipe } from "@packages/types";
 import { DEFAULT_COURSES } from "@packages/types";
 import { api, ApiError, type EventInput } from "@/lib/api";
 
@@ -8,7 +8,11 @@ export interface LinePatch {
   portions?: number;
   notes?: string;
   assignedTo?: string[];
+  // null clears the prep day back to the event day.
+  prepDate?: string | null;
 }
+
+export type TaskPatch = PatchEventTaskRequest;
 
 export interface PlanningData {
   events: AppEvent[];
@@ -33,6 +37,9 @@ export interface PlanningData {
   replaceEvent: (event: AppEvent) => void;
   patchEvent: (eventId: string, patch: EventInput) => Promise<AppEvent>;
   patchLine: (eventId: string, lineId: string, patch: LinePatch) => Promise<AppEvent>;
+  addTask: (eventId: string, task: AddEventTaskRequest) => Promise<AppEvent>;
+  patchTask: (eventId: string, taskId: string, patch: TaskPatch) => Promise<AppEvent>;
+  removeTask: (eventId: string, taskId: string) => Promise<AppEvent>;
 }
 
 export interface PlanningDataOptions {
@@ -105,6 +112,24 @@ export function usePlanningData(ledgerYear?: string | number, options: PlanningD
     return updated;
   }, [replaceEvent]);
 
+  const addTask = useCallback(async (eventId: string, task: AddEventTaskRequest) => {
+    const updated = await api.events.tasks.add(eventId, task);
+    replaceEvent(updated);
+    return updated;
+  }, [replaceEvent]);
+
+  const patchTask = useCallback(async (eventId: string, taskId: string, patch: TaskPatch) => {
+    const updated = await api.events.tasks.patch(eventId, taskId, patch);
+    replaceEvent(updated);
+    return updated;
+  }, [replaceEvent]);
+
+  const removeTask = useCallback(async (eventId: string, taskId: string) => {
+    const updated = await api.events.tasks.remove(eventId, taskId);
+    replaceEvent(updated);
+    return updated;
+  }, [replaceEvent]);
+
   const recipeById = useMemo(() => new Map(recipes.map((r) => [r.recipeId, r])), [recipes]);
   const clientById = useMemo(() => new Map(clients.map((c) => [c.clientId, c])), [clients]);
   const ingredientById = useMemo(() => new Map(ingredients.map((i) => [i.ingredientId, i])), [ingredients]);
@@ -114,7 +139,7 @@ export function usePlanningData(ledgerYear?: string | number, options: PlanningD
   return {
     events, recipes, ingredients, settings, clients, clientsConfigured, entries, ledgerConfigured, groceryLists, people,
     recipeById, clientById, ingredientById, courses,
-    loading, error, reload, replaceEvent, patchEvent, patchLine,
+    loading, error, reload, replaceEvent, patchEvent, patchLine, addTask, patchTask, removeTask,
   };
 }
 

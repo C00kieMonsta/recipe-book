@@ -4,6 +4,7 @@ import type {
   AppSettings,
   AppEvent,
   EventRecipeLine,
+  EventTask,
   GroceryList,
   Client,
   LedgerEntry,
@@ -14,6 +15,8 @@ import type {
   AddEventLineRequest,
   PatchEventLineRequest,
   PutEventLinesRequest,
+  AddEventTaskRequest,
+  PatchEventTaskRequest,
   CreateLedgerEntryRequest,
   PatchLedgerEntryRequest,
   LockMonthRequest,
@@ -143,9 +146,10 @@ export type MergeResponse =
   | { ok: true; recipesUpdated: number; listsUpdated: number; removed: number; preexisting?: number }
   | { ok: false; recipesUpdated: number; listsUpdated: number; failures: unknown[]; preexisting?: number };
 
-// Lines sent on create or update may omit lineId; the server fills it.
-export type EventInput = Omit<Partial<AppEvent>, "recipes"> & {
+// Lines and tasks sent on create or update may omit their id; the server fills it.
+export type EventInput = Omit<Partial<AppEvent>, "recipes" | "tasks"> & {
   recipes?: (Omit<EventRecipeLine, "lineId"> & { lineId?: string })[];
+  tasks?: (Omit<EventTask, "taskId"> & { taskId?: string })[];
 };
 
 export interface InstantiateResponse { created: AppEvent[]; skipped: string[] }
@@ -204,6 +208,11 @@ export const api = {
       patch: withInvalidate(["events"], (id: string, lineId: string, patch: PatchEventLineRequest) => request<AppEvent>(`/admin/events/${id}/lines/${lineId}`, json("PATCH", patch))),
       put: withInvalidate(["events"], (id: string, lines: PutEventLinesRequest["lines"]) => request<AppEvent>(`/admin/events/${id}/lines`, json("PUT", { lines }))),
       remove: withInvalidate(["events"], (id: string, lineId: string) => request<AppEvent>(`/admin/events/${id}/lines/${lineId}`, { method: "DELETE" })),
+    },
+    tasks: {
+      add: withInvalidate(["events"], (id: string, task: AddEventTaskRequest) => request<AppEvent>(`/admin/events/${id}/tasks`, json("POST", task))),
+      patch: withInvalidate(["events"], (id: string, taskId: string, patch: PatchEventTaskRequest) => request<AppEvent>(`/admin/events/${id}/tasks/${taskId}`, json("PATCH", patch))),
+      remove: withInvalidate(["events"], (id: string, taskId: string) => request<AppEvent>(`/admin/events/${id}/tasks/${taskId}`, { method: "DELETE" })),
     },
   },
   groceryLists: {

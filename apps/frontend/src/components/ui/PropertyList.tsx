@@ -35,7 +35,7 @@ export type PropertyProps = PropertyBase & (
   | { kind: "number"; value: number | null | undefined; onSave?: (v: number) => void | Promise<unknown>; min?: number; max?: number; decimals?: number; suffix?: ReactNode; format?: (v: number) => string }
   | { kind: "date"; value: string | null | undefined; onSave?: (iso: string) => void | Promise<unknown>; format?: (iso: string) => string }
   | { kind: "select" | "status"; value: string | null | undefined; options: (string | SelectPillOption)[]; onSave?: (v: string) => void | Promise<unknown>; colour?: TagColour; align?: "left" | "right" }
-  | { kind: "relation"; value: string | null | undefined; options: RelationOption[]; href?: (id: string) => string; onSave?: (id: string) => void | Promise<unknown>; onCreateNew?: (name: string) => void; allowEmpty?: boolean }
+  | { kind: "relation"; value: string | null | undefined; options: RelationOption[]; href?: (id: string) => string; onSave?: (id: string) => void | Promise<unknown>; onCreateNew?: (name: string) => void; createLabel?: string; allowEmpty?: boolean }
   | { kind: "people"; value: string[]; people: Person[]; onSave?: (ids: string[]) => void | Promise<unknown>; allowInherit?: boolean; inherited?: boolean }
   | { kind: "computed"; value: ReactNode }
   | { kind: "custom"; children: ReactNode }
@@ -234,12 +234,13 @@ function DateValue({ value, onCommit, placeholder, format }: { value: string; on
   );
 }
 
-function RelationValue({ value, options, href, onCommit, onCreateNew, placeholder, editable, allowEmpty }: {
+function RelationValue({ value, options, href, onCommit, onCreateNew, createLabel, placeholder, editable, allowEmpty }: {
   value: string;
   options: RelationOption[];
   href?: (id: string) => string;
   onCommit: (id: string) => void;
   onCreateNew?: (name: string) => void;
+  createLabel?: string;
   placeholder: string;
   editable: boolean;
   allowEmpty?: boolean;
@@ -278,10 +279,10 @@ function RelationValue({ value, options, href, onCommit, onCreateNew, placeholde
           ))}
           {filtered.length === 0 && !onCreateNew && <div className="px-3 py-2 text-sm text-muted-foreground">Aucun résultat</div>}
         </div>
-        {onCreateNew && q && (
+        {onCreateNew && (
           <>
             <MenuSeparator />
-            <MenuItem onSelect={() => onCreateNew(query.trim())} className="text-primary">+ Créer « {query.trim()} »</MenuItem>
+            <MenuItem onSelect={() => onCreateNew(query.trim())} className="text-primary">{q ? `+ Créer « ${query.trim()} »` : (createLabel ?? "+ Créer")}</MenuItem>
           </>
         )}
       </Menu>
@@ -398,11 +399,11 @@ function SelectProperty({ base, placeholder, value, options, onSave, colour, ali
   );
 }
 
-function RelationProperty({ base, placeholder, value, options, href, onSave, onCreateNew, allowEmpty }: Base & Extract<PropertyProps, { kind: "relation" }>) {
+function RelationProperty({ base, placeholder, value, options, href, onSave, onCreateNew, createLabel, allowEmpty }: Base & Extract<PropertyProps, { kind: "relation" }>) {
   const [local, commit] = useOptimistic(value ?? "", onSave);
   return (
     <Row {...base} editable={Boolean(onSave)}>
-      <RelationValue value={local} options={options} href={href} onCommit={commit} onCreateNew={onCreateNew} placeholder={placeholder} editable={Boolean(onSave)} allowEmpty={allowEmpty} />
+      <RelationValue value={local} options={options} href={href} onCommit={commit} onCreateNew={onCreateNew} createLabel={createLabel} placeholder={placeholder} editable={Boolean(onSave)} allowEmpty={allowEmpty} />
     </Row>
   );
 }
