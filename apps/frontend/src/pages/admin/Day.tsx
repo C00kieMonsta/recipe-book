@@ -1,30 +1,38 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CalendarDays, CheckCircle2, EyeOff, MoreHorizontal, Pencil, Plus, Printer, Share2, ShoppingCart, Trash2, UserPlus, X } from "lucide-react";
-import type { AppEvent, DayItem, EventCostSnapshot, Ingredient, Person, PrepLine, PrepStatus, PrepTask, Recipe, ScaledIngredient } from "@packages/types";
+import type { AppEvent, DayItem, EventCostSnapshot, Ingredient, Person, PrepLine, PrepStatus, PrepTask, PrestationTypeSetting, Recipe, ScaledIngredient } from "@packages/types";
 import {
-  addDays, buildCostSnapshot, calcRecipeCost, courseIndex, datesOfIsoWeek, filterByPerson, fmtQty, groupByPerson, groupByRecipe, isoWeekOf, longDayLabel,
-  parseIsoWeek, parseYmd, personName, prepLinesForDate, prepTasksForDate, scaledIngredients, shortDayLabel, shortEventName,
+  addDays, buildCostSnapshot, calcRecipeCost, courseIndex, datesOfIsoWeek, DEFAULT_PRESTATION_TYPES, filterByPerson, fmtQty, groupByPerson, groupByRecipe, isoWeekOf, longDayLabel,
+  parseIsoWeek, parseYmd, personName, prepLinesForDate, prepTasksForDate, scaledIngredients, shortDayLabel, shortEventName, weekPlan,
 } from "@packages/types";
 import { api, ApiError } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { buildGroceryItems, groceryTitleFor } from "@/lib/grocery";
 import { defaultTaskEventId } from "@/lib/tasks";
 import { NEXT_STATUS, plural, prestationLabel, usePlanningData } from "@/lib/use-planning-data";
+import { weekSummary, type ChecklistIntent } from "@/lib/week-summary";
+import { useLocalStorage } from "@/hooks/use-local-storage";
 import { useToast } from "@/hooks/use-toast";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { clearMiseEnPlace } from "@/hooks/use-mise-en-place";
 import { useBackLink, useFullBleed, useTopTitle } from "@/components/admin/AdminLayout";
+import DayHeads from "@/components/admin/DayHeads";
+import FirstRunCallout from "@/components/admin/FirstRunCallout";
 import MoveToDayMenu from "@/components/admin/MoveToDayMenu";
 import PlanningBar from "@/components/admin/PlanningBar";
+import PlanningFrame from "@/components/admin/PlanningFrame";
+import WeekChecklist from "@/components/admin/WeekChecklist";
+import WeekMeta from "@/components/admin/WeekMeta";
 import PersonChips, { PersonChip } from "@/components/admin/PersonChips";
 import PersonPicker from "@/components/admin/PersonPicker";
 import { Dot, StatusDot, STATUS_LABEL } from "@/components/admin/StatusDot";
 import TaskComposer from "@/components/admin/TaskComposer";
 import TaskDialog, { type TaskDialogValue } from "@/components/admin/TaskDialog";
 import {
-  ActionMenu, Button, Dialog, EmptyState, FilterButton, FilterChip, FilterGroup, IconButton, Menu, MenuCheck, MenuItem, MenuRadio, MenuSection, MenuSeparator,
-  PageHeader, SectionToggle, SelectPill, StatusControl, Tag, useMenu,
+  ActionMenu, Button, Dialog, FilterButton, FilterChip, FilterGroup, IconButton, Menu, MenuCheck, MenuItem, MenuRadio, MenuSection, MenuSeparator,
+  SectionToggle, SelectPill, StatusControl, Tag, useMenu,
 } from "@/components/ui";
 import type { ActionMenuItem } from "@/components/ui";
 
@@ -49,11 +57,6 @@ const shortDate = new Intl.DateTimeFormat("fr-BE", { weekday: "short", day: "num
 function navLabel(date: string): string {
   const s = shortDate.format(parseYmd(date));
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-// "Sam 17 oct"
-function crumbLabel(date: string): string {
-  return navLabel(date).replace(/\./g, "");
 }
 
 // "pour samedi 17 octobre"
@@ -138,12 +141,24 @@ export default function Day() {
   const from = (location.state as { from?: string } | null)?.from;
   const here = location.pathname + location.search;
 
-  const data = usePlanningData();
+  const weekDates = useMemo(() => datesOfIsoWeek(week), [week]);
+  // The Thursday decides the ledger year, as on the week page.
+  const year = weekDates[3].slice(0, 4);
+  const data = usePlanningData(year, { withLists: true });
   const {
-    events, recipes, settings, people, recipeById, clientById, ingredientById, courses, loading, error,
-    replaceEvent, patchLine, patchEvent, addTask, patchTask, removeTask,
+    events, recipes, settings, people, clients, clientsConfigured, entries, ledgerConfigured, groceryLists,
+    recipeById, clientById, ingredientById, courses, loading, error,
+    reload, replaceEvent, patchLine, patchEvent, addTask, patchTask, removeTask,
   } = data;
   const activePeople = useMemo(() => people.filter((p) => p.active), [people]);
+  const summary = useMemo(
+    () => weekSummary({ isoWeek: week, today, events, clients, clientsConfigured, groceryLists, entries, ledgerConfigured, people, settings }),
+    [week, today, events, clients, clientsConfigured, groceryLists, entries, ledgerConfigured, people, settings],
+  );
+  const plan = useMemo(() => weekPlan(events, weekDates[0], people), [events, weekDates, people]);
+  const started = weekDates[0] <= today;
+  const firstRun = !loading && recipes.length === 0 && events.length === 0 && activePeople.length === 0;
+  const prestationTypes: PrestationTypeSetting[] = settings?.prestationTypes?.length ? settings.prestationTypes : DEFAULT_PRESTATION_TYPES;
 
   const personne = searchParams.get("personne") ?? "";
   const modeParam = searchParams.get("mode");
@@ -156,7 +171,12 @@ export default function Day() {
   const [taskDialog, setTaskDialog] = useState<TaskDialogState | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [confirmTask, setConfirmTask] = useState<PrepTask | null>(null);
+  // Same key as the week page, so the callouts keep their state between the two views.
+  const [checklistOpen, setChecklistOpen] = useLocalStorage<boolean>("recipe-book:checklist-open", true);
   const touch = useTouchScreen();
+  // Under md the full right group wraps and overflows, so narrow pointer windows get the touch group.
+  const narrow = useMediaQuery("(max-width: 767px)");
+  const compact = touch || narrow;
   const menu = useMenu();
   const touchStart = useRef<{ x: number; y: number } | null>(null);
 
@@ -185,9 +205,8 @@ export default function Day() {
   const weekNumber = parseIsoWeek(week).week;
   const weekUrl = from ?? `/semaine/${week}${personne ? `?personne=${encodeURIComponent(personne)}` : ""}`;
   const title = personne ? `${personName(people, personne)} · ${longDayLabel(safeDate)}` : longDayLabel(safeDate);
-  useBackLink({ to: weekUrl, label: `Semaine ${weekNumber}` });
+  useBackLink({ to: weekUrl, label: "Semaine" });
   useTopTitle(title);
-  const weekDates = useMemo(() => datesOfIsoWeek(week), [week]);
   // The week's events by date then name, for the strip counts, the composer and the dialog.
   const weekEvents = useMemo(
     () => events.filter((e) => { const d = e.date.slice(0, 10); return d >= weekDates[0] && d <= weekDates[6]; }).sort(byDateThenName),
@@ -523,6 +542,34 @@ export default function Day() {
     }
   };
 
+  const setType = async (eventId: string, type: PrestationTypeSetting) => {
+    setBusy(true);
+    try {
+      await patchEvent(eventId, { prestationType: type.key, vatRate: type.defaultVatRate });
+      reload();
+    } catch {
+      toast({ title: "Erreur lors de l'enregistrement du type", variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const closeEvent = async (eventId: string) => {
+    const ev = events.find((e) => e.eventId === eventId);
+    if (!ev) return;
+    try {
+      const costSnapshot = { ...buildCostSnapshot(ev, recipeCostById, recipePortionsById), takenAt: new Date().toISOString() };
+      await patchEvent(eventId, { status: "completed", costSnapshot });
+      toast({ title: "Événement terminé" });
+      reload();
+    } catch {
+      toast({ title: "Erreur lors de la clôture", variant: "destructive" });
+    }
+  };
+
+  // Checklist actions that need a sheet or a creation flow run on the week page.
+  const toWeek = (checklistIntent: ChecklistIntent) => navigate(weekUrl, { state: { openChecklist: true, checklistIntent } });
+
   if (!valid) return <Navigate to={`/semaine/${isoWeekOf(todayIso())}`} replace />;
 
   const prepUrl = (l: PrepLine) => `/events/${l.eventId}/lines/${l.lineId}${personne ? `?personne=${encodeURIComponent(personne)}` : ""}`;
@@ -626,7 +673,7 @@ export default function Day() {
     </>
   );
 
-  // On touch the ⋯ sheet also carries the grouping and the filters.
+  // Compact (touch or under md): the ⋯ menu also carries the grouping and the filters.
   const touchFilterItems = (
     <>
       {!personne && mode !== "personne" && (
@@ -653,7 +700,7 @@ export default function Day() {
     <div ref={menu.ref} className="relative inline-flex">
       <IconButton size="sm" aria-label="Plus d'actions" aria-haspopup="menu" aria-expanded={menu.open} onClick={menu.toggle} icon={<MoreHorizontal />} />
       <Menu {...menu.props} align="right" title={longDayLabel(safeDate)} aria-label="Plus d'actions">
-        {touch && touchFilterItems}
+        {compact && touchFilterItems}
         {actionItems}
       </Menu>
     </div>
@@ -683,74 +730,130 @@ export default function Day() {
   const empty = !loading && !error && items.length === 0;
   const showAddTask = !loading && !error && !personne && canAddTask;
 
-  return (
-    <div className="mx-auto max-w-wide pb-24 print:max-w-none" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-      <PageHeader
-        iconKey="semaine"
-        breadcrumb={[{ label: `Semaine ${weekNumber}`, to: weekUrl }, { label: crumbLabel(safeDate) }]}
-        title={title}
-        meta={meta}
-        className="no-print"
-      />
-      <h1 className="hidden text-h1 print:block">{title}</h1>
-
-      <PlanningBar
-        view={mode === "personne" ? "personne" : "day"}
-        weekHref={weekUrl}
-        dayHref={`/jour/${safeDate}${personQuery}${hideDone ? `${personQuery ? "&" : "?"}masquer=faites` : ""}`}
-        personHref={activePeople.length > 0 && !personne ? `/jour/${safeDate}?mode=personne${hideDone ? "&masquer=faites" : ""}` : undefined}
-        dateLabel={navLabel(safeDate)}
-        onPrev={() => navigate(dayUrl(addDays(safeDate, -1)), { state: location.state })}
-        onNext={() => navigate(dayUrl(addDays(safeDate, 1)), { state: location.state })}
-        onPick={(d) => navigate(dayUrl(d), { state: location.state })}
-        pickValue={safeDate}
-        isToday={safeDate === today}
-        onToday={() => navigate(dayUrl(today), { state: location.state })}
-        after={groupPill}
-        right={(
-          <>
-            <FilterButton count={filterCount} onClear={() => setParams({ personne: null, masquer: null })}>
-              {personOptions.length > 0 && (
-                <FilterGroup
-                  label="Personne"
-                  name="personne"
-                  kind="radio"
-                  value={personne}
-                  onChange={(v) => setParam("personne", v || null)}
-                  options={[{ value: "", label: "Toutes les personnes" }, ...personOptions.map((p) => ({ value: p.personId, label: p.name }))]}
-                  renderOption={(o) => o.value ? <span className="inline-flex items-center gap-2"><PersonChip personId={o.value} people={people} size="sm" />{o.label}</span> : o.label}
-                />
-              )}
+  const bar = (
+    <PlanningBar
+      view={mode === "personne" ? "personne" : "day"}
+      weekHref={weekUrl}
+      dayHref={`/jour/${safeDate}${personQuery}${hideDone ? `${personQuery ? "&" : "?"}masquer=faites` : ""}`}
+      personHref={activePeople.length > 0 && !personne ? `/jour/${safeDate}?mode=personne${hideDone ? "&masquer=faites" : ""}` : undefined}
+      dateLabel={<><span className="hidden md:inline">Semaine {weekNumber} · </span>{navLabel(safeDate)}</>}
+      onPrev={() => navigate(dayUrl(addDays(safeDate, -1)), { state: location.state })}
+      onNext={() => navigate(dayUrl(addDays(safeDate, 1)), { state: location.state })}
+      onPick={(d) => navigate(dayUrl(d), { state: location.state })}
+      pickValue={safeDate}
+      isToday={safeDate === today}
+      onToday={() => navigate(dayUrl(today), { state: location.state })}
+      right={compact ? (
+        <span className="flex items-center gap-0.5 touch:-mr-1">{moreMenu}<IconButton variant="primary" size="sm" as={Link} to={newEventUrl} aria-label="Nouvel événement" title="Nouvel événement" icon={<Plus />} /></span>
+      ) : (
+        <>
+          {groupPill}
+          <FilterButton count={filterCount} onClear={() => setParams({ personne: null, masquer: null })}>
+            {personOptions.length > 0 && (
               <FilterGroup
-                name="masquer"
-                kind="check"
-                value={hideDone ? ["faites"] : []}
-                onChange={(v) => setParam("masquer", v.includes("faites") ? "faites" : null)}
-                options={[{ value: "faites", label: "Masquer les lignes faites" }]}
+                label="Personne"
+                name="personne"
+                kind="radio"
+                value={personne}
+                onChange={(v) => setParam("personne", v || null)}
+                options={[{ value: "", label: "Toutes les personnes" }, ...personOptions.map((p) => ({ value: p.personId, label: p.name }))]}
+                renderOption={(o) => o.value ? <span className="inline-flex items-center gap-2"><PersonChip personId={o.value} people={people} size="sm" />{o.label}</span> : o.label}
               />
-            </FilterButton>
-            {moreMenu}
-            <Button variant="primary" size="sm" as={Link} to={newEventUrl} icon={<Plus />}>Nouvel événement</Button>
-          </>
-        )}
-        rightTouch={<>{moreMenu}<IconButton variant="primary" size="sm" as={Link} to={newEventUrl} aria-label="Nouvel événement" title="Nouvel événement" icon={<Plus />} /></>}
-        filters={filterChips}
-        dates={weekDates}
-        counts={counts}
-        today={today}
-        selected={safeDate}
-        stripHref={dayUrl}
-        linkState={location.state}
-      />
+            )}
+            <FilterGroup
+              name="masquer"
+              kind="check"
+              value={hideDone ? ["faites"] : []}
+              onChange={(v) => setParam("masquer", v.includes("faites") ? "faites" : null)}
+              options={[{ value: "faites", label: "Masquer les lignes faites" }]}
+            />
+          </FilterButton>
+          {moreMenu}
+          <Button variant="primary" size="sm" as={Link} to={newEventUrl} icon={<Plus />}>Nouvel événement</Button>
+        </>
+      )}
+      filters={filterChips}
+      dates={weekDates}
+      counts={counts}
+      today={today}
+      selected={safeDate}
+      stripHref={dayUrl}
+      linkState={location.state}
+    />
+  );
 
-      <div className="max-w-doc">
-        {error && <p className="mt-4 text-sm text-danger">{error}</p>}
+  // The same callouts as the week; three actions need its sheets and run there.
+  const callouts = !loading && (
+    <>
+      <FirstRunCallout hidden={Boolean(personne)} />
+      <WeekChecklist
+        items={summary.checklist}
+        firstRun={firstRun}
+        open={checklistOpen}
+        onToggle={() => setChecklistOpen((o) => !o)}
+        from={here}
+        monday={weekDates[0]}
+        weekNo={weekNumber}
+        prestationTypes={prestationTypes}
+        coveringList={summary.coveringList}
+        busy={busy}
+        onSetType={setType}
+        onCloseEvent={closeEvent}
+        onAssign={() => toWeek({ kind: "assign" })}
+        onCreateClientWeek={(clientId, guestCount) => toWeek({ kind: "client_week", clientId, guestCount })}
+        onCreateGroceries={(eventIds) => toWeek({ kind: "groceries", eventIds })}
+      />
+    </>
+  );
+
+  const heads = (
+    <DayHeads
+      dates={weekDates}
+      plan={loading ? undefined : plan}
+      started={started}
+      today={today}
+      selected={safeDate}
+      href={dayUrl}
+      closeHref={weekUrl}
+      state={location.state}
+      newEventHref={(d) => `/events/new?date=${d}&retour=${encodeURIComponent(here)}`}
+      people={people}
+      selectedPerson={personne}
+      onPersonFilter={(id) => setParam("personne", personne === id ? null : id)}
+    />
+  );
+
+  return (
+    <PlanningFrame
+      weekNo={weekNumber}
+      titleSuffix={` · ${title}`}
+      meta={personne ? `${personName(people, personne)} · ${meta}` : <WeekMeta weekTotals={summary.weekTotals} started={started} monthLink={summary.monthLink} state={{ from: here }} />}
+      bar={bar}
+      error={error}
+      callouts={callouts}
+      heads={heads}
+      className="pb-24 print:max-w-none"
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
+      {/* A short day keeps the week scroll offset, so the heads row stays put on the way back. */}
+      <div className="mt-3 max-w-doc xl:min-h-screen">
+        <h2 className="text-h3 print:text-h1">{title}</h2>
+        <p className="mt-1 text-sm text-muted-foreground tabular-nums">{meta}</p>
         {loading && <p className="mt-6 text-sm text-muted-foreground">Chargement…</p>}
         {empty && !personne && (
-          <EmptyState message="Aucune préparation ce jour." action={{ label: "+ Nouvel événement", to: newEventUrl }} />
+          <>
+            <p className="mt-4 text-sm text-muted-foreground touch:text-base">Aucune préparation ce jour.</p>
+            <Button variant="ghost" size="sm" as={Link} to={newEventUrl} icon={<Plus />} className="mt-1 justify-start text-muted-foreground">Nouvel événement</Button>
+          </>
         )}
         {empty && personne && serviceEvents.length === 0 && (
-          <EmptyState message={`Aucune préparation pour ${personName(people, personne)} ce jour.`} action={{ label: "Toutes les personnes", to: `/jour/${safeDate}` }} />
+          <>
+            <p className="mt-4 text-sm text-muted-foreground touch:text-base">Aucune préparation pour {personName(people, personne)} ce jour.</p>
+            <p className="mt-1">
+              <Button variant="link" size="sm" as={Link} to={`/jour/${safeDate}`}>Toutes les personnes</Button>
+            </p>
+          </>
         )}
         {!loading && !error && items.length > 0 && (personne ? personItems.length === 0 : groups.every((g) => g.lines.length === 0)) && (
           <p className="mt-6 text-sm text-muted-foreground touch:text-base">Tout est fait.</p>
@@ -765,7 +868,7 @@ export default function Day() {
             )}
             {serviceEvents.length > 0 && (
               <section className="mt-6">
-                <h2 className="text-h3">Service</h2>
+                <h3 className="text-h3">Service</h3>
                 <ul className="mt-2">
                   {serviceEvents.map((ev) => (
                     <li key={ev.eventId}>
@@ -787,23 +890,23 @@ export default function Day() {
           </>
         ) : (
           shownGroups.map((group, i) => (
-            <section key={group.key} className={i > 0 ? "mt-6 print-break" : "mt-4"}>
+            <section key={group.key} className={i > 0 ? "mt-6 print-break" : "mt-6"}>
               <header className="sticky top-[96px] z-[15] bg-background py-2 md:top-0">
-                <div className="flex min-h-7 items-center justify-between gap-3">
-                  <h2 className={`flex min-w-0 items-center gap-2 text-h3 ${group.tag ? "flex-wrap" : ""}`}>
+                <div className="flex min-h-7 items-center gap-3">
+                  <h3 className={`flex min-w-0 items-center gap-2 text-h3 ${group.tag ? "flex-wrap" : ""}`}>
                     {mode === "personne" && group.personId && <PersonChip personId={group.personId} people={people} size="md" />}
                     <span className="min-w-0 truncate">{group.title}</span>
                     {group.tag && <Tag colour="gray" className="shrink-0">{group.tag}</Tag>}
-                  </h2>
+                  </h3>
                   <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{group.count}</span>
                   {mode === "personne" && group.personId && (
                     <>
-                      <Button variant="ghost" size="sm" aria-label={`Partager la liste de ${group.title}`} className="no-print hidden md:inline-flex" onClick={() => share(group.personId ?? undefined)} icon={<Share2 />}>Partager</Button>
-                      <IconButton variant="ghost" size="sm" aria-label={`Partager la liste de ${group.title}`} className="no-print md:hidden" onClick={() => share(group.personId ?? undefined)} icon={<Share2 />} />
+                      <Button variant="ghost" size="sm" aria-label={`Partager la liste de ${group.title}`} className="no-print ml-auto hidden md:inline-flex" onClick={() => share(group.personId ?? undefined)} icon={<Share2 />}>Partager</Button>
+                      <IconButton variant="ghost" size="sm" aria-label={`Partager la liste de ${group.title}`} className="no-print ml-auto md:hidden" onClick={() => share(group.personId ?? undefined)} icon={<Share2 />} />
                     </>
                   )}
                   {mode === "personne" && group.personId === null && (
-                    <GroupAssign people={activePeople} onChange={(next) => assignAll(group.lines, next)} />
+                    <GroupAssign people={activePeople} onChange={(next) => assignAll(group.lines, next)} className="ml-auto" />
                   )}
                 </div>
                 {group.subtitle && <p className="text-sm text-muted-foreground">{group.subtitle}</p>}
@@ -881,7 +984,7 @@ export default function Day() {
         </div>
       )}
       {busy && <span className="sr-only" aria-live="polite">Enregistrement…</span>}
-    </div>
+    </PlanningFrame>
   );
 }
 
@@ -1046,11 +1149,11 @@ function TaskRow({ task, people, second, onStatus, onCycle, onAssign, onEdit, on
 }
 
 // "Assigner tout" on the Sans personne heading; every toggle writes the whole group.
-function GroupAssign({ people, onChange }: { people: Person[]; onChange: (next: string[]) => void }) {
+function GroupAssign({ people, onChange, className }: { people: Person[]; onChange: (next: string[]) => void; className?: string }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState<string[]>([]);
   return (
-    <span className={`no-print relative inline-flex shrink-0 ${open ? "z-20" : ""}`}>
+    <span className={`no-print relative inline-flex shrink-0 ${open ? "z-20" : ""} ${className ?? ""}`}>
       <Button variant="link" size="sm" aria-haspopup="dialog" onClick={() => setOpen(true)}>Assigner tout</Button>
       {open && (
         <PersonPicker

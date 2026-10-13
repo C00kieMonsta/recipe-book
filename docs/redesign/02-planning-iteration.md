@@ -161,8 +161,8 @@ Rule: every `Link` out of Week, Day and PrepSheet passes `state={{ from: locatio
 
 | From | Back control | Target |
 |---|---|---|
-| Day | breadcrumb `Semaine 43` | `state.from ?? /semaine/<isoWeekOf(date)>?personne=` |
-| Day on the phone | top bar shows `‹ Semaine 43` instead of the logo (`useBackLink`, 2.6) | same |
+| Day | the Semaine tab, Escape, or a click on the tinted head in the row of days (`title="Fermer le jour"`); no breadcrumb since 06 | `state.from ?? /semaine/<isoWeekOf(date)>?personne=` |
+| Day on the phone | top bar shows `‹ Semaine` instead of the logo (`useBackLink`, 2.6) | same |
 | Prep sheet | `‹ Mar 13` (44px) in its own bar | `state.from ?? /jour/<date>?personne=` |
 | Prep sheet `‹ ›` | prev and next line of the day, inside the person's lines when `?personne=` is set | `/events/:e/lines/:l?personne=` |
 | Cook mode | `Quitter` | `state.from ?? (line ? /events/:eventId/lines/:lineId?personne= : event ? /jour/:date : /recipes/:id)` |
@@ -197,7 +197,7 @@ Week picker: the range label is a `<button>` wrapping a visually hidden `<input 
 - Delete `COLLAPSE_BELOW`, `useMediaQuery`, `onWeek`, `narrow`. `collapsed = collapsedPref ?? !wide` where `wide = window.innerWidth >= 1400` read once on mount. The chevron persists the choice as today. The same rule on every page, so the sidebar never changes shape between week and day.
 - The collapsed state becomes a labelled rail: `w-[84px]`, each item `flex-col items-center gap-1 py-2`, icon 20px, label `text-caption` (13px, `.rail-label` in `index.css`: centered, `leading-tight`). Active item on `bg-sidebar-accent`. "Comptabilité" at 13px is 78px wide, which is why the rail is 84px and not 64. The label is always visible, so the rail never hides where you are.
 - `Semaine` keeps `path: "/semaine"`, which now exists as the index redirect above. `isActive` stays: `/semaine/*`, `/jour/*`, prep sheets.
-- Mobile top bar: reads `backTo?: { to: string; label: string }` from the outlet context. When set, the left side renders `‹ <label>` (44px link) instead of the logo and name. `AdminLayout.tsx` exposes `setBackTo` and a hook `useBackLink(backTo)` next to `useFullBleed`, cleared on unmount. Day sets `{ to: weekUrl, label: "Semaine 43" }`; EventDetail sets `{ to: /jour/<date>, label: "Mar 13" }`.
+- Mobile top bar: reads `backTo?: { to: string; label: string }` from the outlet context. When set, the left side renders `‹ <label>` (44px link) instead of the logo and name. `AdminLayout.tsx` exposes `setBackTo` and a hook `useBackLink(backTo)` next to `useFullBleed`, cleared on unmount. Day sets `{ to: weekUrl, label: "Semaine" }` (the page title under it already reads `Semaine 43`); EventDetail sets `{ to: /jour/<date>, label: "Mar 13" }`.
 
 ## 3. Sunday flow and the week checklist
 
@@ -405,7 +405,7 @@ File `apps/frontend/src/pages/admin/Day.tsx`.
 
 ### 5.1 Header
 
-- Breadcrumb `Semaine 43` → `state.from ?? /semaine/<isoWeekOf(date)>?personne=`; `useBackLink({ to, label: "Semaine 43" })` for the phone top bar. When the date is not today the breadcrumb row also shows `Aujourd'hui` → `/jour/<today>` with the query kept.
+- No breadcrumb since 06: the way back is the Semaine tab, Escape, the tinted head in the row of days and the phone `‹ Semaine` (`useBackLink({ to, label: "Semaine" })`), target `state.from ?? /semaine/<isoWeekOf(date)>?personne=`. `Aujourd'hui` lives in the toolbar `DateNav`, always rendered and disabled on today → `/jour/<today>` with the query kept. The page title reads `Semaine 43` as on the week; the date below is the body heading.
 - Title `longDayLabel(date)`; with `?personne=`: "Kristoff · Mardi 13 octobre". Meta `2 événements · 42 convives · 2 lignes · 1 faite` (with a person: `4 lignes · 1 faite`).
 - Actions on one row at every width: `‹` `›` (44px, keep `?personne`, `?mode`, `?masquer`), the mode control (segmented on `md+`, `<select>` below), the person `<select>` ("Toutes les personnes", hidden when no active person), and an `ActionMenu` `⋯` with `Courses du jour`, `Imprimer`, `Imprimer par personne`, `Partager…`, `Masquer les lignes faites` (checkable item, writes `?masquer=faites`), and for a past date with `upcoming` events `Terminer les 2 événements` (sequential `patchEvent` with `buildCostSnapshot`, toast with the count). On the phone the five rows of `day-375.png` become title, meta, one 44px row.
 - `mode` in the URL: `evenement` (default), `categorie`, `recette`, `personne`. `MODES` gains `{ value: "personne", label: "Par personne" }`, shown only when an active person exists and `?personne=` is not set.

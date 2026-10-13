@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { CalendarDays, ChevronRight, FileText, GripVertical, MoreHorizontal, Pencil, Plus, Printer, Share2, ShoppingCart, Trash2, UserPlus } from "lucide-react";
-import type { AppEvent, Client, EventRecipeLine, EventTask, Person, PrepStatus, PrestationTypeSetting, WeekDay, WeekMovedIn } from "@packages/types";
+import { CalendarDays, ChevronRight, EyeOff, FileText, GripVertical, MoreHorizontal, Pencil, Plus, Printer, Share2, ShoppingCart, Trash2, UserPlus } from "lucide-react";
+import type { AppEvent, Client, EventRecipeLine, EventTask, Person, PrepStatus, PrestationTypeSetting, WeekMovedIn } from "@packages/types";
 import {
   addDays,
   assigneesOf,
@@ -12,9 +12,7 @@ import {
   DEFAULT_PRESTATION_TYPES,
   isoWeekOf,
   longDayLabel,
-  monthSignedRevenue,
   movedOutLines,
-  objectifMensuel,
   ownDayLines,
   parseIsoWeek,
   parseYmd,
@@ -25,22 +23,21 @@ import {
   sortEventLines,
   tasksOf,
   tasksOn,
-  weekChecklist,
   rangeLabel,
   weekdayOf,
-  weekGroceryList,
   weekPlan,
-  ymOf,
 } from "@packages/types";
 import { api, ApiError } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { buildGroceryItems, groceryTitleFor } from "@/lib/grocery";
 import { defaultTaskEventId } from "@/lib/tasks";
-import { fmtEur0, NEXT_STATUS, plural, usePlanningData } from "@/lib/use-planning-data";
+import { dayHeaderMeta, NEXT_STATUS, plural, usePlanningData } from "@/lib/use-planning-data";
+import { weekSummary, type ChecklistIntent, type WeekLinkState } from "@/lib/week-summary";
 import { cn } from "@/lib/utils";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { useToast } from "@/hooks/use-toast";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useFullBleed, useTopTitle } from "@/components/admin/AdminLayout";
 import { StatusDot } from "@/components/admin/StatusDot";
 import PersonChips, { PersonChip } from "@/components/admin/PersonChips";
@@ -48,14 +45,18 @@ import PersonPicker from "@/components/admin/PersonPicker";
 import WeekChecklist from "@/components/admin/WeekChecklist";
 import AssignSheet from "@/components/admin/AssignSheet";
 import PlanningBar from "@/components/admin/PlanningBar";
+import PlanningFrame from "@/components/admin/PlanningFrame";
+import DayHeads from "@/components/admin/DayHeads";
+import WeekMeta from "@/components/admin/WeekMeta";
 import FirstRunCallout from "@/components/admin/FirstRunCallout";
 import MoveToDayMenu from "@/components/admin/MoveToDayMenu";
 import TaskComposer from "@/components/admin/TaskComposer";
 import TaskDialog, { type TaskDialogValue } from "@/components/admin/TaskDialog";
 import { OPEN_CHECKLIST_EVENT } from "@/components/admin/tour-steps";
+import { useTour } from "@/components/admin/TourProvider";
 import {
   ActionMenu, Button, Dialog, FieldLabel, FilterButton, FilterChip, FilterGroup, IconButton,
-  Menu, MenuCheck, MenuItem, MenuRadio, MenuSection, MenuSeparator, PageHeader, useMenu,
+  Menu, MenuCheck, MenuItem, MenuRadio, MenuSection, MenuSeparator, useMenu,
   type ActionMenuItem,
 } from "@/components/ui";
 
@@ -69,7 +70,6 @@ type DragItem = { kind: "recipe" | "task"; eventId: string; id: string; eventDat
 
 type TaskDialogState = { mode: "create" | "edit"; eventId: string; taskId?: string; initial: TaskDialogValue };
 
-const num0 = new Intl.NumberFormat("fr-BE", { maximumFractionDigits: 0 });
 const dayMonthShort = new Intl.DateTimeFormat("fr-BE", { day: "numeric", month: "short", timeZone: "UTC" });
 
 // Row actions of the seven-column grid reveal on the row, not on the column, so the column `group` is not reused.
@@ -128,9 +128,7 @@ export default function Week() {
   const safeWeek = valid ? isoWeek : isoWeekOf(today);
   const dates = useMemo(() => datesOfIsoWeek(safeWeek), [safeWeek]);
   const monday = dates[0];
-  const thursday = dates[3];
-  const ym = ymOf(thursday);
-  const year = thursday.slice(0, 4);
+  const year = dates[3].slice(0, 4);
   const weekNo = parseIsoWeek(safeWeek).week;
   const prevWeek = isoWeekOf(addDays(monday, -7));
   const nextWeek = isoWeekOf(addDays(monday, 7));
@@ -150,7 +148,8 @@ export default function Week() {
 
   const selectedClient = searchParams.get("client") ?? "";
   const selectedPerson = searchParams.get("personne") ?? "";
-  const setParam = (key: "client" | "personne", value: string) => {
+  const hideDone = searchParams.get("masquer") === "faites";
+  const setParam = (key: "client" | "personne" | "masquer", value: string) => {
     const next = new URLSearchParams(searchParams);
     if (value) next.set(key, value); else next.delete(key);
     setSearchParams(next, { replace: true });
@@ -159,6 +158,7 @@ export default function Week() {
     const next = new URLSearchParams(searchParams);
     next.delete("client");
     next.delete("personne");
+    next.delete("masquer");
     setSearchParams(next, { replace: true });
   };
 
@@ -173,6 +173,10 @@ export default function Week() {
   const [drag, setDrag] = useState<DragItem | null>(null);
   const [dropDay, setDropDay] = useState<string | null>(null);
   const touch = useTouchScreen();
+  // Under md the full right group wraps and overflows, so narrow pointer windows get the touch group.
+  const narrow = useMediaQuery("(max-width: 767px)");
+  const compact = touch || narrow;
+  const { active: tourActive } = useTour();
   const menu = useMenu();
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const dayRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -201,18 +205,13 @@ export default function Week() {
     [weekEvents, selectedClient],
   );
   const plan = useMemo(() => weekPlan(filteredEvents, monday, people), [filteredEvents, monday, people]);
-  // The money line always describes the whole week whatever the filters.
-  const weekTotals = useMemo(() => weekPlan(events, monday), [events, monday]);
-  const monthSigned = useMemo(() => monthSignedRevenue(events, ym), [events, ym]);
-  const objective = objectifMensuel(settings?.objectives?.[year], ym);
+  const summary = useMemo(
+    () => weekSummary({ isoWeek: safeWeek, today, events, clients, clientsConfigured, groceryLists, entries, ledgerConfigured, people, settings }),
+    [safeWeek, today, events, clients, clientsConfigured, groceryLists, entries, ledgerConfigured, people, settings],
+  );
+  const { weekTotals, monthLink, checklist, coveringList } = summary;
   const recipeCostById = useMemo(() => new Map(recipes.map((r) => [r.recipeId, calcRecipeCost(r, ingredientById)])), [recipes, ingredientById]);
   const recipePortionsById = useMemo(() => new Map(recipes.map((r) => [r.recipeId, r.portions || 1])), [recipes]);
-
-  const checklist = useMemo(
-    () => weekChecklist({ weekDates: dates, today, events, clients, clientsConfigured, groceryLists, entries, ledgerConfigured, people }),
-    [dates, today, events, clients, clientsConfigured, groceryLists, entries, ledgerConfigured, people],
-  );
-  const coveringList = useMemo(() => weekGroceryList(weekEvents.map((e) => e.eventId), groceryLists), [weekEvents, groceryLists]);
 
   // The sidebar "Semaine" link returns here.
   useEffect(() => {
@@ -223,11 +222,21 @@ export default function Week() {
   const retour = encodeURIComponent(`/semaine/${safeWeek}`);
   const newEventUrl = (date: string) => `/events/new?date=${date}${selectedClient ? `&client=${selectedClient}` : ""}&retour=${retour}`;
   const personQuery = selectedPerson ? `?personne=${encodeURIComponent(selectedPerson)}` : "";
-  const dayUrl = (date: string) => `/jour/${date}${personQuery}`;
+  // The day page reads the same person and « masquer » filters.
+  const dayParams = new URLSearchParams(personQuery);
+  if (hideDone) dayParams.set("masquer", "faites");
+  const dayQuery = dayParams.toString() ? `?${dayParams}` : "";
+  const dayUrl = (date: string) => `/jour/${date}${dayQuery}`;
   const prepUrl = (eventId: string, lineId: string) => `/events/${eventId}/lines/${lineId}${personQuery}`;
   const printUrl = `/semaine/${safeWeek}/imprimer${search}`;
   const state = { from };
   const anchorDay = todayInWeek ? today : monday;
+  const linkState = location.state as WeekLinkState | null;
+
+  // The day page sends its checklist actions here.
+  useEffect(() => {
+    if (linkState?.openChecklist) setChecklistOpen(true);
+  }, [linkState?.openChecklist, setChecklistOpen]);
 
   const modalOpen = Boolean(sheet) || assignOpen || menu.open || Boolean(taskDialog) || Boolean(confirmTask);
   useEffect(() => {
@@ -255,11 +264,12 @@ export default function Week() {
   }, []);
 
   // Phone: today is brought into view once loaded; on a Sunday looking at next week, the first day with events.
+  // The tour scrolls to its own anchor, so this waits until it ends.
   useEffect(() => {
-    if (loading || window.innerWidth >= 1280) return;
+    if (loading || tourActive || window.innerWidth >= 1280) return;
     const target = todayInWeek ? today : weekdayOf(today) === 7 ? plan.days.find((d) => d.events.length > 0)?.date : undefined;
     if (target && target !== dates[0]) scrollToDay(target);
-  }, [safeWeek, loading]);
+  }, [safeWeek, loading, tourActive]);
 
   const onTouchStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
@@ -428,6 +438,18 @@ export default function Week() {
     if (client) setSheet({ client, guestCount: guestCount || client.defaultGuestCount || 1 });
   };
 
+  // Runs once per arrival, then the history entry loses the intent so a reload does not repeat it.
+  const intentRan = useRef<ChecklistIntent | null>(null);
+  useEffect(() => {
+    const intent = linkState?.checklistIntent;
+    if (!intent || loading || intentRan.current === intent) return;
+    intentRan.current = intent;
+    if (intent.kind === "assign") setAssignOpen(true);
+    else if (intent.kind === "client_week") openClientSheet(intent.clientId, intent.guestCount);
+    else void createGrocery(weekEvents.filter((e) => intent.eventIds.includes(e.eventId)));
+    navigate(location.pathname + location.search, { replace: true, state: { from: linkState?.from } });
+  }, [linkState, loading]);
+
   const setType = async (eventId: string, type: PrestationTypeSetting) => {
     setBusy(true);
     try { await patchEvent(eventId, { prestationType: type.key, vatRate: type.defaultVatRate }); reload(); }
@@ -463,12 +485,6 @@ export default function Week() {
 
   if (!valid) return <Navigate to={`/semaine/${isoWeekOf(today)}${search}`} replace />;
 
-  const dayMeta = (d: WeekDay) => {
-    if (d.events.length === 0) return "aucun événement";
-    const base = `${d.events.length} évén. · ${d.guests} conv.`;
-    return started && d.linesTotal > 0 ? `${base} · ${d.linesDone}/${d.linesTotal} faites` : base;
-  };
-  const dayTitle = (d: WeekDay) => `${plural(d.events.length, "événement")} · ${plural(d.guests, "convive")}${started && d.linesTotal ? ` · ${d.linesDone} ${d.linesDone === 1 ? "ligne faite" : "lignes faites"} sur ${d.linesTotal}` : ""}`;
   const recipeName = (id: string) => recipeById.get(id)?.name ?? id;
   const matchesPerson = (item: { assignedTo?: string[] }, ev: AppEvent) => assigneesOf(item, ev).includes(selectedPerson);
   // Own-day lines and tasks of the day decide whether the card is shown in full under the person filter.
@@ -487,7 +503,7 @@ export default function Week() {
   const counts = Object.fromEntries(plan.days.map((d) => [d.date, d.events.length]));
   // The tour spotlights the chips of this card only.
   const firstEventId = plan.days.find((d) => d.events.length > 0)?.events[0]?.eventId;
-  const filterCount = (selectedClient ? 1 : 0) + (selectedPerson ? 1 : 0);
+  const filterCount = (selectedClient ? 1 : 0) + (selectedPerson ? 1 : 0) + (hideDone ? 1 : 0);
   const showClientFilter = clientsConfigured && clientsThisWeek.length > 0;
   const showPersonFilter = activePeople.length > 0;
   const taskEventFor = (date: string) => defaultTaskEventId(weekEventsSorted, date);
@@ -526,17 +542,6 @@ export default function Week() {
     openSheet: (href) => navigate(href, { state }),
   });
 
-  const { linesDone, linesTotal } = weekTotals;
-  const doneFragment = started && linesTotal > 0 ? (
-    <>
-      <span className="hidden md:inline"> · {linesDone} {linesDone === 1 ? "ligne de préparation faite" : "lignes de préparation faites"} sur {linesTotal}</span>
-      <span className="md:hidden"> · {linesDone}/{linesTotal} lignes faites</span>
-    </>
-  ) : null;
-  const monthLink = objective !== undefined
-    ? { to: `/comptes/apercu?year=${year}`, text: `Objectif du mois ${fmtEur0(monthSigned)} / ${fmtEur0(objective)}`, short: `Objectif ${num0.format(monthSigned)} / ${fmtEur0(objective)}` }
-    : { to: `/comptes/previsionnel?year=${year}`, text: "Définir l'objectif du mois", short: "Définir l'objectif du mois" };
-
   const filterGroups = (
     <>
       {showClientFilter && (
@@ -560,6 +565,13 @@ export default function Week() {
           renderOption={(o) => o.value ? <span className="inline-flex items-center gap-2"><PersonChip personId={o.value} people={people} size="sm" />{o.label}</span> : o.label}
         />
       )}
+      <FilterGroup
+        name="masquer"
+        kind="check"
+        value={hideDone ? ["faites"] : []}
+        onChange={(v) => setParam("masquer", v.includes("faites") ? "faites" : "")}
+        options={[{ value: "faites", label: "Masquer les lignes faites" }]}
+      />
     </>
   );
 
@@ -578,8 +590,8 @@ export default function Week() {
     </>
   );
 
-  // On touch the ⋯ sheet also carries the two filters.
-  const touchFilterItems = (showClientFilter || showPersonFilter) && (
+  // Compact (touch or under md): the ⋯ menu also carries the filters.
+  const touchFilterItems = (
     <>
       {showClientFilter && (
         <MenuSection label="Client">
@@ -597,6 +609,7 @@ export default function Week() {
           ))}
         </MenuSection>
       )}
+      <MenuCheck icon={<EyeOff />} checked={hideDone} onChange={(v) => setParam("masquer", v ? "faites" : "")}>Masquer les lignes faites</MenuCheck>
       <MenuSeparator />
     </>
   );
@@ -606,7 +619,7 @@ export default function Week() {
     <div ref={menu.ref} className="relative inline-flex">
       <IconButton size="sm" aria-label="Plus d'actions" aria-haspopup="menu" aria-expanded={menu.open} onClick={menu.toggle} icon={<MoreHorizontal />} />
       <Menu {...menu.props} align="right" title={`Semaine ${weekNo}`} aria-label="Plus d'actions">
-        {touch && touchFilterItems}
+        {compact && touchFilterItems}
         {actionItems}
       </Menu>
     </div>
@@ -624,6 +637,7 @@ export default function Week() {
     <>
       {selectedClient && <FilterChip onRemove={() => setParam("client", "")}>{clientById.get(selectedClient)?.name ?? selectedClient}</FilterChip>}
       {selectedPerson && <FilterChip onRemove={() => setParam("personne", "")}>{personName(people, selectedPerson)}</FilterChip>}
+      {hideDone && <FilterChip onRemove={() => setParam("masquer", "")}>Lignes faites masquées</FilterChip>}
     </>
   ) : undefined;
 
@@ -643,7 +657,7 @@ export default function Week() {
   );
 
   const lineRows = (ev: AppEvent, lines: EventRecipeLine[], shared: RowShared) =>
-    sortEventLines(lines, courses, recipeById).map((line) => (
+    sortEventLines(hideDone ? lines.filter((l) => lineStatus(l) !== "done") : lines, courses, recipeById).map((line) => (
       <ItemRow
         key={line.lineId}
         shared={shared}
@@ -653,136 +667,103 @@ export default function Week() {
     ));
 
   const taskRows = (ev: AppEvent, tasks: EventTask[], shared: RowShared) =>
-    tasks.map((task) => <ItemRow key={task.taskId} shared={shared} dim={isOtherPerson(ev, task)} item={{ kind: "task", ev, task }} />);
+    (hideDone ? tasks.filter((t) => t.prepStatus !== "done") : tasks).map((task) => <ItemRow key={task.taskId} shared={shared} dim={isOtherPerson(ev, task)} item={{ kind: "task", ev, task }} />);
+
+  // Navigation and strip, shared with the day page.
+  const bar = (
+    <PlanningBar
+      view="week"
+      weekHref={weekUrl(safeWeek)}
+      dayHref={dayUrl(anchorDay)}
+      personHref={activePeople.length > 0 ? `/jour/${anchorDay}?mode=personne${hideDone ? "&masquer=faites" : ""}` : undefined}
+      dateLabel={<><span className="hidden md:inline">Semaine {weekNo} · </span>{shortRange(dates[0], dates[6])}</>}
+      onPrev={() => navigate(weekUrl(prevWeek))}
+      onNext={() => navigate(weekUrl(nextWeek))}
+      onPick={(d) => navigate(weekUrl(isoWeekOf(d)))}
+      pickValue={monday}
+      isToday={safeWeek === todayWeek}
+      onToday={() => navigate(weekUrl(todayWeek))}
+      right={compact ? (
+        <span className="flex items-center gap-0.5 touch:-mr-1">{moreMenu}{newButtonTouch}</span>
+      ) : (
+        <>
+          <FilterButton count={filterCount} onClear={clearFilters}>{filterGroups}</FilterButton>
+          {moreMenu}
+          {newButton}
+        </>
+      )}
+      filters={filterChips}
+      dates={dates}
+      counts={counts}
+      today={today}
+      stripHref={dayUrl}
+      linkState={state}
+    />
+  );
+
+  const callouts = !loading ? (
+    <>
+      <FirstRunCallout hidden={Boolean(selectedPerson)} />
+      <WeekChecklist
+        items={checklist}
+        firstRun={firstRun}
+        open={checklistOpen}
+        onToggle={() => setChecklistOpen((o) => !o)}
+        from={from}
+        monday={monday}
+        weekNo={weekNo}
+        prestationTypes={prestationTypes}
+        coveringList={coveringList}
+        busy={busy}
+        onCreateClientWeek={openClientSheet}
+        onSetType={setType}
+        onAssign={() => setAssignOpen(true)}
+        onCreateGroceries={(ids) => createGrocery(weekEvents.filter((e) => ids.includes(e.eventId)))}
+        onCloseEvent={closeEvent}
+      />
+    </>
+  ) : undefined;
+
+  // The seven heads of the laptop columns, one sticky row shared with the day page.
+  const heads = (
+    <DayHeads
+      dates={dates}
+      plan={loading ? undefined : plan}
+      started={started}
+      today={today}
+      href={dayUrl}
+      state={state}
+      newEventHref={newEventUrl}
+      people={people}
+      selectedPerson={selectedPerson}
+      onPersonFilter={(id) => setParam("personne", selectedPerson === id ? "" : id)}
+    />
+  );
 
   return (
-    <div className="mx-auto max-w-wide">
-      <PageHeader
-        iconKey="semaine"
-        title={`Semaine ${weekNo}`}
-        className="no-print"
-        meta={(
-          <span className="tabular-nums" data-tour="week-stats">
-            <abbr title="Chiffre d'affaires HTVA des événements confirmés" className="no-underline">Signé</abbr> {fmtEur0(weekTotals.signedRevenue)} HTVA · <span className="whitespace-nowrap">{weekTotals.guests} <span className="hidden md:inline">convives</span><span className="md:hidden">conv.</span></span>{doneFragment}
-            {/* The separator travels with the link so a wrapped line never ends on a lone dot. */}
-            {" "}
-            <span className="whitespace-nowrap">
-              {"· "}
-              <Link to={monthLink.to} state={state} className="inline-flex items-center gap-0.5 rounded text-primary hover:bg-hover touch:min-h-11">
-                <span className="hidden md:inline">{monthLink.text}</span>
-                <span className="md:hidden">{monthLink.short}</span>
-                <ChevronRight className="h-4 w-4" aria-hidden="true" />
-              </Link>
-            </span>
-          </span>
-        )}
-      />
-
-      {/* Navigation and strip, shared with the day page; swipe changes the week on the phone */}
-      <PlanningBar
-        view="week"
-        weekHref={weekUrl(safeWeek)}
-        dayHref={`/jour/${anchorDay}${personQuery}`}
-        dayTabLabel={anchorDay === today ? "Aujourd'hui" : dayLabel(anchorDay)}
-        personHref={activePeople.length > 0 ? `/jour/${anchorDay}?mode=personne` : undefined}
-        dateLabel={<><span className="hidden md:inline">Semaine {weekNo} · </span>{shortRange(dates[0], dates[6])}</>}
-        onPrev={() => navigate(weekUrl(prevWeek))}
-        onNext={() => navigate(weekUrl(nextWeek))}
-        onPick={(d) => navigate(weekUrl(isoWeekOf(d)))}
-        pickValue={monday}
-        isToday={safeWeek === todayWeek}
-        onToday={() => navigate(weekUrl(todayWeek))}
-        right={(
-          <>
-            {(showClientFilter || showPersonFilter) && (
-              <FilterButton count={filterCount} onClear={clearFilters}>{filterGroups}</FilterButton>
-            )}
-            {!touch && moreMenu}
-            {newButton}
-          </>
-        )}
-        rightTouch={<>{touch && moreMenu}{newButtonTouch}</>}
-        filters={filterChips}
-        dates={dates}
-        counts={counts}
-        today={today}
-        stripHref={dayUrl}
-        linkState={state}
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-      />
-      {error && <p className="no-print mt-3 text-sm text-danger">{error}</p>}
-
-      {/* Checklist */}
-      {!loading && (
-        <div className="no-print mt-3" data-tour="week-checklist">
-          <FirstRunCallout hidden={Boolean(selectedPerson)} />
-          <WeekChecklist
-            items={checklist}
-            firstRun={firstRun}
-            open={checklistOpen}
-            onToggle={() => setChecklistOpen((o) => !o)}
-            from={from}
-            monday={monday}
-            weekNo={weekNo}
-            prestationTypes={prestationTypes}
-            coveringList={coveringList}
-            busy={busy}
-            onCreateClientWeek={openClientSheet}
-            onSetType={setType}
-            onAssign={() => setAssignOpen(true)}
-            onCreateGroceries={(ids) => createGrocery(weekEvents.filter((e) => ids.includes(e.eventId)))}
-            onCloseEvent={closeEvent}
-          />
-        </div>
-      )}
-
+    <PlanningFrame
+      weekNo={weekNo}
+      meta={<WeekMeta weekTotals={weekTotals} started={started} monthLink={monthLink} state={state} />}
+      bar={bar}
+      error={error}
+      callouts={callouts}
+      heads={heads}
+      stickyHeads
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
       {loading && <p className="mt-6 text-sm text-muted-foreground">Chargement…</p>}
 
-      {/* Laptop: seven columns */}
+      {/* Laptop: seven column bodies under the heads row */}
       {!loading && (
-        <div className="mt-4 hidden grid-cols-[repeat(7,minmax(0,1fr))] gap-2 xl:grid print:hidden">
+        <div className="hidden grid-cols-[repeat(7,minmax(0,1fr))] gap-2 xl:grid print:hidden">
           {plan.days.map((day, i) => {
-            const isToday = day.date === today;
             const past = day.date < today;
-            const dayPeople = plan.peopleByDay[day.date] ?? [];
-            const [dayName, dayNum] = dayLabel(day.date).split(" ");
             const shared = rowShared(false, i >= 4 ? "right" : "left");
             const taskEventId = taskEventFor(day.date);
             const dropHere = Boolean(drag) && dropDay === day.date;
             return (
               <div key={day.date} className={`group min-w-0 ${past ? "opacity-60" : ""}`}>
-                <div className="sticky top-0 z-10 bg-background pb-1">
-                  <div className="flex items-start gap-1">
-                    <Link to={dayUrl(day.date)} state={state} title={dayTitle(day)} data-tour={i === 0 ? "week-day" : undefined} className="min-w-0 flex-1 rounded px-1 hover:bg-hover">
-                      <div className="flex h-7 items-center gap-1 text-sm font-semibold">
-                        <span>{dayName}</span>
-                        <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${isToday ? "bg-danger-solid text-white" : ""}`}>{dayNum}</span>
-                      </div>
-                      <div className="truncate text-caption text-muted-foreground">{dayMeta(day)}</div>
-                    </Link>
-                    <IconButton size="sm" as={Link} to={newEventUrl(day.date)} aria-label={`Nouvel événement le ${longDayLabel(day.date)}`} className="reveal mt-1" icon={<Plus />} />
-                  </div>
-                  {dayPeople.length > 0 && (
-                    <div className="flex h-7 items-center gap-0.5 px-1">
-                      <span className="mr-1 text-caption text-muted-foreground">Équipe</span>
-                      {dayPeople.slice(0, 4).map((id) => (
-                        <button
-                          key={id}
-                          type="button"
-                          aria-pressed={selectedPerson === id}
-                          aria-label={personName(people, id)}
-                          title={`Filtrer sur ${personName(people, id)}`}
-                          onClick={() => setParam("personne", selectedPerson === id ? "" : id)}
-                          className={`rounded-full ${selectedPerson === id ? "shadow-[0_0_0_2px_#2383e2]" : ""}`}
-                        >
-                          <PersonChip personId={id} people={people} size="sm" />
-                        </button>
-                      ))}
-                      {dayPeople.length > 4 && <span className="text-caption text-muted-foreground">+{dayPeople.length - 4}</span>}
-                    </div>
-                  )}
-                </div>
                 <div
                   className={cn("space-y-2 px-0.5 pb-2", dropHere && "rounded-lg bg-selected")}
                   onDragOver={canDrag && drag ? (e) => { e.preventDefault(); setDropDay(day.date); } : undefined}
@@ -889,7 +870,7 @@ export default function Week() {
                       {dayName}
                       <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${isToday ? "bg-danger-solid text-white" : ""}`}>{dayNum}</span>
                     </span>
-                    <span className="min-w-0 truncate text-sm text-muted-foreground">{dayMeta(day)}</span>
+                    <span className="min-w-0 truncate text-sm text-muted-foreground">{dayHeaderMeta(day, started)}</span>
                     {!empty && <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-icon" aria-hidden="true" />}
                   </Link>
                   {empty && (
@@ -1017,7 +998,7 @@ export default function Week() {
           </form>
         )}
       </Dialog>
-    </div>
+    </PlanningFrame>
   );
 }
 

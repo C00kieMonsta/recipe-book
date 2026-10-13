@@ -106,7 +106,7 @@ export default function AdminLayout() {
             <IconButton
               size="sm"
               aria-label="Afficher le menu"
-              className="fixed left-2 top-2 z-30 hidden md:inline-flex"
+              className="fixed left-2 top-2 z-30 hidden md:inline-flex print:hidden"
               onClick={() => setCollapsedPref(false)}
               icon={<ChevronsRight />}
             />

@@ -48,19 +48,39 @@ export interface PlanningDataOptions {
 
 const is503 = (e: unknown) => e instanceof ApiError && e.status === 503;
 
+interface Snapshot {
+  key: string;
+  events: AppEvent[];
+  recipes: Recipe[];
+  ingredients: Ingredient[];
+  settings: AppSettings | null;
+  clients: Client[];
+  clientsConfigured: boolean;
+  entries: LedgerEntry[];
+  ledgerConfigured: boolean;
+  groceryLists: GroceryList[];
+}
+
+// The last fetch, kept across mounts so the next planning page renders with content instead of « Chargement… ».
+let last: Snapshot | null = null;
+
+const snapshotKey = (ledgerYear: string | number | undefined, withLists: boolean) => `${ledgerYear}|${withLists}`;
+
 // Loads events, recipes, ingredients, settings and clients; the ledger only when a year is given.
 export function usePlanningData(ledgerYear?: string | number, options: PlanningDataOptions = {}): PlanningData {
   const withLists = options.withLists === true;
-  const [events, setEvents] = useState<AppEvent[]>([]);
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
-  const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [clientsConfigured, setClientsConfigured] = useState(true);
-  const [entries, setEntries] = useState<LedgerEntry[]>([]);
-  const [ledgerConfigured, setLedgerConfigured] = useState(true);
-  const [groceryLists, setGroceryLists] = useState<GroceryList[]>([]);
-  const [loading, setLoading] = useState(true);
+  const key = snapshotKey(ledgerYear, withLists);
+  const cached = last?.key === key ? last : null;
+  const [events, setEvents] = useState<AppEvent[]>(() => cached?.events ?? []);
+  const [recipes, setRecipes] = useState<Recipe[]>(() => cached?.recipes ?? []);
+  const [ingredients, setIngredients] = useState<Ingredient[]>(() => cached?.ingredients ?? []);
+  const [settings, setSettings] = useState<AppSettings | null>(() => cached?.settings ?? null);
+  const [clients, setClients] = useState<Client[]>(() => cached?.clients ?? []);
+  const [clientsConfigured, setClientsConfigured] = useState(cached?.clientsConfigured ?? true);
+  const [entries, setEntries] = useState<LedgerEntry[]>(() => cached?.entries ?? []);
+  const [ledgerConfigured, setLedgerConfigured] = useState(cached?.ledgerConfigured ?? true);
+  const [groceryLists, setGroceryLists] = useState<GroceryList[]>(() => cached?.groceryLists ?? []);
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
@@ -68,7 +88,10 @@ export function usePlanningData(ledgerYear?: string | number, options: PlanningD
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    let clientsOk = true;
+    let ledgerOk = true;
+    // A refetch over a snapshot keeps the content on screen.
+    if (last?.key !== key) setLoading(true);
     setError(null);
     Promise.all([
       api.events.list(),
@@ -77,26 +100,28 @@ export function usePlanningData(ledgerYear?: string | number, options: PlanningD
       api.settings.get(),
       api.clients.list().then(
         (cl) => { setClientsConfigured(true); return cl; },
-        (e: unknown) => { if (is503(e)) { setClientsConfigured(false); return [] as Client[]; } throw e; },
+        (e: unknown) => { if (is503(e)) { clientsOk = false; setClientsConfigured(false); return [] as Client[]; } throw e; },
       ),
       ledgerYear === undefined
         ? Promise.resolve([] as LedgerEntry[])
         : api.ledger.list(String(ledgerYear)).then(
             (en) => { setLedgerConfigured(true); return en; },
-            (e: unknown) => { if (is503(e)) { setLedgerConfigured(false); return [] as LedgerEntry[]; } throw e; },
+            (e: unknown) => { if (is503(e)) { ledgerOk = false; setLedgerConfigured(false); return [] as LedgerEntry[]; } throw e; },
           ),
       withLists ? api.groceryLists.list().catch(() => [] as GroceryList[]) : Promise.resolve([] as GroceryList[]),
     ])
       .then(([ev, re, ing, se, cl, en, gl]) => {
         if (cancelled) return;
+        last = { key, events: ev, recipes: re, ingredients: ing, settings: se, clients: cl, clientsConfigured: clientsOk, entries: en, ledgerConfigured: ledgerOk, groceryLists: gl };
         setEvents(ev); setRecipes(re); setIngredients(ing); setSettings(se); setClients(cl); setEntries(en); setGroceryLists(gl);
       })
       .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : "Erreur de chargement"); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [ledgerYear, withLists, tick]);
+  }, [key, ledgerYear, withLists, tick]);
 
   const replaceEvent = useCallback((event: AppEvent) => {
+    if (last) last = { ...last, events: last.events.map((e) => (e.eventId === event.eventId ? event : e)) };
     setEvents((prev) => prev.map((e) => (e.eventId === event.eventId ? event : e)));
   }, []);
 

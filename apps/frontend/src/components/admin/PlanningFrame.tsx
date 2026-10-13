@@ -14,6 +14,8 @@ export interface PlanningFrameProps {
   callouts?: ReactNode;
   // <DayHeads …/>
   heads?: ReactNode;
+  // Week: the heads row sticks under the top edge while the columns scroll.
+  stickyHeads?: boolean;
   className?: string;
   onTouchStart?: (e: React.TouchEvent) => void;
   onTouchEnd?: (e: React.TouchEvent) => void;
@@ -21,7 +23,7 @@ export interface PlanningFrameProps {
 }
 
 // Everything above the body of the week and the day page, so the two cannot drift.
-export default function PlanningFrame({ weekNo, titleSuffix, meta, bar, error, callouts, heads, className, onTouchStart, onTouchEnd, children }: PlanningFrameProps) {
+export default function PlanningFrame({ weekNo, titleSuffix, meta, bar, error, callouts, heads, stickyHeads = false, className, onTouchStart, onTouchEnd, children }: PlanningFrameProps) {
   return (
     <div className={cn("mx-auto max-w-wide", className)} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       <PageHeader
@@ -33,7 +35,7 @@ export default function PlanningFrame({ weekNo, titleSuffix, meta, bar, error, c
       {bar}
       {error && <p className="no-print mt-3 text-sm text-danger">{error}</p>}
       {callouts && <div className="no-print mt-3" data-tour="week-checklist">{callouts}</div>}
-      {heads && <div className="no-print mt-4 hidden xl:block">{heads}</div>}
+      {heads && <div className={cn("no-print mt-4 hidden xl:block", stickyHeads && "xl:sticky xl:top-0 xl:z-20 bg-background")}>{heads}</div>}
       {children}
     </div>
   );

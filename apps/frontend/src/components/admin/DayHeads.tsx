@@ -25,17 +25,15 @@ export interface DayHeadsProps {
   people: Person[];
   selectedPerson?: string;
   onPersonFilter?: (personId: string) => void;
-  // Week: the row sticks under the top edge; day: it scrolls with the page.
-  sticky?: boolean;
 }
 
 // The seven column heads of the week, one row shared by the week and the day page at xl.
-export default function DayHeads({ dates, plan, started, today, selected, href, closeHref, state, newEventHref, people, selectedPerson, onPersonFilter, sticky = false }: DayHeadsProps) {
+export default function DayHeads({ dates, plan, started, today, selected, href, closeHref, state, newEventHref, people, selectedPerson, onPersonFilter }: DayHeadsProps) {
   return (
     <div
       role="group"
       aria-label="Jours de la semaine"
-      className={cn("grid grid-cols-[repeat(7,minmax(0,1fr))] gap-2 bg-background pb-1", sticky && "sticky top-0 z-20")}
+      className="grid grid-cols-[repeat(7,minmax(0,1fr))] gap-2 bg-background pb-1"
     >
       {dates.map((date, i) => {
         const day = plan?.days[i];

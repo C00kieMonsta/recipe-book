@@ -9,8 +9,6 @@ export interface PlanningBarProps {
   // Targets of the three view tabs; "Par personne" is hidden without a target.
   weekHref: string;
   dayHref: string;
-  // Ignored: the tab reads « Jour » in both views. Kept until the pages stop passing it.
-  dayTabLabel?: string;
   personHref?: string;
   // The period control.
   dateLabel: ReactNode;
@@ -20,8 +18,6 @@ export interface PlanningBarProps {
   pickValue?: string;
   isToday?: boolean;
   onToday?: () => void;
-  // Ignored: the Jour "Grouper" pill now belongs to `right`. Kept until the pages stop passing it.
-  after?: ReactNode;
   // Right group on pointer screens; `rightTouch` replaces it on touch screens.
   right?: ReactNode;
   rightTouch?: ReactNode;

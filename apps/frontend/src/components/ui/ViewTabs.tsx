@@ -28,7 +28,11 @@ export default function ViewTabs({ items, value, onChange, className, "aria-labe
         const active = item.key === value;
         const content = (
           <>
-            {item.label}
+            {/* The invisible bold copy sets the width, so the active tab does not shift its neighbours. */}
+            <span className="grid">
+              <span className="col-start-1 row-start-1">{item.label}</span>
+              <span aria-hidden className="invisible col-start-1 row-start-1 font-medium">{item.label}</span>
+            </span>
             {item.count !== undefined && <span className="text-caption text-muted-foreground">{item.count}</span>}
           </>
         );

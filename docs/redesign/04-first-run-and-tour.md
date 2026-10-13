@@ -43,7 +43,7 @@ Nine steps. Routes are the seed-independent forms. `/semaine` redirects to the l
 | 1 | `/semaine` | `week-stats` | `pages/admin/Week.tsx`, the `<span className="tabular-nums">` passed as `meta` to `PageHeader` | Votre semaine | La Semaine est votre page d'accueil. Cette ligne la résume : chiffre d'affaires signé, convives, préparations faites, et le mois en cours face à l'objectif. Cliquez le mois pour ouvrir la comptabilité. | Same anchor, same copy. Card pinned to the bottom. |
 | 2 | `/semaine` | `week-checklist` | `pages/admin/Week.tsx`, the `<div className="no-print mt-3">` that wraps `<WeekChecklist>` | Ce qui manque pour la semaine | Cette case liste ce qui manque avant de lancer la semaine : personnes, courses, prix, factures. Elle se remplit toute seule ; le lien bleu à droite règle chaque point. First-run body (no event yet): Tant que le carnet est vide, cette case liste les cinq étapes pour démarrer. Ensuite elle dit chaque semaine ce qui manque ; le lien bleu à droite règle chaque point. | Same anchor. The tour opens the callout for this step (`setChecklistOpen(true)` through the `tour:open-checklist` event, 4.6) because it is collapsed by default under 1280px. |
 | 3 | `/semaine` | `week-day` | `pages/admin/Week.tsx`, two elements carry it, both for the first day (`plan.days[0]`) only: the header `<Link to={dayUrl(day.date)}>` in the xl grid (line ~506) and the header `<Link>` of the stacked `<section>` (line ~614). The resolver picks the visible one. | Un jour par colonne | Cliquez le nom d'un jour pour l'ouvrir. Le + à côté crée un événement ce jour-là. Sous le nom : événements, convives, préparations faites sur le total. | Title "Un jour par section". Body: Touchez le nom d'un jour, ou un chiffre dans la bande L M M J V S D, pour l'ouvrir. Le + crée un événement ce jour-là. |
-| 4 | `/jour/aujourdhui` | `breadcrumb` | `components/ui/PageHeader.tsx`, the `<nav aria-label="Fil d'Ariane">` (static attribute, every page with a breadcrumb has it; the step only looks for it on `/jour/*`) | Revenir à la semaine | Vous êtes sur un jour. « Semaine » en haut ramène à la semaine en un clic, comme l'onglet Semaine. Le rond devant chaque préparation est son statut : vide à faire, bleu en cours, vert fait. | Anchor `back`: `components/admin/AdminSidebar.tsx`, the `<Link to={backTo.to}>` in the phone top bar. Body: « ‹ Semaine » en haut à gauche ramène à la semaine. Le rond devant chaque préparation est son statut : vide à faire, bleu en cours, vert fait. Un tap le change, sans confirmation. |
+| 4 | `/jour/aujourdhui` | `day-open` (step key stays `breadcrumb`) | `components/admin/DayHeads.tsx` and `components/admin/DayStrip.tsx`, the tinted cell of `DayHeads` (xl) or `DayStrip` (below xl); the resolver picks the visible one. Both render from the URL dates before data arrives, so there is no loading race. | Revenir à la semaine | Le jour ouvert est surligné dans la rangée des jours. L'onglet Semaine, Échap ou un clic sur ce jour ramènent à la semaine. Le rond devant chaque préparation est son statut : vide à faire, bleu en cours, vert fait. | Anchor `back`: `components/admin/AdminSidebar.tsx`, the `<Link to={backTo.to}>` in the phone top bar. Body: « ‹ Semaine » en haut à gauche ramène à la semaine. Le rond devant chaque préparation est son statut : vide à faire, bleu en cours, vert fait. Un tap le change, sans confirmation. |
 | 5 | resolved: `/events/:eventId/lines/:lineId` of the nearest upcoming event with a menu line, else none (centred card, stays on `/jour/…`) | `fiche-ingredients` | `components/ui/RecipeReader.tsx`, the first `<section>` (heading "Ingrédients pour N" and the list) | La fiche de préparation | Les quantités sont déjà calculées pour les convives de l'événement : rien à recalculer. Cochez les ingrédients pendant la mise en place. Cuisiner montre la recette étape par étape ; Terminer marque la ligne faite. | Same anchor. The list is scrolled so the heading and three rows sit above the bottom card. Fallback body when no line exists: Chaque recette au menu d'un événement a sa fiche : quantités déjà calculées pour les convives, ingrédients à cocher, et Cuisiner pour suivre la recette étape par étape. Créez un événement avec une recette pour la voir. |
 | 6 | `/semaine` | `assign` | `pages/admin/Week.tsx`, the `<div className="pr-1 pt-0.5">` wrapping `<AssignChips>` on the first event card of the xl grid (first day with an event, first event). Only that one card carries the attribute. | Attribuer le travail | Les initiales sur une carte sont les personnes de Paramètres › Équipe. Cliquez-les pour attribuer l'événement ou une seule ligne. « Choisir qui fait quoi » dans la case Ce qui manque traite toute la semaine. | Anchor `planning-tabs` (`components/admin/PlanningBar.tsx`, a `<div data-tour="planning-tabs">` around `<ViewTabs>`). Body: Pour attribuer, utilisez « Choisir qui fait quoi » dans la case Ce qui manque. Pour voir ce que chacun doit faire, ouvrez un jour puis l'onglet Par personne. Fallback body (no card, laptop): Les personnes de Paramètres › Équipe reçoivent le travail, par événement ou par ligne, depuis la carte de l'événement ou « Choisir qui fait quoi » dans la case Ce qui manque. L'onglet Par personne d'un jour montre la liste de chacun. |
 | 7 | `/events` | `events-list` | `pages/admin/Events.tsx`, a new `<div data-tour="events-list">` around the `<Toolbar>` and the `<div className="mt-2">` holding the `<Table>` | Événements | Tous vos événements, à venir et terminés. Pour refaire une semaine Hoona : ouvrez un événement Hoona, puis ⋯ › Dupliquer. Créer un événement pour un client remplit son menu depuis sa semaine type. | Same anchor; the cut-out is clipped to the viewport height minus the card. |
@@ -52,7 +52,7 @@ Nine steps. Routes are the seed-independent forms. `/semaine` redirects to the l
 
 Step 1 on an empty workspace spotlights "Signé 0 € · 0 conv. · Mois 0 € · Définir l'objectif ›", which still matches the copy. Step 2 spotlights the one-row checklist "Aucun événement cette semaine · + Ajouter". Step 3 spotlights "Lun 12 / aucun". Step 5 and step 6 (laptop) show the centred card with their fallback body. Steps 7, 8, 9 anchor toolbars that render with or without data.
 
-Character counts (checked): every body is 118 to 213 characters, every title at most 29 (step 2, "Ce qui manque pour la semaine").
+Character counts (checked): every body is 118 to 214 characters, every title at most 29 (step 2, "Ce qui manque pour la semaine").
 
 ---
 
@@ -171,7 +171,7 @@ export function findAnchor(name: string): HTMLElement | null;
 export function waitForAnchor(name: string, timeoutMs: number): Promise<HTMLElement | null>;
 ```
 
-`findAnchor` queries every `[data-tour="<name>"]` and returns the first whose `getClientRects().length > 0` and whose bounding box has width and height above 0. That is what picks the xl grid header over the stacked header on `week-day`, and the phone top bar link over the breadcrumb on a phone.
+`findAnchor` queries every `[data-tour="<name>"]` and returns the first whose `getClientRects().length > 0` and whose bounding box has width and height above 0. That is what picks the `DayHeads` cell over the stacked header on `week-day`, the `DayHeads` cell over the `DayStrip` cell on `day-open`, and the phone top bar link on a phone.
 
 Rendering, desktop:
 
@@ -228,12 +228,13 @@ Z-order: click catcher `z-50` (same layer as `Sheet` and `Dialog` overlays, whic
 
 | `data-tour` | File | Element |
 |---|---|---|
-| `week-stats` | `pages/admin/Week.tsx` | the `meta` `<span className="tabular-nums">` |
-| `week-checklist` | `pages/admin/Week.tsx` | `<div className="no-print mt-3">` around `WeekChecklist` |
-| `week-day` | `pages/admin/Week.tsx` | the first day's header `<Link>` in the xl grid and in the stacked list (both; `data-tour={i === 0 ? "week-day" : undefined}`) |
+| `week-stats` | `components/admin/WeekMeta.tsx` | the `meta` `<span className="tabular-nums">`, rendered by both planning pages |
+| `week-checklist` | `components/admin/PlanningFrame.tsx` | `<div className="no-print mt-3">` around the callouts, rendered by both planning pages |
+| `week-day` | `components/admin/DayHeads.tsx` and `pages/admin/Week.tsx` | the first day's `<Link>` in the heads row and the first stacked section header (both; `data-tour={i === 0 ? "week-day" : undefined}`) |
+| `day-open` | `components/admin/DayHeads.tsx` and `components/admin/DayStrip.tsx` | the selected (tinted) cell of each (`data-tour={isSelected ? "day-open" : undefined}`); step 4 anchors on it |
 | `assign` | `pages/admin/Week.tsx` | the `<div className="pr-1 pt-0.5">` around `AssignChips` of the first event card (xl grid only) |
 | `planning-tabs` | `components/admin/PlanningBar.tsx` | new `<div data-tour="planning-tabs" className="flex min-w-0">` around `<ViewTabs>` |
-| `breadcrumb` | `components/ui/PageHeader.tsx` | `<nav aria-label="Fil d'Ariane">` |
+| `breadcrumb` | `components/ui/PageHeader.tsx` | `<nav aria-label="Fil d'Ariane">`, kept for the record pages; the planning pages no longer pass a breadcrumb |
 | `back` | `components/admin/AdminSidebar.tsx` | the phone top bar `<Link to={backTo.to}>` |
 | `fiche-ingredients` | `components/ui/RecipeReader.tsx` | the first `<section>` (ingredients) |
 | `events-list` | `pages/admin/Events.tsx` | new `<div data-tour="events-list">` around `Toolbar` + table wrapper |
@@ -355,7 +356,7 @@ Desktop, 1366:
 - [ ] `tour-1-1366.png` (`/semaine/2026-W42`): dim overlay, cut-out around "Signé 6 874 € · 279 conv. · … ›", card below it, 320px wide, counter "1 sur 9", title "Votre semaine", buttons Ignorer, Précédent (disabled), Suivant (blue). Card does not cover the stat line.
 - [ ] `tour-2-1366.png`: cut-out around the whole checklist callout, callout open, card below, title "Ce qui manque pour la semaine".
 - [ ] `tour-3-1366.png`: cut-out around "Lun 12 / 1 · 30 conv. · 0/1" only (the first column header, not the whole column), card below.
-- [ ] `tour-4-1366.png` (lands on `/jour/2026-10-12`): cut-out around "Semaine 42 / Lun 12 oct", card below.
+- [ ] `tour-4-1366.png` (lands on `/jour/2026-10-12`): cut-out around the tinted "Lun 12" head cell in the row of days, card below, title "Revenir à la semaine".
 - [ ] `tour-5-1366.png` (lands on `/events/548b873d-…/lines/819f1739-…` or the Monday line): cut-out around "Ingrédients pour 30" and its rows; card to the right or below, never over the list. Chrome hidden, overlay still full screen.
 - [ ] `tour-6-1366.png` (`/semaine/…`): cut-out around the "AM" chip of the first card (Hoona, Monday), card below.
 - [ ] `tour-7-1366.png` (`/events`): cut-out around the toolbar and the table, card at the right of the table or centred when the table is taller than the viewport.
@@ -363,14 +364,14 @@ Desktop, 1366:
 - [ ] `tour-9-1366.png` (`/settings`): cut-out around "Général | Catalogue | Équipe | Finances | Société", the "Visite guidée" section visible under it, button reads "Terminer".
 - [ ] `tour-done-1366.png`: after Terminer, no overlay, `/settings` shows "Visite guidée · Vue le 12 octobre 2026".
 - [ ] Press Escape at step 4: overlay gone, page is `/jour/2026-10-12`, `localStorage["recipe-book:tour"].seenAt` set.
-- [ ] ArrowLeft at step 5 returns to `/jour/…` and the breadcrumb cut-out.
+- [ ] ArrowLeft at step 5 returns to `/jour/…` and the tinted-day cut-out.
 
 Phone, 375 (touch emulation):
 
 - [ ] `tour-1-375.png`: card pinned to the bottom, rounded top, 44px buttons, cut-out around the stat line above.
 - [ ] `tour-2-375.png`: checklist expanded (rows visible), fully above the card, title "Ce qui manque pour la semaine".
 - [ ] `tour-3-375.png`: cut-out around "Lun 12 · 1 évén. · 30 conv. · 0/1 ›" (stacked header), title "Un jour par section".
-- [ ] `tour-4-375.png`: cut-out around "‹ Semaine 42" in the top bar, body mentions the tap on the dot.
+- [ ] `tour-4-375.png`: cut-out around "‹ Semaine" in the top bar, body mentions the tap on the dot.
 - [ ] `tour-5-375.png`: "Ingrédients pour 30" heading and at least three rows visible above the card.
 - [ ] `tour-6-375.png`: cut-out around the "Semaine | Jour | Par personne" tabs.
 - [ ] `tour-8-375.png`: the Comptabilité tabs scrolled so "Journal" is at the left edge; cut-out clipped to the viewport width.
@@ -388,7 +389,7 @@ Empty workspace (`APP=http://localhost:5174`):
 
 Global:
 
-- [ ] `grep -rn "data-tour" apps/frontend/src` lists exactly the eleven attributes of 4.6.
+- [ ] `grep -rn "data-tour" apps/frontend/src` lists exactly the twelve attributes of 4.6.
 - [ ] No new entry in `package.json`.
 - [ ] The tour never renders in `/recipes/:id/cook` (outside `AdminLayout`) and never on `/login`.
 - [ ] Rules of 03-notion-ui.md hold on the card: white, one font, 14px body, 15px/600 title, `shadow-dialog`, radius 10px, one blue button.

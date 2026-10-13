@@ -17,6 +17,7 @@ Plan for the rethink of the app after the caterer's feedback (planning view, rea
 | `03-notion-ui.md` | The Notion-like design system: ten rules, tokens, primitives, every screen, acceptance. |
 | `04-first-run-and-tour.md` | The guided tour (Visite guidée) and the first-run help: entry points, nine steps, component API, persistence, accessibility, acceptance. |
 | `05-week-tasks-print.md` | Dalia's second feedback: client from the event, menu categories with Mignardises, the week box reworded, tasks without a recipe and preparations moved to another day, a printable week. |
+| `06-week-day-transition.md` | The day is the week with one column open: one shared header and row of day heads on the week and the day page, from the owner's production screenshots. |
 | `workings/implementation-review.md` | Review of the first implementation against the plan. |
 | `workings/first-run-review.md` | Five first-time personas walking the running app, the judge's sixteen fixes, what the tour explains, what is deferred. |
 

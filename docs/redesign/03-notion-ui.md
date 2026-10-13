@@ -633,7 +633,13 @@ Renders `.table` on `md` and up (sticky header `sticky top-0 bg-background`). Be
 export const PAGE_ICONS = { semaine: "📅", evenements: "🎉", recettes: "📖", ingredients: "🧅", courses: "🛒", clients: "👥", comptabilite: "💶", parametres: "⚙️", recette: "📖", evenement: "🎉", client: "🏢", particulier: "👤", fiche: "🔪" } as const;
 ```
 
-**`PlanningBar.tsx`**. Becomes a thin wrapper around `Toolbar`: `left` = `ViewTabs [Semaine] [Jour] [Par personne]`; `center` = `DateNav`; `right` = the page's slot (`FilterButton`, ⋯, + Nouveau). Delete `BACK_BTN`, the `h1` (moves to `PageHeader` on the page), `below`, `TODAY_BTN`. `DayStrip` stays the second row: `"sticky top-topbar z-20 bg-background py-1 md:static"`, shown on phones for both views and on the Jour page on desktop (`lg:hidden` there, as the week columns carry the dates on wide screens: keep today's behaviour).
+**`PlanningBar.tsx`**. Becomes a thin wrapper around `Toolbar`: `left` = `ViewTabs [Semaine] [Jour] [Par personne]` (the tab reads « Jour » in both views, no « · Aujourd'hui » suffix); `center` = `DateNav` alone, with `labelClassName="md:min-w-[15rem] justify-start"` and `todayAlways`, so ‹, › and « Aujourd'hui » sit at the same x in both views; `right` = the page's slot (the Grouper `SelectPill` on the Jour page, `FilterButton`, ⋯, + Nouveau). Delete `BACK_BTN`, the `h1` (moves to `PageHeader` on the page), `below`, `TODAY_BTN`, `after`. `DayStrip` stays the second row: `"sticky top-topbar z-20 bg-background py-1 md:static xl:hidden"`, shown below `xl` for both views and hidden at `xl` on both pages, where `DayHeads` carries the dates (06 section 6.2).
+
+**`DayHeads.tsx`** (new, 06 section 6.4). The seven column heads of the week, extracted into one row `"grid grid-cols-[repeat(7,minmax(0,1fr))] gap-2 bg-background pb-1"`, plus `sticky top-0 z-20` on the week only. Cell `"group min-w-0 rounded"`, past days `opacity-60`, the open day `bg-selected` with `aria-current="page"` and `data-tour="day-open"`. Inside: a `Link` `"min-w-0 flex-1 rounded px-1 hover:bg-hover"` with the day name at `text-sm font-semibold`, the number in a 20px circle (`bg-danger-solid text-white` on today), the caption `"truncate text-caption text-muted-foreground"` (`dayHeaderMeta`), then the reveal `IconButton sm Plus` and the « Équipe » chip row. Rendered by both planning pages at `xl`; on the Jour page the open cell links back to the week (`title="Fermer le jour"`).
+
+**`WeekMeta.tsx`** (new, 06 section 6.5). The week stat line (`span "tabular-nums"`, `data-tour="week-stats"`): « Signé 4 884 € HTVA · 224 convives · 12 lignes de préparation faites sur 40 · Objectif du mois 11 758 € / 16 000 € › », short forms under `md` (« conv. », « 12/40 lignes faites », « Objectif … »). Passed as `PageHeader` `meta` by both planning pages.
+
+**`PlanningFrame.tsx`** (new, 06 section 6.6). The shared skeleton of the two planning pages: `div "mx-auto max-w-wide"`, `PageHeader iconKey="semaine"` with the title « Semaine 42 » (the Jour page adds an `sr-only` « · Mardi 13 octobre » inside the `h1`), `meta`, the `PlanningBar`, the error line, the callouts wrapper `"no-print mt-3"` (`data-tour="week-checklist"`), the heads wrapper `"no-print mt-4 hidden xl:block"`, then the page body. Same DOM order and margins on both pages, so nothing above the row of days moves between week and day.
 
 **`DayStrip.tsx`**. Cell `"relative flex h-11 flex-col items-center justify-center gap-0.5 rounded hover:bg-hover"`, letter `"text-caption text-muted-foreground"`, number `"flex h-5 w-5 items-center justify-center rounded-full text-sm font-medium tabular-nums touch:text-base"`, count `"text-caption text-muted-foreground"`. Today: number `bg-danger-solid text-white`. Selected: cell `bg-selected`, letter and count `text-primary`. No underline, no beige.
 
@@ -684,10 +690,12 @@ Removed: the 84px rail with labels under icons, the rail toggle, the gradient ro
 
 1366:
 ```
- 📅 Semaine 43                                                                 40/700
- Signé 4 884 € · 224 conv. · Mois 11 758 € / 16 000 € ›                        16 grey, link to /comptes/apercu
+ 📅 Semaine 43                                                                 40/700, same title on Jour
+ Signé 4 884 € HTVA · 224 convives · 12 lignes de préparation faites sur 40 · Objectif du mois 11 758 € / 16 000 € ›   16 grey, WeekMeta, same on Jour
  [Semaine] [Jour] [Par personne]   ‹  Semaine 43 · 19 au 25 oct. ▾  ›  Aujourd'hui     Filtrer ▾   ⋯   [+ Nouveau]
+                                      label min-w 15rem     always rendered, disabled on the current week
  ─────────────────────────────────────────────────────────────────────────────── hairline
+ ┌ 👋 Première visite ? …                                  [Faire la visite] Plus tard ┐   until dismissed, same on Jour
  ┌ callout #f1f1ef ──────────────────────────────────────────────────────────┐
  │ ▾ ✅ À faire avant la semaine (3)                                           │
  │   ○ 6 lignes sans personne (1 événement)                       Assigner    │
@@ -695,8 +703,8 @@ Removed: the 84px rail with labels under icons, the rail toggle, the gradient ro
  │   ○ 1 facture impayée · 1 092 € · la plus ancienne du 26/09    Voir        │
  └────────────────────────────────────────────────────────────────────────────┘
 
- Lun 19          Mar 20          Mer 21        …    Sam 24      Dim 25
- 1 · 30 conv. +  2 · 42 conv. +  1 · 30 conv. +     aucun   +   aucun   +      12 grey meta; + on hover
+ Lun 19          Mar 20          Mer 21        …    Sam 24      Dim 25         DayHeads, 14/600, sticky; same row on Jour
+ 1 · 30 conv. +  2 · 42 conv. +  1 · 30 conv. +     aucun   +   aucun   +      12 grey meta; + on hover of the head cell
  (AM)            (AM)(KR)        (AM)                                           20px grey circles, click filters
  ┌────────────┐  ┌────────────┐  ┌────────────┐
  │ Hoona (AM) │  │ Hoona (AM) │  │ Hoona (AM) │                               cards: white, shadow-card, radius 6, 14px
@@ -716,8 +724,8 @@ Removed: the 84px rail with labels under icons, the rail toggle, the gradient ro
  📅 Semaine 43                                30/700
  Signé 4 884 € · 224 conv. · Mois 11 758 / 16 000 € ›
  [Semaine] [Jour] [Par personne]        ⋯  [+ Nouveau]
- ‹  Semaine 43 · 19 au 25 oct. ▾  ›    Aujourd'hui
-  L 19  M 20  M 21  J 22  V 23  S 24  D 25    44px strip, sticky; today red circle
+ ‹  Semaine 43 · 19 au 25 oct. ▾  ›    Aujourd'hui   always rendered, disabled on the current week
+  L 19  M 20  M 21  J 22  V 23  S 24  D 25    44px strip, sticky, shared with Jour; today red circle
    1     2     1     2     2
  ▾ ✅ À faire avant la semaine (3)            callout, 44px rows
  Lun 19   1 évén. · 30 conv.              ›   14/600, 44px, links to the day
@@ -730,23 +738,28 @@ Removed: the 84px rail with labels under icons, the rail toggle, the gradient ro
  …
 ```
 
-Rules: the title has no arrows; `DateNav` lives in the toolbar. "Filtrer ▾" opens the FilterMenu with two radio groups (Client, Personne); active values show as blue chips under the toolbar; `Filtrer · 1` when set. ⋯ holds: section "Afficher" with check rows "Afficher les lignes" / "Afficher les événements"; Courses de la semaine; Imprimer; Imprimer par personne; Partager avec Kristoff / Amélie. "+ Nouveau" goes to `/events/new?date=<monday or today>`. Today's column: no tint; the date number gets the red 20px circle. Past days `opacity-60`. Swipe still changes the week on touch.
+Rules: the title has no arrows; `DateNav` lives in the toolbar, its label at `md:min-w-[15rem]` so ‹ and › keep their x on Jour. "Aujourd'hui" is always rendered after › and `disabled` on the current week. "Filtrer ▾" always renders; it opens the FilterMenu with two radio groups (Client, Personne) and the check "Masquer les lignes faites" (`?masquer=faites`, carried to the day links); active values show as blue chips under the toolbar; `Filtrer · 1` when set. Everything above the row of days (title, meta, toolbar, callouts) is the `PlanningFrame` shared with Jour (3.3); the row of days is `DayHeads` at `xl` and the `DayStrip` below, both shared with Jour. ⋯ holds: section "Afficher" with check rows "Afficher les lignes" / "Afficher les événements"; Courses de la semaine; Imprimer; Imprimer par personne; Partager avec Kristoff / Amélie. "+ Nouveau" goes to `/events/new?date=<monday or today>`. Today's column: no tint; the date number gets the red 20px circle. Past days `opacity-60`. Swipe still changes the week on touch.
 
-Removed: the dark "Semaine | Jour" and "Lignes | Événements" segments, the two selects, the bordered "Courses de la semaine", the bordered ⋯, the bordered checklist card and its "Réduire ^" link, the orange action links, the right-aligned "Signé / Mois" block, the orange "Aujourd'hui", the "19 au 25 octobre ▾" bordered picker, the serif title, the ‹ › around the title, the always-visible column "+", the beige today column, the hover `StatusDots` row.
+Removed: the dark "Semaine | Jour" and "Lignes | Événements" segments, the two selects, the bordered "Courses de la semaine", the bordered ⋯, the bordered checklist card and its "Réduire ^" link, the orange action links, the right-aligned "Signé / Mois" block, the orange "Aujourd'hui", the "19 au 25 octobre ▾" bordered picker, the serif title, the ‹ › around the title, the always-visible column "+", the beige today column, the hover `StatusDots` row, the "· Aujourd'hui" suffix of the Jour tab, the seven per-column sticky heads (one shared row instead).
 
 ### 4.3 Jour (`/jour/:date`)
 
 1366:
 ```
- Semaine 42 / Sam 17 oct                                                      14 breadcrumb
- 📅 Samedi 17 octobre                                                         40/700
- 1 événement · 60 convives · 6 lignes · 0 faites                              16 grey
- [Semaine] [Jour] [Par personne]   ‹  Sam. 17 oct. ▾  ›  Aujourd'hui    Grouper : Événement ▾   Filtrer ▾   ⋯
- ─────────────────────────────────────────────────────────────────────────────
-  L 12   M 13   M 14   J 15   V 16   (S 17)   D 18                            44px strip to lg; selected blue tint
-   1      2      1      3      1       1       1
+ 📅 Semaine 42                                                                40/700, same as Semaine; sr-only « · Samedi 17 octobre »
+ Signé 4 884 € HTVA · 224 convives · 12 lignes de préparation faites sur 40 · Objectif du mois 11 758 € / 16 000 € ›   16 grey, the same WeekMeta
+ [Semaine] [Jour] [Par personne]   ‹  Semaine 42 · Sam. 17 oct. ▾  ›  Aujourd'hui    Grouper : Événement ▾   Filtrer ▾   ⋯   [+ Nouveau]
+                                      same slot as Semaine        enabled (not today)   right group, before Filtrer
+ ───────────────────────────────────────────────────────────────────────────── hairline
+ ┌ 👋 Première visite ? …                                  [Faire la visite] Plus tard ┐   until dismissed, same as Semaine
+ ┌ ▾ ✅ À faire avant la semaine (3) ────────────────────────────────────────┐   same items, same open state as Semaine
+ Lun 12          Mar 13          Mer 14        …    [Sam 17]    Dim 18         DayHeads, same row and y as Semaine; not sticky
+ 1 · 30 conv.    2 · 42 conv.    1 · 30 conv.       1 · 60 c…   aucun          12 grey captions; Sam 17 bg-selected, aria-current
 
- Mariage Dupont                                                  6 lignes     20/600 + grey count
+ Samedi 17 octobre                                                            20/600, the day heading, max-w-doc
+ 1 événement · 60 convives · 6 préparations · 0 faites                        14 grey
+
+ Mariage Dupont  6 lignes                                                     20/600, grey count next to the title
  60 convives · Buffet avec service                                            14 grey
  (○ À faire ▾)  Mini quiches lorraines            Apéritif          (KR)  60   36px rows, name 16px
  (● En cours ▾) Houmous de betterave   Apéritif · Se garde 4 j     (AM)  60
@@ -754,15 +767,27 @@ Removed: the dark "Semaine | Jour" and "Lignes | Événements" segments, the two
  …
 ```
 
+Empty day, 1366, under the same heads row (Mar 13 tinted):
+```
+ Mardi 13 octobre                                                             20/600
+ 0 événement · 0 convive · 0 préparation · 0 faites                           14 grey
+ Aucune préparation ce jour.                                                  14 grey, left-aligned
+ + Nouvel événement                                                           ghost, same as a column foot
+ + Tâche                                                                      ghost, when the week has an event
+```
+
 375:
 ```
- ‹ Semaine 42       Samedi 17 octobre
- 📅 Samedi 17 octobre                         30/700
- 1 événement · 60 convives · 6 lignes · 0 faites
- [Semaine] [Jour] [Par personne]          ⋯
- ‹  Sam. 17 oct. ▾  ›    Grouper : Événement ▾
-  L 12  M 13  M 14  J 15  V 16 (S 17) D 18
- Mariage Dupont                       6 lignes
+ ‹ Semaine          Samedi 17 octobre         ☰
+ 📅 Semaine 42                                30/700, same as Semaine
+ Signé 4 884 € HTVA · 224 conv. · 12/40 lignes faites · Objectif … ›
+ [Semaine] [Jour] [Par personne]          ⋯  [+]
+ ‹  Sam. 17 oct. ▾  ›    Aujourd'hui          Grouper and the filters in the ⋯ sheet
+  L 12  M 13  M 14  J 15  V 16 (S 17) D 18    the same sticky strip, S 17 tinted
+ ▾ ✅ À faire avant la semaine (3)            the same callouts
+ Samedi 17 octobre                            20/600
+ 1 événement · 60 convives · 6 préparations · 0 faites
+ Mariage Dupont  6 lignes
  60 convives · Buffet avec service
  ○  Mini quiches lorraines           (KR)  60   44px rows; the dot taps À faire → En cours → Fait
     Apéritif
@@ -770,9 +795,9 @@ Removed: the dark "Semaine | Jour" and "Lignes | Événements" segments, the two
     Apéritif · Se garde 4 jours au frais
 ```
 
-Rules: the status is one `StatusControl` pill (gray/blue/green) that opens a Menu; on touch the 16px dot with a 44px hit area cycles (existing `StatusDot` behaviour), the pill is not shown. The whole row is the link to the fiche; no chevron. "Grouper ▾" is a `SelectPill` with Événement, Catégorie, Recette (Par personne is the third view tab, mapped to the existing `?mode=personne`; the `Par personne` option leaves the pill). "Filtrer ▾" holds the Personne radio group and the check "Masquer les lignes faites". ⋯ holds Courses du jour, Imprimer, Imprimer par personne, Partager…, Terminer l'événement (past days). Par personne view: group headings `(AM) Amélie` 20/600 with a `Share2` IconButton on the right, "Sans personne" with a `Button link sm "Assigner tout"`.
+Rules: the day is the week with one column open. Everything above the row of days is the same `PlanningFrame` as Semaine (3.3): title « Semaine 42 », `WeekMeta`, toolbar, callouts, at the same y. No breadcrumb: the way back is the Semaine tab, Escape, a click on the tinted head (`title="Fermer le jour"`) or the phone « ‹ Semaine ». The day is named in the DateNav (« Semaine 42 · Sam. 17 oct. », same slot as the week label), the tinted head and the body heading « Samedi 17 octobre » (`h2 text-h3`, prints as the title) with the day's own counts under it; with `?personne=` the heading reads « Kristoff · Samedi 17 octobre » and the meta line shows « Kristoff · 3 préparations · 1 faite » instead of `WeekMeta`. "Aujourd'hui" is always rendered after ›, `disabled` on today. The empty day is left-aligned under the heading: « Aucune préparation ce jour. », ghost « + Nouvel événement », ghost « + Tâche »; no centred `EmptyState`. The status is one `StatusControl` pill (gray/blue/green) that opens a Menu; on touch the 16px dot with a 44px hit area cycles (existing `StatusDot` behaviour), the pill is not shown. The whole row is the link to the fiche; no chevron. "Grouper ▾" is a `SelectPill` in the right group, before "Filtrer ▾", with Événement, Catégorie, Recette (Par personne is the third view tab, mapped to the existing `?mode=personne`; the `Par personne` option leaves the pill). "Filtrer ▾" holds the Personne radio group and the check "Masquer les lignes faites". Group headings carry the grey count right next to the title. ⋯ holds Courses du jour, Imprimer, Imprimer par personne, Partager…, Terminer l'événement (past days). Par personne view: group headings `(AM) Amélie` 20/600 with a `Share2` IconButton on the right, "Sans personne" with a `Button link sm "Assigner tout"`.
 
-Removed: the tinted "‹ Semaine 42" button, the four-segment "Par événement | …" group and its phone select, the "Toutes les personnes" select and its phone twin, the bordered ⋯, the 240px three-segment status per row (6 × 3 buttons), the row chevrons, the strip underline and beige today cell, the serif title.
+Removed: the tinted "‹ Semaine 42" button, the four-segment "Par événement | …" group and its phone select, the "Toutes les personnes" select and its phone twin, the bordered ⋯, the 240px three-segment status per row (6 × 3 buttons), the row chevrons, the strip underline and beige today cell, the serif title, the breadcrumb row, the date as page title, the day-only meta line under it, the "Aujourd'hui" that popped in and out, the centred empty state, the group count pinned to the far edge.
 
 ### 4.4 Fiche de préparation (`/events/:eventId/lines/:lineId`, chrome hidden, `max-w-doc`)
 
