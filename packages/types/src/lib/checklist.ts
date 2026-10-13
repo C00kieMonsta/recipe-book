@@ -5,7 +5,7 @@ import type { LedgerEntry } from "../entities/ledger";
 import type { Person } from "../entities/settings";
 import { weekdayOf, ymOf } from "./dates";
 import { sumMoney } from "./money";
-import { assigneesOf, shortEventName, signedRevenue } from "./planning";
+import { assigneesOf, prepDateOf, shortEventName, signedRevenue, tasksOf } from "./planning";
 import { invoicedEventIds, isInvoiceEntry } from "./reports";
 
 export interface ChecklistInputs {
@@ -26,7 +26,7 @@ export type ChecklistItem =
   | { kind: "no_menu"; eventId: string; name: string; date: string }
   | { kind: "no_price"; eventId: string; name: string; date: string }
   | { kind: "no_type"; eventId: string; name: string; date: string }
-  | { kind: "unassigned"; lineCount: number; eventCount: number }
+  | { kind: "unassigned"; lineCount: number; taskCount: number; eventCount: number }
   | { kind: "groceries"; uncoveredEventIds: string[]; partial: boolean; listId?: string }
   | { kind: "to_close"; events: { eventId: string; name: string; date: string }[] }
   | { kind: "to_invoice"; eventId: string; name: string; date: string; htva: number }
@@ -90,18 +90,21 @@ export function weekChecklist(inputs: ChecklistInputs): ChecklistItem[] {
   for (const e of weekEvents) if (e.sellingPricePerGuest <= 0) items.push({ kind: "no_price", eventId: e.eventId, name: nameOf(e), date: e.date });
   for (const e of weekEvents) if (!e.prestationType) items.push({ kind: "no_type", eventId: e.eventId, name: nameOf(e), date: e.date });
 
-  // 5. Lines nobody is assigned to, only once people exist.
+  // 5. Lines and tasks prepared this week with nobody assigned, over every event since a line can be moved in from another week.
   if (people.some((p) => p.active)) {
     let lineCount = 0;
+    let taskCount = 0;
     let eventCount = 0;
-    for (const e of weekEvents) {
-      const n = e.recipes.filter((l) => assigneesOf(l, e).length === 0).length;
-      if (n > 0) {
-        lineCount += n;
+    for (const e of events) {
+      const lines = e.recipes.filter((l) => week.has(prepDateOf(l, e)) && assigneesOf(l, e).length === 0).length;
+      const tasks = tasksOf(e).filter((t) => week.has(t.date) && assigneesOf(t, e).length === 0).length;
+      if (lines + tasks > 0) {
+        lineCount += lines;
+        taskCount += tasks;
         eventCount++;
       }
     }
-    if (lineCount > 0) items.push({ kind: "unassigned", lineCount, eventCount });
+    if (lineCount + taskCount > 0) items.push({ kind: "unassigned", lineCount, taskCount, eventCount });
   }
 
   // 6. Grocery list coverage of the week.

@@ -1,4 +1,5 @@
-import type { UnitQty } from "../entities/recipe";
+import type { Ingredient } from "../entities/ingredient";
+import type { Recipe, UnitQty } from "../entities/recipe";
 
 export interface QtyParts {
   value: string;
@@ -75,4 +76,29 @@ export function scaleStepText(step: string, ratio: number): { parts: StepPart[];
   if (last < step.length) parts.push(step.slice(last));
   if (!changed) return { parts: [step], changed: false };
   return { parts, changed };
+}
+
+export interface ScaledIngredient {
+  name: string;
+  qty: number;
+  unit: string;
+}
+
+// Sums the scaled quantity of every ingredient over the lines, per ingredient and unit.
+export function scaledIngredients(
+  recipe: Pick<Recipe, "portions" | "ingredients">,
+  lines: { portions: number }[],
+  ingredientById: Map<string, Pick<Ingredient, "name">>,
+): ScaledIngredient[] {
+  const agg = new Map<string, ScaledIngredient>();
+  for (const line of lines) {
+    const ratio = line.portions / (recipe.portions || 1);
+    for (const ri of recipe.ingredients) {
+      const key = `${ri.ingredientId}:${ri.unit}`;
+      const existing = agg.get(key);
+      if (existing) existing.qty += ri.qty * ratio;
+      else agg.set(key, { name: ingredientById.get(ri.ingredientId)?.name ?? "Ingrédient inconnu", qty: ri.qty * ratio, unit: ri.unit });
+    }
+  }
+  return [...agg.values()];
 }

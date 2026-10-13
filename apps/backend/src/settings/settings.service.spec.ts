@@ -3,6 +3,7 @@ import {
   DEFAULT_PRESTATION_TYPES,
   DEFAULT_RECIPE_CATEGORIES,
   DEFAULT_SUPPLIERS,
+  LEGACY_DEFAULT_COURSES,
 } from "@packages/types";
 import type { AppSettings } from "@packages/types";
 import type { Tables } from "../config/config.service";
@@ -161,6 +162,23 @@ describe("SettingsService.get", () => {
     expect(settings.monthCloses).toEqual({});
     expect(settings.ignoredDuplicateGroups).toEqual([]);
     expect(settings).not.toHaveProperty("company");
+  });
+
+  it("serves the legacy five-item courses list as the six defaults without writing", async () => {
+    const { ddb, service } = build();
+    ddb.seed("settings", {
+      settingsId: "global",
+      courses: [...LEGACY_DEFAULT_COURSES],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const settings = await service.get();
+
+    expect(settings.courses).toEqual(DEFAULT_COURSES);
+    expect(settings.courses).toHaveLength(6);
+    expect(settings.courses).toContain("Mignardises");
+    expect(ddb.raw("settings", GLOBAL_KEY)?.courses).toEqual(LEGACY_DEFAULT_COURSES);
+    expect(ddb.raw("settings", GLOBAL_KEY)?.updatedAt).toBe("2026-01-01T00:00:00.000Z");
   });
 });
 

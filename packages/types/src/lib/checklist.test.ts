@@ -137,11 +137,47 @@ describe("weekChecklist", () => {
       event({ eventId: "c", date: "2026-10-22", recipes: [line()] }),
     ];
     const withPeople = weekChecklist(inputs({ events, people }));
-    expect(withPeople.find((i) => i.kind === "unassigned")).toEqual({ kind: "unassigned", lineCount: 3, eventCount: 2 });
+    expect(withPeople.find((i) => i.kind === "unassigned")).toEqual({ kind: "unassigned", lineCount: 3, taskCount: 0, eventCount: 2 });
     const noPeople = weekChecklist(inputs({ events }));
     expect(kinds(noPeople)).not.toContain("unassigned");
     const inactiveOnly = weekChecklist(inputs({ events, people: [{ personId: "x", name: "X", active: false }] }));
     expect(kinds(inactiveOnly)).not.toContain("unassigned");
+  });
+
+  it("unassigned counts a task without a person on a week event", () => {
+    const events = [event({ eventId: "a", date: "2026-10-20", recipes: [line({ assignedTo: ["amelie"] })], tasks: [{ taskId: "t1", label: "Cuire les sablés", date: "2026-10-20" }] })];
+    const items = weekChecklist(inputs({ events, people }));
+    expect(items.find((i) => i.kind === "unassigned")).toEqual({ kind: "unassigned", lineCount: 0, taskCount: 1, eventCount: 1 });
+  });
+
+  it("unassigned counts a line moved into the week from an event dated the next Monday", () => {
+    const nextWeek = event({
+      eventId: "next",
+      date: "2026-10-26",
+      assignedTo: ["amelie"],
+      recipes: [line({ prepDate: "2026-10-22", assignedTo: [] }), line()],
+    });
+    const other = event({ eventId: "far", date: "2026-10-27", recipes: [line({ prepDate: "2026-10-23" })] });
+    const items = weekChecklist(inputs({ events: [nextWeek, other], people }));
+    expect(items.find((i) => i.kind === "unassigned")).toEqual({ kind: "unassigned", lineCount: 1, taskCount: 0, eventCount: 1 });
+    expect(kinds(items)).toContain("empty_week");
+  });
+
+  it("unassigned ignores a line of a week event moved to the previous week", () => {
+    const events = [
+      event({ eventId: "a", date: "2026-10-20", recipes: [line({ prepDate: "2026-10-16" })] }),
+      event({ eventId: "b", date: "2026-10-21", recipes: [line({ prepDate: "2026-10-17" }), line()] }),
+    ];
+    const items = weekChecklist(inputs({ events, people }));
+    expect(items.find((i) => i.kind === "unassigned")).toEqual({ kind: "unassigned", lineCount: 1, taskCount: 0, eventCount: 1 });
+    const none = weekChecklist(inputs({ events: [events[0]], people }));
+    expect(kinds(none)).not.toContain("unassigned");
+  });
+
+  it("no_menu still fires for an event with a task and no line", () => {
+    const events = [event({ eventId: "a", date: "2026-10-20", recipes: [], tasks: [{ taskId: "t1", label: "Dégeler le poisson", date: "2026-10-20" }] })];
+    const items = weekChecklist(inputs({ events }));
+    expect(items.find((i) => i.kind === "no_menu")).toEqual({ kind: "no_menu", eventId: "a", name: "a", date: "2026-10-20" });
   });
 
   it("groceries reports uncovered events, partial when some are covered, and nothing when all are", () => {

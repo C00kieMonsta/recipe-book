@@ -1,4 +1,5 @@
-import { fmtQty, fmtQtyText, scaleStepText } from "./quantity";
+import type { Recipe } from "../entities/recipe";
+import { fmtQty, fmtQtyText, scaledIngredients, scaleStepText } from "./quantity";
 
 describe("fmtQty", () => {
   it("shows grams as kg from 1000 with one trimmed decimal", () => {
@@ -68,5 +69,49 @@ describe("scaleStepText", () => {
   it("handles several quantities in one step", () => {
     const r = scaleStepText("125 g de beurre et 2 oeufs", 2);
     expect(r.parts).toEqual([{ from: "125 g", to: "250 g" }, " de beurre et ", { from: "2 oeufs", to: "4 oeufs" }]);
+  });
+});
+
+describe("scaledIngredients", () => {
+  const ingredientById = new Map([
+    ["beurre", { name: "Beurre" }],
+    ["lait", { name: "Lait" }],
+  ]);
+  const recipe: Pick<Recipe, "portions" | "ingredients"> = {
+    portions: 10,
+    ingredients: [{ ingredientId: "beurre", qty: 125, unit: "g", lossPct: 0 }],
+  };
+
+  it("sums the scaled quantity over the lines", () => {
+    expect(scaledIngredients(recipe, [{ portions: 60 }, { portions: 20 }], ingredientById)).toEqual([
+      { name: "Beurre", qty: 1000, unit: "g" },
+    ]);
+  });
+
+  it("keeps two units of the same ingredient apart", () => {
+    const r = {
+      portions: 10,
+      ingredients: [
+        { ingredientId: "lait", qty: 500, unit: "ml" as const, lossPct: 0 },
+        { ingredientId: "lait", qty: 1, unit: "pièce" as const, lossPct: 0 },
+      ],
+    };
+    expect(scaledIngredients(r, [{ portions: 20 }], ingredientById)).toEqual([
+      { name: "Lait", qty: 1000, unit: "ml" },
+      { name: "Lait", qty: 2, unit: "pièce" },
+    ]);
+  });
+
+  it("names an unknown ingredient Ingrédient inconnu", () => {
+    const r = { portions: 10, ingredients: [{ ingredientId: "ghost", qty: 10, unit: "g" as const, lossPct: 0 }] };
+    expect(scaledIngredients(r, [{ portions: 10 }], ingredientById)).toEqual([{ name: "Ingrédient inconnu", qty: 10, unit: "g" }]);
+  });
+
+  it("treats recipe portions 0 as 1", () => {
+    expect(scaledIngredients({ ...recipe, portions: 0 }, [{ portions: 3 }], ingredientById)).toEqual([{ name: "Beurre", qty: 375, unit: "g" }]);
+  });
+
+  it("returns nothing without lines", () => {
+    expect(scaledIngredients(recipe, [], ingredientById)).toEqual([]);
   });
 });

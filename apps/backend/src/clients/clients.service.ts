@@ -165,6 +165,7 @@ export class ClientsService {
         ...(line.course !== undefined && { course: line.course }),
         ...(line.notes !== undefined && { notes: line.notes }),
       })),
+      tasks: [],
       extraCosts: template.extraCosts,
       ...(template.notes !== undefined && { notes: template.notes }),
       ...(template.assignedTo && { assignedTo: template.assignedTo }),

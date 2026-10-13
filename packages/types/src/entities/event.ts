@@ -10,7 +10,20 @@ export interface EventRecipeLine {
   course?: string;
   notes?: string;
   prepStatus?: PrepStatus;
+  // YYYY-MM-DD, the day the line is prepared. Absent = the event day. Never stored equal to the event day.
   prepDate?: string;
+  // personIds; absent or [] inherits the event.
+  assignedTo?: string[];
+}
+
+export interface EventTask {
+  // Filled by EventsService on every write.
+  taskId: string;
+  label: string;
+  // YYYY-MM-DD, the day the task is done.
+  date: string;
+  prepStatus?: PrepStatus;
+  notes?: string;
   // personIds; absent or [] inherits the event.
   assignedTo?: string[];
 }
@@ -46,6 +59,8 @@ export interface AppEvent {
   date: string;
   guestCount: number;
   recipes: EventRecipeLine[];
+  // Absent on items written before this spec; the service returns [] in that case.
+  tasks?: EventTask[];
   extraCosts: EventExtraCost[];
   sellingPricePerGuest: number;
   notes?: string;

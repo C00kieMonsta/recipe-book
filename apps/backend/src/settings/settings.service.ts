@@ -1,10 +1,10 @@
 import { Injectable } from "@nestjs/common";
 import type { AppSettings } from "@packages/types";
 import {
-  DEFAULT_COURSES,
   DEFAULT_PRESTATION_TYPES,
   DEFAULT_RECIPE_CATEGORIES,
   DEFAULT_SUPPLIERS,
+  upgradeCourses,
 } from "@packages/types";
 import { DdbService } from "../shared/ddb.service";
 
@@ -13,13 +13,14 @@ const GLOBAL_ID = "global";
 export type SettingsUpdate = Partial<Omit<AppSettings, "settingsId" | "updatedAt">>;
 
 // company and ledgerStartYm have no default and stay absent until set.
+// A legacy five-item courses list is served as the six defaults; nothing is written until the next save.
 function withDefaults(stored: Partial<AppSettings>): AppSettings {
   return {
     ...stored,
     settingsId: GLOBAL_ID,
     recipeCategories: stored.recipeCategories ?? DEFAULT_RECIPE_CATEGORIES,
     suppliers: stored.suppliers ?? DEFAULT_SUPPLIERS,
-    courses: stored.courses ?? DEFAULT_COURSES,
+    courses: upgradeCourses(stored.courses),
     prestationTypes: stored.prestationTypes ?? DEFAULT_PRESTATION_TYPES,
     fixedCharges: stored.fixedCharges ?? [],
     objectives: stored.objectives ?? {},

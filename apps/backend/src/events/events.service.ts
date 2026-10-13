@@ -2,16 +2,23 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { randomUUID } from "crypto";
 import type {
   AddEventLineRequest,
+  AddEventTaskRequest,
   AppEvent,
   CreateEventRequest,
   EventRecipeLine,
+  EventTask,
   PatchEventLineRequest,
+  PatchEventTaskRequest,
   PutEventLinesRequest,
   UpdateEventRequest,
 } from "@packages/types";
+import { shiftPrepDates, tasksOf } from "@packages/types";
 import { DdbService } from "../shared/ddb.service";
 
 type IncomingLine = Omit<EventRecipeLine, "lineId"> & { lineId?: string };
+type IncomingTask = Omit<EventTask, "taskId"> & { taskId?: string };
+// A line before normalizeLines: a patch may carry prepDate null to clear it.
+type LooseLine = Omit<EventRecipeLine, "prepDate"> & { prepDate?: string | null };
 
 // Drops undefined values so a spread never clears a stored field the caller did not send.
 const definedEntries = <T extends object>(obj: T): Partial<T> =>
@@ -25,6 +32,20 @@ const withoutNull = <T extends object>(obj: T): NonNullFields<T> =>
 
 const fillLineIds = (lines: IncomingLine[]): EventRecipeLine[] =>
   lines.map((l) => ({ ...l, lineId: l.lineId ?? randomUUID() }));
+
+const fillTaskIds = (tasks: IncomingTask[]): EventTask[] =>
+  tasks.map((t) => ({ ...t, taskId: t.taskId ?? randomUUID() }));
+
+// Drops prepDate when it is null or equal to the event day; the attribute lives inside the array, so a top-level REMOVE cannot reach it.
+function normalizeLines(lines: LooseLine[], eventDate: string): EventRecipeLine[] {
+  const day = eventDate.slice(0, 10);
+  return lines.map((line) => {
+    if (line.prepDate && line.prepDate !== day) return line as EventRecipeLine;
+    const copy = { ...line };
+    delete copy.prepDate;
+    return copy as EventRecipeLine;
+  });
+}
 
 const isConditionFailure = (err: unknown) => (err as { name?: string }).name === "ConditionalCheckFailedException";
 
@@ -63,7 +84,8 @@ export class EventsService {
     const event: AppEvent = {
       eventId: randomUUID(),
       ...withoutNull(rest),
-      recipes: fillLineIds(data.recipes),
+      recipes: normalizeLines(fillLineIds(data.recipes), data.date),
+      tasks: fillTaskIds(data.tasks),
       ...(costSnapshot && { costSnapshot: { ...costSnapshot, takenAt: now } }),
       nameLower: data.name.toLowerCase(),
       createdAt: now,
@@ -78,7 +100,18 @@ export class EventsService {
     const now = new Date().toISOString();
     const updates: Record<string, unknown> = { ...fields, updatedAt: now };
     if (fields.name) updates.nameLower = fields.name.toLowerCase();
-    if (fields.recipes) updates.recipes = this.mergeLines(stored.recipes, fields.recipes);
+    let recipes = fields.recipes ? this.mergeLines(stored.recipes, fields.recipes) : undefined;
+    let tasks = fields.tasks ? this.mergeTasks(tasksOf(stored), fields.tasks) : undefined;
+    if (fields.date && fields.date !== stored.date.slice(0, 10)) {
+      const shifted = shiftPrepDates(
+        { date: stored.date, recipes: recipes ?? stored.recipes, tasks: tasks ?? tasksOf(stored) },
+        fields.date,
+      );
+      recipes = shifted.recipes;
+      tasks = shifted.tasks;
+    }
+    if (recipes) updates.recipes = normalizeLines(recipes, fields.date ?? stored.date);
+    if (tasks) updates.tasks = tasks;
     if (fields.costSnapshot) updates.costSnapshot = { ...fields.costSnapshot, takenAt: now };
     await this.ddb.update(this.table, { eventId }, updates);
     return this.getOrFail(eventId);
@@ -89,8 +122,10 @@ export class EventsService {
   }
 
   async addLine(eventId: string, line: AddEventLineRequest): Promise<AppEvent> {
-    return this.withFreshEvent(eventId, (stored) =>
-      this.writeLines(stored, [...stored.recipes, { ...line, lineId: randomUUID() }]));
+    return this.withFreshEvent(eventId, (stored) => {
+      const recipes = [...stored.recipes, { ...line, lineId: randomUUID() }];
+      return this.writeFields(stored, { recipes: normalizeLines(recipes, stored.date) });
+    });
   }
 
   async patchLine(eventId: string, lineId: string, patch: PatchEventLineRequest): Promise<AppEvent> {
@@ -98,7 +133,7 @@ export class EventsService {
       const index = stored.recipes.findIndex((l) => l.lineId === lineId);
       if (index === -1) throw new NotFoundException("Line not found");
       const recipes = stored.recipes.map((l, i) => (i === index ? { ...l, ...definedEntries(patch) } : l));
-      return this.writeLines(stored, recipes);
+      return this.writeFields(stored, { recipes: normalizeLines(recipes, stored.date) });
     });
   }
 
@@ -113,14 +148,37 @@ export class EventsService {
         ...(byId.get(l.lineId) as EventRecipeLine),
         ...(l.course !== undefined && { course: l.course }),
       }));
-      return this.writeLines(stored, recipes);
+      return this.writeFields(stored, { recipes: normalizeLines(recipes, stored.date) });
     });
   }
 
   async removeLine(eventId: string, lineId: string): Promise<AppEvent> {
     return this.withFreshEvent(eventId, (stored) => {
       if (!stored.recipes.some((l) => l.lineId === lineId)) throw new NotFoundException("Line not found");
-      return this.writeLines(stored, stored.recipes.filter((l) => l.lineId !== lineId));
+      return this.writeFields(stored, { recipes: stored.recipes.filter((l) => l.lineId !== lineId) });
+    });
+  }
+
+  async addTask(eventId: string, task: AddEventTaskRequest): Promise<AppEvent> {
+    return this.withFreshEvent(eventId, (stored) =>
+      this.writeFields(stored, { tasks: [...tasksOf(stored), { ...task, taskId: randomUUID() }] }));
+  }
+
+  async patchTask(eventId: string, taskId: string, patch: PatchEventTaskRequest): Promise<AppEvent> {
+    return this.withFreshEvent(eventId, (stored) => {
+      const tasks = tasksOf(stored);
+      const index = tasks.findIndex((t) => t.taskId === taskId);
+      if (index === -1) throw new NotFoundException("Task not found");
+      const next = tasks.map((t, i) => (i === index ? { ...t, ...definedEntries(patch) } : t));
+      return this.writeFields(stored, { tasks: next });
+    });
+  }
+
+  async removeTask(eventId: string, taskId: string): Promise<AppEvent> {
+    return this.withFreshEvent(eventId, (stored) => {
+      const tasks = tasksOf(stored);
+      if (!tasks.some((t) => t.taskId === taskId)) throw new NotFoundException("Task not found");
+      return this.writeFields(stored, { tasks: tasks.filter((t) => t.taskId !== taskId) });
     });
   }
 
@@ -137,12 +195,15 @@ export class EventsService {
     }
   }
 
-  // Writes the array only when updatedAt still matches the read the lines were computed from.
-  private async writeLines(stored: AppEvent, recipes: EventRecipeLine[]): Promise<AppEvent> {
+  // Writes the arrays only when updatedAt still matches the read they were computed from.
+  private async writeFields(
+    stored: AppEvent,
+    fields: { recipes?: EventRecipeLine[]; tasks?: EventTask[] },
+  ): Promise<AppEvent> {
     const guard = stored.updatedAt
       ? { condition: "#ua = :expected", names: { "#ua": "updatedAt" }, values: { ":expected": stored.updatedAt } }
       : { condition: "attribute_not_exists(#ua)", names: { "#ua": "updatedAt" } };
-    const updates = { recipes, updatedAt: nextStamp(stored.updatedAt) };
+    const updates = { ...definedEntries(fields), updatedAt: nextStamp(stored.updatedAt) };
     await this.ddb.update(this.table, { eventId: stored.eventId }, updates, guard);
     return this.getOrFail(stored.eventId);
   }
@@ -157,10 +218,20 @@ export class EventsService {
     });
   }
 
-  // Backfills lineId on events written before the field existed, once per event.
+  // Mirrors mergeLines for tasks.
+  private mergeTasks(stored: EventTask[], incoming: IncomingTask[]): EventTask[] {
+    const byId = new Map(stored.map((t) => [t.taskId, t]));
+    return incoming.map((t) => {
+      const prev = t.taskId ? byId.get(t.taskId) : undefined;
+      if (!prev) return { ...t, taskId: randomUUID() };
+      return { ...prev, ...definedEntries(t), taskId: prev.taskId };
+    });
+  }
+
+  // Backfills lineId on events written before the field existed, once per event; tasks default to [] in memory only.
   private async withLineIds(event: AppEvent): Promise<AppEvent> {
     const lines = (event.recipes ?? []) as IncomingLine[];
-    if (lines.every((l) => l.lineId)) return { ...event, recipes: lines as EventRecipeLine[] };
+    if (lines.every((l) => l.lineId)) return { ...event, recipes: lines as EventRecipeLine[], tasks: tasksOf(event) };
     const recipes = fillLineIds(lines);
     try {
       await this.ddb.update(this.table, { eventId: event.eventId }, { recipes }, {
@@ -170,8 +241,8 @@ export class EventsService {
     } catch (err) {
       if (!isConditionFailure(err)) throw err;
       const fresh = (await this.ddb.get(this.table, { eventId: event.eventId })) as AppEvent | null;
-      return fresh ?? { ...event, recipes };
+      return fresh ? { ...fresh, tasks: tasksOf(fresh) } : { ...event, recipes, tasks: tasksOf(event) };
     }
-    return { ...event, recipes };
+    return { ...event, recipes, tasks: tasksOf(event) };
   }
 }

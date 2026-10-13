@@ -124,7 +124,9 @@ export const DEFAULT_SUPPLIERS: SettingsSupplier[] = [
   { name: "Diamant rouge" },
 ];
 
-export const DEFAULT_COURSES = ["Apéritif", "Entrée", "Plat", "Dessert", "Autre"];
+export const DEFAULT_COURSES = ["Apéritif", "Entrée", "Plat", "Dessert", "Mignardises", "Autre"];
+// The list stored by installs created before Mignardises existed.
+export const LEGACY_DEFAULT_COURSES = ["Apéritif", "Entrée", "Plat", "Dessert", "Autre"];
 
 export const DEFAULT_PRESTATION_TYPES: PrestationTypeSetting[] = [
   { key: "menu_a_emporter", label: "Menu à emporter", defaultVatRate: 6 },

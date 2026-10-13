@@ -183,6 +183,20 @@ describe("calcEventCost", () => {
     expect(r.total).toBeCloseTo(146);
   });
 
+  it("ignores tasks: an event with tasks costs and snapshots the same as without", () => {
+    const tasks = [
+      { taskId: "t1", label: "Dégeler le poisson", date: "2026-10-11" },
+      { taskId: "t2", label: "Cuire les sablés", date: "2026-10-12", prepStatus: "done" as const },
+      { taskId: "t3", label: "Dresser la salle", date: "2026-10-13", assignedTo: ["amelie"] },
+    ];
+    const without = event({ recipes: lines });
+    const withTasks = event({ recipes: lines, tasks });
+    expect(calcLinesRawMaterial(withTasks, costs, portions)).toBe(calcLinesRawMaterial(without, costs, portions));
+    expect(calcEventCost(withTasks, costs, portions)).toEqual(calcEventCost(without, costs, portions));
+    expect(buildCostSnapshot(withTasks, costs, portions)).toEqual(buildCostSnapshot(without, costs, portions));
+    expect(buildCostSnapshot(withTasks, costs, portions).lines).toHaveLength(2);
+  });
+
   it("total uses the actual cost when set, like today's EventEditor", () => {
     const ev = event({ recipes: lines, actualCost: 100, extraCosts: [{ label: "x", amount: 25, kind: "transport" }] });
     expect(calcEventCost(ev, costs, portions).total).toBeCloseTo(125);

@@ -2,6 +2,7 @@ import {
   addDays,
   datesOfIsoWeek,
   dayLabel,
+  daysBetween,
   endOfWeekSunday,
   isoWeekOf,
   longDayLabel,
@@ -9,6 +10,7 @@ import {
   mondayOfIsoWeek,
   parseIsoWeek,
   rangeLabel,
+  shortDayLabel,
   startOfWeekMonday,
   weekLabel,
   weekdayOf,
@@ -116,5 +118,24 @@ describe("French labels", () => {
   it("monthLabel", () => {
     expect(monthLabel("2026-10")).toBe("Octobre 2026");
     expect(monthLabel("2026-10-13")).toBe("Octobre 2026");
+  });
+});
+
+describe("daysBetween", () => {
+  it("counts whole days forward, backward and on the same day", () => {
+    expect(daysBetween("2026-10-17", "2026-10-24")).toBe(7);
+    expect(daysBetween("2026-10-24", "2026-10-17")).toBe(-7);
+    expect(daysBetween("2026-10-17", "2026-10-17")).toBe(0);
+  });
+  it("crosses a month end", () => {
+    expect(daysBetween("2026-10-30", "2026-11-02")).toBe(3);
+    expect(daysBetween("2026-02-27", "2026-03-01")).toBe(2);
+  });
+});
+
+describe("shortDayLabel", () => {
+  it("gives the short weekday with a dot and the day number", () => {
+    expect(shortDayLabel("2026-10-15")).toBe("jeu. 15");
+    expect(shortDayLabel("2026-10-17")).toBe("sam. 17");
   });
 });

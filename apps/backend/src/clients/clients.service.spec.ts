@@ -218,7 +218,7 @@ describe("ClientsService", () => {
     const { service, events } = setup();
     const client = await service.create(hoona);
     await events.create({
-      name: "Hoona manuel", date: "2026-10-13", guestCount: 10, recipes: [], extraCosts: [],
+      name: "Hoona manuel", date: "2026-10-13", guestCount: 10, recipes: [], tasks: [], extraCosts: [],
       sellingPricePerGuest: 0, status: "upcoming", clientId: client.clientId,
     });
     const result = await service.instantiate(client.clientId, { dates: week });
@@ -279,7 +279,7 @@ describe("ClientsService", () => {
   it("linkEvents matches contactEmail case-insensitively and contactName", async () => {
     const { service, events } = setup();
     const client = await service.create(hoona);
-    const base = { date: "2026-09-01", guestCount: 10, recipes: [], extraCosts: [], sellingPricePerGuest: 0, status: "upcoming" as const };
+    const base = { date: "2026-09-01", guestCount: 10, recipes: [], tasks: [], extraCosts: [], sellingPricePerGuest: 0, status: "upcoming" as const };
     const byEmail = await events.create({ ...base, name: "A", contactEmail: "MARIE@hoona.BE" });
     const byName = await events.create({ ...base, name: "B", contactName: "marie" });
     const other = await events.create({ ...base, name: "C", contactEmail: "someone@else.be", contactName: "Paul" });

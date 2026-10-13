@@ -2,8 +2,10 @@ import { Controller, Get, Post, Patch, Put, Delete, Param, Body, BadRequestExcep
 import { AdminGuard } from "../auth/admin.guard";
 import {
   addEventLineSchema,
+  addEventTaskSchema,
   createEventRequestSchema,
   patchEventLineSchema,
+  patchEventTaskSchema,
   putEventLinesSchema,
   updateEventRequestSchema,
 } from "@packages/types";
@@ -68,5 +70,24 @@ export class EventsController {
   @Delete(":id/lines/:lineId")
   async removeLine(@Param("id") id: string, @Param("lineId") lineId: string) {
     return this.events.removeLine(id, lineId);
+  }
+
+  @Post(":id/tasks")
+  async addTask(@Param("id") id: string, @Body() body: unknown) {
+    const parsed = addEventTaskSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    return this.events.addTask(id, parsed.data);
+  }
+
+  @Patch(":id/tasks/:taskId")
+  async patchTask(@Param("id") id: string, @Param("taskId") taskId: string, @Body() body: unknown) {
+    const parsed = patchEventTaskSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    return this.events.patchTask(id, taskId, parsed.data);
+  }
+
+  @Delete(":id/tasks/:taskId")
+  async removeTask(@Param("id") id: string, @Param("taskId") taskId: string) {
+    return this.events.removeTask(id, taskId);
   }
 }

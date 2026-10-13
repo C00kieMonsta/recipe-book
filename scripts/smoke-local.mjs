@@ -71,7 +71,7 @@ await check("a1 settings defaults", async (req) => {
   const r = await req("GET", "/api/admin/settings");
   const s = r.body;
   return r.status === 200
-    && eq(s.courses, ["Apéritif", "Entrée", "Plat", "Dessert", "Autre"])
+    && eq(s.courses, ["Apéritif", "Entrée", "Plat", "Dessert", "Mignardises", "Autre"])
     && s.prestationTypes?.length === 7
     && eq(s.fixedCharges, []) && eq(s.objectives, {}) && eq(s.monthCloses, {}) && eq(s.ignoredDuplicateGroups, []);
 });
@@ -83,7 +83,8 @@ await check("a2 settings patch then get", async (req) => {
   if (p.status !== 200) return false;
   const r = await req("GET", "/api/admin/settings");
   return r.body.objectives?.["2026"]?.annualRevenue === 160000 && r.body.objectives["2026"].monthsActive === 10
-    && r.body.courses.length === 5 && r.body.prestationTypes.length === 7;
+    // The legacy five-item list is served upgraded with Mignardises.
+    && r.body.courses.length === 6 && r.body.prestationTypes.length === 7;
 });
 
 // b. Ingredients and recipes

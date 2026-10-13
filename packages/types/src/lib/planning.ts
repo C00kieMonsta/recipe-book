@@ -1,8 +1,9 @@
 import type { Client } from "../entities/client";
-import type { AppEvent, EventRecipeLine, PrepStatus } from "../entities/event";
+import type { AppEvent, EventRecipeLine, EventTask, PrepStatus } from "../entities/event";
 import type { Recipe } from "../entities/recipe";
 import type { Person } from "../entities/settings";
-import { addDays, ymOf } from "./dates";
+import { DEFAULT_COURSES, LEGACY_DEFAULT_COURSES } from "../entities/settings";
+import { addDays, daysBetween, ymOf } from "./dates";
 import { round2, sumMoney } from "./money";
 
 export const FALLBACK_COURSE = "Autre";
@@ -13,6 +14,13 @@ export type ClientLookup = Map<string, Pick<Client, "name">>;
 // Revenue HTVA of an event as sold, the "Signé" figure everywhere.
 export function signedRevenue(event: Pick<AppEvent, "sellingPricePerGuest" | "guestCount">): number {
   return round2(event.sellingPricePerGuest * event.guestCount);
+}
+
+// undefined or [] gives DEFAULT_COURSES; exactly the legacy list gives DEFAULT_COURSES; anything else as is.
+export function upgradeCourses(stored: string[] | undefined): string[] {
+  if (!stored?.length) return DEFAULT_COURSES;
+  const legacy = stored.length === LEGACY_DEFAULT_COURSES.length && stored.every((c, i) => c === LEGACY_DEFAULT_COURSES[i]);
+  return legacy ? DEFAULT_COURSES : stored;
 }
 
 // Raw course of a line: its own value, then the recipe default, then "Autre".
@@ -66,7 +74,7 @@ export function isWeekdayLabel(name: string): boolean {
   return (WEEKDAY_LABELS as readonly string[]).some((l) => l.toLowerCase() === n);
 }
 
-// Effective assignees of a line: its own list when set, else the event's.
+// Effective assignees of a line or a task: its own list when set, else the event's.
 export function assigneesOf(line: Pick<EventRecipeLine, "assignedTo">, event: Pick<AppEvent, "assignedTo">): string[] {
   return line.assignedTo?.length ? line.assignedTo : event.assignedTo ?? [];
 }
@@ -109,7 +117,48 @@ export function shortEventName(ev: Pick<AppEvent, "name" | "templateId">, client
   return ev.name;
 }
 
+// The day a line is prepared: its prepDate, else the event day.
+export function prepDateOf(line: Pick<EventRecipeLine, "prepDate">, event: Pick<AppEvent, "date">): string {
+  return line.prepDate ?? event.date.slice(0, 10);
+}
+
+export function isMoved(line: Pick<EventRecipeLine, "prepDate">, event: Pick<AppEvent, "date">): boolean {
+  return prepDateOf(line, event) !== event.date.slice(0, 10);
+}
+
+export function tasksOf(event: Pick<AppEvent, "tasks">): EventTask[] {
+  return event.tasks ?? [];
+}
+
+// Tasks of the event dated `date`.
+export function tasksOn(event: Pick<AppEvent, "tasks">, date: string): EventTask[] {
+  return tasksOf(event).filter((t) => t.date === date);
+}
+
+// Lines prepared on the event day.
+export function ownDayLines(event: Pick<AppEvent, "date" | "recipes">): EventRecipeLine[] {
+  return event.recipes.filter((l) => !isMoved(l, event));
+}
+
+// Lines with a prepDate different from the event day.
+export function movedOutLines(event: Pick<AppEvent, "date" | "recipes">): EventRecipeLine[] {
+  return event.recipes.filter((l) => isMoved(l, event));
+}
+
+// Every explicit prepDate and every task date move with the event; lines without prepDate are untouched.
+export function shiftPrepDates(
+  event: Pick<AppEvent, "date" | "recipes" | "tasks">,
+  newDate: string,
+): { recipes: EventRecipeLine[]; tasks: EventTask[] } {
+  const delta = daysBetween(event.date.slice(0, 10), newDate.slice(0, 10));
+  return {
+    recipes: event.recipes.map((l) => (l.prepDate ? { ...l, prepDate: addDays(l.prepDate, delta) } : l)),
+    tasks: tasksOf(event).map((t) => ({ ...t, date: addDays(t.date, delta) })),
+  };
+}
+
 export interface PrepLine {
+  kind: "recipe";
   eventId: string;
   eventName: string;
   clientName?: string;
@@ -120,13 +169,99 @@ export interface PrepLine {
   portions: number;
   course: string;
   prepStatus: PrepStatus;
+  // The prep day, which is the event day unless the line was moved.
   date: string;
+  eventDate: string;
+  moved: boolean;
   notes?: string;
   // Effective assignees, and whether the line set them itself.
   assignedTo: string[];
   ownAssignment: boolean;
 }
 
+export interface PrepTask {
+  kind: "task";
+  eventId: string;
+  eventName: string;
+  clientName?: string;
+  prestationType?: string;
+  taskId: string;
+  label: string;
+  prepStatus: PrepStatus;
+  date: string;
+  eventDate: string;
+  moved: boolean;
+  notes?: string;
+  assignedTo: string[];
+  ownAssignment: boolean;
+}
+
+export type DayItem = PrepLine | PrepTask;
+
+function clientNameOf(event: Pick<AppEvent, "clientId" | "contactName">, clientById: ClientLookup): string | undefined {
+  return (event.clientId && clientById.get(event.clientId)?.name) || event.contactName || undefined;
+}
+
+function byDateThenName(a: Pick<AppEvent, "date" | "name">, b: Pick<AppEvent, "date" | "name">): number {
+  const da = a.date.slice(0, 10);
+  const db = b.date.slice(0, 10);
+  if (da !== db) return da < db ? -1 : 1;
+  return a.name.localeCompare(b.name, "fr");
+}
+
+function toPrepLine(
+  event: AppEvent,
+  line: EventRecipeLine,
+  recipeById: RecipeLookup,
+  clientById: ClientLookup,
+  courses: string[],
+  date: string,
+): PrepLine {
+  const recipe = recipeById.get(line.recipeId);
+  const eventDate = event.date.slice(0, 10);
+  return {
+    kind: "recipe",
+    eventId: event.eventId,
+    eventName: event.name,
+    clientName: clientNameOf(event, clientById),
+    prestationType: event.prestationType,
+    lineId: line.lineId,
+    recipeId: line.recipeId,
+    recipeName: recipe?.name ?? line.recipeId,
+    portions: line.portions,
+    course: courseBucket(courseOf(line, recipe), courses),
+    prepStatus: line.prepStatus ?? "todo",
+    date,
+    eventDate,
+    moved: date !== eventDate,
+    notes: line.notes,
+    assignedTo: assigneesOf(line, event),
+    ownAssignment: !!line.assignedTo?.length,
+  };
+}
+
+function toPrepTask(event: AppEvent, task: EventTask, clientById: ClientLookup): PrepTask {
+  const eventDate = event.date.slice(0, 10);
+  return {
+    kind: "task",
+    eventId: event.eventId,
+    eventName: event.name,
+    clientName: clientNameOf(event, clientById),
+    prestationType: event.prestationType,
+    taskId: task.taskId,
+    label: task.label,
+    prepStatus: task.prepStatus ?? "todo",
+    date: task.date,
+    eventDate,
+    moved: task.date !== eventDate,
+    notes: task.notes,
+    assignedTo: assigneesOf(task, event),
+    ownAssignment: !!task.assignedTo?.length,
+  };
+}
+
+// Lines prepared on `date` over every event: own-day lines first (course order, then array order),
+// then moved-in lines grouped by event (events by date then name), each group in course order.
 export function prepLinesForDate(
   events: AppEvent[],
   recipeById: RecipeLookup,
@@ -134,37 +269,49 @@ export function prepLinesForDate(
   courses: string[],
   date: string,
 ): PrepLine[] {
-  const out: { line: PrepLine; key: number; order: number }[] = [];
+  const own: { line: PrepLine; key: number; order: number }[] = [];
+  const movedIn: { event: AppEvent; lines: EventRecipeLine[] }[] = [];
   let order = 0;
   for (const event of events) {
-    if (event.date.slice(0, 10) !== date) continue;
-    const clientName = (event.clientId && clientById.get(event.clientId)?.name) || event.contactName || undefined;
-    for (const line of sortEventLines(event.recipes, courses, recipeById)) {
-      const recipe = recipeById.get(line.recipeId);
-      const course = courseBucket(courseOf(line, recipe), courses);
-      out.push({
-        key: courseIndex(course, courses),
-        order: order++,
-        line: {
-          eventId: event.eventId,
-          eventName: event.name,
-          clientName,
-          prestationType: event.prestationType,
-          lineId: line.lineId,
-          recipeId: line.recipeId,
-          recipeName: recipe?.name ?? line.recipeId,
-          portions: line.portions,
-          course,
-          prepStatus: line.prepStatus ?? "todo",
-          date: event.date,
-          notes: line.notes,
-          assignedTo: assigneesOf(line, event),
-          ownAssignment: !!line.assignedTo?.length,
-        },
-      });
+    const lines = event.recipes.filter((l) => prepDateOf(l, event) === date);
+    if (lines.length === 0) continue;
+    if (event.date.slice(0, 10) !== date) {
+      movedIn.push({ event, lines });
+      continue;
+    }
+    for (const line of sortEventLines(lines, courses, recipeById)) {
+      const prep = toPrepLine(event, line, recipeById, clientById, courses, date);
+      own.push({ line: prep, key: courseIndex(prep.course, courses), order: order++ });
     }
   }
-  return out.sort((a, b) => a.key - b.key || a.order - b.order).map((x) => x.line);
+  own.sort((a, b) => a.key - b.key || a.order - b.order);
+  movedIn.sort((a, b) => byDateThenName(a.event, b.event));
+  return [
+    ...own.map((x) => x.line),
+    ...movedIn.flatMap(({ event, lines }) =>
+      sortEventLines(lines, courses, recipeById).map((line) => toPrepLine(event, line, recipeById, clientById, courses, date)),
+    ),
+  ];
+}
+
+// Tasks dated `date`: tasks of events dated that day first, then tasks of other events, events by date then name,
+// array order inside an event.
+export function prepTasksForDate(events: AppEvent[], clientById: ClientLookup, date: string): PrepTask[] {
+  const withTasks = events.filter((e) => tasksOn(e, date).length > 0).sort(byDateThenName);
+  const own = withTasks.filter((e) => e.date.slice(0, 10) === date);
+  const others = withTasks.filter((e) => e.date.slice(0, 10) !== date);
+  return [...own, ...others].flatMap((event) => tasksOn(event, date).map((task) => toPrepTask(event, task, clientById)));
+}
+
+// prepLinesForDate then prepTasksForDate.
+export function dayItems(
+  events: AppEvent[],
+  recipeById: RecipeLookup,
+  clientById: ClientLookup,
+  courses: string[],
+  date: string,
+): DayItem[] {
+  return [...prepLinesForDate(events, recipeById, clientById, courses, date), ...prepTasksForDate(events, clientById, date)];
 }
 
 export interface RecipeGroup {
@@ -194,28 +341,28 @@ export function groupByRecipe(lines: PrepLine[]): RecipeGroup[] {
   return [...groups.values()];
 }
 
-export interface PersonGroup {
+export interface PersonGroup<T = PrepLine> {
   personId: string | null;
   name: string;
-  lines: PrepLine[];
+  lines: T[];
 }
 
 export const SANS_PERSONNE = "Sans personne";
 
-// Active people in settings order, then ids seen on lines but not active, then "Sans personne"; empty groups are dropped.
-export function groupByPerson(lines: PrepLine[], people: Person[]): PersonGroup[] {
+// Active people in settings order, then ids seen on items but not active, then "Sans personne"; empty groups are dropped.
+export function groupByPerson<T extends { assignedTo: string[] }>(items: T[], people: Person[]): PersonGroup<T>[] {
   const order: string[] = people.filter((p) => p.active).map((p) => p.personId);
-  for (const line of lines) for (const id of line.assignedTo) if (!order.includes(id)) order.push(id);
-  const groups: PersonGroup[] = order
-    .map((personId) => ({ personId, name: personName(people, personId), lines: filterByPerson(lines, personId) }))
+  for (const item of items) for (const id of item.assignedTo) if (!order.includes(id)) order.push(id);
+  const groups: PersonGroup<T>[] = order
+    .map((personId) => ({ personId, name: personName(people, personId), lines: filterByPerson(items, personId) }))
     .filter((g) => g.lines.length > 0);
-  const nobody = lines.filter((l) => l.assignedTo.length === 0);
+  const nobody = items.filter((l) => l.assignedTo.length === 0);
   if (nobody.length) groups.push({ personId: null, name: SANS_PERSONNE, lines: nobody });
   return groups;
 }
 
-export function filterByPerson(lines: PrepLine[], personId: string): PrepLine[] {
-  return lines.filter((l) => l.assignedTo.includes(personId));
+export function filterByPerson<T extends { assignedTo: string[] }>(items: T[], personId: string): T[] {
+  return items.filter((l) => l.assignedTo.includes(personId));
 }
 
 // Distinct ids in settings order, unknown ids after in order of appearance.
@@ -226,11 +373,22 @@ export function sortPersonIds(ids: Iterable<string>, people: Person[]): string[]
   return [...known, ...rest];
 }
 
+export interface WeekMovedIn {
+  event: AppEvent;
+  lines: EventRecipeLine[];
+  tasks: EventTask[];
+}
+
 export interface WeekDay {
   date: string;
+  // Events dated that day.
   events: AppEvent[];
+  // Events not dated that day with at least one line or task prepared that day, by event date then name.
+  movedIn: WeekMovedIn[];
+  // By event date.
   guests: number;
   signedRevenue: number;
+  // Own-day lines of the day's events, moved-in lines and every task dated that day.
   linesDone: number;
   linesTotal: number;
 }
@@ -247,29 +405,46 @@ export interface WeekPlan {
 }
 
 // weekStart is the Monday as YYYY-MM-DD; the plan covers seven days from it.
+// Takes every event, not only the week's: a line moved in from next week must render.
 export function weekPlan(events: AppEvent[], weekStart: string, people: Person[] = []): WeekPlan {
   const days: WeekDay[] = [];
   const peopleByDay: Record<string, string[]> = {};
   for (let i = 0; i < 7; i++) {
     const date = addDays(weekStart, i);
-    const dayEvents = events.filter((e) => e.date.slice(0, 10) === date);
-    let linesDone = 0;
-    let linesTotal = 0;
+    const dayEvents: AppEvent[] = [];
+    const movedIn: WeekMovedIn[] = [];
+    for (const e of events) {
+      if (e.date.slice(0, 10) === date) {
+        dayEvents.push(e);
+        continue;
+      }
+      const lines = e.recipes.filter((l) => prepDateOf(l, e) === date);
+      const tasks = tasksOn(e, date);
+      if (lines.length || tasks.length) movedIn.push({ event: e, lines, tasks });
+    }
+    movedIn.sort((a, b) => byDateThenName(a.event, b.event));
+    // Everything prepared that day, each with the event it inherits assignees from.
+    const items: { item: Pick<EventRecipeLine, "prepStatus" | "assignedTo">; event: AppEvent }[] = [];
     const ids: string[] = [];
     for (const e of dayEvents) {
-      linesTotal += e.recipes.length;
-      linesDone += e.recipes.filter((l) => l.prepStatus === "done").length;
       ids.push(...(e.assignedTo ?? []));
-      for (const l of e.recipes) ids.push(...assigneesOf(l, e));
+      for (const l of ownDayLines(e)) items.push({ item: l, event: e });
+      for (const t of tasksOn(e, date)) items.push({ item: t, event: e });
     }
+    for (const m of movedIn) {
+      for (const l of m.lines) items.push({ item: l, event: m.event });
+      for (const t of m.tasks) items.push({ item: t, event: m.event });
+    }
+    for (const { item, event } of items) ids.push(...assigneesOf(item, event));
     peopleByDay[date] = sortPersonIds(ids, people);
     days.push({
       date,
       events: dayEvents,
+      movedIn,
       guests: dayEvents.reduce((n, e) => n + e.guestCount, 0),
       signedRevenue: sumMoney(dayEvents.map(signedRevenue)),
-      linesDone,
-      linesTotal,
+      linesDone: items.filter((x) => x.item.prepStatus === "done").length,
+      linesTotal: items.length,
     });
   }
   return {

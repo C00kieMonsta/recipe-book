@@ -4,7 +4,7 @@ import type { LedgerEntry, SalesKind } from "../entities/ledger";
 import type { AppSettings, FixedCharge, MonthClose, MpSource, YearObjective } from "../entities/settings";
 import { DEFAULT_PRESTATION_TYPES } from "../entities/settings";
 import { calcEventCost } from "./costing";
-import { parseYmd, ymOf } from "./dates";
+import { daysBetween, ymOf } from "./dates";
 import { round2, sumMoney } from "./money";
 import { shortEventName, signedRevenue } from "./planning";
 
@@ -847,12 +847,7 @@ export interface AFacturer {
   totals: { toInvoiceHtva: number; unpaidTvac: number };
 }
 
-const DAY_MS = 86_400_000;
 const byDate = <T extends { date: string }>(a: T, b: T) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
-
-export function daysBetween(from: string, to: string): number {
-  return Math.round((parseYmd(to).getTime() - parseYmd(from).getTime()) / DAY_MS);
-}
 
 export function aFacturer(inputs: Pick<ReportInputs, "events" | "entries" | "clients">, today: string): AFacturer {
   const { events, entries, clients = [] } = inputs;

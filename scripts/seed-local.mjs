@@ -204,7 +204,7 @@ const RECIPES = [
     ],
   },
   {
-    name: "Gratin dauphinois", type: "Buffet", defaultCourse: "Autre", portions: 10, portionWeight: 180,
+    name: "Gratin dauphinois", type: "Buffet", defaultCourse: "Plat", portions: 10, portionWeight: 180,
     description: "Accompagnement. Pommes de terre en fines rondelles cuites dans la crème et le lait à l'ail.",
     ingredients: [line("Pommes de terre", 2000), line("Crème fraîche", 500), line("Lait entier", 500), line("Ail", 10), line("Beurre", 30)],
     techniques: [
@@ -252,6 +252,15 @@ const RECIPES = [
       "Monter les bowls en sections: riz, pois chiches, courgettes, betterave. Napper de sauce et parsemer de menthe ciselée au moment du service.",
     ],
   },
+  {
+    name: "Sablés bretons", type: "Walking dinner", defaultCourse: "Mignardises", portions: 10, portionWeight: 15,
+    description: "Petits sablés au beurre demi-sel, servis avec le café.",
+    ingredients: [line("Beurre", 100), line("Farine", 150), line("Sucre", 80), line("Oeuf", 1)],
+    techniques: [
+      "Crémer le beurre mou avec le sucre, ajouter le jaune d'oeuf puis la farine et une pincée de sel. Former un boudin, filmer et laisser reposer 1 heure au frais.",
+      "Tailler des rondelles de 1 cm, les poser dans des moules à tartelettes et cuire 15 minutes à 170 °C. Laisser refroidir dans les moules avant de démouler.",
+    ],
+  },
 ];
 const rec = {}; // name -> recipeId
 for (const r of RECIPES) {
@@ -271,6 +280,7 @@ const R = {
   tarte: rec["Tarte au citron"],
   mousse: rec["Mousse au chocolat"],
   bowl: rec["Lunch bowl pois chiches tahini"],
+  sables: rec["Sablés bretons"],
 };
 const L = (recipeId, portions, course) => ({ recipeId, portions, course });
 
@@ -325,7 +335,12 @@ const mariage = await must("POST", "/api/admin/events", {
   contactName: "Claire Dupont", contactEmail: "claire.dupont@example.be",
   recipes: [
     L(R.quiches, 60, "Apéritif"), L(R.houmous, 60, "Apéritif"), L(R.verrines, 60, "Entrée"),
-    L(R.poulet, 60, "Plat"), L(R.gratin, 60, "Autre"), L(R.tarte, 60, "Dessert"),
+    L(R.poulet, 60, "Plat"), L(R.gratin, 60, "Plat"), L(R.tarte, 60, "Dessert"),
+    { ...L(R.sables, 60, "Mignardises"), prepDate: "2026-10-15" },
+  ],
+  tasks: [
+    { label: "Dégeler le poisson", date: "2026-10-15" },
+    { label: "Cuire les sablés", date: "2026-10-16", assignedTo: ["kristoff"] },
   ],
   extraCosts: [
     { label: "Location vaisselle", amount: 180, kind: "location" },
@@ -395,7 +410,7 @@ const SEPTEMBER = [
   {
     name: "Buffet anniversaire Lambert", date: "2026-09-12", guestCount: 40, prestationType: "buffet_avec_service", vatRate: 12, sellingPricePerGuest: 42,
     contactName: "Anne Lambert",
-    recipes: [L(R.quiches, 40, "Apéritif"), L(R.houmous, 40, "Apéritif"), L(R.poulet, 40, "Plat"), L(R.gratin, 40, "Autre"), L(R.tarte, 40, "Dessert")],
+    recipes: [L(R.quiches, 40, "Apéritif"), L(R.houmous, 40, "Apéritif"), L(R.poulet, 40, "Plat"), L(R.gratin, 40, "Plat"), L(R.tarte, 40, "Dessert")],
     extraCosts: [{ label: "Service Kristoff 8h", amount: 240, kind: "personnel" }],
     hoursSpent: 14,
     invoice: { number: "2026-031", paid: true, paidAt: "2026-09-25" },
@@ -411,7 +426,7 @@ const SEPTEMBER = [
   {
     name: "Chef à domicile Van Acker", date: "2026-09-26", guestCount: 15, prestationType: "chef_a_domicile", vatRate: 12, sellingPricePerGuest: 65,
     contactName: "Pieter Van Acker",
-    recipes: [L(R.verrines, 15, "Entrée"), L(R.poulet, 15, "Plat"), L(R.gratin, 15, "Autre"), L(R.tarte, 15, "Dessert")],
+    recipes: [L(R.verrines, 15, "Entrée"), L(R.poulet, 15, "Plat"), L(R.gratin, 15, "Plat"), L(R.tarte, 15, "Dessert")],
     extraCosts: [{ label: "Déplacement Tervuren", amount: 25, kind: "transport" }],
     hoursSpent: 9,
     invoice: { number: "2026-033", paid: false },
@@ -476,6 +491,8 @@ console.log(JSON.stringify({
   hoonaTuesdayEventId: hoonaTuesday.eventId,
   hoonaTuesdayFirstLineId: hoonaTuesday.recipes[0].lineId,
   mariageDupontEventId: mariage.eventId,
+  mariageSablesLineId: mariage.recipes.find((l) => l.recipeId === R.sables)?.lineId,
+  mariageTaskIds: (mariage.tasks ?? []).map((t) => t.taskId),
   tarteAuCitronRecipeId: R.tarte,
   hoonaClientId: hoona.clientId,
   counts: { events: events.length, recipes: recipes.length, ingredients: ingredients.length, entries: ledger.length },

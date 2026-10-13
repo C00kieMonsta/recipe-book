@@ -20,6 +20,11 @@ export function addDays(date: string, n: number): string {
   return toYmd(d);
 }
 
+// Whole days from a to b, negative when b is before a.
+export function daysBetween(a: string, b: string): number {
+  return Math.round((parseYmd(b).getTime() - parseYmd(a).getTime()) / DAY_MS);
+}
+
 export function ymOf(date: string): string {
   return date.slice(0, 7);
 }
@@ -83,6 +88,11 @@ function capitalize(s: string): string {
 // "Mar 13"
 export function dayLabel(date: string): string {
   return capitalize(shortDay.format(parseYmd(date)).replace(".", ""));
+}
+
+// "jeu. 15"
+export function shortDayLabel(date: string): string {
+  return shortDay.format(parseYmd(date));
 }
 
 // "Mardi 13 octobre"

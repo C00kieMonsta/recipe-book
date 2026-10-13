@@ -1,6 +1,15 @@
 import { createLedgerEntrySchema, patchLedgerEntrySchema, lockMonthSchema } from "./ledger";
 import { money, moneyNonnegative } from "./primitives";
-import { putEventLinesSchema, updateEventRequestSchema, addEventLineSchema, patchEventLineSchema } from "./events";
+import {
+  addEventLineSchema,
+  addEventTaskSchema,
+  createEventRequestSchema,
+  eventTaskSchema,
+  patchEventLineSchema,
+  patchEventTaskSchema,
+  putEventLinesSchema,
+  updateEventRequestSchema,
+} from "./events";
 import { importIngredientRowSchema, mergeIngredientsSchema } from "./ingredients";
 import { importRecipeIngredientSchema } from "./recipes";
 import { clientTemplateSchema, createClientSchema, templateLineSchema, updateClientSchema } from "./clients";
@@ -94,6 +103,50 @@ describe("event schemas", () => {
     expect(patchEventLineSchema.safeParse({ assignedTo: [] }).success).toBe(true);
     expect(patchEventLineSchema.safeParse({ assignedTo: [""] }).success).toBe(false);
     expect(patchEventLineSchema.safeParse({ assignedTo: Array.from({ length: 11 }, (_, i) => `p${i}`) }).success).toBe(false);
+  });
+  it("task schema rejects an empty label and a bad date", () => {
+    expect(eventTaskSchema.safeParse({ label: "Cuire les sablés", date: "2026-10-16" }).success).toBe(true);
+    expect(eventTaskSchema.safeParse({ label: "  ", date: "2026-10-16" }).success).toBe(false);
+    expect(eventTaskSchema.safeParse({ label: "Cuire les sablés", date: "16/10/2026" }).success).toBe(false);
+    expect(eventTaskSchema.safeParse({ label: "x".repeat(121), date: "2026-10-16" }).success).toBe(false);
+    expect(eventTaskSchema.safeParse({ label: "Cuire", date: "2026-10-16", course: "Plat" }).success).toBe(false);
+    const r = eventTaskSchema.safeParse({ taskId: "t1", label: " Dégeler le poisson ", date: "2026-10-15", prepStatus: "doing", assignedTo: ["kristoff"] });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.label).toBe("Dégeler le poisson");
+  });
+  it("add and patch task schemas omit taskId and stay strict", () => {
+    expect(addEventTaskSchema.safeParse({ label: "Cuire", date: "2026-10-16" }).success).toBe(true);
+    expect(addEventTaskSchema.safeParse({ label: "Cuire", date: "2026-10-16", taskId: "t" }).success).toBe(false);
+    expect(addEventTaskSchema.safeParse({ date: "2026-10-16" }).success).toBe(false);
+    expect(patchEventTaskSchema.safeParse({ prepStatus: "done" }).success).toBe(true);
+    expect(patchEventTaskSchema.safeParse({ date: "2026-10-17", assignedTo: [] }).success).toBe(true);
+    expect(patchEventTaskSchema.safeParse({ label: "" }).success).toBe(false);
+    expect(patchEventTaskSchema.safeParse({ taskId: "t" }).success).toBe(false);
+  });
+  it("create defaults tasks to [] and update leaves them undefined", () => {
+    const created = createEventRequestSchema.safeParse({ name: "Mariage Dupont", date: "2026-10-17", guestCount: 60 });
+    expect(created.success).toBe(true);
+    if (created.success) expect(created.data.tasks).toEqual([]);
+    const withTasks = createEventRequestSchema.safeParse({
+      name: "Mariage Dupont",
+      date: "2026-10-17",
+      guestCount: 60,
+      tasks: [{ label: "Dégeler le poisson", date: "2026-10-15" }],
+    });
+    expect(withTasks.success).toBe(true);
+    if (withTasks.success) expect(withTasks.data.tasks).toEqual([{ label: "Dégeler le poisson", date: "2026-10-15" }]);
+    const updated = updateEventRequestSchema.safeParse({ name: "x" });
+    expect(updated.success).toBe(true);
+    if (updated.success) expect(updated.data.tasks).toBeUndefined();
+    expect(updateEventRequestSchema.safeParse({ tasks: [{ label: "", date: "2026-10-15" }] }).success).toBe(false);
+  });
+  it("line patch accepts prepDate null, add line and template line do not", () => {
+    expect(patchEventLineSchema.safeParse({ prepDate: null }).success).toBe(true);
+    expect(patchEventLineSchema.safeParse({ prepDate: "2026-10-15" }).success).toBe(true);
+    expect(patchEventLineSchema.safeParse({ prepDate: "15/10/2026" }).success).toBe(false);
+    expect(addEventLineSchema.safeParse({ recipeId: "r", portions: 2, prepDate: null }).success).toBe(false);
+    expect(addEventLineSchema.safeParse({ recipeId: "r", portions: 2, prepDate: "2026-10-15" }).success).toBe(true);
+    expect(templateLineSchema.safeParse({ recipeId: "r", portions: 1, prepDate: "2026-10-15" }).success).toBe(false);
   });
 });
 

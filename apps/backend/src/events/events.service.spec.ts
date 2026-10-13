@@ -91,6 +91,7 @@ const createBody = {
     { lineId: "keep-me", recipeId: "r2", portions: 5 },
   ],
   extraCosts: [],
+  tasks: [],
   sellingPricePerGuest: 50,
   status: "upcoming" as const,
 };
@@ -362,6 +363,246 @@ describe("EventsService", () => {
       const event = await service.removeLine("e1", "b");
       expect(event.recipes.map((l) => l.lineId)).toEqual(["a", "c"]);
       await expect(service.removeLine("e1", "b")).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe("tasks", () => {
+    beforeEach(async () => {
+      await ddb.put(
+        "events",
+        baseEvent({
+          recipes: [{ lineId: "a", recipeId: "r1", portions: 2 }],
+          tasks: [
+            { taskId: "t1", label: "Dégeler le poisson", date: "2026-05-30", prepStatus: "done" },
+            { taskId: "t2", label: "Cuire les sablés", date: "2026-05-31", assignedTo: ["kristoff"] },
+          ],
+        }),
+      );
+    });
+
+    it("get on an event without tasks returns tasks: [] and makes no update call", async () => {
+      await ddb.put("events", baseEvent({ eventId: "e2", recipes: [{ lineId: "a", recipeId: "r1", portions: 1 }] }));
+      const event = await service.getOrFail("e2");
+      expect(event.tasks).toEqual([]);
+      expect(ddb.updates).toHaveLength(0);
+      expect(ddb.rows("events").get("e2")).not.toHaveProperty("tasks");
+    });
+
+    it("addTask fills taskId, bumps updatedAt and guards on the updatedAt it read", async () => {
+      const event = await service.addTask("e1", { label: "Acheter le pain", date: "2026-06-01" });
+      expect(event.tasks).toHaveLength(3);
+      const added = event.tasks?.[2];
+      expect(added?.taskId).toEqual(expect.any(String));
+      expect(added?.taskId).not.toBe("");
+      expect(added).toMatchObject({ label: "Acheter le pain", date: "2026-06-01" });
+      expect(event.updatedAt > "2026-01-01T00:00:00.000Z").toBe(true);
+      expect(ddb.updates).toHaveLength(1);
+      expect(ddb.updates[0].fields).not.toHaveProperty("recipes");
+      expect(ddb.updates[0].options).toEqual({
+        condition: "#ua = :expected",
+        names: { "#ua": "updatedAt" },
+        values: { ":expected": "2026-01-01T00:00:00.000Z" },
+      });
+    });
+
+    it("patchTask merges the patch and keeps the other fields", async () => {
+      const event = await service.patchTask("e1", "t2", { prepStatus: "doing", date: "2026-06-01" });
+      expect(event.tasks?.[1]).toEqual({
+        taskId: "t2", label: "Cuire les sablés", date: "2026-06-01", prepStatus: "doing", assignedTo: ["kristoff"],
+      });
+      expect(event.tasks?.[0]).toEqual({ taskId: "t1", label: "Dégeler le poisson", date: "2026-05-30", prepStatus: "done" });
+      expect(event.recipes).toEqual([{ lineId: "a", recipeId: "r1", portions: 2 }]);
+    });
+
+    it("patchTask 404s on an unknown task", async () => {
+      await expect(service.patchTask("e1", "zz", { label: "x" })).rejects.toBeInstanceOf(NotFoundException);
+      expect(ddb.updates).toHaveLength(0);
+    });
+
+    it("removeTask drops the task and 404s when unknown", async () => {
+      const event = await service.removeTask("e1", "t1");
+      expect(event.tasks?.map((t) => t.taskId)).toEqual(["t2"]);
+      await expect(service.removeTask("e1", "t1")).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("task writes 409 LINES_CHANGED when the event keeps moving", async () => {
+      let n = 0;
+      ddb.beforeUpdate = () => {
+        const row = ddb.rows("events").get("e1") as Item;
+        row.updatedAt = `2026-01-0${++n + 1}T00:00:00.000Z`;
+      };
+      const call = service.addTask("e1", { label: "x", date: "2026-06-01" });
+      await expect(call).rejects.toBeInstanceOf(ConflictException);
+      await call.catch((err: ConflictException) => {
+        expect(err.getResponse()).toEqual({ code: "LINES_CHANGED", missing: [] });
+      });
+      expect(ddb.updates).toHaveLength(2);
+      expect((await service.getOrFail("e1")).tasks).toHaveLength(2);
+    });
+
+    it("task endpoints work on an event stored without a tasks attribute", async () => {
+      await ddb.put("events", baseEvent({ eventId: "e2" }));
+      const event = await service.addTask("e2", { label: "x", date: "2026-06-01" });
+      expect(event.tasks).toHaveLength(1);
+      await expect(service.removeTask("e2", "nope")).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe("prep dates", () => {
+    const storedLine = (index: number) => ((ddb.rows("events").get("e1") as Item).recipes as Item[])[index];
+
+    beforeEach(async () => {
+      await ddb.put(
+        "events",
+        baseEvent({
+          recipes: [
+            { lineId: "a", recipeId: "r1", portions: 2, prepDate: "2026-05-29" },
+            { lineId: "b", recipeId: "r2", portions: 3, notes: "spicy" },
+          ],
+        }),
+      );
+    });
+
+    it("patchLine with prepDate null leaves the stored line without a prepDate key", async () => {
+      const event = await service.patchLine("e1", "a", { prepDate: null });
+      expect(event.recipes[0]).toEqual({ lineId: "a", recipeId: "r1", portions: 2 });
+      expect(storedLine(0)).not.toHaveProperty("prepDate");
+    });
+
+    it("patchLine with prepDate equal to the event day leaves the stored line without prepDate", async () => {
+      const event = await service.patchLine("e1", "a", { prepDate: "2026-06-01" });
+      expect(event.recipes[0]).toEqual({ lineId: "a", recipeId: "r1", portions: 2 });
+      expect(storedLine(0)).not.toHaveProperty("prepDate");
+    });
+
+    it("patchLine with prepDate two days before stores it", async () => {
+      const event = await service.patchLine("e1", "b", { prepDate: "2026-05-30" });
+      expect(event.recipes[1]).toEqual({ lineId: "b", recipeId: "r2", portions: 3, notes: "spicy", prepDate: "2026-05-30" });
+      expect(storedLine(1).prepDate).toBe("2026-05-30");
+    });
+
+    it("addLine drops a prepDate equal to the event day and keeps another day", async () => {
+      const same = await service.addLine("e1", { recipeId: "r3", portions: 1, prepDate: "2026-06-01" });
+      expect(same.recipes[2]).toEqual({ lineId: same.recipes[2].lineId, recipeId: "r3", portions: 1 });
+      expect(storedLine(2)).not.toHaveProperty("prepDate");
+      const other = await service.addLine("e1", { recipeId: "r4", portions: 1, prepDate: "2026-05-31" });
+      expect(other.recipes[3].prepDate).toBe("2026-05-31");
+    });
+
+    it("putLines keeps a prepDate through a reorder", async () => {
+      const event = await service.putLines("e1", { lines: [{ lineId: "b" }, { lineId: "a" }] });
+      expect(event.recipes[1]).toEqual({ lineId: "a", recipeId: "r1", portions: 2, prepDate: "2026-05-29" });
+    });
+
+    it("create fills taskIds and drops a line prepDate equal to the event day", async () => {
+      const event = await service.create({
+        ...createBody,
+        recipes: [
+          { recipeId: "r1", portions: 10, prepDate: "2026-06-01" },
+          { recipeId: "r2", portions: 5, prepDate: "2026-05-30" },
+        ],
+        tasks: [
+          { label: "Dégeler le poisson", date: "2026-05-30" },
+          { taskId: "keep-me", label: "Cuire les sablés", date: "2026-05-31" },
+        ],
+      });
+      expect(event.recipes[0]).not.toHaveProperty("prepDate");
+      expect(event.recipes[1].prepDate).toBe("2026-05-30");
+      expect(event.tasks?.[0].taskId).toEqual(expect.any(String));
+      expect(event.tasks?.[0].taskId).not.toBe("");
+      expect(event.tasks?.[1].taskId).toBe("keep-me");
+      const stored = await ddb.get("events", { eventId: event.eventId });
+      expect(stored).toEqual(event);
+      expect((stored?.recipes as Item[])[0]).not.toHaveProperty("prepDate");
+    });
+  });
+
+  describe("update with tasks and a new date", () => {
+    beforeEach(async () => {
+      await ddb.put(
+        "events",
+        baseEvent({
+          recipes: [
+            { lineId: "a", recipeId: "r1", portions: 2, prepDate: "2026-05-30" },
+            { lineId: "b", recipeId: "r2", portions: 3 },
+          ],
+          tasks: [
+            { taskId: "t1", label: "Dégeler le poisson", date: "2026-05-30", prepStatus: "done" },
+            { taskId: "t2", label: "Cuire les sablés", date: "2026-05-31" },
+          ],
+        }),
+      );
+    });
+
+    it("a new date shifts line prepDates and task dates by the delta and leaves a line without prepDate alone", async () => {
+      const event = await service.update("e1", { date: "2026-06-08" });
+      expect(event.date).toBe("2026-06-08");
+      expect(event.recipes[0].prepDate).toBe("2026-06-06");
+      expect(event.recipes[1]).toEqual({ lineId: "b", recipeId: "r2", portions: 3 });
+      expect(event.tasks?.map((t) => t.date)).toEqual(["2026-06-06", "2026-06-07"]);
+      expect(event.tasks?.[0]).toMatchObject({ taskId: "t1", label: "Dégeler le poisson", prepStatus: "done" });
+    });
+
+    it("a date moved backwards shifts the same way", async () => {
+      const event = await service.update("e1", { date: "2026-05-25" });
+      expect(event.recipes[0].prepDate).toBe("2026-05-23");
+      expect(event.tasks?.map((t) => t.date)).toEqual(["2026-05-23", "2026-05-24"]);
+    });
+
+    it("a date equal to the stored date does not touch recipes or tasks", async () => {
+      const event = await service.update("e1", { date: "2026-06-01", name: "Baptême" });
+      expect(ddb.updates).toHaveLength(1);
+      expect(ddb.updates[0].fields).not.toHaveProperty("recipes");
+      expect(ddb.updates[0].fields).not.toHaveProperty("tasks");
+      expect(event.recipes[0].prepDate).toBe("2026-05-30");
+      expect(event.tasks?.[1].date).toBe("2026-05-31");
+    });
+
+    it("tasks merge by taskId and keep a stored prepStatus the caller omitted", async () => {
+      const event = await service.update("e1", {
+        tasks: [
+          { taskId: "t1", label: "Dégeler le poisson", date: "2026-05-29" },
+          { taskId: "t2", label: "Cuire les sablés", date: "2026-05-31", prepStatus: "doing" },
+        ],
+      });
+      expect(event.tasks?.[0]).toEqual({ taskId: "t1", label: "Dégeler le poisson", date: "2026-05-29", prepStatus: "done" });
+      expect(event.tasks?.[1]).toEqual({ taskId: "t2", label: "Cuire les sablés", date: "2026-05-31", prepStatus: "doing" });
+      expect(ddb.updates[0].fields).not.toHaveProperty("recipes");
+    });
+
+    it("tasks append unknown ids with a fresh one and drop absent tasks", async () => {
+      const event = await service.update("e1", {
+        tasks: [
+          { taskId: "t2", label: "Cuire les sablés", date: "2026-05-31" },
+          { label: "Acheter le pain", date: "2026-06-01" },
+        ],
+      });
+      expect(event.tasks).toHaveLength(2);
+      expect(event.tasks?.[0].taskId).toBe("t2");
+      expect(event.tasks?.[1].taskId).toEqual(expect.any(String));
+      expect(event.tasks?.[1]).toMatchObject({ label: "Acheter le pain", date: "2026-06-01" });
+      expect(event.tasks?.some((t) => t.taskId === "t1")).toBe(false);
+    });
+
+    it("a new date sent with recipes and tasks shifts the merged arrays and then normalizes", async () => {
+      const event = await service.update("e1", {
+        date: "2026-06-03",
+        recipes: [
+          { lineId: "a", recipeId: "r1", portions: 4 },
+          { lineId: "b", recipeId: "r2", portions: 3, prepDate: "2026-06-01" },
+        ],
+        tasks: [{ taskId: "t1", label: "Dégeler le poisson", date: "2026-05-30" }],
+      });
+      expect(event.recipes[0]).toEqual({ lineId: "a", recipeId: "r1", portions: 4, prepDate: "2026-06-01" });
+      expect(event.recipes[1]).toEqual({ lineId: "b", recipeId: "r2", portions: 3 });
+      expect(event.tasks).toEqual([{ taskId: "t1", label: "Dégeler le poisson", date: "2026-06-01", prepStatus: "done" }]);
+    });
+
+    it("a new date on an event without tasks or prepDates writes an empty tasks list and unchanged lines", async () => {
+      await ddb.put("events", baseEvent({ eventId: "e2", recipes: [{ lineId: "a", recipeId: "r1", portions: 2 }] }));
+      const event = await service.update("e2", { date: "2026-06-08" });
+      expect(event.recipes).toEqual([{ lineId: "a", recipeId: "r1", portions: 2 }]);
+      expect(event.tasks).toEqual([]);
     });
   });
 });
