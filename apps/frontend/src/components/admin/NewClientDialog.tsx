@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Client, ClientKind } from "@packages/types";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -32,14 +32,18 @@ export default function NewClientDialog({ open, onClose, initial, existing, onCr
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Fields reset when the dialog opens; a new initial object while open must not wipe typing.
+  const initialRef = useRef(initial);
+  initialRef.current = initial;
   useEffect(() => {
     if (!open) return;
-    setName(initial.name ?? "");
-    setKind(initial.kind ?? "particulier");
-    setPhone(initial.phone ?? "");
-    setEmail(initial.email ?? "");
+    const init = initialRef.current;
+    setName(init.name ?? "");
+    setKind(init.kind ?? "particulier");
+    setPhone(init.phone ?? "");
+    setEmail(init.email ?? "");
     setBusy(false);
-  }, [open, initial]);
+  }, [open]);
 
   const trimmed = name.trim();
   const duplicate = trimmed ? existing.find((c) => c.name.trim().toLowerCase() === trimmed.toLowerCase()) : undefined;

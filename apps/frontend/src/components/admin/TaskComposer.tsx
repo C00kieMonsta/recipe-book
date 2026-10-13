@@ -1,4 +1,4 @@
-import { useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import { useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent } from "react";
 import type { AppEvent, Client } from "@packages/types";
 import { shortDayLabel, shortEventName } from "@packages/types";
 import { useToast } from "@/hooks/use-toast";
@@ -59,8 +59,13 @@ export default function TaskComposer({ events, clientById, defaultEventId, onAdd
     if (!text.trim() && !busy) onClose();
   };
 
+  // Clicks on the pill and its menu keep the focus in the input.
+  const onMouseDown = (e: MouseEvent<HTMLDivElement>) => {
+    if (e.target !== input.current) e.preventDefault();
+  };
+
   return (
-    <div ref={box} className="shadow-card rounded-lg p-1" onBlur={onBlur}>
+    <div ref={box} className="shadow-card rounded-lg p-1" onBlur={onBlur} onMouseDown={onMouseDown}>
       <input
         ref={input}
         className="h-7 w-full bg-transparent text-sm outline-none placeholder:text-placeholder"
@@ -70,7 +75,6 @@ export default function TaskComposer({ events, clientById, defaultEventId, onAdd
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKey}
-        disabled={busy}
       />
       <SelectPill
         colour="gray"

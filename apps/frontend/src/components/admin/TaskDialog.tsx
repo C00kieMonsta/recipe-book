@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { Person } from "@packages/types";
 import Button from "@/components/ui/Button";
 import Dialog from "@/components/ui/Dialog";
@@ -33,11 +33,15 @@ export default function TaskDialog(props: TaskDialogProps) {
 function TaskForm({ onClose, mode, initial, events, people, onSubmit, onDelete }: TaskDialogProps) {
   const [label, setLabel] = useState(initial.label);
   const [date, setDate] = useState(initial.date);
-  const [eventId, setEventId] = useState(initial.eventId);
+  const [eventId, setEventId] = useState(() => (events.some((ev) => ev.eventId === initial.eventId) || events.length === 0 ? initial.eventId : events[0].eventId));
   const [assignedTo, setAssignedTo] = useState<string[]>(initial.assignedTo);
   const [notes, setNotes] = useState(initial.notes);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const labelInput = useRef<HTMLInputElement>(null);
+
+  // Runs after the Dialog focus effect, so « Quoi » keeps the focus.
+  useEffect(() => { labelInput.current?.focus(); }, []);
 
   const active = people.filter((p) => p.active);
   const trimmed = label.trim();
@@ -101,6 +105,7 @@ function TaskForm({ onClose, mode, initial, events, people, onSubmit, onDelete }
           <div>
             <FieldLabel htmlFor="task-label">Quoi</FieldLabel>
             <input
+              ref={labelInput}
               id="task-label"
               className="input-field"
               autoFocus

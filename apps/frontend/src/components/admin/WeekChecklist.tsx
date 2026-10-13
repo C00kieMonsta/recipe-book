@@ -29,7 +29,8 @@ export interface WeekChecklistProps {
   onCloseEvent: (eventId: string) => Promise<void>;
 }
 
-const ROW = "flex min-h-7 items-center gap-2 text-sm touch:min-h-11";
+// Below md the link drops under the sentence, right-aligned, when both do not fit on one line; the tag only shows from md.
+const ROW = "flex min-h-7 flex-wrap items-center justify-end gap-2 text-sm md:flex-nowrap touch:min-h-11";
 const TEXT = "min-w-0 flex-1";
 // Guide rows wrap on phones: bullet and link follow the first line of text.
 const GUIDE_ROW = "flex min-h-7 items-start gap-2 text-sm touch:min-h-11";
@@ -56,6 +57,16 @@ function ActionLink({ to, state, className, children }: { to: string; state: unk
 
 function Bullet({ className }: { className?: string }) {
   return <span aria-hidden="true" className={cn("ml-0.5 mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-icon", className)} />;
+}
+
+// Bullet and sentence as one flex item so the pair stays together when the row wraps.
+function RowText({ children, title, bullet = true }: { children: ReactNode; title?: string; bullet?: boolean }) {
+  return (
+    <span className="flex min-w-0 flex-auto items-center gap-2">
+      {bullet ? <Bullet /> : <span className="h-4 w-4 shrink-0" aria-hidden="true" />}
+      <span className={TEXT} title={title}>{children}</span>
+    </span>
+  );
 }
 
 export default function WeekChecklist(props: WeekChecklistProps) {
@@ -98,12 +109,11 @@ export default function WeekChecklist(props: WeekChecklistProps) {
 
   const notConfiguredRow = notConfigured && notConfigured.kind === "not_configured" && (
     <li className={`${ROW} text-muted-foreground`}>
-      <span className="h-4 w-4 shrink-0" aria-hidden="true" />
-      <span className={TEXT}>
+      <RowText bullet={false}>
         {notConfigured.clients && notConfigured.ledger
           ? "Clients et comptabilité non configurés"
           : notConfigured.clients ? "Clients non configurés" : "Comptabilité non configurée"}
-      </span>
+      </RowText>
       <ActionLink to="/settings#apropos" state={state}>Paramètres</ActionLink>
     </li>
   );
@@ -122,7 +132,12 @@ export default function WeekChecklist(props: WeekChecklistProps) {
     <div aria-live="polite">
       <Callout
         emoji="📋"
-        title={<span className="inline-flex items-center gap-2">Ce qui manque pour la semaine {weekNo}<Tag colour="gray">{count} {count === 1 ? "point" : "points"}</Tag></span>}
+        title={(
+          <span className="inline-flex max-w-full items-center gap-2">
+            <span className="truncate">Ce qui manque pour la semaine {weekNo}</span>
+            <Tag colour="gray" className="hidden shrink-0 md:inline-flex">{count} {count === 1 ? "point" : "points"}</Tag>
+          </span>
+        )}
         collapsible
         open={open}
         onToggle={onToggle}
@@ -135,8 +150,7 @@ export default function WeekChecklist(props: WeekChecklistProps) {
           })}
           {coveringList && !items.some((i) => i.kind === "groceries") && (
             <li className={`${ROW} text-muted-foreground`}>
-              <span className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span className={TEXT}>Courses · liste{coveringList.range ? ` du ${rangeLabel(coveringList.range.from, coveringList.range.to)}` : ""}</span>
+              <RowText bullet={false}>Courses · liste{coveringList.range ? ` du ${rangeLabel(coveringList.range.from, coveringList.range.to)}` : ""}</RowText>
               <ActionLink to={`/grocery-list?id=${coveringList.listId}`} state={state}>Voir</ActionLink>
             </li>
           )}
@@ -156,32 +170,28 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
     case "client_week":
       return (
         <li className={ROW}>
-          <Bullet />
-          <span className={TEXT}>{item.clientName} : {plural(item.missingDays, "jour")} sans événement cette semaine</span>
+          <RowText>{item.clientName} : {plural(item.missingDays, "jour")} sans événement cette semaine</RowText>
           <Button variant="link" size="sm" disabled={busy} onClick={() => onCreateClientWeek(item.clientId, item.guestCount)}>Créer la semaine {item.clientName}</Button>
         </li>
       );
     case "no_menu":
       return (
         <li className={ROW}>
-          <Bullet />
-          <span className={TEXT}>{item.name} n'a pas encore de menu</span>
+          <RowText>{item.name} n'a pas encore de menu</RowText>
           <ActionLink to={`/events/${item.eventId}?ajouter=1#menu`} state={state}>Ajouter des recettes</ActionLink>
         </li>
       );
     case "no_price":
       return (
         <li className={ROW}>
-          <Bullet />
-          <span className={TEXT}>{item.name} n'a pas de prix par convive</span>
+          <RowText>{item.name} n'a pas de prix par convive</RowText>
           <ActionLink to={`/events/${item.eventId}?focus=prix`} state={state}>Fixer le prix</ActionLink>
         </li>
       );
     case "no_type":
       return (
         <li className={ROW}>
-          <Bullet />
-          <span className={TEXT}>{item.name} n'a pas de type de prestation</span>
+          <RowText>{item.name} n'a pas de type de prestation</RowText>
           <SelectPill
             value=""
             placeholder="Choisir"
@@ -200,8 +210,7 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
     case "unassigned":
       return (
         <li className={ROW}>
-          <Bullet />
-          <span className={TEXT}>{unassignedLabel(item.lineCount, item.taskCount)} sans personne ({plural(item.eventCount, "événement")})</span>
+          <RowText>{unassignedLabel(item.lineCount, item.taskCount)} sans personne ({plural(item.eventCount, "événement")})</RowText>
           <Button variant="link" size="sm" onClick={onAssign}>Choisir qui fait quoi</Button>
         </li>
       );
@@ -209,12 +218,11 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
       const n = item.uncoveredEventIds.length;
       return (
         <li className={ROW}>
-          <Bullet />
-          <span className={TEXT}>
+          <RowText>
             {item.partial
               ? `${plural(n, "événement")} ${n === 1 ? "n'a" : "n'ont"} pas de liste de courses`
               : `Les courses ne sont pas encore créées (${plural(n, "événement")})`}
-          </span>
+          </RowText>
           <Button variant="link" size="sm" disabled={busy} onClick={() => onCreateGroceries(item.uncoveredEventIds)}>
             {item.partial ? "Compléter la liste" : "Créer la liste de courses"}
           </Button>
@@ -225,12 +233,11 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
       return (
         <li>
           <div className={ROW}>
-            <Bullet />
-            <span className={TEXT}>
+            <RowText>
               {item.events.length === 1
                 ? "1 événement passé est à terminer, puis à facturer"
                 : `${item.events.length} événements passés sont à terminer, puis à facturer`}
-            </span>
+            </RowText>
           </div>
           <ul className="pl-6">
             {item.events.map((ev) => (
@@ -254,24 +261,21 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
     case "to_invoice":
       return (
         <li className={ROW}>
-          <Bullet />
-          <span className={TEXT}>{item.name} est terminé · {fmtEur0(item.htva)} à facturer</span>
+          <RowText>{item.name} est terminé · {fmtEur0(item.htva)} à facturer</RowText>
           <ActionLink to={`/events/${item.eventId}?facturer=1#facturation`} state={state}>Créer la facture</ActionLink>
         </li>
       );
     case "to_invoice_many":
       return (
         <li className={ROW}>
-          <Bullet />
-          <span className={TEXT}>{item.count} événements terminés à facturer · {fmtEur0(item.htva)}</span>
+          <RowText>{item.count} événements terminés à facturer · {fmtEur0(item.htva)}</RowText>
           <ActionLink to="/comptes/a-facturer" state={state}>Voir à facturer</ActionLink>
         </li>
       );
     case "to_invoice_month":
       return (
         <li className={ROW}>
-          <Bullet />
-          <span className={TEXT}>{item.clientName} : {ymLabel(item.ym)} à facturer · {plural(item.eventIds.length, "événement")} · {fmtEur0(item.htva)}</span>
+          <RowText>{item.clientName} : {ymLabel(item.ym)} à facturer · {plural(item.eventIds.length, "événement")} · {fmtEur0(item.htva)}</RowText>
           <ActionLink to={`/comptes/journal?client=${item.clientId}&prefill=month&ym=${item.ym}`} state={state}>Facturer le mois</ActionLink>
         </li>
       );
@@ -280,10 +284,9 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
       // The longest row: the date goes to a title on phones.
       return (
         <li className={ROW}>
-          <Bullet />
-          <span className={TEXT} title={oldest}>
+          <RowText title={oldest}>
             {item.count === 1 ? "1 facture n'est pas encore payée" : `${item.count} factures ne sont pas encore payées`} · {fmtEur0(item.totalTvac)}<span className="hidden md:inline"> · {oldest}</span>
-          </span>
+          </RowText>
           <ActionLink to="/comptes/a-facturer#impayes" state={state}>
             <span className="md:hidden">Voir</span>
             <span className="hidden md:inline">Voir les impayés</span>
@@ -294,8 +297,7 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
     case "empty_week":
       return (
         <li className={ROW}>
-          <Bullet />
-          <span className={TEXT}>Rien de prévu cette semaine</span>
+          <RowText>Rien de prévu cette semaine</RowText>
           <ActionLink to={`/events/new?date=${monday}&retour=${retour}`} state={state}>+ Nouvel événement</ActionLink>
         </li>
       );
