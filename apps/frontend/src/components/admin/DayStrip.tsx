@@ -33,6 +33,7 @@ export default function DayStrip({ dates, counts, today, selected, href, state, 
             state={state}
             aria-label={longDay.format(parseYmd(date))}
             aria-current={isSelected ? "page" : isToday ? "date" : undefined}
+            data-tour={isSelected ? "day-open" : undefined}
             className={`relative flex h-11 flex-col items-center justify-center gap-0.5 rounded hover:bg-hover ${isSelected ? "bg-selected" : ""}`}
           >
             <span className={`text-caption leading-none ${muted}`}>{LETTERS[i]}</span>

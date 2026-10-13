@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AddEventTaskRequest, AppEvent, AppSettings, Client, GroceryList, Ingredient, LedgerEntry, PatchEventTaskRequest, Person, PrepStatus, Recipe } from "@packages/types";
+import type { AddEventTaskRequest, AppEvent, AppSettings, Client, GroceryList, Ingredient, LedgerEntry, PatchEventTaskRequest, Person, PrepStatus, Recipe, WeekDay } from "@packages/types";
 import { DEFAULT_COURSES } from "@packages/types";
 import { api, ApiError, type EventInput } from "@/lib/api";
 
@@ -159,4 +159,16 @@ export const NEXT_STATUS: Record<PrepStatus, PrepStatus> = { todo: "doing", doin
 
 export function plural(n: number, singular: string, pluralForm = `${singular}s`): string {
   return `${n} ${n === 1 ? singular : pluralForm}`;
+}
+
+// « aucun événement » | « 1 évén. · 9 conv. » | « 1 évén. · 9 conv. · 0/1 faites »
+export function dayHeaderMeta(d: WeekDay, started: boolean): string {
+  if (d.events.length === 0) return "aucun événement";
+  const base = `${d.events.length} évén. · ${d.guests} conv.`;
+  return started && d.linesTotal > 0 ? `${base} · ${d.linesDone}/${d.linesTotal} faites` : base;
+}
+
+// « 1 événement · 9 convives · 0 lignes faites sur 1 »
+export function dayHeaderTitle(d: WeekDay, started: boolean): string {
+  return `${plural(d.events.length, "événement")} · ${plural(d.guests, "convive")}${started && d.linesTotal ? ` · ${d.linesDone} ${d.linesDone === 1 ? "ligne faite" : "lignes faites"} sur ${d.linesTotal}` : ""}`;
 }

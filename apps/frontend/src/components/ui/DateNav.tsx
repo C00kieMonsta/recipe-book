@@ -15,11 +15,15 @@ export interface DateNavProps {
   isToday?: boolean;
   onToday?: () => void;
   todayLabel?: string;
+  // Extra classes on the label button; the planning bar fixes its width so ‹ › do not move between views.
+  labelClassName?: string;
+  // Keep « Aujourd'hui » mounted and disabled on today instead of unmounting it.
+  todayAlways?: boolean;
   className?: string;
   "aria-label"?: string;
 }
 
-export default function DateNav({ label, onPrev, onNext, onPick, value, pickerType = "date", isToday = false, onToday, todayLabel = "Aujourd'hui", className, "aria-label": ariaLabel }: DateNavProps) {
+export default function DateNav({ label, onPrev, onNext, onPick, value, pickerType = "date", isToday = false, onToday, todayLabel = "Aujourd'hui", labelClassName, todayAlways = false, className, "aria-label": ariaLabel }: DateNavProps) {
   const input = useRef<HTMLInputElement>(null);
 
   const open = () => {
@@ -41,7 +45,7 @@ export default function DateNav({ label, onPrev, onNext, onPick, value, pickerTy
           type="button"
           onClick={onPick ? open : undefined}
           aria-haspopup={onPick ? "dialog" : undefined}
-          className="inline-flex h-7 items-center gap-1 whitespace-nowrap rounded px-2 text-sm font-medium hover:bg-hover touch:h-11 touch:text-base"
+          className={cn("inline-flex h-7 items-center gap-1 whitespace-nowrap rounded px-2 text-sm font-medium hover:bg-hover touch:h-11 touch:text-base", labelClassName)}
         >
           {label}
           {onPick && <ChevronDown className="h-3.5 w-3.5 text-icon" aria-hidden="true" />}
@@ -59,8 +63,8 @@ export default function DateNav({ label, onPrev, onNext, onPick, value, pickerTy
         )}
       </span>
       <IconButton size="sm" aria-label="Suivant" onClick={onNext} icon={<ChevronRight />} />
-      {onToday && !isToday && (
-        <Button variant="subtle" size="sm" onClick={onToday}>{todayLabel}</Button>
+      {onToday && (todayAlways || !isToday) && (
+        <Button variant="subtle" size="sm" onClick={onToday} disabled={todayAlways && isToday}>{todayLabel}</Button>
       )}
     </div>
   );

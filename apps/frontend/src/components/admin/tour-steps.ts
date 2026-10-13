@@ -61,9 +61,9 @@ export const TOUR_STEPS: TourStep[] = [
   {
     key: "breadcrumb",
     route: "/jour/aujourdhui",
-    anchor: "breadcrumb",
+    anchor: "day-open",
     title: "Revenir à la semaine",
-    body: "Vous êtes sur un jour. « Semaine » en haut ramène à la semaine en un clic, comme l'onglet Semaine. Le rond devant chaque préparation est son statut : vide à faire, bleu en cours, vert fait.",
+    body: "Le jour ouvert est surligné dans la rangée des jours. L'onglet Semaine, Échap ou un clic sur ce jour ramènent à la semaine. Le rond devant chaque préparation est son statut : vide à faire, bleu en cours, vert fait.",
     phone: {
       anchor: "back",
       body: "« ‹ Semaine » en haut à gauche ramène à la semaine. Le rond devant chaque préparation est son statut : vide à faire, bleu en cours, vert fait. Un tap le change, sans confirmation.",

@@ -9,7 +9,7 @@ export interface PlanningBarProps {
   // Targets of the three view tabs; "Par personne" is hidden without a target.
   weekHref: string;
   dayHref: string;
-  // Day the "Jour" tab opens from the week, shown as "Jour · Lun 12".
+  // Ignored: the tab reads « Jour » in both views. Kept until the pages stop passing it.
   dayTabLabel?: string;
   personHref?: string;
   // The period control.
@@ -20,7 +20,7 @@ export interface PlanningBarProps {
   pickValue?: string;
   isToday?: boolean;
   onToday?: () => void;
-  // Rendered after the DateNav on the same row (the Jour "Grouper" pill).
+  // Ignored: the Jour "Grouper" pill now belongs to `right`. Kept until the pages stop passing it.
   after?: ReactNode;
   // Right group on pointer screens; `rightTouch` replaces it on touch screens.
   right?: ReactNode;
@@ -39,14 +39,12 @@ export interface PlanningBarProps {
 
 // One toolbar row shared by the week and the day page, then the seven-day strip.
 export default function PlanningBar(props: PlanningBarProps) {
-  const { view, weekHref, dayHref, dayTabLabel, personHref, dateLabel, onPrev, onNext, onPick, pickValue, isToday, onToday, after, right, rightTouch, filters } = props;
+  const { view, weekHref, dayHref, personHref, dateLabel, onPrev, onNext, onPick, pickValue, isToday, onToday, right, rightTouch, filters } = props;
   const { dates, counts, today, selected, stripHref, linkState, onTouchStart, onTouchEnd } = props;
-  const isWeek = view === "week";
 
   const tabs = [
     { key: "week", label: "Semaine", to: weekHref },
-    // The suffix waits for lg: under that the three 44px tabs push ⋯ and + onto a second row.
-    { key: "day", label: isWeek && dayTabLabel ? <>Jour<span className="hidden lg:inline"> · {dayTabLabel}</span></> : "Jour", to: dayHref },
+    { key: "day", label: "Jour", to: dayHref },
     ...(personHref ? [{ key: "personne", label: "Par personne", to: personHref, title: "Les lignes de chacun, pour un jour" }] : []),
   ];
 
@@ -56,18 +54,26 @@ export default function PlanningBar(props: PlanningBarProps) {
         <Toolbar
           left={<div data-tour="planning-tabs" className="flex min-w-0"><ViewTabs items={tabs} value={view} aria-label="Affichage" className="-ml-2" /></div>}
           center={(
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <DateNav label={dateLabel} onPrev={onPrev} onNext={onNext} onPick={onPick} value={pickValue} pickerType="date" isToday={isToday} onToday={onToday} />
-              {after}
-            </div>
+            <DateNav
+              label={dateLabel}
+              onPrev={onPrev}
+              onNext={onNext}
+              onPick={onPick}
+              value={pickValue}
+              pickerType="date"
+              isToday={isToday}
+              onToday={onToday}
+              labelClassName="md:min-w-[15rem] justify-start"
+              todayAlways
+            />
           )}
           right={right}
           rightTouch={rightTouch && <span className="flex items-center gap-0.5 touch:-mr-1">{rightTouch}</span>}
           filters={filters}
         />
       </div>
-      {/* On the laptop week the seven columns are the days, so the strip would repeat every date. */}
-      <div className={`no-print sticky top-topbar z-20 -mx-4 bg-background px-4 py-1 md:static md:mx-0 md:px-0${isWeek ? " xl:hidden" : ""}`}>
+      {/* At xl the DayHeads row carries the seven days on both pages, so the strip would repeat every date. */}
+      <div className="no-print sticky top-topbar z-20 -mx-4 bg-background px-4 py-1 md:static md:mx-0 md:px-0 xl:hidden">
         <DayStrip dates={dates} counts={counts} today={today} selected={selected} href={stripHref} state={linkState} />
       </div>
     </>
