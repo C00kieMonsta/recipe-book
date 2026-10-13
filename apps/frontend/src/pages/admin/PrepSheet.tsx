@@ -1,20 +1,22 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ChefHat, ChevronDown, ChevronLeft, ChevronRight, Circle, Hash, Pencil, Printer, Scale, SlidersHorizontal, Square, Tag as TagIcon, Type, User } from "lucide-react";
+import { Calendar, ChefHat, ChevronDown, ChevronLeft, ChevronRight, Circle, Hash, Pencil, Printer, Scale, SlidersHorizontal, Square, Tag as TagIcon, Type, User } from "lucide-react";
 import type { PrepStatus } from "@packages/types";
-import { courseBucket, courseOf, dayLabel, filterByPerson, isoWeekOf, prepLinesForDate } from "@packages/types";
+import { addDays, courseBucket, courseOf, dayLabel, filterByPerson, isoWeekOf, prepDateOf, prepLinesForDate, shortDayLabel } from "@packages/types";
+import { api, ApiError } from "@/lib/api";
 import { usePlanningData } from "@/lib/use-planning-data";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { useMiseEnPlace } from "@/hooks/use-mise-en-place";
 import { useToast } from "@/hooks/use-toast";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
 import { useFullBleed, useHideChrome } from "@/components/admin/AdminLayout";
+import MoveToDayMenu, { moveDayOptions, OTHER_DATE } from "@/components/admin/MoveToDayMenu";
 import PersonChips from "@/components/admin/PersonChips";
 import PersonPicker from "@/components/admin/PersonPicker";
 import { cn } from "@/lib/utils";
 import {
   ActionMenu, Button, BUTTON_BASE, BUTTON_SIZE, BUTTON_VARIANT, EditableText, ICON_BUTTON_SIZE, IconButton, PageHeader, Property, PropertyList,
-  RecipeReader, SectionToggle, StatusControl, Tag,
+  RecipeReader, SectionToggle, SelectPill, StatusControl, Tag,
 } from "@/components/ui";
 import type { ActionMenuItem } from "@/components/ui";
 
@@ -27,6 +29,11 @@ function isTypingTarget(e: KeyboardEvent): boolean {
   const t = e.target as HTMLElement | null;
   if (!t) return false;
   return t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable;
+}
+
+// The move list of the fiche: the six days before the event day, then the event day.
+function sevenDaysEndingOn(date: string): string[] {
+  return Array.from({ length: 7 }, (_, i) => addDays(date, i - 6));
 }
 
 export default function PrepSheet() {
@@ -43,12 +50,14 @@ export default function PrepSheet() {
   const personQuery = personne ? `?personne=${encodeURIComponent(personne)}` : "";
   const from = (location.state as { from?: string } | null)?.from;
 
-  const { events, recipeById, clientById, ingredientById, courses, people, loading, error, patchLine } = usePlanningData();
+  const { events, recipeById, clientById, ingredientById, courses, people, loading, error, patchLine, replaceEvent } = usePlanningData();
 
   const event = events.find((e) => e.eventId === eventId);
   const line = event?.recipes.find((l) => l.lineId === lineId);
   const recipe = line ? recipeById.get(line.recipeId) : undefined;
-  const date = event?.date.slice(0, 10) ?? "";
+  const eventDate = event?.date.slice(0, 10) ?? "";
+  // The prep day: the pager, the back link and the crumb follow it.
+  const date = event && line ? prepDateOf(line, event) : eventDate;
 
   const [portions, setPortions] = useState<number | null>(null);
   const [editPortions, setEditPortions] = useState(false);
@@ -56,6 +65,9 @@ export default function PrepSheet() {
   const [scaleSteps, setScaleSteps] = useLocalStorage<boolean>("recipe-book:scale-steps", true);
   const [saving, setSaving] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const moveRef = useRef<HTMLSpanElement>(null);
+  const dateInput = useRef<HTMLInputElement>(null);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const readerRef = useRef<HTMLDivElement>(null);
   const [ingredientsOut, setIngredientsOut] = useState(false);
@@ -63,7 +75,7 @@ export default function PrepSheet() {
 
   const linePortions = line?.portions;
   useEffect(() => { if (linePortions !== undefined) setPortions(linePortions); }, [lineId, linePortions]);
-  useEffect(() => { setEditPortions(false); setPickerOpen(false); }, [lineId]);
+  useEffect(() => { setEditPortions(false); setPickerOpen(false); setMoveOpen(false); }, [lineId]);
 
   const dayLines = useMemo(() => {
     const all = date ? prepLinesForDate(events, recipeById, clientById, courses, date) : [];
@@ -197,6 +209,37 @@ export default function PrepSheet() {
     }
   };
 
+  // Moves the line to another prep day, then reopens the fiche so the pager rebuilds on that day.
+  const moveTo = async (d: string) => {
+    if (!line || !d || d === date) return;
+    setSaving(true);
+    try {
+      await patchLine(eventId, lineId, { prepDate: d === eventDate ? null : d });
+      toast({ title: `Déplacée au ${shortDayLabel(d)}` });
+      navigate(`/events/${eventId}/lines/${lineId}${personQuery}`, { replace: true });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        api.events.get(eventId).then(replaceEvent).catch(() => undefined);
+        fail("Le menu a changé ailleurs, il a été rechargé");
+      } else {
+        fail("Erreur lors du déplacement");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openDatePicker = () => {
+    const el = dateInput.current;
+    if (!el) return;
+    try {
+      if (typeof el.showPicker === "function") el.showPicker();
+      else el.focus();
+    } catch {
+      el.focus();
+    }
+  };
+
   if (loading) return <div className="p-6 text-sm text-muted-foreground">Chargement…</div>;
   if (error) return <div className="p-6 text-sm text-danger">{error}</div>;
   if (!event || !line || !recipe) {
@@ -220,10 +263,16 @@ export default function PrepSheet() {
   const activePeople = people.some((p) => p.active);
   const cookUrl = `/recipes/${recipe.recipeId}/cook?portions=${shown}&event=${eventId}&line=${lineId}${personne ? `&personne=${encodeURIComponent(personne)}` : ""}`;
   const cookState = { from: location.pathname + location.search };
+  const moved = date !== eventDate;
+  const moveDays = sevenDaysEndingOn(eventDate);
+  // The current day joins the list when it is outside the seven days; the chosen one carries the event day.
+  const dayOptions = moveDayOptions(eventDate, moveDays.includes(date) ? moveDays : [...moveDays, date].sort())
+    .map((o) => (o.value === date && moved ? { ...o, label: `${shortDayLabel(date)} · pour ${shortDayLabel(eventDate)}` } : o));
 
   const menuItems: ActionMenuItem[] = [
     { kind: "check", label: "Texte plus grand", icon: <Type />, checked: size === "xl", onClick: () => setSize(size === "xl" ? "lead" : "xl") },
     { label: "Modifier les portions", icon: <SlidersHorizontal />, onClick: () => setEditPortions(true) },
+    { label: "Déplacer au…", icon: <Calendar />, onClick: () => setMoveOpen(true) },
     { kind: "check", label: "Quantités de base", icon: <Scale />, checked: !scaleSteps, onClick: () => setScaleSteps((v) => !v) },
     { label: "Tout décocher", icon: <Square />, onClick: () => mep.clear() },
     { kind: "separator" },
@@ -276,7 +325,20 @@ export default function PrepSheet() {
               )}
             </>
           )}
-          <ActionMenu items={menuItems} title={recipe.name} />
+          <span ref={moveRef} className="relative inline-flex">
+            <ActionMenu items={menuItems} title={recipe.name} />
+            <MoveToDayMenu
+              open={moveOpen}
+              onClose={() => setMoveOpen(false)}
+              anchorRef={moveRef}
+              align="right"
+              title={`Déplacer « ${recipe.name} »`}
+              eventDate={eventDate}
+              current={date}
+              days={moveDays}
+              onPick={(d) => { setMoveOpen(false); void moveTo(d); }}
+            />
+          </span>
           <span className="ml-1 touch:hidden">{cookButton}</span>
         </div>
       </div>
@@ -293,8 +355,29 @@ export default function PrepSheet() {
               icon="🎉"
               label="Événement"
               kind="computed"
-              value={<Link to={`/events/${eventId}`} state={cookState} className="inline-flex items-center text-primary underline-offset-2 hover:underline touch:min-h-11">{who} · {dayLabel(date)}</Link>}
+              value={<Link to={`/events/${eventId}`} state={cookState} className="inline-flex items-center text-primary underline-offset-2 hover:underline touch:min-h-11">{who} · {dayLabel(eventDate)}</Link>}
             />
+            <Property icon={Calendar} label="Jour de préparation" kind="custom">
+              <span className="relative inline-flex">
+                <SelectPill
+                  colour="gray"
+                  value={date}
+                  options={dayOptions}
+                  onChange={(v) => { if (v === OTHER_DATE) openDatePicker(); else void moveTo(v); }}
+                  aria-label="Jour de préparation"
+                  title="Jour de préparation"
+                />
+                <input
+                  ref={dateInput}
+                  type="date"
+                  value={date}
+                  onChange={(e) => void moveTo(e.target.value)}
+                  aria-label="Choisir une date"
+                  tabIndex={-1}
+                  className="sr-only absolute bottom-0 left-0"
+                />
+              </span>
+            </Property>
             {activePeople && (
               <Property icon={User} label="Personne" kind="custom">
                 <span className="relative inline-flex">

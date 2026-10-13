@@ -41,7 +41,7 @@ export type PropertyProps = PropertyBase & (
   | { kind: "custom"; children: ReactNode }
 );
 
-const DT = "flex h-[34px] w-40 shrink-0 items-center gap-1.5 text-sm text-muted-foreground touch:h-11 touch:w-28";
+const DT = "flex h-[34px] w-40 shrink-0 items-center gap-1.5 text-sm text-muted-foreground touch:h-11 touch:w-40";
 const DD = "flex min-h-[34px] min-w-0 flex-1 flex-wrap items-center gap-1 py-1.5 text-base touch:min-h-11";
 const INPUT = "-mx-1.5 w-full min-w-0 rounded bg-input-bg px-1.5 text-base shadow-ring outline-none";
 

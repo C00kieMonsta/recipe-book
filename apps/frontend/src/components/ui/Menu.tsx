@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Link } from "react-router-dom";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -37,6 +37,18 @@ export function useMenu() {
 export function Menu({ open, onClose, anchorRef, align = "left", title, children, className, "aria-label": ariaLabel }: MenuProps) {
   const touch = useTouchScreen();
   const panelRef = useRef<HTMLDivElement>(null);
+  const [flip, setFlip] = useState(false);
+
+  // Open upwards when the panel would run past the viewport bottom.
+  useLayoutEffect(() => {
+    if (!open || touch) { setFlip(false); return; }
+    const panel = panelRef.current;
+    const anchor = anchorRef?.current;
+    if (!panel || !anchor) return;
+    const a = anchor.getBoundingClientRect();
+    const h = panel.offsetHeight + 4;
+    setFlip(a.bottom + h > window.innerHeight && a.top - h >= 0);
+  }, [open, touch, anchorRef]);
 
   useEffect(() => {
     if (!open || touch) return;
@@ -75,7 +87,8 @@ export function Menu({ open, onClose, anchorRef, align = "left", title, children
         role="menu"
         aria-label={ariaLabel}
         className={cn(
-          "absolute top-full z-50 mt-1 min-w-[200px] max-w-[320px] rounded-lg bg-background py-1 shadow-menu animate-pop",
+          "absolute z-50 min-w-[200px] max-w-[320px] rounded-lg bg-background py-1 shadow-menu animate-pop",
+          flip ? "bottom-full mb-1" : "top-full mt-1",
           align === "right" ? "right-0" : "left-0",
           className,
         )}

@@ -136,6 +136,9 @@
   aside, nav, .no-print { display: none !important; }
   body { font-size: 12pt; }
   .print-break { break-before: page; }
+  h1, h2, h3 { break-after: avoid; }
+  .print-row { break-inside: avoid; }
+  .print-sheet { font-size: 11pt; }
   [aria-haspopup="dialog"] .border-dashed { display: none !important; }
 }
 

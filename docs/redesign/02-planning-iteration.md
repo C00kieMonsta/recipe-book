@@ -393,7 +393,7 @@ Day page with `?personne=` (5.3): title "Kristoff · Mardi 13 octobre", only his
 
 - A person's day: `/jour/:date?personne=kristoff` → `Imprimer` prints the filtered list; title "Kristoff · Mardi 13 octobre".
 - The whole day by person: `/jour/:date?mode=personne` → `Imprimer` prints one `.print-break` page per person (groups already break).
-- The week by person: `⋯ › Imprimer par personne` sets `printMode = "person"` and renders, in the `print:block` section, one page per active person: "Kristoff" at `text-h2`, then per day with lines "Mardi 20 octobre" at `text-h3` and rows "☐ Poulet basquaise · Hoona · 30 · Plat"; lines with two people print on both pages with "avec Amélie" after the name; a last page "Sans personne" when needed. The default week print adds the initials in parentheses after each line.
+- The week: ⋯ › Imprimer la semaine… opens `/semaine/:isoWeek/imprimer`, built from `weekPrintPages()` (05-week-tasks-print.md section 6.11); options Une page par jour, Avec les ingrédients, Par personne.
 
 ### 4.8 Deferred: team link without login
 

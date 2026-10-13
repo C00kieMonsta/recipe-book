@@ -840,17 +840,17 @@ Point 3, week box:
 
 Point 4, tasks and moved lines:
 
-- [ ] `week-1366.png` (same capture as above): the Thu 15 column shows, after its own event, the group « pour sam. 17 · Mariage Dupont » with « Sablés bretons » and the task « Dégeler le poisson »; the Fri 16 column shows the task « Cuire les sablés » with the KR chip; the Mariage Dupont card reads « 60 conv. · 7 lignes · 1 un autre jour »; the Sat 17 column does not list Sablés bretons; each column ends with « + Nouvel événement » and « + Tâche ».
+- [ ] `week-1366.png` (same capture as above): the Thu 15 column shows, after its own event, the group « pour sam. 17 · Mariage Dupont » with « Sablés bretons » and the task « Dégeler le poisson »; the Fri 16 column shows the task « Cuire les sablés » with the KR chip; the Mariage Dupont card reads « 60 conv. · 7 lignes · 2 un autre jour »; the Sat 17 column does not list Sablés bretons; each column ends with « + Nouvel événement » and « + Tâche ».
 - [ ] `week-row-menu-1366.png` (hover the Sablés row, click its ⋯, click « Déplacer au… »): radio list « Le jour même · sam. 17 », « lun. 12 » … « dim. 18 » without sam. 17, « jeu. 15 » checked, « Autre date… », caption « Les courses restent celles de l'événement. ».
 - [ ] Behaviour (1366): drag « Sablés bretons » from Thu 15 to Fri 16; the row moves, `GET /admin/events/f03ad103…` shows `prepDate: "2026-10-16"`; drag it to Sat 17; the line has no `prepDate`.
 - [ ] `week-composer-1366.png` (click « + Tâche » in the Wed 14 column): the composer box with the placeholder and the pill « Hoona · mer. 14 »; typing « Commander le pain » and Enter adds the row under Hoona's lines and keeps the composer open.
 - [ ] `week-task-375.png` (`/semaine/2026-W42`, scroll to Jeu 15): the moved-in group and the task rows with a visible ⋯ at the row end, « + Tâche » under the day.
-- [ ] `week-task-dialog-375.png` (tap « + Tâche » on Jeu 15): Sheet « Nouvelle tâche », « Quoi » focused, « Quel jour » 15/10/2026, « Pour quel événement » « Lunch étude Delen · jeu. 15 », « Qui » chips, caption.
+- [ ] `week-task-dialog-375.png` (tap « + Tâche » on Jeu 15): Sheet « Nouvelle tâche », « Quoi » focused, « Quel jour » 15/10/2026, « Pour quel événement » « Hoona · jeu. 15 », « Qui » chips, caption.
 - [ ] `day-1366.png` (`/jour/2026-10-15`): meta reads « 3 événements · 67 convives · n préparations · 0 faites » where n = the day's own lines + 1 (Sablés) + 1 (the task); after the day's events, a group « Mariage Dupont » with the tag « pour sam. 17 » and the subtitle starting « pour samedi 17 octobre »; « Dégeler le poisson » with the second line « Tâche »; « + Tâche » after the groups.
-- [ ] `day-personne-375.png` (`/jour/2026-10-16?personne=kristoff`): « Cuire les sablés » listed with « Mariage Dupont · tâche » as second line.
+- [ ] `day-personne-375.png` (`/jour/2026-10-16?personne=kristoff`): « Cuire les sablés » listed with « Famille Dupont · tâche » as second line.
 - [ ] `fiche-moved-1366.png` (the Sablés fiche `/events/f03ad103…/lines/<lineId>`): property « Jour de préparation » reads « jeu. 15 · pour sam. 17 », the crumb reads « Semaine 42 / Jeu 15 / Sablés bretons », the pager counts Thursday's lines.
 - [ ] `event-tasks-1366.png` (`/events/f03ad103…`): the « Tâches » section with two rows, date tags « jeu. 15 » and « ven. 16 », the Sablés line with a gray « jeu. 15 » tag; `event-tasks-375.png` same stacked.
-- [ ] Behaviour: change the event date to 2026-10-24 on the event page; toast « Date modifiée · 3 préparations déplacées avec l'événement »; the tasks read « jeu. 22 » and « ven. 23 »; change it back.
+- [ ] Behaviour: change the event date to 2026-10-24 on the event page; toast « Date modifiée · 4 préparations déplacées avec l'événement »; the tasks read « jeu. 22 » and « ven. 23 »; change it back.
 - [ ] Behaviour: ⋯ › Dupliquer to 2026-10-24: the copy has the Sablés line with `prepDate` 2026-10-22 and two tasks dated 22 and 23 with no `prepStatus`.
 - [ ] `assign-sheet-1366.png` (week › « Choisir qui fait quoi »): Mariage Dupont lists its seven lines and two tasks (gray « tâche » tags), title « n préparations sans personne ».
 - [ ] Checklist row on W42 reads « 5 préparations et 1 tâche sans personne (…) » (counts depend on the seed; the word « tâche » must appear).
@@ -858,7 +858,7 @@ Point 4, tasks and moved lines:
 Point 5, print:
 
 - [ ] `week-menu-1366.png` (click the week ⋯): items « Afficher les lignes », « Afficher les événements », « Créer les courses de la semaine », « Imprimer la semaine… », « Partager avec … »; no « Imprimer » and no « Imprimer par personne ».
-- [ ] `print-week-1366.png` (`/semaine/2026-W42/imprimer`, fullPage): toolbar with « ‹ Semaine 42 », Options, blue « Imprimer »; h1 « Semaine 42 · 12 au 18 octobre 2026 »; a section per day with rows (box, name, category, portions, initials); on Thursday the block « Pour samedi 17 octobre · Mariage Dupont » with Sablés bretons and « Dégeler le poisson » (category « Tâche », no portions); on Saturday « 1 préparation prévue jeu. 15 » under the Mariage Dupont heading.
+- [ ] `print-week-1366.png` (`/semaine/2026-W42/imprimer`, fullPage): toolbar with « ‹ Semaine 42 », Options, blue « Imprimer »; h1 « Semaine 42 · 12 au 18 octobre 2026 »; a section per day with rows (box, name, category, portions, initials); on Thursday the block « Pour samedi 17 octobre · Mariage Dupont » with Sablés bretons and « Dégeler le poisson » (category « Tâche », no portions); on Saturday « 2 préparations prévues mar. 13, jeu. 15 » under the Mariage Dupont heading.
 - [ ] `print-week-ingredients-1366.png` (`/semaine/2026-W42/imprimer?ingredients=1`): two-column ingredient lists under each recipe row, quantities in kg or g through `fmtQtyText`.
 - [ ] `print-week-person-1366.png` (`/semaine/2026-W42/imprimer?par=personne`): a page per active person (Amélie, Kristoff), then « Sans personne » if needed; a shared line shows « avec Amélie ».
 - [ ] `print-week-375.png` (`/semaine/2026-W42/imprimer`): the same content, « Imprimer / Partager » 44px, the caption about PDF, no horizontal scroll.

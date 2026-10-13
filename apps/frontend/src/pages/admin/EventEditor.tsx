@@ -5,7 +5,6 @@ import type {
   AppEvent,
   AppSettings,
   Client,
-  ClientKind,
   EventExtraCost,
   EventRecipeLine,
   ExtraCostKind,
@@ -15,7 +14,7 @@ import type {
   Recipe,
   VatRate,
 } from "@packages/types";
-import { DEFAULT_COURSES, DEFAULT_PRESTATION_TYPES, VAT_RATES } from "@packages/types";
+import { DEFAULT_COURSES, DEFAULT_PRESTATION_TYPES, VAT_RATES, groupByCourse } from "@packages/types";
 import { api, ApiError, type EventInput } from "@/lib/api";
 import { longDayLabel, todayIso, weekdayOf } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
@@ -23,6 +22,7 @@ import { calcEventCost, calcRecipeCost, fmt } from "@/lib/recipe-helpers";
 import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
 import { FieldLabel, NumericInput, PageHeader, Section, Tag, Button, IconButton, SearchSelect, MoneyTile } from "@/components/ui";
 import { PersonChip } from "@/components/admin/PersonChips";
+import NewClientDialog from "@/components/admin/NewClientDialog";
 
 // Lines of a not-yet-created event have no lineId; the server fills it on POST.
 type LocalLine = Omit<EventRecipeLine, "lineId"> & { lineId?: string };
@@ -81,11 +81,11 @@ export default function EventEditor() {
   const retour = safeReturn(searchParams.get("retour"));
 
   const [newClientOpen, setNewClientOpen] = useState(false);
-  const [newClientName, setNewClientName] = useState("");
-  const [newClientKind, setNewClientKind] = useState<ClientKind>("entreprise");
-  const [creatingClient, setCreatingClient] = useState(false);
+  const [clientsConfigured, setClientsConfigured] = useState(true);
 
   const initialized = useRef(false);
+  // Set by addRecipe so only a freshly added line without a category takes the focus.
+  const justAdded = useRef(false);
   const savingRef = useRef(false);
   const pendingRef = useRef(false);
   const createdIdRef = useRef<string | null>(null);
@@ -123,7 +123,10 @@ export default function EventEditor() {
           api.recipes.list(),
           api.ingredients.list(),
           // The clients table may not be provisioned yet; the editor must still open.
-          api.clients.list().catch((e: unknown) => (e instanceof ApiError && e.status === 503 ? [] : Promise.reject(e))),
+          api.clients.list().catch((e: unknown) => {
+            if (e instanceof ApiError && e.status === 503) { setClientsConfigured(false); return [] as Client[]; }
+            throw e;
+          }),
           api.settings.get(),
         ]);
         setAllRecipes(recs);
@@ -277,6 +280,20 @@ export default function EventEditor() {
     () => [...allRecipes].sort((a, b) => a.name.localeCompare(b.name, "fr")).map((r) => ({ value: r.recipeId, label: r.name, detail: r.type })),
     [allRecipes],
   );
+  const recipeById = useMemo(() => new Map(allRecipes.map((r) => [r.recipeId, r])), [allRecipes]);
+
+  // Lines grouped under their category; lines with no value and no recipe default go last under « Non définie ».
+  const indexById = useMemo(() => new Map(costLines.map((l, i) => [l.lineId, i])), [costLines]);
+  const menuGroups = useMemo(() => {
+    const undefinedLines = costLines.filter((rl) => !rl.course && !recipeById.get(rl.recipeId)?.defaultCourse);
+    const rest = costLines.filter((rl) => rl.course || recipeById.get(rl.recipeId)?.defaultCourse);
+    const groups = groupByCourse(rest, courses, recipeById);
+    return undefinedLines.length > 0 ? [...groups, { course: "Non définie", lines: undefinedLines }] : groups;
+  }, [costLines, courses, recipeById]);
+  const lastLineId = costLines.length > 0 ? costLines[costLines.length - 1].lineId : null;
+
+  // autoFocus only fires at mount, so the flag can drop once the added line has rendered.
+  useEffect(() => { justAdded.current = false; }, [recipes]);
 
   const runLineOp = async (op: () => Promise<AppEvent>) => {
     setSaving(true);
@@ -300,6 +317,7 @@ export default function EventEditor() {
     if (recipes.some((r) => r.recipeId === recipeId) && !window.confirm("Cette recette est déjà dans le menu. Ajouter une seconde ligne ?")) return;
     const rec = allRecipes.find((r) => r.recipeId === recipeId);
     const line: LocalLine = { recipeId, portions: Math.max(1, Math.round(guestCount)), course: rec?.defaultCourse };
+    justAdded.current = true;
     if (currentId) {
       runLineOp(() => api.events.lines.add(currentId, { recipeId: line.recipeId, portions: line.portions, course: line.course }));
     } else {
@@ -343,22 +361,10 @@ export default function EventEditor() {
     if (c) applyClientDefaults(c, prestationTypes);
   };
 
-  const createClient = async () => {
-    const trimmed = newClientName.trim();
-    if (!trimmed) return;
-    setCreatingClient(true);
-    try {
-      const c = await api.clients.create({ name: trimmed, kind: newClientKind, templates: [], active: true });
-      setClients([...clients, c].sort((a, b) => a.name.localeCompare(b.name, "fr")));
-      setClientId(c.clientId);
-      applyClientDefaults(c, prestationTypes);
-      setNewClientOpen(false);
-      setNewClientName("");
-    } catch {
-      toast({ title: "Erreur lors de la création du client", variant: "destructive" });
-    } finally {
-      setCreatingClient(false);
-    }
+  const onClientCreated = (c: Client) => {
+    setClients([...clients, c].sort((a, b) => a.name.localeCompare(b.name, "fr")));
+    setClientId(c.clientId);
+    applyClientDefaults(c, prestationTypes);
   };
 
   const onPrestationChange = (key: string) => {
@@ -425,31 +431,12 @@ export default function EventEditor() {
             <select id="ev-client" className="input-field" value={clientId} onChange={(e) => onClientChange(e.target.value)}>
               <option value="">Aucun client</option>
               {clients.map((c) => <option key={c.clientId} value={c.clientId}>{c.name}</option>)}
-              <option value={NEW_CLIENT}>Nouveau client…</option>
+              {clientsConfigured && <option value={NEW_CLIENT}>Nouveau client…</option>}
             </select>
-            <Link to="#" onClick={(e) => { e.preventDefault(); onClientChange(NEW_CLIENT); }} className="mt-1 inline-block text-sm text-primary hover:underline">+ Nouveau client</Link>
-            <p className="mt-1 text-sm text-muted-foreground">Choisir un client remplit le menu, les convives, le prix et l'équipe depuis sa semaine type.</p>
-            {newClientOpen && (
-              <div className="mt-3 rounded-lg bg-surface p-4">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <FieldLabel htmlFor="new-client-name">Nom du client</FieldLabel>
-                    <input id="new-client-name" className="input-field" autoFocus value={newClientName} onChange={(e) => setNewClientName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); createClient(); } }} />
-                  </div>
-                  <div>
-                    <FieldLabel htmlFor="new-client-kind">Type</FieldLabel>
-                    <select id="new-client-kind" className="input-field" value={newClientKind} onChange={(e) => setNewClientKind(e.target.value as ClientKind)}>
-                      <option value="entreprise">Entreprise</option>
-                      <option value="particulier">Particulier</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="mt-3 flex gap-2">
-                  <Button variant="primary" size="md" onClick={createClient} disabled={creatingClient || !newClientName.trim()}>Créer le client</Button>
-                  <Button variant="default" size="md" onClick={() => { setNewClientOpen(false); setNewClientName(""); }}>Annuler</Button>
-                </div>
-              </div>
+            {clientsConfigured && (
+              <Link to="#" onClick={(e) => { e.preventDefault(); onClientChange(NEW_CLIENT); }} className="mt-1 inline-block text-sm text-primary hover:underline">+ Nouveau client</Link>
             )}
+            <p className="mt-1 text-sm text-muted-foreground">Choisir un client remplit le menu, les convives, le prix et l'équipe depuis sa semaine type.</p>
           </div>
           <div className="sm:col-span-2">
             <FieldLabel>Équipe</FieldLabel>
@@ -538,47 +525,67 @@ export default function EventEditor() {
         )}
 
         {recipes.length > 0 && (
-          <ul className="mt-4 divide-y divide-border">
-            {recipes.map((rl, i) => {
-              const rec = allRecipes.find((r) => r.recipeId === rl.recipeId);
-              const costPerPortion = (recipeCostMap.get(rl.recipeId) || 0) / (recipePortionMap.get(rl.recipeId) || 1);
-              const lineCost = costPerPortion * rl.portions;
-              const courseValue = rl.course ?? rec?.defaultCourse ?? "";
-              return (
-                <li key={rl.lineId ?? `local-${i}`} className="py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <Link to={`/recipes/${rl.recipeId}`} className="min-w-0 flex-1 truncate text-sm font-medium hover:underline touch:text-base">
-                      {rec?.name || "Recette inconnue"}
-                    </Link>
-                    <IconButton size="sm" aria-label="Retirer la recette" onClick={() => removeRecipeLine(i)} icon={<X />} />
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-end gap-3">
-                    <div className="w-36">
-                      <FieldLabel htmlFor={`ev-line-course-${i}`}>Catégorie</FieldLabel>
-                      <select id={`ev-line-course-${i}`} className="input-field" value={courseValue} onChange={(e) => patchLine(i, { course: e.target.value || rec?.defaultCourse || "Autre" })}>
-                        {!courseValue && <option value="">Non définie</option>}
-                        {courseOptions(courseValue).map((c) => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
-                    <div className="w-28">
-                      <FieldLabel htmlFor={`ev-line-portions-${i}`}>Portions</FieldLabel>
-                      <NumericInput id={`ev-line-portions-${i}`} className="input-field text-right" value={rl.portions} onChange={(v) => { const p = Math.max(1, Math.round(v)); if (p !== rl.portions) patchLine(i, { portions: p }); }} min={1} />
-                    </div>
-                    <div className="ml-auto text-right text-sm text-muted-foreground tabular-nums">
-                      <div>{fmt(costPerPortion)} / portion</div>
-                      <div className="font-medium text-foreground">{fmt(lineCost)}</div>
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-            <li className="flex items-center justify-between border-t border-divider py-3 text-sm font-semibold">
+          <div className="mt-4">
+            {menuGroups.map((group) => (
+              <div key={group.course} className="mt-4 first:mt-0">
+                <h3 className="text-base font-semibold">{group.course}</h3>
+                <ul className="mt-1 divide-y divide-border">
+                  {group.lines.map((rl) => {
+                    const i = indexById.get(rl.lineId) ?? 0;
+                    const rec = recipeById.get(rl.recipeId);
+                    const costPerPortion = (recipeCostMap.get(rl.recipeId) || 0) / (recipePortionMap.get(rl.recipeId) || 1);
+                    const lineCost = costPerPortion * rl.portions;
+                    const courseValue = rl.course ?? rec?.defaultCourse ?? "";
+                    const focusSelect = !courseValue && justAdded.current && rl.lineId === lastLineId;
+                    return (
+                      <li key={rl.lineId} className="py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <Link to={`/recipes/${rl.recipeId}`} className="min-w-0 flex-1 truncate text-sm font-medium hover:underline touch:text-base">
+                            {rec?.name || "Recette inconnue"}
+                          </Link>
+                          <IconButton size="sm" aria-label="Retirer la recette" onClick={() => removeRecipeLine(i)} icon={<X />} />
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-end gap-3">
+                          <div className="w-36">
+                            <FieldLabel htmlFor={`ev-line-course-${i}`}>Catégorie</FieldLabel>
+                            <select id={`ev-line-course-${i}`} className="input-field" value={courseValue} autoFocus={focusSelect} onChange={(e) => patchLine(i, { course: e.target.value || rec?.defaultCourse || "Autre" })}>
+                              {!courseValue && <option value="">Non définie</option>}
+                              {courseOptions(courseValue).map((c) => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </div>
+                          <div className="w-28">
+                            <FieldLabel htmlFor={`ev-line-portions-${i}`}>Portions</FieldLabel>
+                            <NumericInput id={`ev-line-portions-${i}`} className="input-field text-right" value={rl.portions} onChange={(v) => { const p = Math.max(1, Math.round(v)); if (p !== rl.portions) patchLine(i, { portions: p }); }} min={1} />
+                          </div>
+                          <div className="ml-auto text-right text-sm text-muted-foreground tabular-nums">
+                            <div>{fmt(costPerPortion)} / portion</div>
+                            <div className="font-medium text-foreground">{fmt(lineCost)}</div>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+            <div className="mt-4 flex items-center justify-between border-t border-divider py-3 text-sm font-semibold">
               <span>Sous-total recettes HTVA</span>
               <span className="tabular-nums">{fmt(liveRecipeCost)}</span>
-            </li>
-          </ul>
+            </div>
+          </div>
         )}
       </Section>
+
+      {clientsConfigured && (
+        <NewClientDialog
+          open={newClientOpen}
+          onClose={() => setNewClientOpen(false)}
+          initial={{ name: "", kind: "particulier", contactName, phone: contactPhone, email: contactEmail }}
+          existing={clients}
+          onCreated={onClientCreated}
+          onLinkExisting={(cid) => onClientChange(cid)}
+        />
+      )}
 
       <Section
         title="Coûts supplémentaires"

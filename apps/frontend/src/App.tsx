@@ -5,6 +5,7 @@ import { todayIso } from "@/lib/dates";
 import LoginPage from "@/pages/LoginPage";
 import AdminLayout from "@/components/admin/AdminLayout";
 import Week from "@/pages/admin/Week";
+import WeekPrintPage from "@/pages/admin/WeekPrintPage";
 import Day from "@/pages/admin/Day";
 import PrepSheet from "@/pages/admin/PrepSheet";
 import Recipes from "@/pages/admin/Recipes";
@@ -61,6 +62,7 @@ export default function App() {
         <Route path="/" element={<HomeRedirect />} />
         <Route path="/semaine" element={<WeekIndexRedirect />} />
         <Route path="/semaine/:isoWeek" element={<Week />} />
+        <Route path="/semaine/:isoWeek/imprimer" element={<WeekPrintPage />} />
         <Route path="/jour/aujourdhui" element={<TodayRedirect />} />
         <Route path="/jour/:date" element={<Day />} />
         <Route path="/recipes" element={<Recipes />} />

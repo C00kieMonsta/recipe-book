@@ -9,9 +9,11 @@ import type {
   EventCostSnapshot,
   EventExtraCost,
   EventRecipeLine,
+  EventTask,
   ExtraCostKind,
   Ingredient,
   LedgerEntry,
+  PatchEventTaskRequest,
   Person,
   PrepStatus,
   Recipe,
@@ -38,11 +40,17 @@ import {
   isoWeekOf,
   personName,
   addDays,
+  shortDayLabel,
+  tasksOf,
+  isMoved,
+  prepDateOf,
+  shiftPrepDates,
 } from "@packages/types";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
 import { dayMonthShortLabel, longDayLabel, dayMonthLabel, weekdayOf, todayIso } from "@/lib/dates";
+import { plural } from "@/lib/use-planning-data";
 import {
   PageHeader,
   Section,
@@ -74,6 +82,9 @@ import { PREP_STATUS_OPTIONS } from "@/components/ui/StatusControl";
 import LedgerEntryForm from "@/components/comptes/LedgerEntryForm";
 import PersonChips, { PersonChip } from "@/components/admin/PersonChips";
 import PersonPicker from "@/components/admin/PersonPicker";
+import NewClientDialog from "@/components/admin/NewClientDialog";
+import TaskDialog, { type TaskDialogValue } from "@/components/admin/TaskDialog";
+import MoveToDayMenu from "@/components/admin/MoveToDayMenu";
 import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
 import { PaidPopover } from "@/pages/admin/comptes/Journal";
 import { jsPDF } from "jspdf";
@@ -108,7 +119,15 @@ function safeFileName(name: string): string {
   return name.replace(/[^a-zA-Z0-9àâéèêëïîôùûüç\s-]/g, "").trim() || "evenement";
 }
 
+// "jeudi 15 octobre", for use after "le".
+function dayPhrase(date: string): string {
+  const s = longDayLabel(date);
+  return s.charAt(0).toLowerCase() + s.slice(1);
+}
+
 type DropTarget = { course: string; lineId: string | null };
+type MoveTarget = { kind: "line" | "task"; id: string };
+type TaskDialogState = { mode: "create" | "edit"; taskId?: string; initial: TaskDialogValue };
 
 const ROW = "group flex min-h-9 items-center gap-1 rounded px-1 hover:bg-hover touch:min-h-11";
 
@@ -125,6 +144,7 @@ export default function EventDetail() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
+  const [clientsConfigured, setClientsConfigured] = useState(true);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [ledgerNotConfigured, setLedgerNotConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -133,11 +153,17 @@ export default function EventDetail() {
   const [dialog, setDialog] = useState<
     | { kind: "delete" }
     | { kind: "removeLine"; lineId: string }
+    | { kind: "removeTask"; taskId: string }
     | { kind: "adjust" }
     | { kind: "duplicate" }
     | { kind: "template" }
     | null
   >(null);
+  const [newClient, setNewClient] = useState<{ name: string } | null>(null);
+  const [taskDialog, setTaskDialog] = useState<TaskDialogState | null>(null);
+  const [pickerTaskId, setPickerTaskId] = useState<string | null>(null);
+  const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
+  const moveAnchorRef = useRef<HTMLSpanElement>(null);
   const [busy, setBusy] = useState(false);
   const [adjustGuests, setAdjustGuests] = useState("");
   const [duplicateDate, setDuplicateDate] = useState(todayIso());
@@ -165,7 +191,7 @@ export default function EventDetail() {
       api.ingredients.list(),
       api.settings.get(),
       api.clients.list().catch((e: unknown) => {
-        if (e instanceof ApiError && e.status === 503) return [] as Client[];
+        if (e instanceof ApiError && e.status === 503) { setClientsConfigured(false); return [] as Client[]; }
         throw e;
       }),
     ])
@@ -264,6 +290,22 @@ export default function EventDetail() {
     }
   };
 
+  // Same as runLines but rethrows, so TaskDialog stays open on failure.
+  const runTask = async (call: Promise<AppEvent>, okTitle: string) => {
+    try {
+      setEvent(await call);
+      toast({ title: okTitle });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409 && id) {
+        toast({ title: "Le menu a changé ailleurs, il a été rechargé", variant: "destructive" });
+        api.events.get(id).then(setEvent).catch(() => undefined);
+      } else {
+        toast({ title: "Erreur lors de l'enregistrement de la tâche", variant: "destructive" });
+      }
+      throw e;
+    }
+  };
+
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
   if (loadError || !event || !id) return <div className="p-8 text-muted-foreground">Événement introuvable.</div>;
 
@@ -327,8 +369,48 @@ export default function EventDetail() {
     orderedPut(groups, target.course !== sourceCourse ? { lineId: dragged.lineId, course: target.course } : undefined);
   };
 
-  const patchLine = (lineId: string, patch: { portions?: number; prepStatus?: PrepStatus; notes?: string; assignedTo?: string[] }) =>
+  const patchLine = (lineId: string, patch: { portions?: number; prepStatus?: PrepStatus; notes?: string; assignedTo?: string[]; prepDate?: string | null }) =>
     runLines(api.events.lines.patch(id, lineId, patch));
+
+  // ── Tasks ─────────────────────────────────────────────────────────────────
+  const tasks = tasksOf(event);
+  // The seven days ending on the event day, for « Déplacer au… ».
+  const moveDays = Array.from({ length: 7 }, (_, i) => addDays(event.date, i - 6));
+
+  const patchTask = (taskId: string, patch: PatchEventTaskRequest) => runLines(api.events.tasks.patch(id, taskId, patch));
+
+  const openTaskCreate = () =>
+    setTaskDialog({ mode: "create", initial: { label: "", date: event.date, eventId: event.eventId, assignedTo: [], notes: "" } });
+  const openTaskEdit = (task: EventTask) =>
+    setTaskDialog({ mode: "edit", taskId: task.taskId, initial: { label: task.label, date: task.date, eventId: event.eventId, assignedTo: task.assignedTo ?? [], notes: task.notes ?? "" } });
+
+  const submitTask = async (v: TaskDialogValue) => {
+    if (taskDialog?.mode === "edit" && taskDialog.taskId) {
+      await runTask(api.events.tasks.patch(id, taskDialog.taskId, { label: v.label, date: v.date, notes: v.notes, assignedTo: v.assignedTo }), "Tâche enregistrée");
+      return;
+    }
+    await runTask(api.events.tasks.add(id, {
+      label: v.label,
+      date: v.date,
+      ...(v.notes ? { notes: v.notes } : {}),
+      ...(v.assignedTo.length ? { assignedTo: v.assignedTo } : {}),
+    }), "Tâche ajoutée");
+  };
+
+  const deleteTask = (taskId: string) => runTask(api.events.tasks.remove(id, taskId), "Tâche supprimée");
+
+  const moveTo = (target: MoveTarget, date: string) => {
+    setMoveTarget(null);
+    if (target.kind === "line") patchLine(target.id, { prepDate: date === event.date ? null : date });
+    else patchTask(target.id, { date });
+  };
+
+  const changeDate = (date: string) => {
+    if (date === event.date) return;
+    const shifted = event.recipes.filter((l) => l.prepDate).length + tasks.length;
+    const title = shifted > 0 ? `Date modifiée · ${plural(shifted, "préparation déplacée", "préparations déplacées")} avec l'événement` : undefined;
+    return saveField({ date }, title);
+  };
 
   const addRecipe = (recipeId: string) => {
     const recipe = recipeById.get(recipeId);
@@ -392,16 +474,19 @@ export default function EventDetail() {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(duplicateDate)) return;
     setBusy(true);
     try {
+      const shifted = shiftPrepDates(event, duplicateDate);
       const payload = {
         name: `${event.name} (copie)`,
         date: duplicateDate,
         guestCount: event.guestCount,
-        recipes: event.recipes.map((l) => ({
+        recipes: shifted.recipes.map((l) => ({
           recipeId: l.recipeId,
           portions: l.portions,
           ...(l.course ? { course: l.course } : {}),
           ...(l.notes ? { notes: l.notes } : {}),
+          ...(l.prepDate ? { prepDate: l.prepDate } : {}),
         })),
+        tasks: shifted.tasks.map((t) => ({ label: t.label, date: t.date, ...(t.notes ? { notes: t.notes } : {}) })),
         extraCosts: event.extraCosts,
         sellingPricePerGuest: event.sellingPricePerGuest,
         notes: event.notes,
@@ -633,6 +718,7 @@ export default function EventDetail() {
     const recipe = recipeById.get(line.recipeId);
     const status: PrepStatus = line.prepStatus ?? "todo";
     const isDropBefore = dropTarget?.course === group.course && dropTarget.lineId === line.lineId;
+    const isMoveOpen = moveTarget?.kind === "line" && moveTarget.id === line.lineId;
     return (
       <div
         key={line.lineId}
@@ -659,10 +745,16 @@ export default function EventDetail() {
               {recipe?.name ?? "Recette supprimée"}
             </Link>
             {line.notes && noteLineId !== line.lineId && <span className="block text-sm text-muted-foreground md:inline"><span className="hidden md:inline"> · </span>{line.notes}</span>}
+            {isMoved(line, event) && (
+              <Tag colour="gray" className="mt-0.5 md:hidden" title={`Préparée le ${dayPhrase(prepDateOf(line, event))}`}>{shortDayLabel(prepDateOf(line, event))}</Tag>
+            )}
           </div>
           <span className="shrink-0 whitespace-nowrap text-sm tabular-nums touch:text-base" data-portions>
             <EditableInlineNum value={line.portions} min={1} onSave={(v) => patchLine(line.lineId, { portions: Math.max(1, Math.round(v)) })} suffix=" port." />
           </span>
+          {isMoved(line, event) && (
+            <Tag colour="gray" className="hidden shrink-0 md:inline-flex" title={`Préparée le ${dayPhrase(prepDateOf(line, event))}`}>{shortDayLabel(prepDateOf(line, event))}</Tag>
+          )}
           <span className="relative inline-flex shrink-0">
             <PersonChips
               personIds={assigneesOf(line, event)}
@@ -683,25 +775,41 @@ export default function EventDetail() {
               />
             )}
           </span>
-          <ActionMenu
-            className="reveal"
-            title={recipe?.name}
-            items={[
-              { kind: "section", label: "Changer de catégorie" },
-              ...courses.map((c) => ({ kind: "check" as const, label: c, checked: c === group.course, onClick: () => { if (c !== group.course) changeCourse(line, c); } })),
-              { kind: "separator" },
-              { label: "Monter", onClick: () => moveLine(group.course, index, -1), disabled: index === 0 },
-              { label: "Descendre", onClick: () => moveLine(group.course, index, 1), disabled: index === group.lines.length - 1 },
-              { label: "Modifier les portions", onClick: () => focusPortions(line.lineId) },
-              { label: "Assigner", onClick: () => setPickerLineId(line.lineId) },
-              { label: "Note", onClick: () => setNoteLineId(line.lineId) },
-              { kind: "separator" },
-              { label: "Ouvrir la fiche", onClick: () => navigate(`/events/${id}/lines/${line.lineId}`) },
-              { label: "Cuisiner", onClick: () => navigate(`/recipes/${line.recipeId}/cook?portions=${line.portions}&event=${id}&line=${line.lineId}`) },
-              { kind: "separator" },
-              { label: "Retirer", onClick: () => setDialog({ kind: "removeLine", lineId: line.lineId }), variant: "danger" },
-            ]}
-          />
+          <span ref={isMoveOpen ? moveAnchorRef : undefined} className="relative inline-flex shrink-0">
+            <ActionMenu
+              className="reveal"
+              title={recipe?.name}
+              items={[
+                { kind: "section", label: "Changer de catégorie" },
+                ...courses.map((c) => ({ kind: "check" as const, label: c, checked: c === group.course, onClick: () => { if (c !== group.course) changeCourse(line, c); } })),
+                { kind: "separator" },
+                { label: "Monter", onClick: () => moveLine(group.course, index, -1), disabled: index === 0 },
+                { label: "Descendre", onClick: () => moveLine(group.course, index, 1), disabled: index === group.lines.length - 1 },
+                { label: "Modifier les portions", onClick: () => focusPortions(line.lineId) },
+                { label: "Assigner", onClick: () => setPickerLineId(line.lineId) },
+                { label: "Note", onClick: () => setNoteLineId(line.lineId) },
+                { label: "Déplacer au…", onClick: () => setMoveTarget({ kind: "line", id: line.lineId }) },
+                { kind: "separator" },
+                { label: "Ouvrir la fiche", onClick: () => navigate(`/events/${id}/lines/${line.lineId}`) },
+                { label: "Cuisiner", onClick: () => navigate(`/recipes/${line.recipeId}/cook?portions=${line.portions}&event=${id}&line=${line.lineId}`) },
+                { kind: "separator" },
+                { label: "Retirer", onClick: () => setDialog({ kind: "removeLine", lineId: line.lineId }), variant: "danger" },
+              ]}
+            />
+            {isMoveOpen && (
+              <MoveToDayMenu
+                open
+                onClose={() => setMoveTarget(null)}
+                anchorRef={moveAnchorRef}
+                align="right"
+                title={`Déplacer « ${recipe?.name ?? "Recette supprimée"} »`}
+                eventDate={event.date}
+                current={prepDateOf(line, event)}
+                days={moveDays}
+                onPick={(d) => moveTo({ kind: "line", id: line.lineId }, d)}
+              />
+            )}
+          </span>
         </div>
         {noteLineId === line.lineId && (
           <LineNote
@@ -710,6 +818,69 @@ export default function EventDetail() {
             onCancel={() => setNoteLineId(null)}
           />
         )}
+      </div>
+    );
+  };
+
+  const renderTask = (task: EventTask) => {
+    const isMoveOpen = moveTarget?.kind === "task" && moveTarget.id === task.taskId;
+    return (
+      <div key={task.taskId} className={ROW}>
+        <LineStatus value={task.prepStatus ?? "todo"} isTouch={isTouch} onChange={(v) => patchTask(task.taskId, { prepStatus: v })} />
+        <div className="min-w-0 flex-1 px-1">
+          <button type="button" onClick={() => openTaskEdit(task)} title={task.label} className="text-left text-sm text-foreground hover:underline touch:text-base">
+            {task.label}
+          </button>
+          {task.notes && <span className="block text-sm text-muted-foreground md:inline"><span className="hidden md:inline"> · </span>{task.notes}</span>}
+          <Tag colour="gray" className="mt-0.5 md:hidden" title={`Le ${dayPhrase(task.date)}`}>{shortDayLabel(task.date)}</Tag>
+        </div>
+        <Tag colour="gray" className="hidden shrink-0 md:inline-flex" title={`Le ${dayPhrase(task.date)}`}>{shortDayLabel(task.date)}</Tag>
+        <span className="relative inline-flex shrink-0">
+          <PersonChips
+            personIds={assigneesOf(task, event)}
+            people={people}
+            size="sm"
+            inherited={!task.assignedTo?.length}
+            onClick={() => setPickerTaskId(task.taskId)}
+          />
+          {pickerTaskId === task.taskId && (
+            <PersonPicker
+              value={task.assignedTo ?? []}
+              options={people}
+              onChange={(next) => patchTask(task.taskId, { assignedTo: next })}
+              allowInherit
+              align="right"
+              title={task.label}
+              onClose={() => setPickerTaskId(null)}
+            />
+          )}
+        </span>
+        <span ref={isMoveOpen ? moveAnchorRef : undefined} className="relative inline-flex shrink-0">
+          <ActionMenu
+            className="reveal"
+            title={task.label}
+            items={[
+              { label: "Modifier…", onClick: () => openTaskEdit(task) },
+              { label: "Déplacer au…", onClick: () => setMoveTarget({ kind: "task", id: task.taskId }) },
+              { label: "Assigner", onClick: () => setPickerTaskId(task.taskId) },
+              { kind: "separator" },
+              { label: "Supprimer", onClick: () => setDialog({ kind: "removeTask", taskId: task.taskId }), variant: "danger" },
+            ]}
+          />
+          {isMoveOpen && (
+            <MoveToDayMenu
+              open
+              onClose={() => setMoveTarget(null)}
+              anchorRef={moveAnchorRef}
+              align="right"
+              title={`Déplacer « ${task.label} »`}
+              eventDate={event.date}
+              current={task.date}
+              days={moveDays}
+              onPick={(d) => moveTo({ kind: "task", id: task.taskId }, d)}
+            />
+          )}
+        </span>
       </div>
     );
   };
@@ -762,10 +933,26 @@ export default function EventDetail() {
         }
         properties={
           <PropertyList>
-            <Property icon={Calendar} label="Date" kind="date" value={event.date} format={longDayLabel} onSave={(v) => saveField({ date: v })} />
+            <Property icon={Calendar} label="Date" kind="date" value={event.date} format={longDayLabel} onSave={changeDate} />
             <Property icon={Users} label="Convives" kind="number" value={event.guestCount} min={1} decimals={0} onSave={(v) => saveField({ guestCount: Math.max(1, Math.round(v)) })} />
             <Property icon="🍽" label="Prestation" kind="select" value={event.prestationType ?? ""} options={prestationOptions} colour="gray" placeholder="Choisir une prestation" onSave={(v) => saveField({ prestationType: v })} />
-            <Property icon={Building2} label="Client" kind="relation" value={event.clientId ?? ""} options={clientOptions} href={(cid) => `/clients/${cid}`} allowEmpty placeholder="Aucun client" onSave={(v) => saveField({ clientId: v || undefined })} />
+            {clientsConfigured ? (
+              <Property
+                icon={Building2}
+                label="Client"
+                kind="relation"
+                value={event.clientId ?? ""}
+                options={clientOptions}
+                href={(cid) => `/clients/${cid}`}
+                allowEmpty
+                placeholder="Aucun client"
+                createLabel="+ Nouveau client"
+                onCreateNew={(q) => setNewClient({ name: q })}
+                onSave={(v) => saveField({ clientId: v || undefined })}
+              />
+            ) : (
+              <Property icon={Building2} label="Client" kind="computed" value={<Link to="/settings#apropos" className="text-primary hover:underline">Clients non configurés</Link>} />
+            )}
             <Property icon={Euro} label="Prix / convive" kind="custom">
               <div ref={priceRef} className="flex items-center gap-1">
                 <EditableInlineNum value={event.sellingPricePerGuest} onSave={(v) => save({ sellingPricePerGuest: round2(Math.max(0, v)) })} min={0} suffix=" €" />
@@ -847,6 +1034,18 @@ export default function EventDetail() {
           )}
         </Section>
       </div>
+
+      <Section
+        title="Tâches"
+        meta={plural(tasks.length, "tâche")}
+        action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={openTaskCreate}>Tâche</Button>}
+      >
+        {tasks.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Aucune tâche. Une tâche est un travail sans recette : cuire les sablés, dégeler le poisson.</p>
+        ) : (
+          <div>{tasks.map(renderTask)}</div>
+        )}
+      </Section>
 
       <Section
         title="Coûts supplémentaires"
@@ -976,6 +1175,53 @@ export default function EventDetail() {
           {dialog?.kind === "removeLine" ? recipeById.get(event.recipes.find((l) => l.lineId === dialog.lineId)?.recipeId ?? "")?.name ?? "Cette ligne" : ""} sera retirée de l'événement.
         </p>
       </Dialog>
+
+      <Dialog
+        open={dialog?.kind === "removeTask"}
+        onClose={() => setDialog(null)}
+        title={`Supprimer la tâche « ${dialog?.kind === "removeTask" ? tasks.find((t) => t.taskId === dialog.taskId)?.label ?? "" : ""} » ?`}
+        size="sm"
+        footer={
+          <DialogActions
+            onCancel={() => setDialog(null)}
+            onConfirm={() => { if (dialog?.kind === "removeTask") { deleteTask(dialog.taskId).catch(() => undefined); setDialog(null); } }}
+            confirmLabel="Supprimer"
+            danger
+          />
+        }
+      >
+        <p className="text-muted-foreground">Cette action est irréversible.</p>
+      </Dialog>
+
+      <TaskDialog
+        open={taskDialog !== null}
+        onClose={() => setTaskDialog(null)}
+        mode={taskDialog?.mode ?? "create"}
+        initial={taskDialog?.initial ?? { label: "", date: event.date, eventId: event.eventId, assignedTo: [], notes: "" }}
+        events={[]}
+        people={people}
+        onSubmit={submitTask}
+        onDelete={taskDialog?.mode === "edit" && taskDialog.taskId ? () => deleteTask(taskDialog.taskId as string) : undefined}
+      />
+
+      <NewClientDialog
+        open={newClient !== null}
+        onClose={() => setNewClient(null)}
+        initial={{
+          name: newClient?.name || event.contactName,
+          kind: "particulier",
+          contactName: event.contactName,
+          phone: event.contactPhone,
+          email: event.contactEmail,
+        }}
+        existing={clients}
+        onCreated={async (c) => {
+          setClients([...clients, c]);
+          // The client exists now, so the dialog closes even when linking fails.
+          await saveField({ clientId: c.clientId }, "Client créé et lié").catch(() => undefined);
+        }}
+        onLinkExisting={(cid) => saveField({ clientId: cid }, "Client lié").catch(() => undefined)}
+      />
 
       <Dialog
         open={dialog?.kind === "adjust"}

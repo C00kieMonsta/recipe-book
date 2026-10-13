@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ChevronRight, MoreHorizontal, Plus, Printer, Share2, ShoppingCart, UserPlus } from "lucide-react";
-import type { AppEvent, Client, EventRecipeLine, Person, PrepStatus, PrestationTypeSetting, WeekDay } from "@packages/types";
+import { CalendarDays, ChevronRight, FileText, GripVertical, MoreHorizontal, Pencil, Plus, Printer, Share2, ShoppingCart, Trash2, UserPlus } from "lucide-react";
+import type { AppEvent, Client, EventRecipeLine, EventTask, Person, PrepStatus, PrestationTypeSetting, WeekDay, WeekMovedIn } from "@packages/types";
 import {
   addDays,
   assigneesOf,
@@ -13,12 +13,18 @@ import {
   isoWeekOf,
   longDayLabel,
   monthSignedRevenue,
+  movedOutLines,
   objectifMensuel,
+  ownDayLines,
   parseIsoWeek,
   parseYmd,
   personName,
+  prepDateOf,
+  shortDayLabel,
   shortEventName,
   sortEventLines,
+  tasksOf,
+  tasksOn,
   weekChecklist,
   rangeLabel,
   weekdayOf,
@@ -26,9 +32,10 @@ import {
   weekPlan,
   ymOf,
 } from "@packages/types";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { buildGroceryItems, groceryTitleFor } from "@/lib/grocery";
+import { defaultTaskEventId } from "@/lib/tasks";
 import { fmtEur0, NEXT_STATUS, plural, usePlanningData } from "@/lib/use-planning-data";
 import { cn } from "@/lib/utils";
 import { useLocalStorage } from "@/hooks/use-local-storage";
@@ -42,20 +49,32 @@ import WeekChecklist from "@/components/admin/WeekChecklist";
 import AssignSheet from "@/components/admin/AssignSheet";
 import PlanningBar from "@/components/admin/PlanningBar";
 import FirstRunCallout from "@/components/admin/FirstRunCallout";
+import MoveToDayMenu from "@/components/admin/MoveToDayMenu";
+import TaskComposer from "@/components/admin/TaskComposer";
+import TaskDialog, { type TaskDialogValue } from "@/components/admin/TaskDialog";
 import { OPEN_CHECKLIST_EVENT } from "@/components/admin/tour-steps";
 import {
-  Button, Dialog, FieldLabel, FilterButton, FilterChip, FilterGroup, IconButton,
+  ActionMenu, Button, Dialog, FieldLabel, FilterButton, FilterChip, FilterGroup, IconButton,
   Menu, MenuCheck, MenuItem, MenuRadio, MenuSection, MenuSeparator, PageHeader, useMenu,
+  type ActionMenuItem,
 } from "@/components/ui";
 
 const SWIPE_PX = 60;
 const LAST_WEEK_KEY = "recipe-book:last-week";
 
 type WeekView = "lines" | "events";
-type PrintMode = "week" | "person";
+
+// A line or a task being dragged or moved; `current` is its prep day today.
+type DragItem = { kind: "recipe" | "task"; eventId: string; id: string; eventDate: string; current: string };
+
+type TaskDialogState = { mode: "create" | "edit"; eventId: string; taskId?: string; initial: TaskDialogValue };
 
 const num0 = new Intl.NumberFormat("fr-BE", { maximumFractionDigits: 0 });
 const dayMonthShort = new Intl.DateTimeFormat("fr-BE", { day: "numeric", month: "short", timeZone: "UTC" });
+
+// Row actions of the seven-column grid reveal on the row, not on the column, so the column `group` is not reused.
+const ROW_REVEAL = "pointer:opacity-0 pointer:group-hover/row:opacity-100 pointer:group-focus-within/row:opacity-100 touch:opacity-100";
+const CAPTION_ROW = "flex h-7 items-center px-1 text-caption text-muted-foreground";
 
 // "19 au 25 oct.", "28 sept. au 4 oct."
 function shortRange(from: string, to: string): string {
@@ -77,6 +96,23 @@ function lineStatus(line: EventRecipeLine): PrepStatus {
 
 function doneCount(ev: AppEvent): number {
   return ev.recipes.filter((l) => l.prepStatus === "done").length;
+}
+
+function byDateThenName(a: AppEvent, b: AppEvent): number {
+  return a.date.localeCompare(b.date) || a.name.localeCompare(b.name, "fr");
+}
+
+// Moved-out lines and tasks that fall outside the displayed week, counted per day.
+function outsideDays(ev: AppEvent, dates: string[]): { date: string; count: number }[] {
+  const byDate = new Map<string, number>();
+  for (const l of movedOutLines(ev)) {
+    const d = prepDateOf(l, ev);
+    if (!dates.includes(d)) byDate.set(d, (byDate.get(d) ?? 0) + 1);
+  }
+  for (const t of tasksOf(ev)) {
+    if (!dates.includes(t.date)) byDate.set(t.date, (byDate.get(t.date) ?? 0) + 1);
+  }
+  return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, count]) => ({ date, count }));
 }
 
 export default function Week() {
@@ -108,7 +144,8 @@ export default function Week() {
   const data = usePlanningData(year, { withLists: true });
   const {
     events, clients, clientsConfigured, settings, entries, ledgerConfigured, groceryLists, people,
-    recipeById, clientById, ingredientById, recipes, courses, loading, error, patchLine, patchEvent, reload,
+    recipeById, clientById, ingredientById, recipes, courses, loading, error,
+    patchLine, patchEvent, addTask, patchTask, removeTask, reload,
   } = data;
 
   const selectedClient = searchParams.get("client") ?? "";
@@ -130,8 +167,11 @@ export default function Week() {
   const [sheet, setSheet] = useState<{ client: Client; guestCount: number } | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [printMode, setPrintMode] = useState<PrintMode>("week");
-  const [printTick, setPrintTick] = useState(0);
+  const [taskDialog, setTaskDialog] = useState<TaskDialogState | null>(null);
+  const [confirmTask, setConfirmTask] = useState<{ eventId: string; taskId: string; label: string } | null>(null);
+  const [composerDay, setComposerDay] = useState<string | null>(null);
+  const [drag, setDrag] = useState<DragItem | null>(null);
+  const [dropDay, setDropDay] = useState<string | null>(null);
   const touch = useTouchScreen();
   const menu = useMenu();
   const touchStart = useRef<{ x: number; y: number } | null>(null);
@@ -140,22 +180,29 @@ export default function Week() {
   const activePeople = useMemo(() => people.filter((p) => p.active), [people]);
   const firstRun = !loading && recipes.length === 0 && events.length === 0 && activePeople.length === 0;
   const prestationTypes: PrestationTypeSetting[] = settings?.prestationTypes?.length ? settings.prestationTypes : DEFAULT_PRESTATION_TYPES;
+  const clientOf = (ev: AppEvent) => (ev.clientId ? clientById.get(ev.clientId) : undefined);
 
   const weekEvents = useMemo(
     () => events.filter((e) => e.date.slice(0, 10) >= dates[0] && e.date.slice(0, 10) <= dates[6]),
     [events, dates],
   );
+  const weekEventsSorted = useMemo(() => [...weekEvents].sort(byDateThenName), [weekEvents]);
   const clientsThisWeek = useMemo(
     () => clients.filter((c) => weekEvents.some((e) => e.clientId === c.clientId)),
     [clients, weekEvents],
   );
+  // Every event, so a line moved into this week from another week renders; the plan keeps the week's days.
   const filteredEvents = useMemo(
+    () => (selectedClient ? events.filter((e) => e.clientId === selectedClient) : events),
+    [events, selectedClient],
+  );
+  const weekFilteredEvents = useMemo(
     () => (selectedClient ? weekEvents.filter((e) => e.clientId === selectedClient) : weekEvents),
     [weekEvents, selectedClient],
   );
   const plan = useMemo(() => weekPlan(filteredEvents, monday, people), [filteredEvents, monday, people]);
   // The money line always describes the whole week whatever the filters.
-  const weekTotals = useMemo(() => weekPlan(weekEvents, monday), [weekEvents, monday]);
+  const weekTotals = useMemo(() => weekPlan(events, monday), [events, monday]);
   const monthSigned = useMemo(() => monthSignedRevenue(events, ym), [events, ym]);
   const objective = objectifMensuel(settings?.objectives?.[year], ym);
   const recipeCostById = useMemo(() => new Map(recipes.map((r) => [r.recipeId, calcRecipeCost(r, ingredientById)])), [recipes, ingredientById]);
@@ -178,10 +225,11 @@ export default function Week() {
   const personQuery = selectedPerson ? `?personne=${encodeURIComponent(selectedPerson)}` : "";
   const dayUrl = (date: string) => `/jour/${date}${personQuery}`;
   const prepUrl = (eventId: string, lineId: string) => `/events/${eventId}/lines/${lineId}${personQuery}`;
+  const printUrl = `/semaine/${safeWeek}/imprimer${search}`;
   const state = { from };
   const anchorDay = todayInWeek ? today : monday;
 
-  const modalOpen = Boolean(sheet) || assignOpen || menu.open;
+  const modalOpen = Boolean(sheet) || assignOpen || menu.open || Boolean(taskDialog) || Boolean(confirmTask);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e) || modalOpen) return;
@@ -192,16 +240,15 @@ export default function Week() {
     return () => window.removeEventListener("keydown", onKey);
   }, [navigate, weekUrl, prevWeek, nextWeek, modalOpen]);
 
-  useEffect(() => {
-    if (printTick > 0) window.print();
-  }, [printTick]);
-
   // The guided tour opens the checklist for its second step.
   useEffect(() => {
     const open = () => setChecklistOpen(true);
     window.addEventListener(OPEN_CHECKLIST_EVENT, open);
     return () => window.removeEventListener(OPEN_CHECKLIST_EVENT, open);
   }, [setChecklistOpen]);
+
+  // Changing week closes the composer.
+  useEffect(() => { setComposerDay(null); }, [safeWeek]);
 
   const scrollToDay = useCallback((date: string) => {
     dayRefs.current[date]?.scrollIntoView({ block: "start" });
@@ -231,10 +278,23 @@ export default function Week() {
 
   const fail = (title: string) => toast({ title, variant: "destructive" });
 
-  const cycle = useCallback(async (ev: AppEvent, line: EventRecipeLine) => {
+  // A 409 means the event changed elsewhere; the list is reloaded and the caller skips its own toast.
+  const conflict = (e: unknown): boolean => {
+    if (!(e instanceof ApiError) || e.status !== 409) return false;
+    toast({ title: "Le menu a changé ailleurs, il a été rechargé", variant: "destructive" });
+    reload();
+    return true;
+  };
+
+  const cycleLine = useCallback(async (ev: AppEvent, line: EventRecipeLine) => {
     try { await patchLine(ev.eventId, line.lineId, { prepStatus: NEXT_STATUS[lineStatus(line)] }); }
     catch { fail("Erreur lors de la mise à jour du statut"); }
   }, [patchLine]);
+
+  const cycleTask = useCallback(async (ev: AppEvent, task: EventTask) => {
+    try { await patchTask(ev.eventId, task.taskId, { prepStatus: NEXT_STATUS[task.prepStatus ?? "todo"] }); }
+    catch { fail("Erreur lors de la mise à jour du statut"); }
+  }, [patchTask]);
 
   const assignEvent = useCallback(async (eventId: string, assignedTo: string[]) => {
     try { await patchEvent(eventId, { assignedTo }); }
@@ -245,6 +305,93 @@ export default function Week() {
     try { await patchLine(eventId, lineId, { assignedTo }); }
     catch { fail("Erreur lors de l'assignation"); }
   }, [patchLine]);
+
+  const assignTask = useCallback(async (eventId: string, taskId: string, assignedTo: string[]) => {
+    try { await patchTask(eventId, taskId, { assignedTo }); }
+    catch { fail("Erreur lors de l'assignation"); }
+  }, [patchTask]);
+
+  // Same write for « Déplacer au… » and for a drop; the event day clears a line's prepDate.
+  const moveItem = async (item: DragItem, date: string) => {
+    if (date === item.current) return;
+    try {
+      if (item.kind === "recipe") await patchLine(item.eventId, item.id, { prepDate: date === item.eventDate ? null : date });
+      else await patchTask(item.eventId, item.id, { date });
+    } catch (e) {
+      if (!conflict(e)) fail("Erreur lors du déplacement");
+    }
+  };
+
+  const dropOn = (date: string) => {
+    const item = drag;
+    setDrag(null);
+    setDropDay(null);
+    if (item) void moveItem(item, date);
+  };
+
+  const openTaskCreate = (date: string) => {
+    setTaskDialog({
+      mode: "create",
+      eventId: "",
+      initial: { label: "", date, eventId: defaultTaskEventId(weekEventsSorted, date), assignedTo: [], notes: "" },
+    });
+  };
+
+  const openTaskEdit = (ev: AppEvent, task: EventTask) => {
+    setTaskDialog({
+      mode: "edit",
+      eventId: ev.eventId,
+      taskId: task.taskId,
+      initial: { label: task.label, date: task.date, eventId: ev.eventId, assignedTo: task.assignedTo ?? [], notes: task.notes ?? "" },
+    });
+  };
+
+  const submitTask = async (value: TaskDialogValue) => {
+    const td = taskDialog;
+    if (!td) return;
+    try {
+      if (td.mode === "create") {
+        await addTask(value.eventId, { label: value.label, date: value.date, assignedTo: value.assignedTo, ...(value.notes ? { notes: value.notes } : {}) });
+        toast({ title: "Tâche ajoutée" });
+      } else if (value.eventId === td.eventId && td.taskId) {
+        await patchTask(td.eventId, td.taskId, { label: value.label, date: value.date, assignedTo: value.assignedTo, notes: value.notes });
+        toast({ title: "Tâche enregistrée" });
+      } else if (td.taskId) {
+        // Another event was picked: the task is recreated there with its status and removed from the old one.
+        const old = events.find((e) => e.eventId === td.eventId)?.tasks?.find((t) => t.taskId === td.taskId);
+        await addTask(value.eventId, { label: value.label, date: value.date, assignedTo: value.assignedTo, ...(value.notes ? { notes: value.notes } : {}), ...(old?.prepStatus ? { prepStatus: old.prepStatus } : {}) });
+        await removeTask(td.eventId, td.taskId);
+        toast({ title: "Tâche enregistrée" });
+      }
+    } catch (e) {
+      if (!conflict(e)) fail("Erreur lors de l'enregistrement de la tâche");
+      throw e;
+    }
+  };
+
+  const deleteTask = async (eventId: string, taskId: string) => {
+    try {
+      await removeTask(eventId, taskId);
+      toast({ title: "Tâche supprimée" });
+    } catch (e) {
+      if (!conflict(e)) fail("Erreur lors de l'enregistrement de la tâche");
+      throw e;
+    }
+  };
+
+  const confirmDelete = async () => {
+    const c = confirmTask;
+    if (!c) return;
+    setBusy(true);
+    try { await deleteTask(c.eventId, c.taskId); setConfirmTask(null); }
+    catch { /* toasted in deleteTask */ }
+    finally { setBusy(false); }
+  };
+
+  const composerAdd = async (date: string, eventId: string, label: string) => {
+    try { await addTask(eventId, { label, date }); }
+    catch (e) { conflict(e); throw e; }
+  };
 
   const createGrocery = async (source: AppEvent[]) => {
     if (source.length === 0) { toast({ title: "Aucun événement cette semaine" }); return; }
@@ -314,27 +461,70 @@ export default function Week() {
     }
   };
 
-  const print = (mode: PrintMode) => { setPrintMode(mode); setPrintTick((t) => t + 1); };
-
   if (!valid) return <Navigate to={`/semaine/${isoWeekOf(today)}${search}`} replace />;
 
-  const dayMeta = (d: WeekDay, short = false) => {
+  const dayMeta = (d: WeekDay) => {
     if (d.events.length === 0) return "aucun événement";
     const base = `${d.events.length} évén. · ${d.guests} conv.`;
     return started && d.linesTotal > 0 ? `${base} · ${d.linesDone}/${d.linesTotal} faites` : base;
   };
   const dayTitle = (d: WeekDay) => `${plural(d.events.length, "événement")} · ${plural(d.guests, "convive")}${started && d.linesTotal ? ` · ${d.linesDone} ${d.linesDone === 1 ? "ligne faite" : "lignes faites"} sur ${d.linesTotal}` : ""}`;
-  const clientOf = (ev: AppEvent) => (ev.clientId ? clientById.get(ev.clientId) : undefined);
   const recipeName = (id: string) => recipeById.get(id)?.name ?? id;
-  const hasPersonLine = (ev: AppEvent) => !selectedPerson || ev.recipes.some((l) => assigneesOf(l, ev).includes(selectedPerson));
-  const isOtherPerson = (ev: AppEvent, line: EventRecipeLine) => Boolean(selectedPerson) && !assigneesOf(line, ev).includes(selectedPerson);
+  const matchesPerson = (item: { assignedTo?: string[] }, ev: AppEvent) => assigneesOf(item, ev).includes(selectedPerson);
+  // Own-day lines and tasks of the day decide whether the card is shown in full under the person filter.
+  const hasPersonLine = (ev: AppEvent, date: string) =>
+    !selectedPerson || ownDayLines(ev).some((l) => matchesPerson(l, ev)) || tasksOn(ev, date).some((t) => matchesPerson(t, ev));
+  const isOtherPerson = (ev: AppEvent, item: { assignedTo?: string[] }) => Boolean(selectedPerson) && !matchesPerson(item, ev);
+  // A moved-in group only keeps the items of the filtered person.
+  const visibleMovedIn = (m: WeekMovedIn): WeekMovedIn | null => {
+    if (!selectedPerson) return m;
+    const lines = m.lines.filter((l) => matchesPerson(l, m.event));
+    const tasks = m.tasks.filter((t) => matchesPerson(t, m.event));
+    return lines.length || tasks.length ? { event: m.event, lines, tasks } : null;
+  };
   const canAssign = !touch && activePeople.length > 0;
+  const canDrag = !touch;
   const counts = Object.fromEntries(plan.days.map((d) => [d.date, d.events.length]));
   // The tour spotlights the chips of this card only.
   const firstEventId = plan.days.find((d) => d.events.length > 0)?.events[0]?.eventId;
   const filterCount = (selectedClient ? 1 : 0) + (selectedPerson ? 1 : 0);
   const showClientFilter = clientsConfigured && clientsThisWeek.length > 0;
   const showPersonFilter = activePeople.length > 0;
+  const taskEventFor = (date: string) => defaultTaskEventId(weekEventsSorted, date);
+  const eventLabel = (ev: AppEvent) => `${shortEventName(ev, clientOf(ev))} · ${shortDayLabel(ev.date)}`;
+  const movedInTitle = (ev: AppEvent) => `Pour ${longDayLabel(ev.date).toLowerCase()} · ${shortEventName(ev, clientOf(ev))}`;
+  const movedInLabel = (ev: AppEvent) => `pour ${shortDayLabel(ev.date)} · ${shortEventName(ev, clientOf(ev))}`;
+
+  // The dialog lists the week's events; a task of an outside event keeps its own event in the list.
+  const dialogEvents = (() => {
+    const list = [...weekEventsSorted];
+    if (taskDialog?.mode === "edit" && !list.some((e) => e.eventId === taskDialog.eventId)) {
+      const own = events.find((e) => e.eventId === taskDialog.eventId);
+      if (own) list.push(own);
+      list.sort(byDateThenName);
+    }
+    return list.map((ev) => ({ eventId: ev.eventId, label: eventLabel(ev) }));
+  })();
+
+  const rowShared = (stacked: boolean, align: "left" | "right"): RowShared => ({
+    stacked,
+    people,
+    canAssign,
+    canDrag: canDrag && !stacked,
+    days: dates,
+    align,
+    state,
+    drag,
+    setDrag: (d) => { setDrag(d); if (!d) setDropDay(null); },
+    onMove: moveItem,
+    cycleLine,
+    cycleTask,
+    assignLine,
+    assignTask,
+    editTask: openTaskEdit,
+    deleteTask: (ev, task) => setConfirmTask({ eventId: ev.eventId, taskId: task.taskId, label: task.label }),
+    openSheet: (href) => navigate(href, { state }),
+  });
 
   const { linesDone, linesTotal } = weekTotals;
   const doneFragment = started && linesTotal > 0 ? (
@@ -380,9 +570,8 @@ export default function Week() {
         <MenuCheck checked={view === "events"} onChange={() => setView("events")}>Afficher les événements</MenuCheck>
       </MenuSection>
       <MenuSeparator />
-      <MenuItem icon={<ShoppingCart />} disabled={busy || loading} onSelect={() => createGrocery(filteredEvents)}>Créer les courses de la semaine</MenuItem>
-      <MenuItem icon={<Printer />} onSelect={() => print("week")}>Imprimer</MenuItem>
-      <MenuItem icon={<Printer />} onSelect={() => print("person")}>Imprimer par personne</MenuItem>
+      <MenuItem icon={<ShoppingCart />} disabled={busy || loading} onSelect={() => createGrocery(weekFilteredEvents)}>Créer les courses de la semaine</MenuItem>
+      <MenuItem icon={<Printer />} to={printUrl}>Imprimer la semaine…</MenuItem>
       {activePeople.map((p) => (
         <MenuItem key={p.personId} icon={<Share2 />} onSelect={() => share(p)}>Partager avec {p.name}</MenuItem>
       ))}
@@ -412,6 +601,7 @@ export default function Week() {
     </>
   );
 
+  // Rendered in one slot only: two Menu instances on one useMenu would close each other on mousedown.
   const moreMenu = (
     <div ref={menu.ref} className="relative inline-flex">
       <IconButton size="sm" aria-label="Plus d'actions" aria-haspopup="menu" aria-expanded={menu.open} onClick={menu.toggle} icon={<MoreHorizontal />} />
@@ -437,8 +627,36 @@ export default function Week() {
     </>
   ) : undefined;
 
+  // Caption rows under a card: moved-out items that land outside the displayed week, one per day.
+  const outsideRows = (ev: AppEvent) => outsideDays(ev, dates).map(({ date, count }) => (
+    <Link key={date} to={dayUrl(date)} state={state} className={`${CAPTION_ROW} truncate rounded hover:bg-hover`}>
+      {plural(count, "préparation")} le {shortDayLabel(date)}
+    </Link>
+  ));
+
+  const movedInHeader = (m: WeekMovedIn, stacked: boolean) => (
+    <div className={`${CAPTION_ROW} ${stacked ? "min-h-11" : ""}`}>
+      <Link to={`/events/${m.event.eventId}`} state={state} title={movedInTitle(m.event)} className="min-w-0 truncate rounded hover:bg-hover">
+        {movedInLabel(m.event)}{view === "events" && !stacked ? ` · ${m.lines.length + m.tasks.length}` : ""}
+      </Link>
+    </div>
+  );
+
+  const lineRows = (ev: AppEvent, lines: EventRecipeLine[], shared: RowShared) =>
+    sortEventLines(lines, courses, recipeById).map((line) => (
+      <ItemRow
+        key={line.lineId}
+        shared={shared}
+        dim={isOtherPerson(ev, line)}
+        item={{ kind: "recipe", ev, line, name: recipeName(line.recipeId), href: prepUrl(ev.eventId, line.lineId) }}
+      />
+    ));
+
+  const taskRows = (ev: AppEvent, tasks: EventTask[], shared: RowShared) =>
+    tasks.map((task) => <ItemRow key={task.taskId} shared={shared} dim={isOtherPerson(ev, task)} item={{ kind: "task", ev, task }} />);
+
   return (
-    <div className="mx-auto max-w-wide print:max-w-none">
+    <div className="mx-auto max-w-wide">
       <PageHeader
         iconKey="semaine"
         title={`Semaine ${weekNo}`}
@@ -479,11 +697,11 @@ export default function Week() {
             {(showClientFilter || showPersonFilter) && (
               <FilterButton count={filterCount} onClear={clearFilters}>{filterGroups}</FilterButton>
             )}
-            {moreMenu}
+            {!touch && moreMenu}
             {newButton}
           </>
         )}
-        rightTouch={<>{moreMenu}{newButtonTouch}</>}
+        rightTouch={<>{touch && moreMenu}{newButtonTouch}</>}
         filters={filterChips}
         dates={dates}
         counts={counts}
@@ -506,6 +724,7 @@ export default function Week() {
             onToggle={() => setChecklistOpen((o) => !o)}
             from={from}
             monday={monday}
+            weekNo={weekNo}
             prestationTypes={prestationTypes}
             coveringList={coveringList}
             busy={busy}
@@ -528,6 +747,9 @@ export default function Week() {
             const past = day.date < today;
             const dayPeople = plan.peopleByDay[day.date] ?? [];
             const [dayName, dayNum] = dayLabel(day.date).split(" ");
+            const shared = rowShared(false, i >= 4 ? "right" : "left");
+            const taskEventId = taskEventFor(day.date);
+            const dropHere = Boolean(drag) && dropDay === day.date;
             return (
               <div key={day.date} className={`group min-w-0 ${past ? "opacity-60" : ""}`}>
                 <div className="sticky top-0 z-10 bg-background pb-1">
@@ -537,7 +759,7 @@ export default function Week() {
                         <span>{dayName}</span>
                         <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${isToday ? "bg-danger-solid text-white" : ""}`}>{dayNum}</span>
                       </div>
-                      <div className="truncate text-caption text-muted-foreground">{dayMeta(day, true)}</div>
+                      <div className="truncate text-caption text-muted-foreground">{dayMeta(day)}</div>
                     </Link>
                     <IconButton size="sm" as={Link} to={newEventUrl(day.date)} aria-label={`Nouvel événement le ${longDayLabel(day.date)}`} className="reveal mt-1" icon={<Plus />} />
                   </div>
@@ -561,15 +783,22 @@ export default function Week() {
                     </div>
                   )}
                 </div>
-                <div className="space-y-2 px-0.5 pb-2">
+                <div
+                  className={cn("space-y-2 px-0.5 pb-2", dropHere && "rounded-lg bg-selected")}
+                  onDragOver={canDrag && drag ? (e) => { e.preventDefault(); setDropDay(day.date); } : undefined}
+                  onDrop={canDrag && drag ? (e) => { e.preventDefault(); dropOn(day.date); } : undefined}
+                >
                   {day.events.map((ev) => {
                     const client = clientOf(ev);
                     const title = shortEventName(ev, client);
                     const total = ev.recipes.length;
                     const done = doneCount(ev);
+                    const movedOut = movedOutLines(ev);
+                    const movedTitle = movedOut.length ? `Préparées le ${[...new Set(movedOut.map((l) => prepDateOf(l, ev)))].sort().map(shortDayLabel).join(", ")}` : undefined;
+                    const meta = `${ev.guestCount} conv. · ${plural(total, "ligne")}${view === "events" && total > 0 ? ` · ${plural(done, "faite")}` : ""}`;
                     // The "Assigner" button takes its own row; the column is too narrow for it next to the title.
                     const unassigned = (ev.assignedTo ?? []).length === 0;
-                    if (!hasPersonLine(ev)) {
+                    if (!hasPersonLine(ev, day.date)) {
                       return (
                         <Link key={ev.eventId} to={`/events/${ev.eventId}`} state={state} className="flex h-7 items-center rounded px-2 text-sm text-muted-foreground hover:bg-hover">
                           <span className="truncate">{title}</span>
@@ -581,8 +810,9 @@ export default function Week() {
                         <div className="flex flex-wrap rounded-lg bg-background shadow-card hover:bg-hover">
                           <Link to={`/events/${ev.eventId}`} state={state} className="min-w-0 flex-1 p-2">
                             <div className="text-sm font-medium line-clamp-2">{title}</div>
-                            <div className="mt-0.5 text-caption text-muted-foreground">
-                              {ev.guestCount} conv. · {plural(total, "ligne")}{view === "events" && total > 0 ? ` · ${plural(done, "faite")}` : ""}
+                            <div className="mt-0.5 truncate text-caption text-muted-foreground" title={meta + (movedOut.length > 0 ? ` · ${movedOut.length} un autre jour (${movedTitle})` : "")}>
+                              {meta}
+                              {movedOut.length > 0 && <span> · {movedOut.length} un autre jour</span>}
                             </div>
                             {started && total > 0 && (
                               <div className="mt-2 h-1 w-full rounded-full bg-divider">
@@ -596,33 +826,44 @@ export default function Week() {
                             </div>
                           ) : null}
                         </div>
-                        {view === "lines" && total > 0 && (
+                        {outsideRows(ev)}
+                        {view === "lines" && (
                           <ul className="mt-1">
-                            {sortEventLines(ev.recipes, courses, recipeById).map((line) => {
-                              const status = lineStatus(line);
-                              const own = Boolean(line.assignedTo?.length);
-                              const ids = assigneesOf(line, ev);
-                              const dim = isOtherPerson(ev, line);
-                              return (
-                                <li key={line.lineId} className={`flex h-7 items-center gap-0.5 rounded text-sm hover:bg-hover ${dim ? "opacity-40" : ""}`}>
-                                  <StatusDot value={status} onCycle={() => cycle(ev, line)} />
-                                  <Link to={prepUrl(ev.eventId, line.lineId)} state={state} title={recipeName(line.recipeId)} className={`min-w-0 flex-1 truncate rounded px-0.5 ${status === "done" ? "text-muted-foreground" : ""}`}>
-                                    {recipeName(line.recipeId)}
-                                  </Link>
-                                  {/* Inherited people are shown dimmed so every line has a click target. */}
-                                  {(own || ids.length > 0) && (
-                                    <AssignChips value={ids} picked={own ? ids : []} options={people} enabled={canAssign} inherited={!own} allowInherit max={2} onChange={(next) => assignLine(ev.eventId, line.lineId, next)} title="Assigner la ligne" label={`Assigner ${recipeName(line.recipeId)}`} />
-                                  )}
-                                  <span className={`pl-0.5 pr-1 tabular-nums ${status === "done" ? "text-muted-foreground" : "text-muted-foreground"}`}>{line.portions}</span>
-                                </li>
-                              );
-                            })}
+                            {lineRows(ev, ownDayLines(ev), shared)}
+                            {taskRows(ev, tasksOn(ev, day.date), shared)}
+                          </ul>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {day.movedIn.map((group) => {
+                    const m = visibleMovedIn(group);
+                    if (!m) return null;
+                    return (
+                      <div key={m.event.eventId}>
+                        {movedInHeader(m, false)}
+                        {view === "lines" && (
+                          <ul>
+                            {lineRows(m.event, m.lines, shared)}
+                            {taskRows(m.event, m.tasks, shared)}
                           </ul>
                         )}
                       </div>
                     );
                   })}
                   <Button variant="ghost" size="sm" as={Link} to={newEventUrl(day.date)} icon={<Plus />} className="w-full justify-start text-muted-foreground">Nouvel événement</Button>
+                  {taskEventId && (composerDay === day.date && !touch ? (
+                    <TaskComposer
+                      date={day.date}
+                      events={weekEventsSorted}
+                      clientById={clientById}
+                      defaultEventId={taskEventId}
+                      onAdd={(eventId, label) => composerAdd(day.date, eventId, label)}
+                      onClose={() => setComposerDay(null)}
+                    />
+                  ) : (
+                    <Button variant="ghost" size="sm" icon={<Plus />} className="w-full justify-start text-muted-foreground" onClick={() => (touch ? openTaskCreate(day.date) : setComposerDay(day.date))}>Tâche</Button>
+                  ))}
                 </div>
               </div>
             );
@@ -638,6 +879,8 @@ export default function Week() {
             const past = day.date < today;
             const empty = day.events.length === 0;
             const [dayName, dayNum] = dayLabel(day.date).split(" ");
+            const shared = rowShared(true, "right");
+            const taskEventId = taskEventFor(day.date);
             return (
               <section key={day.date} ref={(el) => { dayRefs.current[day.date] = el; }} className={`scroll-mt-24 md:scroll-mt-0 ${past ? "opacity-60" : ""}`}>
                 <div className="sticky top-[96px] z-10 -mx-4 flex min-h-11 items-center gap-1 bg-background px-4 md:static md:mx-0 md:px-0">
@@ -646,7 +889,7 @@ export default function Week() {
                       {dayName}
                       <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${isToday ? "bg-danger-solid text-white" : ""}`}>{dayNum}</span>
                     </span>
-                    <span className="min-w-0 truncate text-sm text-muted-foreground">{empty ? "aucun événement" : dayMeta(day)}</span>
+                    <span className="min-w-0 truncate text-sm text-muted-foreground">{dayMeta(day)}</span>
                     {!empty && <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-icon" aria-hidden="true" />}
                   </Link>
                   {empty && (
@@ -656,7 +899,7 @@ export default function Week() {
                 {day.events.map((ev) => {
                   const client = clientOf(ev);
                   const title = shortEventName(ev, client);
-                  const collapsed = !hasPersonLine(ev);
+                  const collapsed = !hasPersonLine(ev, day.date);
                   return (
                     <div key={ev.eventId} className="mt-1">
                       <Link to={`/events/${ev.eventId}`} state={state} className={`flex min-h-11 items-center gap-2 rounded-lg bg-background px-3 shadow-card hover:bg-hover ${collapsed ? "text-muted-foreground" : ""}`}>
@@ -664,30 +907,34 @@ export default function Week() {
                         {!collapsed && <span className="shrink-0 text-sm text-muted-foreground">{ev.guestCount} conv.</span>}
                         <PersonChips personIds={ev.assignedTo ?? []} people={people} size="sm" />
                       </Link>
+                      {!collapsed && outsideRows(ev)}
                       {!collapsed && (
                         <ul className="mt-1">
-                          {sortEventLines(ev.recipes, courses, recipeById).map((line) => {
-                            const status = lineStatus(line);
-                            const own = Boolean(line.assignedTo?.length);
-                            const ids = assigneesOf(line, ev);
-                            return (
-                              <li key={line.lineId} className={`flex min-h-11 items-center ${isOtherPerson(ev, line) ? "opacity-40" : ""}`}>
-                                <StatusDot value={status} onCycle={() => cycle(ev, line)} />
-                                <Link to={prepUrl(ev.eventId, line.lineId)} state={state} className={`flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded px-1 text-sm hover:bg-hover touch:text-base ${status === "done" ? "text-muted-foreground" : ""}`}>
-                                  <span className="min-w-0 flex-1 truncate">{recipeName(line.recipeId)}</span>
-                                  <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{line.portions}</span>
-                                  <PersonChips personIds={ids} people={people} size="sm" inherited={!own && ids.length > 0} />
-                                </Link>
-                              </li>
-                            );
-                          })}
+                          {lineRows(ev, ownDayLines(ev), shared)}
+                          {taskRows(ev, tasksOn(ev, day.date), shared)}
                         </ul>
                       )}
                     </div>
                   );
                 })}
+                {day.movedIn.map((group) => {
+                  const m = visibleMovedIn(group);
+                  if (!m) return null;
+                  return (
+                    <div key={m.event.eventId} className="mt-1">
+                      {movedInHeader(m, true)}
+                      <ul>
+                        {lineRows(m.event, m.lines, shared)}
+                        {taskRows(m.event, m.tasks, shared)}
+                      </ul>
+                    </div>
+                  );
+                })}
                 {!empty && (
                   <Button variant="ghost" size="sm" as={Link} to={newEventUrl(day.date)} icon={<Plus />} className="mt-1 w-full justify-start text-muted-foreground">Nouvel événement</Button>
+                )}
+                {taskEventId && (
+                  <Button variant="ghost" size="sm" icon={<Plus />} className="mt-1 w-full justify-start text-muted-foreground" onClick={() => openTaskCreate(day.date)}>Tâche</Button>
                 )}
                 <div className="my-2 h-px bg-border" aria-hidden="true" />
               </section>
@@ -695,16 +942,6 @@ export default function Week() {
           })}
         </div>
       )}
-
-      {/* Print */}
-      <div className="hidden print:block">
-        <h1 className="text-h1">Semaine {weekNo} · {rangeLabel(dates[0], dates[6])}</h1>
-        {printMode === "week" ? (
-          <WeekPrint days={plan.days} people={people} courses={courses} recipeById={recipeById} clientOf={clientOf} dayMeta={dayMeta} />
-        ) : (
-          <PersonPrint days={plan.days} people={activePeople} courses={courses} recipeById={recipeById} clientOf={clientOf} />
-        )}
-      </div>
 
       {assignOpen && (
         <AssignSheet
@@ -715,9 +952,38 @@ export default function Week() {
           courses={courses}
           onEvent={assignEvent}
           onLine={assignLine}
+          onTask={assignTask}
           onClose={() => setAssignOpen(false)}
         />
       )}
+
+      <TaskDialog
+        open={Boolean(taskDialog)}
+        onClose={() => setTaskDialog(null)}
+        mode={taskDialog?.mode ?? "create"}
+        initial={taskDialog?.initial ?? { label: "", date: monday, eventId: "", assignedTo: [], notes: "" }}
+        events={dialogEvents}
+        people={people}
+        onSubmit={submitTask}
+        onDelete={taskDialog?.mode === "edit" && taskDialog.taskId ? () => deleteTask(taskDialog.eventId, taskDialog.taskId as string) : undefined}
+      />
+
+      {/* Delete confirmation reached from a row's ⋯ */}
+      <Dialog
+        open={Boolean(confirmTask)}
+        onClose={() => { if (!busy) setConfirmTask(null); }}
+        title={confirmTask ? `Supprimer la tâche « ${confirmTask.label} » ?` : ""}
+        size="sm"
+        aria-label="Supprimer la tâche"
+        footer={(
+          <>
+            <Button variant="default" size="md" onClick={() => setConfirmTask(null)} disabled={busy}>Annuler</Button>
+            <Button variant="danger" size="md" onClick={() => void confirmDelete()} disabled={busy}>Supprimer</Button>
+          </>
+        )}
+      >
+        <p className="text-muted-foreground">Cette action est irréversible.</p>
+      </Dialog>
 
       {/* Create week dialog */}
       <Dialog
@@ -755,6 +1021,159 @@ export default function Week() {
   );
 }
 
+// ── Rows ──────────────────────────────────────────────────────────────────────
+
+type RowItem =
+  | { kind: "recipe"; ev: AppEvent; line: EventRecipeLine; name: string; href: string }
+  | { kind: "task"; ev: AppEvent; task: EventTask };
+
+interface RowShared {
+  stacked: boolean;
+  people: Person[];
+  canAssign: boolean;
+  canDrag: boolean;
+  days: string[];
+  align: "left" | "right";
+  state: { from: string };
+  drag: DragItem | null;
+  setDrag: (d: DragItem | null) => void;
+  onMove: (item: DragItem, date: string) => void;
+  cycleLine: (ev: AppEvent, line: EventRecipeLine) => void;
+  cycleTask: (ev: AppEvent, task: EventTask) => void;
+  assignLine: (eventId: string, lineId: string, ids: string[]) => void;
+  assignTask: (eventId: string, taskId: string, ids: string[]) => void;
+  editTask: (ev: AppEvent, task: EventTask) => void;
+  deleteTask: (ev: AppEvent, task: EventTask) => void;
+  openSheet: (href: string) => void;
+}
+
+// One line or task row of the week; `stacked` is the phone and tablet shape.
+function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim: boolean }) {
+  const { stacked, people, canAssign, canDrag, days, align, state, drag } = shared;
+  const rowRef = useRef<HTMLLIElement>(null);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const closeMove = useCallback(() => setMoveOpen(false), []);
+  const closeAssign = useCallback(() => setAssignOpen(false), []);
+
+  const ev = item.ev;
+  const status: PrepStatus = (item.kind === "recipe" ? item.line.prepStatus : item.task.prepStatus) ?? "todo";
+  const label = item.kind === "recipe" ? item.name : item.task.label;
+  const assignedTo = item.kind === "recipe" ? item.line.assignedTo : item.task.assignedTo;
+  const own = Boolean(assignedTo?.length);
+  const ids = assigneesOf({ assignedTo }, ev);
+  const id = item.kind === "recipe" ? item.line.lineId : item.task.taskId;
+  const current = item.kind === "recipe" ? prepDateOf(item.line, ev) : item.task.date;
+  const dragItem: DragItem = { kind: item.kind, eventId: ev.eventId, id, eventDate: ev.date, current };
+  const dragging = drag?.kind === item.kind && drag.id === id;
+  const done = status === "done";
+
+  const cycle = () => (item.kind === "recipe" ? shared.cycleLine(ev, item.line) : shared.cycleTask(ev, item.task));
+  const assign = (next: string[]) => (item.kind === "recipe" ? shared.assignLine(ev.eventId, item.line.lineId, next) : shared.assignTask(ev.eventId, item.task.taskId, next));
+  const edit = () => { if (item.kind === "task") shared.editTask(ev, item.task); };
+
+  const menuItems: ActionMenuItem[] = item.kind === "recipe"
+    ? [
+        { label: "Déplacer au…", icon: <CalendarDays />, onClick: () => setMoveOpen(true) },
+        { label: "Assigner", icon: <UserPlus />, onClick: () => setAssignOpen(true) },
+        { label: "Ouvrir la fiche", icon: <FileText />, onClick: () => shared.openSheet(item.href) },
+      ]
+    : [
+        { label: "Modifier…", icon: <Pencil />, onClick: edit },
+        { label: "Déplacer au…", icon: <CalendarDays />, onClick: () => setMoveOpen(true) },
+        { label: "Assigner", icon: <UserPlus />, onClick: () => setAssignOpen(true) },
+        { kind: "separator" },
+        { label: "Supprimer", icon: <Trash2 />, variant: "danger", onClick: () => shared.deleteTask(ev, item.task) },
+      ];
+
+  const moveMenu = (
+    <MoveToDayMenu
+      open={moveOpen}
+      onClose={closeMove}
+      anchorRef={rowRef}
+      align={align}
+      title={`Déplacer « ${label} »`}
+      eventDate={ev.date}
+      current={current}
+      days={days}
+      onPick={(d) => { setMoveOpen(false); shared.onMove(dragItem, d); }}
+    />
+  );
+  const assignTitle = item.kind === "recipe" ? "Assigner la ligne" : "Assigner la tâche";
+  const assignLabel = `Assigner ${label}`;
+
+  if (stacked) {
+    const body = (
+      <>
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        {item.kind === "recipe" && <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{item.line.portions}</span>}
+        <PersonChips personIds={ids} people={people} size="sm" inherited={!own && ids.length > 0} />
+      </>
+    );
+    const bodyClass = cn("flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded px-1 text-sm hover:bg-hover touch:text-base", done && "text-muted-foreground");
+    return (
+      <li ref={rowRef} className={cn("relative flex min-h-11 items-center", dim && "opacity-40")}>
+        <StatusDot value={status} onCycle={cycle} />
+        {item.kind === "recipe" ? (
+          <Link to={item.href} state={state} className={bodyClass}>{body}</Link>
+        ) : (
+          <button type="button" onClick={edit} title={label} className={cn(bodyClass, "text-left")}>{body}</button>
+        )}
+        <ActionMenu items={menuItems} align="right" title={label} aria-label={`Actions pour ${label}`} />
+        {assignOpen && (
+          <PersonPicker value={own ? ids : []} options={people} onChange={assign} allowInherit onClose={closeAssign} title={assignTitle} align="right" />
+        )}
+        {moveMenu}
+      </li>
+    );
+  }
+
+  // Recipe rows keep the ⋯ over the portions slot; task rows make room for it on hover only.
+  const rowClass = item.kind === "recipe"
+    ? "group/row relative flex h-7 items-center gap-0.5 rounded text-sm hover:bg-hover"
+    : "group/row relative flex h-7 items-center gap-0.5 rounded text-sm hover:bg-hover pointer:group-hover/row:pr-7 pointer:group-focus-within/row:pr-7";
+  return (
+    <li ref={rowRef} className={cn(rowClass, (dim || dragging) && "opacity-40")}>
+      {canDrag && (
+        <span
+          draggable
+          onDragStart={() => shared.setDrag(dragItem)}
+          onDragEnd={() => shared.setDrag(null)}
+          title="Glisser vers un autre jour"
+          aria-label="Glisser vers un autre jour"
+          className={cn("absolute -left-4 top-0 flex h-7 w-4 cursor-grab items-center justify-center text-icon active:cursor-grabbing", ROW_REVEAL)}
+        >
+          <GripVertical className="h-4 w-4" />
+        </span>
+      )}
+      <StatusDot value={status} onCycle={cycle} />
+      {item.kind === "recipe" ? (
+        <Link to={item.href} state={state} title={label} draggable={false} className={cn("min-w-0 flex-1 truncate rounded px-0.5", done && "text-muted-foreground")}>
+          {label}
+        </Link>
+      ) : (
+        <button type="button" onClick={edit} title={label} className={cn("min-w-0 flex-1 truncate rounded px-0.5 text-left", done && "text-muted-foreground")}>
+          {label}
+        </button>
+      )}
+      {/* Inherited people are shown dimmed so every row has a click target. */}
+      {(own || ids.length > 0 || assignOpen) && (
+        <AssignChips value={ids} picked={own ? ids : []} options={people} enabled={canAssign} inherited={!own} allowInherit max={2} open={assignOpen} onOpenChange={setAssignOpen} onChange={assign} title={assignTitle} label={assignLabel} />
+      )}
+      {/* The ⋯ sits over the portions while the row is hovered, so the name keeps its width. */}
+      {item.kind === "recipe" && (
+        <span className="min-w-7 shrink-0 pl-0.5 pr-1 text-right tabular-nums text-muted-foreground pointer:group-hover/row:invisible pointer:group-focus-within/row:invisible">
+          {item.line.portions}
+        </span>
+      )}
+      <span className={cn("absolute right-0 top-0", ROW_REVEAL)}>
+        <ActionMenu items={menuItems} align={align} title={label} aria-label={`Actions pour ${label}`} />
+      </span>
+      {moveMenu}
+    </li>
+  );
+}
+
 interface AssignChipsProps {
   value: string[];
   options: Person[];
@@ -768,27 +1187,39 @@ interface AssignChipsProps {
   label?: string;
   // Ids ticked in the picker when they differ from the chips (inherited lines start from "Comme l'événement").
   picked?: string[];
+  // Controlled picker state, used when a row menu opens the picker.
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
+
+type PickerRect = { top: number; left: number; right: number };
 
 // Chips that open the picker in a fixed box, so the column does not clip it.
 // With nobody assigned and assignment allowed, a ghost "Assigner" button replaces the chips.
-function AssignChips({ value, options, enabled, inherited = false, allowInherit = false, max, className, onChange, title, label, picked = value }: AssignChipsProps) {
+function AssignChips({ value, options, enabled, inherited = false, allowInherit = false, max, className, onChange, title, label, picked = value, open, onOpenChange }: AssignChipsProps) {
   const anchor = useRef<HTMLSpanElement>(null);
-  const [rect, setRect] = useState<{ top: number; left: number; right: number } | null>(null);
-  const close = useCallback(() => setRect(null), []);
-  const open = () => {
+  const [rect, setRect] = useState<PickerRect | null>(null);
+  const controlled = open !== undefined;
+  const measure = (): PickerRect | null => {
     const r = anchor.current?.getBoundingClientRect();
-    if (!r) return;
-    setRect(rect ? null : { top: r.bottom, left: r.left, right: r.right });
+    return r ? { top: r.bottom, left: r.left, right: r.right } : null;
+  };
+  useEffect(() => {
+    if (controlled) setRect(open ? measure() : null);
+  }, [controlled, open]);
+  const close = useCallback(() => { setRect(null); onOpenChange?.(false); }, [onOpenChange]);
+  const toggle = () => {
+    if (controlled) { onOpenChange?.(!open); return; }
+    setRect(rect ? null : measure());
   };
   const alignRight = rect ? rect.left > window.innerWidth - 280 : false;
   const showButton = enabled && value.length === 0 && !allowInherit;
   return (
     <span ref={anchor} className="inline-flex">
       {showButton ? (
-        <Button variant="ghost" size="sm" icon={<UserPlus />} onClick={open} aria-label={label} aria-haspopup="dialog" className={cn("text-muted-foreground", className)}>Assigner</Button>
+        <Button variant="ghost" size="sm" icon={<UserPlus />} onClick={toggle} aria-label={label} aria-haspopup="dialog" className={cn("text-muted-foreground", className)}>Assigner</Button>
       ) : (
-        <PersonChips personIds={value} people={options} size="sm" inherited={inherited} max={max} label={value.length === 0 ? label : undefined} className={className} onClick={enabled ? open : undefined} />
+        <PersonChips personIds={value} people={options} size="sm" inherited={inherited} max={max} label={value.length === 0 ? label : undefined} className={className} onClick={enabled ? toggle : undefined} />
       )}
       {rect && (
         <div style={{ position: "fixed", top: rect.top, left: alignRight ? rect.right : rect.left, width: 0, height: 0 }} className="z-50">
@@ -796,96 +1227,5 @@ function AssignChips({ value, options, enabled, inherited = false, allowInherit 
         </div>
       )}
     </span>
-  );
-}
-
-interface PrintProps {
-  days: WeekDay[];
-  people: Person[];
-  courses: string[];
-  recipeById: Map<string, { name: string; defaultCourse?: string }>;
-  clientOf: (ev: AppEvent) => Pick<Client, "name"> | undefined;
-}
-
-function initialsOf(people: Person[], ids: string[]): string {
-  if (!ids.length) return "";
-  return ` (${ids.map((id) => {
-    const p = people.find((x) => x.personId === id);
-    return p ? (p.initials?.trim() || p.name.slice(0, 2)).toUpperCase() : id.slice(0, 2).toUpperCase();
-  }).join(", ")})`;
-}
-
-// Default print: every day with its events and lines, initials after each line.
-function WeekPrint({ days, people, courses, recipeById, clientOf, dayMeta }: PrintProps & { dayMeta: (d: WeekDay) => string }) {
-  return (
-    <>
-      {days.filter((d) => d.events.length > 0).map((day, i) => (
-        <section key={day.date} className={i > 0 ? "print-break" : "mt-6"}>
-          <h2 className="text-h2">{longDayLabel(day.date)}</h2>
-          <p className="text-base text-muted-foreground">{dayMeta(day)}</p>
-          {day.events.map((ev) => (
-            <div key={ev.eventId} className="mt-4">
-              <h3 className="text-h3">{shortEventName(ev, clientOf(ev))} · {ev.guestCount} conv.{initialsOf(people, ev.assignedTo ?? [])}</h3>
-              <ul className="mt-1">
-                {sortEventLines(ev.recipes, courses, recipeById).map((line) => (
-                  <li key={line.lineId} className="flex justify-between gap-4 py-1 text-base">
-                    <span>{lineStatus(line) === "done" ? "☑" : "☐"} {recipeById.get(line.recipeId)?.name ?? line.recipeId}{initialsOf(people, assigneesOf(line, ev))}</span>
-                    <span className="font-semibold tabular-nums">{line.portions}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </section>
-      ))}
-    </>
-  );
-}
-
-// One page per active person with their lines by day, then "Sans personne" when needed.
-function PersonPrint({ days, people, courses, recipeById, clientOf }: PrintProps) {
-  const pages: { key: string; title: string; match: (ids: string[]) => boolean }[] = [
-    ...people.map((p) => ({ key: p.personId, title: p.name, match: (ids: string[]) => ids.includes(p.personId) })),
-    { key: "", title: "Sans personne", match: (ids: string[]) => ids.length === 0 },
-  ];
-  const rows = days.flatMap((day) =>
-    day.events.flatMap((ev) =>
-      sortEventLines(ev.recipes, courses, recipeById).map((line) => ({ day, ev, line, ids: assigneesOf(line, ev) })),
-    ),
-  );
-  let first = true;
-  return (
-    <>
-      {pages.map((page) => {
-        const mine = rows.filter((r) => page.match(r.ids));
-        if (mine.length === 0) return null;
-        const cls = first ? "mt-6" : "print-break";
-        first = false;
-        const byDay = days.filter((d) => mine.some((r) => r.day.date === d.date));
-        return (
-          <section key={page.key} className={cls}>
-            <h2 className="text-h2">{page.title}</h2>
-            {byDay.map((day) => (
-              <div key={day.date} className="mt-4">
-                <h3 className="text-h3">{longDayLabel(day.date)}</h3>
-                <ul className="mt-1">
-                  {mine.filter((r) => r.day.date === day.date).map(({ ev, line, ids }) => {
-                    const others = ids.filter((id) => id !== page.key);
-                    const recipe = recipeById.get(line.recipeId);
-                    return (
-                      <li key={line.lineId} className="py-1 text-base">
-                        {lineStatus(line) === "done" ? "☑" : "☐"} {recipe?.name ?? line.recipeId}
-                        {page.key && others.length > 0 ? ` avec ${others.map((id) => personName(people, id)).join(", ")}` : ""}
-                        {" · "}{shortEventName(ev, clientOf(ev))} · {line.portions}{line.course ?? recipe?.defaultCourse ? ` · ${line.course ?? recipe?.defaultCourse}` : ""}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ))}
-          </section>
-        );
-      })}
-    </>
   );
 }

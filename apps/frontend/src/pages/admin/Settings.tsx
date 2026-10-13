@@ -719,7 +719,7 @@ export default function Settings() {
       </Section>
 
       <Section title="Catégories du menu" action={addAction("Ajouter une catégorie", () => patch((d) => ({ ...d, courses: [...d.courses, ""] })))}>
-        <p className="mb-2 text-sm text-muted-foreground">Ordre des services sur les menus et les fiches de préparation.</p>
+        <p className="mb-2 text-sm text-muted-foreground">Ordre des services sur les menus, la journée, les fiches et l'impression.</p>
         <div>
           {draft.courses.map((course, i) => (
             <NameRow
