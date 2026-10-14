@@ -52,10 +52,10 @@ export const TOUR_STEPS: TourStep[] = [
     route: "/semaine",
     anchor: "week-day",
     title: "Un jour par colonne",
-    body: "Cliquez le nom d'un jour pour l'ouvrir. Le + à côté crée un événement ce jour-là. Sous le nom : événements, convives, préparations faites sur le total.",
+    body: "Cliquez le nom d'un jour pour l'ouvrir. Le + à côté crée un événement ce jour-là. Sous le nom : événements, convives, préparations faites sur le total. Glissez une préparation vers un autre jour, ou ⋯ › Déplacer au….",
     phone: {
       title: "Un jour par section",
-      body: "Touchez le nom d'un jour, ou un chiffre dans la bande L M M J V S D, pour l'ouvrir. Le + crée un événement ce jour-là.",
+      body: "Touchez le nom d'un jour, ou un chiffre dans la bande L M M J V S D, pour l'ouvrir. Le + crée un événement ce jour-là. Maintenez une préparation pour la glisser vers un autre jour.",
     },
   },
   {
@@ -103,17 +103,26 @@ export const TOUR_STEPS: TourStep[] = [
     body: "Tous vos événements, à venir et terminés. Pour refaire une semaine Hoona : ouvrez un événement Hoona, puis ⋯ › Dupliquer. Créer un événement pour un client remplit son menu depuis sa semaine type.",
   },
   {
+    key: "offers",
+    route: "/offres",
+    anchor: "offers-list",
+    title: "Offres et devis",
+    body: "Une offre est un menu type avec son prix par convive : Buffet 1, Walking dinner 2. Depuis une offre, Faire un devis adapte le menu et le nombre de convives pour un client, montre le coût et la marge, puis crée l'événement.",
+    fallbackBody: "Une offre est un menu type avec son prix par convive : Buffet 1, Walking dinner 2. Depuis une offre, Faire un devis adapte le menu et le nombre de convives pour un client, montre le coût et la marge, puis crée l'événement.",
+    phone: { anchor: "offers-list" },
+  },
+  {
     key: "comptes-tabs",
     route: "/comptes/journal",
     anchor: "comptes-tabs",
     title: "Comptabilité",
-    body: "Journal : une ligne par facture, acompte ou achat. À facturer : à terminer, facturer ou encaisser. Aperçu et Compte de résultats : l'année. Prévisionnel : objectif et charges. Au réel : signé face à l'objectif.",
+    body: "Journal : une ligne par facture, acompte, CA du mois ou achat. À facturer, ou À terminer quand les factures se font dans un autre outil : les événements passés à clôturer. Aperçu et Compte de résultats : l'année. Prévisionnel : objectif et charges. Au réel : signé face à l'objectif.",
   },
   {
     key: "settings-tabs",
     route: "/settings",
     anchor: "settings-tabs",
     title: "Paramètres",
-    body: "Équipe : les personnes à qui vous attribuez le travail. Catalogue : types de prestation et fournisseurs. Finances : charges fixes et objectif. Pour revoir cette visite : Général › Visite guidée, juste en dessous.",
+    body: "Équipe : les personnes à qui vous attribuez le travail. Catalogue : catégories, types de prestation et fournisseurs. Société : vos coordonnées et où se font les factures. Finances : charges fixes et objectif. Pour revoir cette visite : Général › Visite guidée, juste en dessous.",
   },
 ];

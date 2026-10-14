@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AppEvent, AppSettings, Client, Ingredient, LedgerEntry, Recipe, ReportInputs } from "@packages/types";
+import type { AppEvent, AppSettings, Client, Ingredient, InvoicingMode, LedgerEntry, Recipe, ReportInputs } from "@packages/types";
 import { calcRecipeCost } from "@packages/types";
 import { api, ApiError } from "@/lib/api";
 
@@ -10,6 +10,8 @@ export interface ReportData {
   recipes: Recipe[];
   ingredients: Ingredient[];
   settings: AppSettings | null;
+  // "app" until the settings load or when unset; the comptes pages and the event page read this one value.
+  invoicing: InvoicingMode;
   clients: Client[];
   loading: boolean;
   /** True when the ledger table is not provisioned yet (API answered 503). */
@@ -72,5 +74,7 @@ export function useReportInputs(year: string | number): ReportData {
     return { entries, events, recipeCostById, recipePortionsById, settings, clients };
   }, [entries, events, recipes, ingredients, settings, clients]);
 
-  return { inputs, entries, events, recipes, ingredients, settings, clients, loading, notConfigured, error, reload };
+  const invoicing: InvoicingMode = settings?.invoicing ?? "app";
+
+  return { inputs, entries, events, recipes, ingredients, settings, invoicing, clients, loading, notConfigured, error, reload };
 }

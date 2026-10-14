@@ -14,12 +14,16 @@ import RecipeEditor from "@/pages/admin/RecipeEditor";
 import RecipeCook from "@/pages/admin/RecipeCook";
 import Ingredients from "@/pages/admin/Ingredients";
 import IngredientDuplicates from "@/pages/admin/IngredientDuplicates";
+import IngredientPrices from "@/pages/admin/IngredientPrices";
 import Events from "@/pages/admin/Events";
 import EventEditor from "@/pages/admin/EventEditor";
 import EventDetail from "@/pages/admin/EventDetail";
 import GroceryListPage from "@/pages/admin/GroceryListPage";
 import Clients from "@/pages/admin/Clients";
 import ClientDetail from "@/pages/admin/ClientDetail";
+import Offers from "@/pages/admin/Offers";
+import OfferDetail from "@/pages/admin/OfferDetail";
+import Devis from "@/pages/admin/Devis";
 import ComptesLayout from "@/pages/admin/comptes/ComptesLayout";
 import Journal from "@/pages/admin/comptes/Journal";
 import Apercu from "@/pages/admin/comptes/Apercu";
@@ -71,6 +75,7 @@ export default function App() {
         <Route path="/recipes/:id/edit" element={<RecipeEditor />} />
         <Route path="/ingredients" element={<Ingredients />} />
         <Route path="/ingredients/doublons" element={<IngredientDuplicates />} />
+        <Route path="/ingredients/prix" element={<IngredientPrices />} />
         <Route path="/events" element={<Events />} />
         <Route path="/events/new" element={<EventEditor />} />
         <Route path="/events/:id" element={<EventDetail />} />
@@ -80,6 +85,9 @@ export default function App() {
         <Route path="/clients" element={<Clients />} />
         <Route path="/clients/new" element={<ClientDetail />} />
         <Route path="/clients/:id" element={<ClientDetail />} />
+        <Route path="/offres" element={<Offers />} />
+        <Route path="/offres/:id" element={<OfferDetail />} />
+        <Route path="/devis" element={<Devis />} />
         <Route path="/comptes" element={<Navigate to="/comptes/journal" replace />} />
         <Route path="/comptes" element={<ComptesLayout />}>
           <Route path="journal" element={<Journal />} />

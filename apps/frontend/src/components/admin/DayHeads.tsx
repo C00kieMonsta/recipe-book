@@ -25,10 +25,14 @@ export interface DayHeadsProps {
   people: Person[];
   selectedPerson?: string;
   onPersonFilter?: (personId: string) => void;
+  // Touch drag: the day under the finger gets the tint and the primary ring.
+  dropDay?: string | null;
+  // Touch drag in progress: every cell tints and the caption shows.
+  dragging?: boolean;
 }
 
 // The seven column heads of the week, one row shared by the week and the day page at xl.
-export default function DayHeads({ dates, plan, started, today, selected, href, closeHref, state, newEventHref, people, selectedPerson, onPersonFilter }: DayHeadsProps) {
+export default function DayHeads({ dates, plan, started, today, selected, href, closeHref, state, newEventHref, people, selectedPerson, onPersonFilter, dropDay, dragging = false }: DayHeadsProps) {
   return (
     <div
       role="group"
@@ -43,7 +47,17 @@ export default function DayHeads({ dates, plan, started, today, selected, href, 
         const [dayName, dayNum] = dayLabel(date).split(" ");
         const dayPeople = plan?.peopleByDay[date] ?? [];
         return (
-          <div key={date} data-tour={isSelected ? "day-open" : undefined} className={cn("group min-w-0 rounded", past && "opacity-60", isSelected && "bg-selected")}>
+          <div
+            key={date}
+            data-tour={isSelected ? "day-open" : undefined}
+            data-drop-day={date}
+            className={cn(
+              "group min-w-0 rounded",
+              past && "opacity-60",
+              (isSelected || dragging) && "bg-selected",
+              dropDay === date && "ring-2 ring-inset ring-primary",
+            )}
+          >
             <div className="flex items-start gap-1">
               <Link
                 to={isSelected && closeHref ? closeHref : href(date)}
@@ -58,7 +72,7 @@ export default function DayHeads({ dates, plan, started, today, selected, href, 
                   <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${isToday ? "bg-danger-solid text-white" : ""}`}>{dayNum}</span>
                 </div>
                 {/* A non-breaking space keeps the caption line while the plan loads. */}
-                <div className="truncate text-caption text-muted-foreground">{day ? dayHeaderMeta(day, started) : " "}</div>
+                <div className="truncate text-caption text-muted-foreground">{day ? dayHeaderMeta(day, started) : " "}</div>
               </Link>
               <IconButton size="sm" as={Link} to={newEventHref(date)} aria-label={`Nouvel événement le ${longDayLabel(date)}`} className="reveal mt-1" icon={<Plus />} />
             </div>
@@ -84,6 +98,7 @@ export default function DayHeads({ dates, plan, started, today, selected, href, 
           </div>
         );
       })}
+      {dragging && <p className="col-span-7 text-caption text-muted-foreground">Déposez sur un jour</p>}
     </div>
   );
 }

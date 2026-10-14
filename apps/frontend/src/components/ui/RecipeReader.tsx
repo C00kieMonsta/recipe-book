@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { Recipe, Ingredient } from "@packages/types";
-import { calcIngredientLineCost, calcRecipeCost, fmtQty, scaleQtyNumber, scaleStepText } from "@packages/types";
+import { calcIngredientLineCost, calcRecipeCost, fmtQty, scaleQtyNumber, scaleStepSegments } from "@packages/types";
 import { fmt } from "@/lib/recipe-helpers";
 import Stepper from "./Stepper";
 import SectionToggle from "./SectionToggle";
@@ -26,17 +26,27 @@ export interface RecipeReaderProps {
   className?: string;
 }
 
+// Bold and highlight come from the step markup; scaled quantities use the blue selection tint so the two never collide.
+function Styled({ bold, mark, children }: { bold: boolean; mark: boolean; children: ReactNode }) {
+  let node = children;
+  if (mark) node = <mark className="rounded-sm bg-tag-yellow-bg px-0.5 text-inherit">{node}</mark>;
+  if (bold) node = <strong>{node}</strong>;
+  return <>{node}</>;
+}
+
 export function StepText({ step, ratio, showBase }: { step: string; ratio: number; showBase?: boolean }) {
-  const { parts } = scaleStepText(step, ratio);
+  const { segments } = scaleStepSegments(step, ratio);
   return (
     <>
-      {parts.map((part, i) =>
-        typeof part === "string" ? (
-          <span key={i}>{part}</span>
+      {segments.map((seg, i) =>
+        seg.kind === "text" ? (
+          <Styled key={i} bold={seg.bold} mark={seg.mark}>{seg.text}</Styled>
         ) : (
           <span key={i} className="whitespace-nowrap">
-            <mark className="rounded-sm bg-tag-yellow-bg px-0.5 text-inherit">{part.to}</mark>
-            {showBase && <span className="text-sm text-muted-foreground"> ({part.from})</span>}
+            <Styled bold={seg.bold} mark={seg.mark}>
+              <mark className="rounded-sm bg-selected px-0.5 text-inherit">{seg.to}</mark>
+              {showBase && <span className="text-sm text-muted-foreground"> ({seg.from})</span>}
+            </Styled>
           </span>
         ),
       )}

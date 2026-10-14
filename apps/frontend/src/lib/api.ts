@@ -25,6 +25,11 @@ import type {
   DuplicateGroup,
   DuplicateMember,
   CostSnapshotRequest,
+  Offer,
+  CreateOfferRequest,
+  UpdateOfferRequest,
+  ImportLedgerRow,
+  ImportIngredientsOptions,
 } from "@packages/types";
 
 export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
@@ -72,7 +77,7 @@ async function parseResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const d = (data ?? {}) as { message?: unknown; error?: unknown };
     const msg = res.status === 413
-      ? "Fichier trop volumineux, divisez le CSV"
+      ? "Fichier trop volumineux"
       : Array.isArray(d.message)
         ? d.message.map((m) => (m && typeof m === "object" && "message" in m ? String((m as { message: unknown }).message) : String(m))).join(", ")
         : (typeof d.message === "string" && d.message) || (typeof d.error === "string" && d.error) || `Request failed: ${res.status}`;
@@ -153,13 +158,20 @@ export type MergeResponse =
   | { ok: true; recipesUpdated: number; listsUpdated: number; removed: number; preexisting?: number }
   | { ok: false; recipesUpdated: number; listsUpdated: number; failures: unknown[]; preexisting?: number };
 
-// Lines and tasks sent on create or update may omit their id; the server fills it.
-export type EventInput = Omit<Partial<AppEvent>, "recipes" | "tasks" | "costSnapshot"> & {
+// Text fields the server clears when the update sends null or "".
+type ClearableEventField = "contactName" | "contactPhone" | "contactEmail" | "deliveryAddress" | "deliveryTime" | "billingDetails";
+
+// Lines and tasks sent on create or update may omit their id; the server fills it. Attachments only change through their own routes.
+export type EventInput = Omit<Partial<AppEvent>, "recipes" | "tasks" | "costSnapshot" | "attachments" | ClearableEventField | "sellingTotal"> & {
   // The server stamps takenAt, so a client sends the request shape.
   costSnapshot?: CostSnapshotRequest;
   recipes?: (Omit<EventRecipeLine, "lineId"> & { lineId?: string })[];
   tasks?: (Omit<EventTask, "taskId"> & { taskId?: string })[];
-};
+  sellingTotal?: number | null;
+} & { [K in ClearableEventField]?: string | null };
+
+export interface ImportIngredientsResponse { created: number; updated: number; unmatched: string[]; notFound: string[] }
+export interface ImportLedgerResponse { created: number; updated: number; skippedLocked: number; invalid: string[] }
 
 export interface InstantiateResponse { created: AppEvent[]; skipped: string[] }
 export interface LinkEventsResponse { linked: number }
@@ -178,6 +190,16 @@ export interface CreateGroceryListRequest {
   range?: { from: string; to: string };
 }
 
+const allRecipes = cached("recipes", () => request<Recipe[]>("/admin/recipes"));
+
+function importQuery(options?: Partial<ImportIngredientsOptions>): string {
+  const params = new URLSearchParams();
+  if (options?.mode) params.set("mode", options.mode);
+  if (options?.supplier?.trim()) params.set("supplier", options.supplier.trim());
+  const q = params.toString();
+  return q ? `?${q}` : "";
+}
+
 // ── API ─────────────────────────────────────────────────────────────────────
 export const api = {
   health: {
@@ -189,12 +211,14 @@ export const api = {
     create: withInvalidate(["ingredients"], (data: Partial<Ingredient>) => request<Ingredient>("/admin/ingredients", json("POST", data))),
     update: withInvalidate(["ingredients"], (id: string, data: Partial<Ingredient>) => request<Ingredient>(`/admin/ingredients/${id}`, json("PATCH", data))),
     delete: withInvalidate(["ingredients", "recipes"], (id: string) => request<{ ok: boolean }>(`/admin/ingredients/${id}`, { method: "DELETE" })),
-    import: withInvalidate(["ingredients"], (rows: unknown[]) => request<{ created: number; updated: number }>("/admin/ingredients/import", json("POST", rows))),
+    import: withInvalidate(["ingredients"], (rows: unknown[], options?: Partial<ImportIngredientsOptions>) =>
+      request<ImportIngredientsResponse>(`/admin/ingredients/import${importQuery(options)}`, json("POST", rows))),
     duplicates: () => request<DuplicatesResponse>("/admin/ingredients/duplicates"),
     merge: withInvalidate(["ingredients", "recipes"], (body: MergeIngredientsRequest) => request<MergeResponse>("/admin/ingredients/merge", json("POST", body))),
   },
   recipes: {
-    list: cached("recipes", () => request<Recipe[]>("/admin/recipes")),
+    // The whole list is cached; a category filter goes to the server uncached.
+    list: (category?: string) => (category ? request<Recipe[]>(`/admin/recipes?category=${encodeURIComponent(category)}`) : allRecipes()),
     get: (id: string) => request<Recipe>(`/admin/recipes/${id}`),
     create: withInvalidate(["recipes"], (data: Partial<Recipe>) => request<Recipe>("/admin/recipes", json("POST", data))),
     update: withInvalidate(["recipes"], (id: string, data: Partial<Recipe>) => request<Recipe>(`/admin/recipes/${id}`, json("PATCH", data))),
@@ -223,6 +247,18 @@ export const api = {
       patch: withInvalidate(["events"], (id: string, taskId: string, patch: PatchEventTaskRequest) => request<AppEvent>(`/admin/events/${id}/tasks/${taskId}`, json("PATCH", patch))),
       remove: withInvalidate(["events"], (id: string, taskId: string) => request<AppEvent>(`/admin/events/${id}/tasks/${taskId}`, { method: "DELETE" })),
     },
+    attachments: {
+      add: withInvalidate(["events"], (id: string, file: File) => uploadRequest<AppEvent>(`/admin/events/${id}/attachments`, file)),
+      rename: withInvalidate(["events"], (id: string, attachmentId: string, name: string) => request<AppEvent>(`/admin/events/${id}/attachments/${attachmentId}`, json("PATCH", { name }))),
+      remove: withInvalidate(["events"], (id: string, attachmentId: string) => request<AppEvent>(`/admin/events/${id}/attachments/${attachmentId}`, { method: "DELETE" })),
+      url: (id: string, attachmentId: string) => request<{ url: string }>(`/admin/events/${id}/attachments/${attachmentId}/url`),
+    },
+  },
+  offers: {
+    list: cached("offers", () => request<Offer[]>("/admin/offers")),
+    create: withInvalidate(["offers"], (data: CreateOfferRequest) => request<Offer>("/admin/offers", json("POST", data))),
+    update: withInvalidate(["offers"], (id: string, data: UpdateOfferRequest) => request<Offer>(`/admin/offers/${id}`, json("PATCH", data))),
+    delete: withInvalidate(["offers"], (id: string) => request<{ ok: boolean }>(`/admin/offers/${id}`, { method: "DELETE" })),
   },
   groceryLists: {
     list: () => request<GroceryList[]>("/admin/grocery-lists"),
@@ -249,6 +285,7 @@ export const api = {
     delete: withInvalidate(["events", "settings"], (id: string) => request<{ ok: boolean }>(`/admin/ledger/${id}`, { method: "DELETE" })),
     lock: withInvalidate(["events", "settings"], (body: LockMonthRequest) => request<LockMonthResponse>("/admin/ledger/lock", json("POST", body))),
     unlock: withInvalidate(["events", "settings"], (body: UnlockMonthRequest) => request<UnlockMonthResponse>("/admin/ledger/unlock", json("POST", body))),
+    import: withInvalidate(["events", "settings"], (rows: ImportLedgerRow[]) => request<ImportLedgerResponse>("/admin/ledger/import", json("POST", { rows }))),
   },
 };
 

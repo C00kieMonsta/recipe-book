@@ -182,6 +182,9 @@ Stored in AWS SSM Parameter Store under `/la-table-amelie/production/*` and writ
 | `S3_BUCKET` | S3 bucket for recipe photos |
 | `ADMIN_CREDENTIALS` | JSON array of `{email, hash}` (bcrypt) |
 | `JWT_SECRET` | HS256 signing secret (32+ chars) |
+| `OPENAI_API_KEY_PARAMETER` | Name of the SSM SecureString holding the OpenAI key. The deploy sets it when the parameter exists; with `NODE_ENV=production` the API defaults to `/la-table-amelie/production/OPENAI_API_KEY` anyway. See « Assistant » |
+| `OPENAI_MODEL` | Optional Responses-API model id (default `gpt-5.6-terra`). Read from SSM by the deploy, empty means the default |
+| `OPENAI_API_KEY` | Local only. Never set it in SSM or in `.env` on the server; see « Assistant » |
 
 ### After the deploy that merges categories and moves invoices to Odoo
 
@@ -203,6 +206,38 @@ Both steps are one-off and safe to re-run. `$API` is the API base URL (the `API_
    ```
 
    To go back: the same call with `{"invoicing":"app"}`, or Paramètres › Société › Factures.
+
+### Assistant
+
+The Assistant (chat sheet, [docs/redesign/08-assistant.md](docs/redesign/08-assistant.md)) needs an OpenAI key. The key never goes in the repo, the deploy template, `.env` on the server or the logs. The API reads it from one SSM SecureString through the instance role, cached and re-read every 15 minutes.
+
+Create the parameter once. Type the value from a password manager, not from a terminal history or a chat:
+
+```bash
+read -rs KEY   # paste the key; nothing is echoed and it stays out of the shell history
+aws ssm put-parameter --profile production --region eu-north-1 \
+  --name /la-table-amelie/production/OPENAI_API_KEY \
+  --type SecureString \
+  --value "$KEY"
+unset KEY
+```
+
+Rotate with the same command plus `--overwrite`; the running API picks the new key up within 15 minutes, no restart. Rotate any key that was ever pasted in a chat, a ticket, a screenshot or a commit, even if it was removed afterwards.
+
+The instance role needs `ssm:GetParameter` on `arn:aws:ssm:eu-north-1:*:parameter/la-table-amelie/production/OPENAI_API_KEY`; `./scripts/provision-new-tables.sh` writes that statement (and the role created by `scripts/create-ec2.sh` already covers the whole prefix). No `kms:Decrypt` statement is needed when the SecureString uses the default `aws/ssm` key, which is the case for the command above. Add one on the key ARN only if you create the parameter with `--key-id`.
+
+Optional model: `aws ssm put-parameter --name /la-table-amelie/production/OPENAI_MODEL --type String --value gpt-5.6-terra`. Absent means the default. Any Responses-API model id works.
+
+The deploy (`.github/workflows/cd-deploy.yml`) writes `OPENAI_API_KEY_PARAMETER` into `.env` when the parameter exists and `OPENAI_MODEL` from SSM. It never reads or writes the key itself. Push main after creating the parameter so `.env` carries the parameter name, or rely on the `NODE_ENV=production` default.
+
+Locally, export the key in the shell that starts the API:
+
+```bash
+export OPENAI_API_KEY=...   # from your password manager, not committed anywhere
+pnpm dev:backend
+```
+
+`GET /health` returns `assistant: true` when a key source is configured (`OPENAI_API_KEY` locally or a parameter name in production). The frontend hides the Assistant cell and the ⌘⇧L shortcut when it is `false`. A configured parameter name whose parameter does not exist yields a 503 `ASSISTANT_DISABLED` on the first message; an `AccessDenied` is logged loudly without the value.
 
 ### Adding a new DynamoDB table
 
@@ -253,7 +288,7 @@ The backend connects to real AWS DynamoDB by default. To use DynamoDB Local inst
 git push origin main
 ```
 
-The script creates `ta-clients-prod` and `ta-ledger-prod` with point-in-time recovery, writes the `CLIENTS_TABLE` and `LEDGER_TABLE` SSM parameters and refreshes the instance role policy; it is safe to re-run. The deploy workflow then rewrites `apps/backend/.env` from SSM and restarts the API; `GET /health` reports both tables as `true`.
+The script creates `ta-clients-prod` and `ta-ledger-prod` with point-in-time recovery, writes the `CLIENTS_TABLE` and `LEDGER_TABLE` SSM parameters and refreshes the instance role policy (seven table ARNs plus `ssm:GetParameter` on the Assistant key parameter); it is safe to re-run. The deploy workflow then rewrites `apps/backend/.env` from SSM and restarts the API; `GET /health` reports both tables as `true`.
 
 ## Local smoke test
 

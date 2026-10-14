@@ -11,7 +11,7 @@ import type {
   SalesKind,
   VatRate,
 } from "@packages/types";
-import { DEFAULT_PRESTATION_TYPES, VAT_RATES, fmtEur, round2, splitTvac, sumMoney } from "@packages/types";
+import { DEFAULT_PRESTATION_TYPES, VAT_RATES, fmtEur, lastDayOfMonth, monthLabel, round2, splitTvac, sumMoney } from "@packages/types";
 import { api } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import {
@@ -26,7 +26,11 @@ import { Button, Callout, Checkbox, Dialog, FieldLabel, IconButton, Tag, ViewTab
 export interface LedgerEntryFormProps {
   initial?: Partial<CreateLedgerEntryRequest>;
   entry?: LedgerEntry;
-  kind?: "facture" | "acompte";
+  kind?: "facture" | "acompte" | "ca_mensuel";
+  // Replaces the computed title (« Facture 2 / 2 · service, livraison, autres (21 %) »).
+  title?: string;
+  // Offers the « CA mensuel » nature; the Journal passes settings.invoicing === "externe".
+  allowMonthly?: boolean;
   eventOptions?: { eventId: string; label: string }[];
   clientOptions?: { clientId: string; name: string }[];
   onSaved: (entry: LedgerEntry, next?: { keepOpen: boolean }) => void;
@@ -98,10 +102,11 @@ function initialState(props: LedgerEntryFormProps): FormState {
   const kind = props.kind ?? src.kind ?? (book === "ventes" ? "facture" : "mp");
   const sales = src;
   const purchase = src;
+  const date = src.date ?? todayIso();
   return {
     book,
     kind,
-    date: src.date ?? todayIso(),
+    date: kind === "ca_mensuel" && !src.date ? lastDayOfMonth(date.slice(0, 7)) : date,
     number: src.number ?? "",
     label: src.label ?? "",
     clientId: src.clientId ?? "",
@@ -111,7 +116,7 @@ function initialState(props: LedgerEntryFormProps): FormState {
     tvac: txt(src.totalTvac),
     htva: txt(src.htva),
     tva: txt(src.vatAmount),
-    paid: sales.paid ?? (kind === "acompte"),
+    paid: sales.paid ?? (kind === "acompte" || kind === "ca_mensuel"),
     paymentMethod: sales.paymentMethod ?? "",
     paidAt: sales.paidAt ?? (kind === "acompte" && !props.entry ? src.date ?? todayIso() : ""),
     km: sales.km !== undefined ? String(sales.km) : "",
@@ -146,6 +151,10 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((p) => ({ ...p, [k]: v }));
   const isSales = f.book === "ventes";
   const isCredit = isSales && f.kind === "note_de_credit";
+  const isMonthly = isSales && f.kind === "ca_mensuel";
+  // The month the form opened on, kept for the ca_mensuel date default and label placeholder.
+  const [openedYm] = useState(() => f.date.slice(0, 7));
+  const monthlyLabel = `CA · ${monthLabel(f.date.length >= 7 ? f.date.slice(0, 7) : openedYm)}`;
   const isPersonnel = !isSales && f.kind === "personnel";
   const sign = isCredit ? -1 : 1;
 
@@ -166,7 +175,12 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
     setF((p) => ({ ...p, vatRate: rate, htva: txt(htva), tva: txt(vatAmount) }));
   };
   const onKind = (kind: string) => {
-    setF((p) => ({ ...p, kind, paid: kind === "acompte" ? true : p.paid }));
+    setF((p) => ({
+      ...p,
+      kind,
+      paid: kind === "acompte" || kind === "ca_mensuel" ? true : p.paid,
+      date: kind === "ca_mensuel" && !entry ? lastDayOfMonth(openedYm) : p.date,
+    }));
     if (kind === "commission") onRate(0);
   };
   const onPrestationType = (key: string) => {
@@ -193,8 +207,8 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
   const buildBody = (): CreateLedgerEntryRequest => {
     const base = {
       date: f.date,
-      label: f.label.trim(),
-      number: f.number.trim() || undefined,
+      label: f.label.trim() || (isMonthly ? monthlyLabel : ""),
+      number: !isMonthly && f.number.trim() ? f.number.trim() : undefined,
       description: f.description.trim() || undefined,
       eventIds: f.eventIds.length ? f.eventIds : undefined,
       clientId: f.clientId || undefined,
@@ -210,9 +224,9 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
         kind: f.kind as SalesKind,
         prestationType: f.prestationType || undefined,
         refEntryId: isCredit && f.refEntryId ? f.refEntryId : undefined,
-        paid: f.paid,
-        paymentMethod: f.paid && f.paymentMethod ? (f.paymentMethod as PaymentMethod) : undefined,
-        paidAt: f.paid && f.paidAt ? f.paidAt : undefined,
+        paid: isMonthly || f.paid,
+        paymentMethod: !isMonthly && f.paid && f.paymentMethod ? (f.paymentMethod as PaymentMethod) : undefined,
+        paidAt: !isMonthly && f.paid && f.paidAt ? f.paidAt : undefined,
         km: f.km.trim() ? num(f.km) : undefined,
       });
     }
@@ -228,7 +242,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
   };
 
   const patchBody = (): PatchLedgerEntryRequest => ({
-    paid: f.paid,
+    paid: isMonthly || f.paid,
     ...(f.paymentMethod ? { paymentMethod: f.paymentMethod as PaymentMethod } : {}),
     ...(f.paidAt ? { paidAt: f.paidAt } : {}),
     description: f.description.trim(),
@@ -236,7 +250,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
 
   const validate = (): string | null => {
     if (locked) return null;
-    if (!f.label.trim()) return "L'intitulé est requis.";
+    if (!f.label.trim() && !isMonthly) return "L'intitulé est requis.";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(f.date)) return "La date est requise.";
     if (!identityOk) return "HTVA + TVA doit égaler TVAC (écart de 0,01 toléré).";
     if (isCredit && !f.number.trim()) return "Le numéro est requis pour une note de crédit.";
@@ -290,9 +304,16 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
 
   const ro = locked;
   const field = `input-field ${ro ? "bg-muted text-muted-foreground" : ""}`;
-  const kinds = isSales ? SALES_KINDS : PURCHASE_KINDS;
+  // « CA mensuel » stays listed for an entry that already carries it.
+  const salesKinds = props.allowMonthly || f.kind === "ca_mensuel" ? SALES_KINDS : SALES_KINDS.filter((k) => k !== "ca_mensuel");
+  const kinds = isSales ? salesKinds : PURCHASE_KINDS;
   const kindLabelOf = (k: string) => (isSales ? SALES_KIND_LABEL[k as SalesKind] : PURCHASE_KIND_LABEL[k as PurchaseKind]);
-  const title = target ? "Modifier la ligne" : props.kind === "acompte" ? "Enregistrer un acompte" : props.kind === "facture" ? "Créer la facture" : "Nouvelle ligne";
+  const title = props.title
+    ?? (target ? "Modifier la ligne"
+      : props.kind === "acompte" ? "Enregistrer un acompte"
+      : props.kind === "facture" ? "Créer la facture"
+      : props.kind === "ca_mensuel" ? "Saisir le CA du mois"
+      : "Nouvelle ligne");
   const dialog = props.layout === "dialog";
 
   const footer = (
@@ -359,13 +380,15 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
           <FieldLabel htmlFor="le-date">Date</FieldLabel>
           <input id="le-date" type="date" className={field} value={f.date} readOnly={ro} onChange={(e) => set("date", e.target.value)} />
         </div>
-        <div>
-          <FieldLabel htmlFor="le-number">{isSales ? "N° de facture" : "Réf."}{isCredit ? " · requis" : ""}</FieldLabel>
-          <input id="le-number" className={field} value={f.number} readOnly={ro} onChange={(e) => set("number", e.target.value)} />
-        </div>
-        <div>
+        {!isMonthly && (
+          <div>
+            <FieldLabel htmlFor="le-number">{isSales ? "N° de facture" : "Réf."}{isCredit ? " · requis" : ""}</FieldLabel>
+            <input id="le-number" className={field} value={f.number} readOnly={ro} onChange={(e) => set("number", e.target.value)} />
+          </div>
+        )}
+        <div className={isMonthly ? "sm:col-span-2" : undefined}>
           <FieldLabel htmlFor="le-label">Intitulé</FieldLabel>
-          <input id="le-label" className={field} value={f.label} readOnly={ro} onChange={(e) => set("label", e.target.value)} />
+          <input id="le-label" className={field} value={f.label} readOnly={ro} placeholder={isMonthly ? monthlyLabel : undefined} onChange={(e) => set("label", e.target.value)} />
         </div>
       </div>
 
@@ -405,7 +428,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
         </div>
       )}
 
-      {eventOptions.length > 0 && (
+      {eventOptions.length > 0 && !isMonthly && (
         <div>
           <FieldLabel htmlFor="le-event-search">Événements{f.eventIds.length ? ` · ${f.eventIds.length} sélectionné${f.eventIds.length > 1 ? "s" : ""}` : ""}</FieldLabel>
           <p className="mb-2 text-sm text-muted-foreground">Cochez l'événement couvert : il passe en Facturé et sort de À facturer.</p>
@@ -502,27 +525,32 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
       {f.kind === "acompte" && (
         <p className="text-sm text-muted-foreground">Traitement TVA des acomptes à confirmer avec le comptable.</p>
       )}
+      {isMonthly && (
+        <p className="text-caption text-muted-foreground">Une ligne par mois et par taux de TVA.</p>
+      )}
 
-      <div className="rounded-lg bg-surface p-3">
-        <Checkbox checked={f.paid} onChange={(v) => set("paid", v)} label="Réglé" className="-mx-1" />
-        {f.paid && (
-          <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <FieldLabel htmlFor="le-method">Mode</FieldLabel>
-              <select id="le-method" className="input-field" value={f.paymentMethod} onChange={(e) => set("paymentMethod", e.target.value)}>
-                <option value="">Non précisé</option>
-                {PAYMENT_METHODS.map((m) => (
-                  <option key={m} value={m}>{PAYMENT_METHOD_LABEL[m]}</option>
-                ))}
-              </select>
+      {!isMonthly && (
+        <div className="rounded-lg bg-surface p-3">
+          <Checkbox checked={f.paid} onChange={(v) => set("paid", v)} label="Réglé" className="-mx-1" />
+          {f.paid && (
+            <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <FieldLabel htmlFor="le-method">Mode</FieldLabel>
+                <select id="le-method" className="input-field" value={f.paymentMethod} onChange={(e) => set("paymentMethod", e.target.value)}>
+                  <option value="">Non précisé</option>
+                  {PAYMENT_METHODS.map((m) => (
+                    <option key={m} value={m}>{PAYMENT_METHOD_LABEL[m]}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <FieldLabel htmlFor="le-paidat">Encaissé le</FieldLabel>
+                <input id="le-paidat" type="date" className="input-field" value={f.paidAt} onChange={(e) => set("paidAt", e.target.value)} />
+              </div>
             </div>
-            <div>
-              <FieldLabel htmlFor="le-paidat">Encaissé le</FieldLabel>
-              <input id="le-paidat" type="date" className="input-field" value={f.paidAt} onChange={(e) => set("paidAt", e.target.value)} />
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_8rem]">
         <div>

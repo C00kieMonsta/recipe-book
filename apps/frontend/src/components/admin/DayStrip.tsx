@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { parseYmd } from "@packages/types";
+import { cn } from "@/lib/utils";
 
 export interface DayStripProps {
   dates: string[];
@@ -11,14 +12,18 @@ export interface DayStripProps {
   href: (date: string) => string;
   state?: unknown;
   className?: string;
+  // Touch drag: the day under the finger gets the tint and the primary ring.
+  dropDay?: string | null;
+  // Touch drag in progress: every cell tints and the caption shows.
+  dragging?: boolean;
 }
 
 const LETTERS = ["L", "M", "M", "J", "V", "S", "D"];
 
 const longDay = new Intl.DateTimeFormat("fr-BE", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
 
-// Seven 44px cells, one per day; a tap opens that day.
-export default function DayStrip({ dates, counts, today, selected, href, state, className = "" }: DayStripProps) {
+// Seven 44px cells, one per day; a tap opens that day, a lifted row drops on it.
+export default function DayStrip({ dates, counts, today, selected, href, state, className = "", dropDay, dragging = false }: DayStripProps) {
   return (
     <div role="group" aria-label="Jours de la semaine" className={`grid grid-cols-7 ${className}`}>
       {dates.map((date, i) => {
@@ -34,7 +39,12 @@ export default function DayStrip({ dates, counts, today, selected, href, state, 
             aria-label={longDay.format(parseYmd(date))}
             aria-current={isSelected ? "page" : isToday ? "date" : undefined}
             data-tour={isSelected ? "day-open" : undefined}
-            className={`relative flex h-11 flex-col items-center justify-center gap-0.5 rounded hover:bg-hover ${isSelected ? "bg-selected" : ""}`}
+            data-drop-day={date}
+            className={cn(
+              "relative flex h-11 flex-col items-center justify-center gap-0.5 rounded hover:bg-hover",
+              (isSelected || dragging) && "bg-selected",
+              dropDay === date && "ring-2 ring-inset ring-primary",
+            )}
           >
             <span className={`text-caption leading-none ${muted}`}>{LETTERS[i]}</span>
             <span className={`flex h-5 w-5 items-center justify-center rounded-full text-sm font-medium leading-none tabular-nums touch:text-base ${isToday ? "bg-danger-solid text-white" : ""}`}>
@@ -44,6 +54,7 @@ export default function DayStrip({ dates, counts, today, selected, href, state, 
           </Link>
         );
       })}
+      {dragging && <p className="col-span-7 pt-1 text-center text-caption text-muted-foreground">Déposez sur un jour</p>}
     </div>
   );
 }

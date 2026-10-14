@@ -5,6 +5,10 @@ import { z } from "zod";
 const optionalString = z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), z.string().min(1).optional());
 const optionalUrl = z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), z.string().url().optional());
 
+// The deploy writes NODE_ENV=production into .env; that is the only stage marker the app has.
+export const PRODUCTION_OPENAI_KEY_PARAMETER = "/la-table-amelie/production/OPENAI_API_KEY";
+export const DEFAULT_OPENAI_MODEL = "gpt-5.6-terra";
+
 const schema = z.object({
   PORT: z.coerce.number().default(3001),
   AWS_REGION: z.string().default("eu-west-1"),
@@ -19,6 +23,10 @@ const schema = z.object({
   S3_BUCKET: z.string().min(1),
   ADMIN_CREDENTIALS: z.string().min(1),
   JWT_SECRET: z.string().min(32),
+  NODE_ENV: optionalString,
+  OPENAI_API_KEY: optionalString,
+  OPENAI_API_KEY_PARAMETER: optionalString,
+  OPENAI_MODEL: optionalString,
 });
 
 export type Env = z.infer<typeof schema>;
@@ -38,7 +46,13 @@ export class ConfigService {
   private readonly env: Env;
 
   constructor() {
-    this.env = schema.parse(process.env);
+    const parsed = schema.parse(process.env);
+    this.env = {
+      ...parsed,
+      OPENAI_API_KEY_PARAMETER:
+        parsed.OPENAI_API_KEY_PARAMETER ?? (parsed.NODE_ENV === "production" ? PRODUCTION_OPENAI_KEY_PARAMETER : undefined),
+      OPENAI_MODEL: parsed.OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL,
+    };
   }
 
   get<K extends keyof Env>(key: K): Env[K] {

@@ -142,6 +142,14 @@ jobs:
                 --query "Parameter.Value" \
                 --output text
             }
+            # Prints the parameter name when it exists, nothing otherwise; never decrypts the value.
+            ssm_exists() {
+              aws ssm get-parameter \
+                --region "$REGION" \
+                --name "${PREFIX}/$1" \
+                --query "Parameter.Name" \
+                --output text 2>/dev/null || true
+            }
 
             cat > "${APP_DIR}/apps/backend/.env" <<ENVEOF
             NODE_ENV=production
@@ -157,6 +165,8 @@ jobs:
             S3_BUCKET=$(ssm_get S3_BUCKET)
             ADMIN_CREDENTIALS=$(ssm_get ADMIN_CREDENTIALS)
             JWT_SECRET=$(ssm_get JWT_SECRET)
+            OPENAI_API_KEY_PARAMETER=$(ssm_exists OPENAI_API_KEY)
+            OPENAI_MODEL=$(ssm_get OPENAI_MODEL)
             ENVEOF
             chmod 600 "${APP_DIR}/apps/backend/.env"
 

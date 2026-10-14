@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import type { ChecklistItem, GroceryList, PrestationTypeSetting } from "@packages/types";
+import type { ChecklistItem, GroceryList, InvoicingMode, PrestationTypeSetting } from "@packages/types";
 import { checklistCount, isoWeekOf, parseIsoWeek, parseYmd, rangeLabel } from "@packages/types";
 import { fmtEur0, plural } from "@/lib/use-planning-data";
 import type { ReactNode } from "react";
@@ -22,6 +22,8 @@ export interface WeekChecklistProps {
   // Newest list covering the week, shown as a muted row when nothing is uncovered.
   coveringList?: Pick<GroceryList, "listId" | "range">;
   busy: boolean;
+  // Absent reads as "app"; "externe" drops the invoicing half of the to_close sentence.
+  invoicing?: InvoicingMode;
   onCreateClientWeek: (clientId: string, guestCount: number) => void;
   onSetType: (eventId: string, type: PrestationTypeSetting) => Promise<void>;
   onAssign: () => void;
@@ -163,7 +165,7 @@ export default function WeekChecklist(props: WeekChecklistProps) {
 
 type RowProps = WeekChecklistProps & { item: ChecklistItem; state: { from: string }; retour: string };
 
-function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCreateClientWeek, onSetType, onAssign, onCreateGroceries, onCloseEvent }: RowProps) {
+function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, invoicing = "app", onCreateClientWeek, onSetType, onAssign, onCreateGroceries, onCloseEvent }: RowProps) {
   const [closing, setClosing] = useState<string | null>(null);
 
   switch (item.kind) {
@@ -235,8 +237,9 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCr
           <div className={ROW}>
             <RowText>
               {item.events.length === 1
-                ? "1 événement passé est à terminer, puis à facturer"
-                : `${item.events.length} événements passés sont à terminer, puis à facturer`}
+                ? "1 événement passé est à terminer"
+                : `${item.events.length} événements passés sont à terminer`}
+              {invoicing === "externe" ? "" : ", puis à facturer"}
             </RowText>
           </div>
           <ul className="pl-6">
