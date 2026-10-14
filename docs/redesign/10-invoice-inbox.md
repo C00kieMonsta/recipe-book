@@ -141,7 +141,7 @@ Tests (fake OpenAI, fake S3, fake ddb): upload stores and returns metadata; extr
 
 ### 6.3 Assistant (08)
 
-Read tool `list_recent_ledger_entries` (last 30 days) is enough for questions like « quelles factures ai-je ajoutées cette semaine ? »; no inbox tool.
+Read tool `list_recent_ledger_entries` (last 30 days) is enough for questions like « quelles factures ai-je ajoutées cette semaine ? »; no inbox tool. Not built in phase A; add it to `assistant.tools.ts` when the question comes up.
 
 ## 7. Build plan
 

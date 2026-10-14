@@ -108,6 +108,8 @@ Reads, executed at once:
 | `get_event` | `{ eventId }` | properties, lines with recipe names, portions, course, prepDate, people; tasks; revenue lines; delivery; billing; cost snapshot |
 | `get_catalogue_summary` | `{}` | categories, prestation types with VAT, people, suppliers, offers (`offerId, name, pricePerGuest, lines`), default VAT rates, today |
 | `quote_price` | section 4.4 | the estimation |
+| `get_offer_document` | `{ documentId }` | one offer document with its sections and rows (spec 09, 5.3) |
+| `search_offer_rows` | `{ query: string; limit?: number }` | up to 20 price-list rows across the active documents (spec 09, 5.3) |
 
 Writes, which only register a proposal (the tool result reads « Proposition enregistrée, l'utilisateur doit la confirmer »): `propose_create_recipe`, `propose_create_ingredient`, `propose_create_event`, `propose_update_event`, `propose_add_event_line`, `propose_update_event_line`, `propose_remove_event_line`, `propose_add_task`. Each takes `{ summary } & payload` plus `eventId` / `lineId` where relevant. The server validates with the DTO at once; on failure the result is `{ error: "<issues in French>" }` and the model may retry twice; on success `{ proposed: true, id }` and an `action` event is streamed.
 

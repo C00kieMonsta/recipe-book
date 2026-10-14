@@ -404,7 +404,7 @@ import type { VatRate } from "../entities/ledger";
 import type { CreateOfferRequest, UpdateOfferRequest } from "../dto/offers";
 
 // The flat layout model the PDF reads. The renderer never looks at the entity.
-export type PrintBlock =
+export type DocPrintBlock =
   | { kind: "band"; text: string }                                                  // « OFFRE BUFFETS AUTOMNE HIVER 2026 »
   | { kind: "company"; lines: string[]; facts: [string, string][] }                 // left block; right key-values
   | { kind: "section"; title: string; intro?: string; price?: string; unit?: string; minimum?: string }
@@ -428,7 +428,7 @@ export function documentFileName(d: Pick<OfferDocument, "title" | "year">): stri
 // The prestation's default rate, else 12.
 export function foodVatRateOf(d: Pick<OfferDocument, "prestationType">, prestationTypes: PrestationTypeSetting[]): VatRate;
 // The layout model, section 8. Money through fmtEur; tags appended « (chaud) »; examples prefixed « ex : »; a row unit printed only when it differs from the section unit; a choice appended to its sous_titre « Entrée (un choix pour la table) »; indent 1 for exemple rows and for rows under a sous_titre.
-export function documentBlocks(d: OfferDocument, company: CompanySettings | undefined): PrintBlock[];
+export function documentBlocks(d: OfferDocument, company: CompanySettings | undefined): DocPrintBlock[];
 // Rows with a recipe, portionsPerGuest 1, or round2(choice.count / n) inside a choice group. course from the nearest sous_titre when it matches a category, else absent.
 export function sectionRecipeLines(s: DocSection, categories?: string[]): OfferLine[];
 // name default « <title> <year> › <section title> ». Keeps price, prestation, vatRate; unlinked plat rows listed in notes as « Plats sans recette : … ».
@@ -482,6 +482,7 @@ Spec (`offer-documents.service.spec.ts`, fake `DdbService` as in `offers.service
 `S3Service` is global (`SharedModule`), so the settings module injects it without a new import.
 
 - `POST /admin/settings/brand/:kind` (`kind` in `BRAND_KINDS`, else 400). `FileInterceptor("file", { limits: { fileSize: MAX_BRAND_IMAGE_BYTES, files: 1 }, fileFilter: mimetype in BRAND_IMAGE_TYPES })`. No file: 400 « Image manquante ou format non pris en charge (JPEG ou PNG) ». Key `brand/${kind}.${BRAND_IMAGE_TYPES[mimetype]}` (the extension comes from the mimetype, never from the file name). When the stored key differs (a PNG replacing a JPEG) the old object is deleted after the upload. Writes `brandLogoKey` or `brandBannerKey` through `SettingsService.update` (unguarded, as scripts do) and returns the settings.
+- As built: the key computation, the S3 upload and the deletion of the previous object live in the controller (`uploadBrand`, `removeBrand`); the service only exposes `brandKeyField(kind)` and `removeBrandKey(kind)`.
 - `DELETE /admin/settings/brand/:kind` → deletes the object, removes the key (`SettingsService.removeBrandKey(kind)`, a direct `ddb.update` with `null` so the attribute is removed), returns the settings.
 - `GET /admin/settings/brand/:kind` → 404 when the key is absent; else `s3.get(key)` streamed with `Content-Type` from S3 and `Cache-Control: private, max-age=86400`. The client appends `?v=<settings.updatedAt>` so a replaced image is refetched.
 
@@ -546,7 +547,7 @@ settings: {
 
 **`apps/frontend/src/lib/pdf-images.ts`** (new). `loadImageForPdf(url: string, opts?: { cropRatio?: number; maxWidth?: number }): Promise<PdfImage>` with `PdfImage = { dataUrl: string; format: "PNG" | "JPEG"; width: number; height: number }`: fetches with the admin token (as `RecipeDetail.loadPhotoForPdf` does today), decodes through an `Image`, and when `cropRatio` is given draws the cover-cropped centre onto a canvas (JPEG, quality 0,85, width capped at `maxWidth`, default 1600). `brandImage(kind: BrandKind, version: string, opts?)`: `loadImageForPdf(api.settings.brand.url(kind, version), opts)`, `null` on 404, cached in module memory by kind and version. `RecipeDetail.tsx` switches its `loadPhotoForPdf` to `loadImageForPdf` (Phase 5, group E).
 
-**`apps/frontend/src/lib/offer-document-pdf.ts`** (new). `exportOfferDocumentPdf(input: { blocks: PrintBlock[]; accent: string; logo?: PdfImage; banner?: PdfImage; footer: string; fileName: string }): jsPDF`. Returns the document; callers `save(fileName)` or `output("bloburl")`. Layout in section 8.
+**`apps/frontend/src/lib/offer-document-pdf.ts`** (new). `exportOfferDocumentPdf(input: { blocks: DocPrintBlock[]; accent: string; logo?: PdfImage; banner?: PdfImage; footer: string; fileName: string }): jsPDF`. Returns the document; callers `save(fileName)` or `output("bloburl")`. Layout in section 8.
 
 **`apps/frontend/src/lib/page-icons.ts`**: `documents: "📄"`, `document: "📄"`.
 
@@ -757,7 +758,7 @@ Transcription rules:
 
 ### 7.2 The fixture spec (`apps/backend/src/offer-documents/offer-documents-2026.spec.ts`)
 
-Reads the JSON; every entry parses with `createOfferDocumentSchema`; seven entries; the titles and years match the seven headings of the source file (« Offre brunch à emporter » 2025 … « Carte à emporter » 2026); the carte à emporter has 9 sections and more than 80 rows; every priced row resolves a unit kind (own or section); every `sous_titre` with a `choice` is followed by at least two plat rows; the buffets automne hiver document has sections titled APERITIF, PLATEAUX A PARTAGER, BUFFET 1 to BUFFET 5, BUFFET DE DESSERTS and MIGNARDISES with prices 8,5, none, 24,5, 34,5, 35,5, 38,5, 44,5, 5,25, 32; `documentFileName` of the fifth gives « Offre buffets automne hiver 2026.pdf ».
+Reads the JSON; every entry parses with `createOfferDocumentSchema`; seven entries; the titles and years match the seven headings of the source file (« Offre brunch à emporter » 2025 … « Carte à emporter » 2026); the carte à emporter has 11 sections and more than 80 rows; every priced row resolves a unit kind (own or section); every `sous_titre` with a `choice` is followed by at least two plat rows; the buffets automne hiver document has sections titled APERITIF, PLATEAUX A PARTAGER, BUFFET 1 to BUFFET 5, BUFFET DE DESSERTS and MIGNARDISES with prices 8,5, none, 24,5, 34,5, 35,5, 38,5, 44,5, 5,25, 32; `documentFileName` of the fifth gives « Offre buffets automne hiver 2026.pdf ».
 
 ### 7.3 Loading and idempotency
 
@@ -887,7 +888,7 @@ Documents list and editor:
 PDF:
 
 - [ ] `Offre buffets automne hiver 2026.pdf` (downloaded from the page): 3 pages at most; page 1 has the seeded logo top-left, the banner 180 × 45, the salmon band « OFFRE BUFFETS AUTOMNE HIVER 2026 », the company block left (name, address, TVA, phone, e-mail, website) and the facts right (« Type de prestation : Avec ou sans service, A emporter ou avec livraison », « Nombre minimum de personnes : 20 », « Note : … »), the column heads; sections in the source order with their prices right-aligned; PLATEAUX A PARTAGER rows priced per row; examples italic and muted; « (chaud) » after the polpettes; no band as the last line of a page; EXTRAS, conditions and the VAT table « Food 12 % · Services 21 % » at the end; « page n / 3 » on every page. Text order checked with `pdftotext -layout`.
-- [ ] `Carte à emporter 2026.pdf`: 4 pages at most; nine sections; « minimum 20 pièces par sorte » on the two finger food bands; « à la pièce » under the column for those sections and « 2,25 € » on the choux row; « gâteau 8 parts » on the cakes; the pavlova vase with « entre 12 et 20 personnes, prix par personne » under its price; no services block; the VAT table last.
+- [ ] `Carte à emporter 2026.pdf`: 4 pages at most; eleven sections; « minimum 20 pièces par sorte » on the two finger food bands; « à la pièce » under the column for those sections and « 2,25 € » on the choux row; « gâteau 8 parts » on the cakes; the pavlova vase with « entre 12 et 20 personnes, prix par personne » under its price; no services block; the VAT table last.
 - [ ] `Offre chef à domicile 2026.pdf`: 2 pages; one band « FOOD · 65,00 € par personne »; sub-headers « Apéritif », « Entrée (un choix pour la table) », « Plat (un choix pour la table) », « Dessert (un choix pour la table) » on the pale fill; « (froid) », « (tiède) », « (chaud) » after the dishes; « SERVICES » with cuisinier 50 and serveur 40.
 - [ ] `Offre baptême 2026.pdf`: 1 page; « Nombre de personnes : à partir de 20 personnes »; « àpd 4,50 € » and « àpd 3,50 € » on the verrines; « supplément en fonction du nombre de personnes » in the price column of the croûte and the pavlova; no services block; VAT « Livraison / location matériel 21 % ».
 - [ ] Behaviour (empty stack, no brand images): the editor shows the warning callout; the PDF prints the company name in the band position, no banner, and the layout holds.
