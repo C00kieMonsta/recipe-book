@@ -1,3 +1,5 @@
+import { costSnapshotSchema } from "./events";
+import { normalizePrice, normalizePriceUnit } from "../entities/ingredient";
 import { createLedgerEntrySchema, patchLedgerEntrySchema, lockMonthSchema } from "./ledger";
 import { isoDate, money, moneyNonnegative, yearMonth } from "./primitives";
 import {
@@ -211,5 +213,27 @@ describe("other schemas", () => {
     expect(r.success).toBe(true);
     expect(updateSettingsRequestSchema.safeParse({ objectives: { "2026": { annualRevenue: 1 } } }).success).toBe(false);
     expect(updateSettingsRequestSchema.safeParse({ fixedCharges: [{ chargeId: "c", label: "x", category: "social", monthlyAmount: 1, from: "2026-1" }] }).success).toBe(false);
+  });
+});
+
+describe("ingredient normalisers", () => {
+  it("maps old spellings to the price unit enum and prices to finite numbers", () => {
+    expect(normalizePriceUnit("€/kilo")).toBe("€/kg");
+    expect(normalizePriceUnit("Kilo")).toBe("€/kg");
+    expect(normalizePriceUnit("€/pc")).toBe("€/pièce");
+    expect(normalizePriceUnit("€/sachet")).toBe("€/pièce");
+    expect(normalizePriceUnit(undefined)).toBe("€/pièce");
+    expect(normalizePrice("4,20")).toBe(4.2);
+    expect(normalizePrice("abc")).toBe(0);
+    expect(normalizePrice(-1)).toBe(0);
+    expect(normalizePrice(3)).toBe(3);
+  });
+});
+
+describe("cost snapshot", () => {
+  it("accepts a client takenAt stamp and still rejects unknown keys", () => {
+    const base = { rawMaterial: 1.5, extrasTotal: 0, lines: [] };
+    expect(costSnapshotSchema.safeParse({ ...base, takenAt: "2026-10-14T10:00:00.000Z" }).success).toBe(true);
+    expect(costSnapshotSchema.safeParse({ ...base, foo: 1 }).success).toBe(false);
   });
 });

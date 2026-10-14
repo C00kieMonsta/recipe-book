@@ -23,8 +23,7 @@ import type {
   UnlockMonthRequest,
   MergeIngredientsRequest,
   DuplicateGroup,
-  DuplicateMember,
-} from "@packages/types";
+  DuplicateMember,, CostSnapshotRequest } from "@packages/types";
 
 export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 // The health route is also served under the api prefix so it goes through the same distribution path as the API.
@@ -73,7 +72,7 @@ async function parseResponse<T>(res: Response): Promise<T> {
     const msg = res.status === 413
       ? "Fichier trop volumineux, divisez le CSV"
       : Array.isArray(d.message)
-        ? d.message.join(", ")
+        ? d.message.map((m) => (m && typeof m === "object" && "message" in m ? String((m as { message: unknown }).message) : String(m))).join(", ")
         : (typeof d.message === "string" && d.message) || (typeof d.error === "string" && d.error) || `Request failed: ${res.status}`;
     throw new ApiError(msg, res.status, data);
   }
@@ -153,7 +152,9 @@ export type MergeResponse =
   | { ok: false; recipesUpdated: number; listsUpdated: number; failures: unknown[]; preexisting?: number };
 
 // Lines and tasks sent on create or update may omit their id; the server fills it.
-export type EventInput = Omit<Partial<AppEvent>, "recipes" | "tasks"> & {
+export type EventInput = Omit<Partial<AppEvent>, "recipes" | "tasks" | "costSnapshot"> & {
+  // The server stamps takenAt, so a client sends the request shape.
+  costSnapshot?: CostSnapshotRequest;
   recipes?: (Omit<EventRecipeLine, "lineId"> & { lineId?: string })[];
   tasks?: (Omit<EventTask, "taskId"> & { taskId?: string })[];
 };
@@ -248,3 +249,9 @@ export const api = {
     unlock: withInvalidate(["events", "settings"], (body: UnlockMonthRequest) => request<UnlockMonthResponse>("/admin/ledger/unlock", json("POST", body))),
   },
 };
+
+// The server's own words for a failed call, for toasts that would otherwise hide the cause.
+export function errorReason(e: unknown): string {
+  if (e instanceof ApiError) return e.message;
+  return e instanceof Error && e.message ? e.message : "";
+}

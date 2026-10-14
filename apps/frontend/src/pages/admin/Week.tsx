@@ -27,7 +27,7 @@ import {
   weekdayOf,
   weekPlan,
 } from "@packages/types";
-import { api, ApiError, invalidate } from "@/lib/api";
+import { api, ApiError, invalidate, errorReason } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { buildGroceryItems, groceryTitleFor } from "@/lib/grocery";
 import { defaultTaskEventId } from "@/lib/tasks";
@@ -464,12 +464,13 @@ export default function Week() {
     const ev = events.find((e) => e.eventId === eventId);
     if (!ev) return;
     try {
-      const costSnapshot = { ...buildCostSnapshot(ev, recipeCostById, recipePortionsById), takenAt: new Date().toISOString() };
+      const costSnapshot = buildCostSnapshot(ev, recipeCostById, recipePortionsById);
       await patchEvent(eventId, { status: "completed", costSnapshot });
       toast({ title: "Événement terminé" });
       reload();
-    } catch {
-      fail("Erreur lors de la clôture");
+    } catch (e) {
+      const why = errorReason(e);
+      fail(why ? `Erreur lors de la clôture · ${why}` : "Erreur lors de la clôture");
     }
   };
 

@@ -129,6 +129,18 @@ const listItem = (overrides: Partial<GroceryList["items"][number]> & { ingredien
 });
 
 describe("IngredientsService", () => {
+  it("serves legacy items with a text price and an old unit spelling as numbers in the enum", async () => {
+    const ddb = new FakeDdb();
+    ddb.rows("ingredients").set("ail", { ingredientId: "ail", name: "Ail sec", nameLower: "ail sec", price: "4,20", unit: "€/kilo", supplier: "Vds" });
+    ddb.rows("ingredients").set("hummus", { ingredientId: "hummus", name: "Hummus maison", nameLower: "hummus maison", unit: "€/pce", supplier: "" });
+    const service = new IngredientsService(ddb as unknown as DdbService, new SettingsService(ddb as unknown as DdbService));
+    const all = await service.getAll();
+    expect(all.find((i) => i.ingredientId === "ail")).toMatchObject({ price: 4.2, unit: "€/kg" });
+    expect(all.find((i) => i.ingredientId === "hummus")).toMatchObject({ price: 0, unit: "€/pièce" });
+    expect(await service.get("ail")).toMatchObject({ price: 4.2, unit: "€/kg" });
+    expect(ddb.updates).toHaveLength(0);
+  });
+
   let ddb: FakeDdb;
   let settings: FakeSettings;
   let service: IngredientsService;

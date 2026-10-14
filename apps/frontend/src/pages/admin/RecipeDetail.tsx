@@ -571,7 +571,7 @@ export default function RecipeDetail() {
                       value={newIng.ingredientId}
                       onChange={(v) => {
                         const ing = ingredients.find((i) => i.ingredientId === v);
-                        const unit = ing ? PRICE_TO_QTY_UNIT[ing.unit] : "g";
+                        const unit = (ing && PRICE_TO_QTY_UNIT[ing.unit]) || "g";
                         setNewIng((p) => ({ ...p, ingredientId: v, unit }));
                       }}
                       placeholder="Rechercher un ingrédient…"

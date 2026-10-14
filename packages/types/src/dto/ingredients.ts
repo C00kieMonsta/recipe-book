@@ -1,16 +1,11 @@
 import { z } from "zod";
-import { UNITS_PRICE } from "../entities/ingredient";
+import { UNITS_PRICE, normalizePriceUnit } from "../entities/ingredient";
 
+const KNOWN_UNIT_SPELLINGS = new Set(["kg", "kilo", "kilogramme", "kilogram", "€/kilo", "€/kilogramme", "piece", "pièce", "piéce", "pcs", "pc", "€/piece", "€/pieces", "€/pièce", "€/pièces", "€/piéce", "€/piéces", "€/pcs", "€/pc", "l", "litre", "liter", "€/litre", "€/liter", "botte"]);
 const priceUnitSchema = z.preprocess((value) => {
   if (typeof value !== "string") return value;
-  const normalized = value.trim().toLowerCase();
-  if (["kg", "kilo", "kilogramme", "kilogram"].includes(normalized)) return "€/kg";
-  if (["piece", "pièce", "piéce", "pcs", "pc"].includes(normalized)) return "€/pièce";
-  if (["l", "litre", "liter"].includes(normalized)) return "€/l";
-  if (normalized === "botte") return "€/botte";
-  if (["€/piece", "€/pieces", "€/pièce", "€/pièces", "€/piéce", "€/piéces", "€/pcs", "€/pc"].includes(normalized)) return "€/pièce";
-  if (["€/litre", "€/liter"].includes(normalized)) return "€/l";
-  return value.trim();
+  const trimmed = value.trim();
+  return KNOWN_UNIT_SPELLINGS.has(trimmed.toLowerCase()) ? normalizePriceUnit(trimmed) : trimmed;
 }, z.enum(UNITS_PRICE));
 
 const priceSchema = z.preprocess((value) => {

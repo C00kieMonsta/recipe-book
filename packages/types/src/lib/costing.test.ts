@@ -232,3 +232,19 @@ describe("buildCostSnapshot", () => {
     expect(snapshot.lines[0].unitCost).toBe(10);
   });
 });
+
+describe("legacy ingredient data", () => {
+  it("costs a price stored as text with a comma and ignores a missing price", () => {
+    const textPrice = ing({ ingredientId: "farine", price: "4,20" as unknown as number, unit: "€/kg" });
+    expect(calcIngredientLineCost(line("farine", 500, "g"), textPrice)).toBeCloseTo(2.1);
+    const noPrice = ing({ ingredientId: "sel", price: undefined as unknown as number, unit: "€/kg" });
+    expect(calcIngredientLineCost(line("sel", 10, "g"), noPrice)).toBe(0);
+  });
+
+  it("builds a snapshot without NaN when a recipe cost is not a number", () => {
+    const event = { recipes: [{ lineId: "l1", recipeId: "r1", portions: 30 }], extraCosts: [] } as unknown as AppEvent;
+    const snap = buildCostSnapshot(event, new Map([["r1", Number.NaN]]), new Map([["r1", 10]]));
+    expect(snap.lines[0].unitCost).toBe(0);
+    expect(snap.rawMaterial).toBe(0);
+  });
+});

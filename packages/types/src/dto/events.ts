@@ -38,6 +38,8 @@ export const eventExtraCostSchema = z
 export const costSnapshotSchema = z
   .object({
     rawMaterial: moneyNonnegative,
+    // Ignored on write, the server stamps the snapshot itself.
+    takenAt: z.string().optional(),
     extrasTotal: moneyNonnegative,
     lines: z.array(
       z

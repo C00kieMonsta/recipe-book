@@ -3,12 +3,15 @@ import type { Ingredient } from "../entities/ingredient";
 import type { Recipe, RecipeIngredient } from "../entities/recipe";
 import type { CostSnapshotRequest } from "../dto/events";
 import { round2 } from "./money";
+import { normalizePrice } from "../entities/ingredient";
 
 // Ingredients priced per kg or per litre are stored in g and ml, hence the per-1000 rule.
 export function calcIngredientLineCost(ri: RecipeIngredient, ing: Ingredient): number {
-  let ppu = ing.price;
-  if (ing.unit === "€/kg" || ing.unit === "€/l") ppu = ing.price / 1000;
-  return ri.qty * (1 + (ri.lossPct || 0) / 100) * ppu;
+  // Items written by the old app can hold a price as text; a non-number counts as free rather than poisoning every total with NaN.
+  const price = normalizePrice(ing.price);
+  const qty = normalizePrice(ri.qty);
+  const ppu = ing.unit === "€/kg" || ing.unit === "€/l" ? price / 1000 : price;
+  return qty * (1 + (ri.lossPct || 0) / 100) * ppu;
 }
 
 export function calcRecipeCost(recipe: Recipe, ingredientById: Map<string, Ingredient>): number {
@@ -93,7 +96,8 @@ export function buildCostSnapshot(
   recipePortionsById: Map<string, number>,
 ): CostSnapshotRequest {
   const lines = (event.recipes ?? []).map((l) => {
-    const unitCost = (recipeCostById.get(l.recipeId) ?? 0) / (recipePortionsById.get(l.recipeId) || 1);
+    const raw = (recipeCostById.get(l.recipeId) ?? 0) / (recipePortionsById.get(l.recipeId) || 1);
+    const unitCost = Number.isFinite(raw) ? raw : 0;
     return { lineId: l.lineId, recipeId: l.recipeId, portions: l.portions, unitCost };
   });
   return {

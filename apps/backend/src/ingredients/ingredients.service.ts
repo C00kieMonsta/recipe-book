@@ -11,7 +11,12 @@ import type {
   RecipeIngredient,
   RefCounts,
 } from "@packages/types";
-import { PRICE_TO_QTY_UNIT, groupDuplicates, normalizeIngredientName } from "@packages/types";
+import { PRICE_TO_QTY_UNIT, groupDuplicates, normalizeIngredientName, normalizePrice, normalizePriceUnit } from "@packages/types";
+
+// Items written by the old app can hold a text price and a unit outside the enum; nothing is written back.
+function normalizeStored(item: Ingredient): Ingredient {
+  return { ...item, price: normalizePrice(item.price), unit: normalizePriceUnit(item.unit) };
+}
 import { DdbService } from "../shared/ddb.service";
 import { SettingsService } from "../settings/settings.service";
 
@@ -140,12 +145,12 @@ export class IngredientsService {
 
   async getAll(): Promise<Ingredient[]> {
     const items = await this.ddb.scanAll(this.table);
-    return items as unknown as Ingredient[];
+    return (items as unknown as Ingredient[]).map(normalizeStored);
   }
 
   async get(ingredientId: string): Promise<Ingredient | null> {
     const item = await this.ddb.get(this.table, { ingredientId });
-    return item as Ingredient | null;
+    return item ? normalizeStored(item as Ingredient) : null;
   }
 
   async getOrFail(ingredientId: string): Promise<Ingredient> {

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CalendarDays, CheckCircle2, EyeOff, MoreHorizontal, Pencil, Plus, Printer, Share2, ShoppingCart, Trash2, UserPlus, X } from "lucide-react";
-import type { AppEvent, DayItem, EventCostSnapshot, Ingredient, Person, PrepLine, PrepStatus, PrepTask, PrestationTypeSetting, Recipe, ScaledIngredient } from "@packages/types";
+import type { AppEvent, DayItem, Ingredient, Person, PrepLine, PrepStatus, PrepTask, PrestationTypeSetting, Recipe, ScaledIngredient } from "@packages/types";
 import {
   addDays, buildCostSnapshot, calcRecipeCost, courseIndex, datesOfIsoWeek, DEFAULT_PRESTATION_TYPES, filterByPerson, fmtQty, groupByPerson, groupByRecipe, isoWeekOf, longDayLabel,
   parseIsoWeek, parseYmd, personName, prepLinesForDate, prepTasksForDate, scaledIngredients, shortDayLabel, shortEventName, weekPlan,
 } from "@packages/types";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, errorReason } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { buildGroceryItems, groceryTitleFor } from "@/lib/grocery";
 import { defaultTaskEventId } from "@/lib/tasks";
@@ -531,13 +531,14 @@ export default function Day() {
     let n = 0;
     try {
       for (const ev of upcoming) {
-        const costSnapshot = buildCostSnapshot(ev, recipeCostById, recipePortionsById) as EventCostSnapshot;
+        const costSnapshot = buildCostSnapshot(ev, recipeCostById, recipePortionsById);
         await patchEvent(ev.eventId, { status: "completed", costSnapshot });
         n++;
       }
       toast({ title: plural(n, "événement terminé", "événements terminés") });
-    } catch {
-      toast({ title: n ? `${n} sur ${upcoming.length} terminés, puis une erreur` : "Erreur lors de la clôture", variant: "destructive" });
+    } catch (e) {
+      const why = errorReason(e);
+      toast({ title: n ? `${n} sur ${upcoming.length} terminés, puis une erreur` : "Erreur lors de la clôture", description: why || undefined, variant: "destructive" });
     } finally {
       setBusy(false);
     }
@@ -559,12 +560,13 @@ export default function Day() {
     const ev = events.find((e) => e.eventId === eventId);
     if (!ev) return;
     try {
-      const costSnapshot = { ...buildCostSnapshot(ev, recipeCostById, recipePortionsById), takenAt: new Date().toISOString() };
+      const costSnapshot = buildCostSnapshot(ev, recipeCostById, recipePortionsById);
       await patchEvent(eventId, { status: "completed", costSnapshot });
       toast({ title: "Événement terminé" });
       reload();
-    } catch {
-      toast({ title: "Erreur lors de la clôture", variant: "destructive" });
+    } catch (e) {
+      const why = errorReason(e);
+      toast({ title: "Erreur lors de la clôture", description: why || undefined, variant: "destructive" });
     }
   };
 
