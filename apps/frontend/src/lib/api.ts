@@ -23,7 +23,9 @@ import type {
   UnlockMonthRequest,
   MergeIngredientsRequest,
   DuplicateGroup,
-  DuplicateMember,, CostSnapshotRequest } from "@packages/types";
+  DuplicateMember,
+  CostSnapshotRequest,
+} from "@packages/types";
 
 export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 // The health route is also served under the api prefix so it goes through the same distribution path as the API.
