@@ -529,8 +529,14 @@ for (const d of documents) log(`document ${d.documentId} · ${d.title} ${d.year}
 log(`offer documents ok (${imported.created.length} created, ${imported.skipped.length} skipped)`);
 
 // Placeholder brand images drawn for the seed, never her real files.
-await upload("/api/admin/settings/brand/logo", join(FIXTURES, "brand", "logo.png"), "image/png");
-await upload("/api/admin/settings/brand/banner", join(FIXTURES, "brand", "banner.jpg"), "image/jpeg");
+// Without a reachable S3 (the local stack) the uploads answer 500; the rest of the seed does not depend on them.
+try {
+  await upload("/api/admin/settings/brand/logo", join(FIXTURES, "brand", "logo.png"), "image/png");
+  await upload("/api/admin/settings/brand/banner", join(FIXTURES, "brand", "banner.jpg"), "image/jpeg");
+} catch (e) {
+  if (!/-> 5\d\d/.test(String(e))) throw e;
+  log("brand images skipped (S3 indisponible en local)");
+}
 // The Société section saves company whole, so the contact fields go with the rest.
 const branded = await must("PATCH", "/api/admin/settings", { company });
 log(`brand ok (${branded.brandLogoKey}, ${branded.brandBannerKey}, accent ${branded.company?.accent})`);
