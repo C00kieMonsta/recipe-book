@@ -3,6 +3,7 @@ import type { Client, CreateClientRequest } from "@packages/types";
 import { ClientsService, eventNameFor, isoWeekday } from "./clients.service";
 import { EventsService } from "../events/events.service";
 import type { DdbService } from "../shared/ddb.service";
+import type { S3Service } from "../shared/s3.service";
 
 type Item = Record<string, unknown>;
 
@@ -109,7 +110,8 @@ const week = ["2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-1
 
 function setup() {
   const ddb = new FakeDdb();
-  const events = new EventsService(ddb as unknown as DdbService);
+  // The clients spec only calls events.create, which never touches S3.
+  const events = new EventsService(ddb as unknown as DdbService, {} as unknown as S3Service);
   const service = new ClientsService(ddb as unknown as DdbService, events);
   return { ddb, events, service };
 }
@@ -218,7 +220,7 @@ describe("ClientsService", () => {
     const { service, events } = setup();
     const client = await service.create(hoona);
     await events.create({
-      name: "Hoona manuel", date: "2026-10-13", guestCount: 10, recipes: [], tasks: [], extraCosts: [],
+      name: "Hoona manuel", date: "2026-10-13", guestCount: 10, recipes: [], tasks: [], extraCosts: [], revenueLines: [],
       sellingPricePerGuest: 0, status: "upcoming", clientId: client.clientId,
     });
     const result = await service.instantiate(client.clientId, { dates: week });
@@ -279,7 +281,7 @@ describe("ClientsService", () => {
   it("linkEvents matches contactEmail case-insensitively and contactName", async () => {
     const { service, events } = setup();
     const client = await service.create(hoona);
-    const base = { date: "2026-09-01", guestCount: 10, recipes: [], tasks: [], extraCosts: [], sellingPricePerGuest: 0, status: "upcoming" as const };
+    const base = { date: "2026-09-01", guestCount: 10, recipes: [], tasks: [], extraCosts: [], revenueLines: [], sellingPricePerGuest: 0, status: "upcoming" as const };
     const byEmail = await events.create({ ...base, name: "A", contactEmail: "MARIE@hoona.BE" });
     const byName = await events.create({ ...base, name: "B", contactName: "marie" });
     const other = await events.create({ ...base, name: "C", contactEmail: "someone@else.be", contactName: "Paul" });

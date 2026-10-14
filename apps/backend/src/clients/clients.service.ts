@@ -167,6 +167,7 @@ export class ClientsService {
       })),
       tasks: [],
       extraCosts: template.extraCosts,
+      revenueLines: [],
       ...(template.notes !== undefined && { notes: template.notes }),
       ...(template.assignedTo && { assignedTo: template.assignedTo }),
       sellingPricePerGuest: template.sellingPricePerGuest,

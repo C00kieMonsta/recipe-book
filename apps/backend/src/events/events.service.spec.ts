@@ -1,6 +1,7 @@
-import { ConflictException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import type { AppEvent } from "@packages/types";
 import { DdbService, UpdateOptions } from "../shared/ddb.service";
+import type { S3Service } from "../shared/s3.service";
 import { EventsService } from "./events.service";
 
 type Item = Record<string, unknown>;
@@ -67,6 +68,35 @@ class FakeDdb {
   }
 }
 
+class FakeS3 {
+  uploads: { key: string; contentType: string; size: number }[] = [];
+  deletes: string[] = [];
+  presigns: { key: string; opts?: { filename?: string; inline?: boolean } }[] = [];
+  failDeletesWith: Error[] = [];
+
+  async upload(key: string, body: Buffer, contentType: string) {
+    this.uploads.push({ key, contentType, size: body.length });
+  }
+
+  async delete(key: string) {
+    const queued = this.failDeletesWith.shift();
+    if (queued) throw queued;
+    this.deletes.push(key);
+  }
+
+  async presignedUrl(key: string, opts?: { filename?: string; inline?: boolean }) {
+    this.presigns.push({ key, opts });
+    return `https://s3.test/${key}?signed`;
+  }
+}
+
+const pdf = (name = "plan-salle.pdf", size = 1024) => ({
+  originalname: name,
+  mimetype: "application/pdf",
+  size,
+  buffer: Buffer.alloc(size),
+});
+
 const baseEvent = (overrides: Omit<Partial<AppEvent>, "recipes"> & { recipes?: unknown[] } = {}): Item => ({
   eventId: "e1",
   name: "Mariage",
@@ -92,17 +122,20 @@ const createBody = {
   ],
   extraCosts: [],
   tasks: [],
+  revenueLines: [],
   sellingPricePerGuest: 50,
   status: "upcoming" as const,
 };
 
 describe("EventsService", () => {
   let ddb: FakeDdb;
+  let s3: FakeS3;
   let service: EventsService;
 
   beforeEach(() => {
     ddb = new FakeDdb();
-    service = new EventsService(ddb as unknown as DdbService);
+    s3 = new FakeS3();
+    service = new EventsService(ddb as unknown as DdbService, s3 as unknown as S3Service);
   });
 
   describe("lazy line ids", () => {
@@ -486,6 +519,183 @@ describe("EventsService", () => {
       const event = await service.addTask("e2", { label: "x", date: "2026-06-01" });
       expect(event.tasks).toHaveLength(1);
       await expect(service.removeTask("e2", "nope")).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe("pricing", () => {
+    it("total mode derives the per-guest price on create and never stores a total in par_convive mode", async () => {
+      const total = await service.create({ ...createBody, pricingMode: "total", sellingTotal: 900, guestCount: 40 });
+      expect(total.sellingPricePerGuest).toBe(22.5);
+      expect(total.sellingTotal).toBe(900);
+      expect(total.pricingMode).toBe("total");
+
+      const perGuest = await service.create({ ...createBody, sellingTotal: 900 });
+      expect(perGuest.sellingPricePerGuest).toBe(50);
+      expect(perGuest).not.toHaveProperty("sellingTotal");
+    });
+
+    it("total mode recomputes the per-guest price when guestCount or sellingTotal changes", async () => {
+      await ddb.put("events", baseEvent({ pricingMode: "total", sellingTotal: 900, sellingPricePerGuest: 22.5 }));
+      const moreGuests = await service.update("e1", { guestCount: 30 });
+      expect(moreGuests.sellingPricePerGuest).toBe(30);
+      expect(moreGuests.sellingTotal).toBe(900);
+
+      const newTotal = await service.update("e1", { sellingTotal: 1000 });
+      expect(newTotal.sellingPricePerGuest).toBe(33.33);
+
+      const renamed = await service.update("e1", { name: "Baptême" });
+      expect(renamed.sellingPricePerGuest).toBe(33.33);
+      expect(ddb.updates[2].fields).not.toHaveProperty("sellingPricePerGuest");
+    });
+
+    it("switching back to par_convive removes sellingTotal and takes the payload price", async () => {
+      await ddb.put("events", baseEvent({ pricingMode: "total", sellingTotal: 900, sellingPricePerGuest: 22.5 }));
+      const event = await service.update("e1", { pricingMode: "par_convive", sellingPricePerGuest: 55 });
+      expect(event.pricingMode).toBe("par_convive");
+      expect(event.sellingPricePerGuest).toBe(55);
+      expect(event).not.toHaveProperty("sellingTotal");
+      expect(ddb.updates[0].fields.sellingTotal).toBeNull();
+    });
+
+    it("stores revenueLines as sent", async () => {
+      const lines = [{ label: "Service", amount: 450, vatRate: 21 as const }];
+      const created = await service.create({ ...createBody, revenueLines: lines });
+      expect(created.revenueLines).toEqual(lines);
+      const updated = await service.update(created.eventId, { revenueLines: [] });
+      expect(updated.revenueLines).toEqual([]);
+    });
+  });
+
+  describe("clearable text fields", () => {
+    beforeEach(async () => {
+      await ddb.put("events", baseEvent({ billingDetails: "Dupont SA", contactName: "Marie", deliveryTime: "11:30" }));
+    });
+
+    it("update with billingDetails null removes the attribute", async () => {
+      const event = await service.update("e1", { billingDetails: null });
+      expect(event).not.toHaveProperty("billingDetails");
+      expect(ddb.updates[0].fields.billingDetails).toBeNull();
+      expect(event.contactName).toBe("Marie");
+    });
+
+    it("update with an empty string removes the attribute instead of storing it", async () => {
+      const event = await service.update("e1", { billingDetails: "", contactName: "", deliveryTime: null });
+      expect(event).not.toHaveProperty("billingDetails");
+      expect(event).not.toHaveProperty("contactName");
+      expect(event).not.toHaveProperty("deliveryTime");
+      expect(ddb.updates[0].fields).toMatchObject({ billingDetails: null, contactName: null, deliveryTime: null });
+    });
+
+    it("create drops empty text fields and keeps the delivery and billing values", async () => {
+      const event = await service.create({
+        ...createBody,
+        contactName: "",
+        deliveryAddress: "Rue des Lilas 4",
+        deliveryTime: "11:30",
+        billingDetails: "Dupont SA\nBE0123",
+      });
+      expect(event).not.toHaveProperty("contactName");
+      expect(event).toMatchObject({ deliveryAddress: "Rue des Lilas 4", deliveryTime: "11:30", billingDetails: "Dupont SA\nBE0123" });
+    });
+  });
+
+  describe("attachments", () => {
+    beforeEach(async () => {
+      await ddb.put(
+        "events",
+        baseEvent({
+          recipes: [{ lineId: "a", recipeId: "r1", portions: 2, prepStatus: "done" }],
+          attachments: [
+            { attachmentId: "f1", key: "event-files/e1/f1.pdf", name: "devis.pdf", contentType: "application/pdf", size: 10, addedAt: "2026-01-01T00:00:00.000Z" },
+          ],
+        }),
+      );
+    });
+
+    it("addAttachment uploads, appends under the guard and keeps lines", async () => {
+      const event = await service.addAttachment("e1", pdf("  plan-salle.pdf  ", 2048));
+      expect(event.attachments).toHaveLength(2);
+      const added = event.attachments?.[1];
+      expect(added).toMatchObject({ name: "plan-salle.pdf", contentType: "application/pdf", size: 2048 });
+      expect(added?.attachmentId).toEqual(expect.any(String));
+      expect(added?.key).toBe(`event-files/e1/${added?.attachmentId}.pdf`);
+      expect(added?.addedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(s3.uploads).toEqual([{ key: added?.key, contentType: "application/pdf", size: 2048 }]);
+      expect(ddb.updates).toHaveLength(1);
+      expect(ddb.updates[0].fields).not.toHaveProperty("recipes");
+      expect(ddb.updates[0].options).toEqual({
+        condition: "#ua = :expected",
+        names: { "#ua": "updatedAt" },
+        values: { ":expected": "2026-01-01T00:00:00.000Z" },
+      });
+      expect(event.recipes).toEqual([{ lineId: "a", recipeId: "r1", portions: 2, prepStatus: "done" }]);
+    });
+
+    it("refuses the 21st attachment before uploading", async () => {
+      const row = ddb.rows("events").get("e1") as Item;
+      row.attachments = Array.from({ length: 20 }, (_, i) => ({
+        attachmentId: `f${i}`, key: `event-files/e1/f${i}.pdf`, name: `${i}.pdf`, contentType: "application/pdf", size: 1, addedAt: "2026-01-01T00:00:00.000Z",
+      }));
+      const call = service.addAttachment("e1", pdf());
+      await expect(call).rejects.toBeInstanceOf(BadRequestException);
+      await call.catch((err: BadRequestException) => expect(err.message).toBe("20 pièces jointes maximum"));
+      expect(s3.uploads).toHaveLength(0);
+      expect(ddb.updates).toHaveLength(0);
+    });
+
+    it("removes the uploaded object when the write fails", async () => {
+      ddb.failUpdatesWith.push(new Error("boom"));
+      await expect(service.addAttachment("e1", pdf())).rejects.toThrow("boom");
+      expect(s3.uploads).toHaveLength(1);
+      expect(s3.deletes).toEqual([s3.uploads[0].key]);
+    });
+
+    it("renameAttachment renames and 404s on an unknown id", async () => {
+      const event = await service.renameAttachment("e1", "f1", "devis signé.pdf");
+      expect(event.attachments?.[0]).toMatchObject({ attachmentId: "f1", key: "event-files/e1/f1.pdf", name: "devis signé.pdf" });
+      await expect(service.renameAttachment("e1", "zz", "x")).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("removeAttachment calls s3.delete with the stored key and drops the row", async () => {
+      const event = await service.removeAttachment("e1", "f1");
+      expect(s3.deletes).toEqual(["event-files/e1/f1.pdf"]);
+      expect(event.attachments).toEqual([]);
+      await expect(service.removeAttachment("e1", "f1")).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("removeAttachment still drops the row when the object delete fails", async () => {
+      const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      s3.failDeletesWith.push(new Error("nope"));
+      const event = await service.removeAttachment("e1", "f1");
+      expect(event.attachments).toEqual([]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
+    });
+
+    it("attachmentUrl presigns the stored key under the attachment name and 404s when unknown", async () => {
+      const { url } = await service.attachmentUrl("e1", "f1");
+      expect(url).toBe("https://s3.test/event-files/e1/f1.pdf?signed");
+      expect(s3.presigns).toEqual([{ key: "event-files/e1/f1.pdf", opts: { filename: "devis.pdf" } }]);
+      await expect(service.attachmentUrl("e1", "zz")).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("delete deletes every attachment object before the item", async () => {
+      const row = ddb.rows("events").get("e1") as Item;
+      (row.attachments as Item[]).push({
+        attachmentId: "f2", key: "event-files/e1/f2.jpg", name: "salle.jpg", contentType: "image/jpeg", size: 1, addedAt: "2026-01-01T00:00:00.000Z",
+      });
+      await service.delete("e1");
+      expect(s3.deletes).toEqual(["event-files/e1/f1.pdf", "event-files/e1/f2.jpg"]);
+      expect(await service.get("e1")).toBeNull();
+      await expect(service.delete("nope")).resolves.toBeUndefined();
+    });
+
+    it("a create or update body with attachments stores none", async () => {
+      const body = { ...createBody, attachments: [{ attachmentId: "x", key: "k", name: "n", contentType: "t", size: 1, addedAt: "a" }] };
+      const created = await service.create(body as unknown as typeof createBody);
+      expect(created).not.toHaveProperty("attachments");
+      const updated = await service.update("e1", { name: "x", attachments: [] } as unknown as { name: string });
+      expect(updated.attachments).toHaveLength(1);
     });
   });
 

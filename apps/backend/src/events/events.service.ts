@@ -43,7 +43,7 @@ const withoutNull = <T extends object>(obj: T): NonNullFields<T> =>
 
 // Maps "" to null for the clearable text fields and drops the server-owned attachments key.
 const sanitizeFields = <T extends object>(fields: T): T => {
-  const copy: Record<string, unknown> = { ...fields };
+  const copy = { ...fields } as Record<string, unknown>;
   delete copy.attachments;
   for (const key of CLEARABLE_TEXT) if (copy[key] === "") copy[key] = null;
   return copy as T;
