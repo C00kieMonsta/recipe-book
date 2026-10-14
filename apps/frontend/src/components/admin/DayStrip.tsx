@@ -25,7 +25,7 @@ const longDay = new Intl.DateTimeFormat("fr-BE", { weekday: "long", day: "numeri
 // Seven 44px cells, one per day; a tap opens that day, a lifted row drops on it.
 export default function DayStrip({ dates, counts, today, selected, href, state, className = "", dropDay, dragging = false }: DayStripProps) {
   return (
-    <div role="group" aria-label="Jours de la semaine" className={`grid grid-cols-7 ${className}`}>
+    <div role="group" aria-label="Jours de la semaine" className={`relative grid grid-cols-7 ${className}`}>
       {dates.map((date, i) => {
         const isToday = date === today;
         const isSelected = date === selected;
@@ -54,7 +54,8 @@ export default function DayStrip({ dates, counts, today, selected, href, state, 
           </Link>
         );
       })}
-      {dragging && <p className="col-span-7 pt-1 text-center text-caption text-muted-foreground">Déposez sur un jour</p>}
+      {/* Floats under the strip so the rows do not shift under the finger. */}
+      {dragging && <p className="absolute inset-x-0 top-full z-10 bg-background text-center text-caption leading-none text-muted-foreground">Déposez sur un jour</p>}
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import type { AuReelRow } from "@packages/types";
-import { DEFAULT_PRESTATION_TYPES, auReel, auReelYear, fmtEur, invoicedEventIds } from "@packages/types";
+import type { AppEvent, AuReelRow } from "@packages/types";
+import { DEFAULT_PRESTATION_TYPES, auReel, auReelYear, fmtEur, foodRevenue, invoicedEventIds, revenueLinesTotal } from "@packages/types";
 import { api } from "@/lib/api";
+import { SALES_KIND_LABEL } from "@/lib/accounting";
 import { dayLabel, monthLabel } from "@/lib/dates";
 import { useReportInputs } from "@/lib/use-report-inputs";
 import { useToast } from "@/hooks/use-toast";
@@ -10,14 +11,12 @@ import { Button, Callout, DateNav, EditableInlineNum, EditableInlineText, ListRo
 
 const NOT_CONFIGURED = "Comptabilité non configurée : la table ta-ledger n'existe pas encore";
 
-const KIND_LABEL: Record<string, string> = {
-  facture: "Facture",
-  acompte: "Acompte",
-  comptoir: "Comptoir",
-  bon_cadeau: "Bon cadeau",
-  note_de_credit: "Note de crédit",
-  autre: "Autre",
-};
+// « 55,00 € × 60 », « 900,00 € food » in total mode, « + 450,00 € » when billed lines exist.
+function signedDetail(ev: AppEvent): string {
+  const food = ev.pricingMode === "total" ? `${fmtEur(foodRevenue(ev))} food` : `${fmtEur(ev.sellingPricePerGuest)} × ${ev.guestCount}`;
+  const lines = revenueLinesTotal(ev);
+  return lines > 0 ? `${food} + ${fmtEur(lines)}` : food;
+}
 
 function currentYm(): string {
   const now = new Date();
@@ -55,7 +54,7 @@ export default function AuReel() {
   const [ym, setYm] = useYmParam();
   const year = Number(ym.slice(0, 4));
   const { toast } = useToast();
-  const { inputs, events, entries, settings, loading, notConfigured, error, reload } = useReportInputs(year);
+  const { inputs, events, entries, settings, invoicing, loading, notConfigured, error, reload } = useReportInputs(year);
 
   const typeLabel = useMemo(() => {
     const map = new Map<string, string>();
@@ -94,7 +93,7 @@ export default function AuReel() {
     );
     if (r.kind === "entry") {
       const linked = r.eventIds.map((id) => eventName.get(id)).filter((n): n is string => Boolean(n));
-      const parts = [dayLabel(r.date), KIND_LABEL[r.entryKind] ?? r.entryKind, type ?? "Sans type"];
+      const parts = [dayLabel(r.date), SALES_KIND_LABEL[r.entryKind] ?? r.entryKind, type ?? "Sans type"];
       if (linked.length) parts.push(linked.join(", "));
       return (
         <div key={`e-${r.entryId}`} className="border-b border-border">
@@ -111,11 +110,12 @@ export default function AuReel() {
       );
     }
     const ev = events.find((e) => e.eventId === r.eventId);
-    const detail = ev ? `${fmtEur(ev.sellingPricePerGuest)} × ${ev.guestCount}` : undefined;
+    const detail = ev ? signedDetail(ev) : undefined;
     const parts = [dayLabel(r.date), type ?? "Sans type"];
     if (detail) parts.push(detail);
     if (ev && ev.name !== r.label) parts.push(ev.name);
-    const toInvoice = r.status === "completed" && !invoiced.has(r.eventId);
+    // The app never proposes an invoice when they are issued elsewhere.
+    const toInvoice = invoicing !== "externe" && r.status === "completed" && !invoiced.has(r.eventId);
     const fields = (
       <>
         <span className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap touch:h-11">

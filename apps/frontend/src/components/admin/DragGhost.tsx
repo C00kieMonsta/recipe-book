@@ -16,6 +16,8 @@ export interface DragGhostProps {
 const MAX_LABEL = 24;
 const OFFSET_X = 24;
 const OFFSET_Y = 56;
+// Under the finger when there is no room above, so a sticky strip or heads row stays visible.
+const BELOW_Y = 24;
 const EDGE = 8;
 
 export function ghostLabel(label: string): string {
@@ -41,7 +43,7 @@ export default function DragGhost({ point, status, label, target }: DragGhostPro
       ref={ref}
       aria-hidden="true"
       className="pointer-events-none fixed z-50 flex h-11 max-w-[calc(100vw-16px)] items-center gap-2 rounded-lg bg-background px-3 text-sm shadow-dialog"
-      style={{ left: point.x - OFFSET_X, top: point.y - OFFSET_Y }}
+      style={{ left: point.x - OFFSET_X, top: point.y - OFFSET_Y < EDGE ? point.y + BELOW_Y : point.y - OFFSET_Y }}
     >
       <Dot status={status} />
       <span className="min-w-0 truncate">{ghostLabel(label)}</span>

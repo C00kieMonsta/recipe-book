@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 export interface DragPoint {
   x: number;
@@ -59,6 +59,19 @@ function swallowClick(e: Event) {
   e.stopPropagation();
 }
 
+// iOS starts a text selection and the link callout at about the hold delay, so both go off at pointerdown.
+function protect(el: HTMLElement) {
+  el.style.userSelect = "none";
+  el.style.webkitUserSelect = "none";
+  el.style.setProperty("-webkit-touch-callout", "none");
+}
+
+function unprotect(el: HTMLElement) {
+  el.style.userSelect = "";
+  el.style.webkitUserSelect = "";
+  el.style.setProperty("-webkit-touch-callout", "");
+}
+
 interface Gesture<T> {
   el: HTMLElement;
   pointerId: number;
@@ -90,6 +103,7 @@ export function useLongPressDrag<T>(options: LongPressDragOptions<T>): LongPress
     if (!g) return;
     if (g.timer !== null) window.clearTimeout(g.timer);
     g.el.removeEventListener("contextmenu", preventDefault);
+    unprotect(g.el);
     gesture.current = null;
   }, []);
 
@@ -132,9 +146,7 @@ export function useLongPressDrag<T>(options: LongPressDragOptions<T>): LongPress
     el.removeEventListener("contextmenu", preventDefault);
     el.classList.remove(DRAG_CLASS);
     el.style.touchAction = "";
-    el.style.userSelect = "";
-    el.style.webkitUserSelect = "";
-    el.style.setProperty("-webkit-touch-callout", "");
+    unprotect(el);
     try {
       el.releasePointerCapture(g.pointerId);
     } catch {
@@ -163,12 +175,10 @@ export function useLongPressDrag<T>(options: LongPressDragOptions<T>): LongPress
     navigator.vibrate?.(10);
     el.addEventListener("touchmove", preventTouch, { passive: false });
     el.addEventListener("click", swallowClick, true);
-    // React rewrites className when the row re-renders, so the styles are also set inline.
+    // Inline copies of the class, for a row re-rendered by a child component between two renders here.
     el.classList.add(DRAG_CLASS);
     el.style.touchAction = "none";
-    el.style.userSelect = "none";
-    el.style.webkitUserSelect = "none";
-    el.style.setProperty("-webkit-touch-callout", "none");
+    protect(el);
     setDragging(true);
     setItem(g.item);
     opts.current.onStart?.(g.item);
@@ -183,6 +193,12 @@ export function useLongPressDrag<T>(options: LongPressDragOptions<T>): LongPress
     else cancelHold();
   }, [cancelHold, finish]);
 
+  // A re-render rewrites the row's className, so the class is put back before paint.
+  useLayoutEffect(() => {
+    const g = gesture.current;
+    if (g?.lifted) g.el.classList.add(DRAG_CLASS);
+  });
+
   const handlers = useCallback((rowItem: T): LongPressDragHandlers => ({
     onPointerDown: (e) => {
       if (!enabled || gesture.current) return;
@@ -191,6 +207,7 @@ export function useLongPressDrag<T>(options: LongPressDragOptions<T>): LongPress
       const el = e.currentTarget;
       const start = { x: e.clientX, y: e.clientY };
       el.addEventListener("contextmenu", preventDefault);
+      protect(el);
       gesture.current = {
         el,
         pointerId: e.pointerId,

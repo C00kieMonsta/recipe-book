@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { AppEvent, EventCostSnapshot } from "@packages/types";
-import { aFacturer, buildCostSnapshot, fmtEur, shortEventName } from "@packages/types";
+import { aFacturer, buildCostSnapshot, fmtEur, shortEventName, signedRevenue } from "@packages/types";
 import { api } from "@/lib/api";
 import { dayMonthShortLabel, monthLabel, todayIso } from "@/lib/dates";
 import { useReportInputs } from "@/lib/use-report-inputs";
@@ -38,8 +38,10 @@ export default function AFacturer() {
   const year = today.slice(0, 4);
   const { toast } = useToast();
   const touch = useTouchScreen();
-  const { inputs, events, entries, clients, loading, notConfigured, error, reload } = useReportInputs(year);
+  const { inputs, events, entries, clients, invoicing, loading, notConfigured, error, reload } = useReportInputs(year);
   const [busy, setBusy] = useState<string | null>(null);
+  // Invoices issued elsewhere: only the events to close are listed.
+  const externe = invoicing === "externe";
 
   const report = useMemo(() => aFacturer({ events, entries, clients }, today), [events, entries, clients, today]);
   const clientById = useMemo(() => new Map(clients.map((c) => [c.clientId, c])), [clients]);
@@ -69,22 +71,22 @@ export default function AFacturer() {
   if (loading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
 
   return (
-    <div className="max-w-doc pb-28 md:pb-0">
+    <div className={externe ? "max-w-doc" : "max-w-doc pb-28 md:pb-0"}>
       {error && <div className="mb-4"><Callout tone="danger">{error}</Callout></div>}
       {notConfigured && <div className="mb-4"><Callout emoji="💶">{NOT_CONFIGURED}</Callout></div>}
 
-      {!notConfigured && (
+      {!notConfigured && !externe && (
         <div className="hidden grid-cols-2 divide-x divide-border rounded-lg bg-surface md:grid">
           <MoneyTile flat label={`À facturer · ${toInvoiceCount}`} value={fmtEur(report.totals.toInvoiceHtva)} sub="HTVA" to="#a-facturer" />
           <MoneyTile flat label={`Impayées · ${report.unpaid.length}`} value={fmtEur(report.totals.unpaidTvac)} sub="TVAC" to="#impayes" />
         </div>
       )}
 
-      {nothing && !notConfigured && <p className="mt-4 text-sm text-muted-foreground">Rien à facturer, rien d'impayé.</p>}
+      {nothing && !notConfigured && !externe && <p className="mt-4 text-sm text-muted-foreground">Rien à facturer, rien d'impayé.</p>}
 
       <Section title="Événements passés à terminer" meta={report.toClose.length > 0 ? <Tag colour="gray">{report.toClose.length}</Tag> : undefined}>
         {report.toClose.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Aucun événement passé à terminer.</p>
+          <p className="text-sm text-muted-foreground">{externe ? "Tous les événements passés sont terminés." : "Aucun événement passé à terminer."}</p>
         ) : (
           <div className="divide-y divide-border">
             {report.toClose.map((ev) => (
@@ -97,14 +99,14 @@ export default function AFacturer() {
                 }
               >
                 <Link to={`/events/${ev.eventId}`} className={LINK}>{shortEventName(ev, ev.clientId ? clientById.get(ev.clientId) : undefined)}</Link>
-                <span className="text-muted-foreground">{` · ${dayMonthShortLabel(ev.date).toLowerCase()} · ${ev.guestCount} conv. · ${fmtEur(ev.sellingPricePerGuest * ev.guestCount)}`}</span>
+                <span className="text-muted-foreground">{` · ${dayMonthShortLabel(ev.date).toLowerCase()} · ${ev.guestCount} conv. · ${fmtEur(signedRevenue(ev))}`}</span>
               </Row>
             ))}
           </div>
         )}
       </Section>
 
-      {!notConfigured && (
+      {!notConfigured && !externe && (
         <>
           <div id="a-facturer" className="scroll-mt-20">
             <Section

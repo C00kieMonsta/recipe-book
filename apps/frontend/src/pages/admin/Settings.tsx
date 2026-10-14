@@ -7,6 +7,7 @@ import type {
   CompanySettings,
   FixedCharge,
   FixedChargeCategory,
+  InvoicingMode,
   Person,
   PrestationTypeSetting,
   SettingsSupplier,
@@ -17,7 +18,6 @@ import type {
 import {
   DEFAULT_COURSES,
   DEFAULT_PRESTATION_TYPES,
-  DEFAULT_RECIPE_CATEGORIES,
   DEFAULT_SUPPLIERS,
   VAT_RATES,
   fmtEur,
@@ -60,7 +60,6 @@ import { PersonChip } from "@/components/admin/PersonChips";
 type DraftPrestationType = PrestationTypeSetting & { isNew?: boolean };
 
 interface Draft {
-  recipeCategories: string[];
   courses: string[];
   prestationTypes: DraftPrestationType[];
   suppliers: SettingsSupplier[];
@@ -69,6 +68,7 @@ interface Draft {
   objectives: Record<string, Partial<YearObjective>>;
   yearActuals: Record<string, YearActuals>;
   company: CompanySettings;
+  invoicing: InvoicingMode;
   ledgerStartYm?: string;
   ignoredDuplicateGroups: string[];
   // Sent back on save so the backend can refuse a stale draft.
@@ -111,6 +111,10 @@ function tabFromHash(hash: string): Tab {
 }
 
 const VAT_OPTIONS = VAT_RATES.map((r) => ({ value: String(r), label: `${r} %` }));
+const INVOICING_OPTIONS: { value: InvoicingMode; label: string }[] = [
+  { value: "app", label: "Dans l'application" },
+  { value: "externe", label: "Dans un autre outil (Odoo)" },
+];
 const longDate = new Intl.DateTimeFormat("fr-BE", { day: "numeric", month: "long", year: "numeric" });
 
 function newId(): string {
@@ -133,7 +137,6 @@ function chargeInResult(c: FixedCharge): boolean {
 
 function fromSettings(s: AppSettings): Draft {
   return {
-    recipeCategories: s.recipeCategories?.length ? s.recipeCategories : DEFAULT_RECIPE_CATEGORIES,
     courses: s.courses?.length ? s.courses : DEFAULT_COURSES,
     prestationTypes: s.prestationTypes?.length ? s.prestationTypes : DEFAULT_PRESTATION_TYPES,
     suppliers: s.suppliers?.length ? s.suppliers : DEFAULT_SUPPLIERS,
@@ -142,6 +145,7 @@ function fromSettings(s: AppSettings): Draft {
     objectives: s.objectives ?? {},
     yearActuals: s.yearActuals ?? {},
     company: s.company ?? { name: "", vatNumber: "", address: "" },
+    invoicing: s.invoicing ?? "app",
     ledgerStartYm: s.ledgerStartYm,
     ignoredDuplicateGroups: s.ignoredDuplicateGroups ?? [],
     updatedAt: s.updatedAt,
@@ -450,10 +454,8 @@ export default function Settings() {
   // ── Save ──
   const handleSave = async () => {
     if (!draft) return;
-    const recipeCategories = draft.recipeCategories.map((c) => c.trim()).filter(Boolean);
     const courses = draft.courses.map((c) => c.trim()).filter(Boolean);
-    if (recipeCategories.length === 0) return toast({ title: "Au moins un format de recette est requis", variant: "destructive" });
-    if (courses.length === 0) return toast({ title: "Au moins une catégorie du menu est requise", variant: "destructive" });
+    if (courses.length === 0) return toast({ title: "Au moins une catégorie est requise", variant: "destructive" });
     const prestationTypes = draft.prestationTypes
       .filter((t) => t.key.trim() && t.label.trim())
       .map((t) => ({ key: t.key.trim(), label: t.label.trim(), defaultVatRate: t.defaultVatRate }));
@@ -500,7 +502,6 @@ export default function Settings() {
     setSaving(true);
     try {
       const updated = await api.settings.update({
-        recipeCategories,
         courses,
         prestationTypes,
         suppliers,
@@ -509,6 +510,7 @@ export default function Settings() {
         objectives,
         yearActuals,
         company,
+        invoicing: draft.invoicing,
         ledgerStartYm: draft.ledgerStartYm || undefined,
         ignoredDuplicateGroups: draft.ignoredDuplicateGroups,
         updatedAt: draft.updatedAt,
@@ -706,36 +708,20 @@ export default function Settings() {
   const general = (
     <>
       <Section title="Visite guidée" meta={tour.seenAt ? `Vue le ${longDate.format(new Date(tour.seenAt))}` : undefined}>
-        <p className="text-sm text-muted-foreground">Neuf étapes pour voir comment planifier la semaine, préparer le jour même et facturer. Environ deux minutes.</p>
+        <p className="text-sm text-muted-foreground">Dix étapes pour voir comment planifier la semaine, préparer le jour même et facturer. Environ deux minutes.</p>
         <Button variant="default" size="md" className="mt-2" onClick={tour.start}>Démarrer la visite</Button>
       </Section>
 
-      <Section title="Formats de recette" meta="Le type de plat : buffet, lunch… sert à classer les recettes" action={addAction("Ajouter un format", () => patch((d) => ({ ...d, recipeCategories: [...d.recipeCategories, ""] })))}>
-        <div>
-          {draft.recipeCategories.map((cat, i) => (
-            <NameRow
-              key={i}
-              value={cat}
-              placeholder="Nom du format…"
-              ariaLabel={`Actions du format ${cat || i + 1}`}
-              index={i}
-              length={draft.recipeCategories.length}
-              onSave={(v) => patch((d) => ({ ...d, recipeCategories: d.recipeCategories.map((c, j) => (j === i ? v : c)) }))}
-              onMove={(from, to) => patch((d) => ({ ...d, recipeCategories: moveItem(d.recipeCategories, from, to) }))}
-              deleteDisabled={draft.recipeCategories.length <= 1}
-              onDelete={() =>
-                setConfirm({
-                  message: `Supprimer le format « ${cat || "sans nom"} » ?`,
-                  onConfirm: () => patch((d) => ({ ...d, recipeCategories: d.recipeCategories.filter((_, j) => j !== i) })),
-                })
-              }
-            />
-          ))}
-        </div>
-      </Section>
+    </>
+  );
 
-      <Section title="Catégories du menu" action={addAction("Ajouter une catégorie", () => patch((d) => ({ ...d, courses: [...d.courses, ""] })))}>
-        <p className="mb-2 text-sm text-muted-foreground">Ordre des services sur les menus, la journée, les fiches et l'impression.</p>
+  const catalogue = (
+    <>
+      <Section
+        title="Catégories"
+        meta="Classent les recettes et groupent le menu d'un événement : apéritif, entrée, plat…"
+        action={addAction("Ajouter une catégorie", () => patch((d) => ({ ...d, courses: [...d.courses, ""] })))}
+      >
         <div>
           {draft.courses.map((course, i) => (
             <NameRow
@@ -762,11 +748,7 @@ export default function Settings() {
           ))}
         </div>
       </Section>
-    </>
-  );
 
-  const catalogue = (
-    <>
       <Section
         title="Types de prestation"
         meta="Ce que vous vendez au client, avec sa TVA"
@@ -1285,6 +1267,15 @@ export default function Settings() {
           <Property label="Début du journal" kind="custom" sub="Les mois avant cette date lisent les Années précédentes.">
             <MonthValue value={draft.ledgerStartYm} ariaLabel="Début du journal" onChange={(v) => patch((d) => ({ ...d, ledgerStartYm: v }))} />
           </Property>
+          <Property
+            label="Factures"
+            kind="select"
+            value={draft.invoicing}
+            options={INVOICING_OPTIONS}
+            colour="gray"
+            sub={draft.invoicing === "externe" ? "L'application ne propose plus de créer les factures ni les acomptes. Le chiffre d'affaires du mois se saisit ou s'importe dans le Journal." : undefined}
+            onSave={(v) => patch((d) => ({ ...d, invoicing: v === "externe" ? "externe" : "app" }))}
+          />
         </PropertyList>
       </Section>
 

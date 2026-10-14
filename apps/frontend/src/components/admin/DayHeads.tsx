@@ -37,7 +37,7 @@ export default function DayHeads({ dates, plan, started, today, selected, href, 
     <div
       role="group"
       aria-label="Jours de la semaine"
-      className="grid grid-cols-[repeat(7,minmax(0,1fr))] gap-2 bg-background pb-1"
+      className="relative grid grid-cols-[repeat(7,minmax(0,1fr))] gap-2 bg-background pb-1"
     >
       {dates.map((date, i) => {
         const day = plan?.days[i];
@@ -98,7 +98,8 @@ export default function DayHeads({ dates, plan, started, today, selected, href, 
           </div>
         );
       })}
-      {dragging && <p className="col-span-7 text-caption text-muted-foreground">Déposez sur un jour</p>}
+      {/* Floats under the row so the columns do not shift under the finger. */}
+      {dragging && <p className="absolute inset-x-0 top-full z-10 bg-background text-caption leading-none text-muted-foreground">Déposez sur un jour</p>}
     </div>
   );
 }
