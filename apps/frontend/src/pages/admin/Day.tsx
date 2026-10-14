@@ -105,6 +105,14 @@ function isLine(item: DayItem): item is PrepLine {
   return item.kind === "recipe";
 }
 
+// The tap's click lands after pointerup, on the Sheet backdrop by then, so it is dropped before React sees it.
+function swallowNextClick(ms = 400) {
+  const stop = () => { document.removeEventListener("click", swallow, true); window.clearTimeout(timer); };
+  const swallow = (e: Event) => { e.preventDefault(); e.stopPropagation(); stop(); };
+  const timer = window.setTimeout(stop, ms);
+  document.addEventListener("click", swallow, true);
+}
+
 function itemKey(item: DayItem): string {
   return item.kind === "recipe" ? item.lineId : item.taskId;
 }
@@ -447,7 +455,7 @@ export default function Day() {
       if (!readTour().touchDragHintSeen) setDragHint(true);
     },
     onEnd: (d, item) => {
-      if (d === null) setMoveRequest(itemKey(item));
+      if (d === null) { swallowNextClick(); setMoveRequest(itemKey(item)); }
       else if (d !== item.date) void moveItem(item, d);
     },
   });

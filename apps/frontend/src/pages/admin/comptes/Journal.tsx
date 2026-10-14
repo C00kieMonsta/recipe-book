@@ -930,18 +930,18 @@ function ImportInvoicesDialog({
       key: "number",
       label: "Numéro",
       render: (r) => (
-        <span className="inline-flex items-center gap-2">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <Tag colour={PREVIEW_TAG[r.status].colour} title={r.reason}>{PREVIEW_TAG[r.status].label}</Tag>
           <span className="font-medium">{r.number}</span>
         </span>
       ),
     },
-    { key: "date", label: "Date", width: "7rem", render: (r) => (r.row ? fmtDateFr(r.row.date) : "") },
+    { key: "date", label: "Date", width: "6.5rem", render: (r) => (r.row ? fmtDateFr(r.row.date) : "") },
     { key: "label", label: "Client", render: (r) => r.row?.label ?? <span className="text-muted-foreground">{r.reason}</span> },
     { key: "htva", label: "HTVA", align: "right", render: (r) => (r.row ? fmtEur(r.row.htva) : "") },
     { key: "vat", label: "TVA", align: "right", render: (r) => (r.row ? fmtEur(r.row.vatAmount) : "") },
-    { key: "tvac", label: "TVAC", align: "right", trailing: true, render: (r) => (r.row ? fmtEur(r.row.totalTvac) : "") },
-    { key: "paid", label: "Payé", width: "4rem", trailing: true, render: (r) => (r.row ? (r.row.paid ? "Oui" : "Non") : "") },
+    { key: "tvac", label: "TVAC", align: "right", trailing: true, render: (r) => (r.row ? <span>{fmtEur(r.row.totalTvac)}</span> : "") },
+    { key: "paid", label: "Payé", width: "3.5rem", trailing: true, render: (r) => (r.row ? <span>{r.row.paid ? "Oui" : "Non"}</span> : "") },
   ];
 
   const footer = step === "upload" ? (
@@ -958,8 +958,9 @@ function ImportInvoicesDialog({
     </div>
   );
 
+  // Seven preview columns need a little more than the lg width.
   return (
-    <Dialog open onClose={onCancel} title="Importer des factures (CSV)" size="lg" footer={footer}>
+    <Dialog open onClose={onCancel} title="Importer des factures (CSV)" size="lg" className="max-w-3xl" footer={footer}>
       {step === "upload" ? (
         <div className="flex flex-col gap-3">
           <button

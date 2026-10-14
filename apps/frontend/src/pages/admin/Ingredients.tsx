@@ -484,8 +484,8 @@ function CsvImport({ existingIngredients, suppliers, onImport, onCancel }: {
             <div className="flex gap-2">
               {pricesOnly
                 ? <Tag colour="gray">{newCount} non trouvé{newCount > 1 ? "s" : ""}</Tag>
-                : <Tag colour="green">{newCount} nouveaux</Tag>}
-              <Tag colour="blue">{updateCount} mises à jour</Tag>
+                : <Tag colour="green">{newCount} nouveau{newCount > 1 ? "x" : ""}</Tag>}
+              <Tag colour="blue">{updateCount} mise{updateCount > 1 ? "s" : ""} à jour</Tag>
             </div>
           </div>
           <div className="max-h-[300px] overflow-y-auto">

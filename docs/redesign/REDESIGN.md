@@ -16,7 +16,7 @@ The home screen becomes the week: seven days, every recipe line with its client 
 | Request 2: reorder recipes in an event, sort by category | `lineId`, `course` on the line, `settings.courses` labelled "Catégories du menu", array order, `PUT /admin/events/:id/lines` with the set check, ▲▼ on phone (slice 2) and drag on laptop (slice 5) | 5.7, 6, 7.4 |
 | Request 3: Hoona weekly view, day by day, favourite to stop duplicating | `Client` table with `templates[]` per weekday, `POST /admin/clients/:id/instantiate` with a head count, client chip and "Créer la semaine" banner on the week | 5.11, 7.5 |
 | Request 4: Livre des comptes / compte de résultats | `ta-ledger` table, settings keys for fixed charges, objectives, prior-year totals and month closes, five Comptabilité pages, xlsx export in the workbook's columns, SRL tax model | 5.12 to 5.16, 7.6 |
-| Prestation types are a third taxonomy (working interpretation) | `prestationType` on the event only; `recipe.type` and `settings.recipeCategories` stay as the recipe's service format, relabelled "Formats de recette"; nothing is merged | 5.17, 7.4 |
+| Prestation types are a third taxonomy (working interpretation) | `prestationType` on the event only; `recipe.type` and `settings.recipeCategories` stay as the recipe's service format, relabelled "Formats de recette"; nothing is merged. Superseded in October 2026: `07-offers-pricing-attachments.md` merges format and category into one "Catégories" list (`recipe.category`, `settings.courses`) | 5.17, 7.4 |
 | Enobase: planning, main-d'œuvre, extras, devis, factures, CRM at 200 €/month | Planning and prep now; extras as ledger purchase lines; a one-day "Proposition de menu" PDF instead of quotes; invoices stay in Falco; CRM is the thin client record; Odoo never | 7.8 |
 | AI integration unclear | Not now for the core; one optional recipe import from photo or text behind an OpenAI API key (a ChatGPT subscription cannot be used) | 7.7 |
 
@@ -38,6 +38,7 @@ Edit `menuItems` in `apps/frontend/src/components/admin/AdminSidebar.tsx` (lines
 | Ingrédients | `/ingredients` (includes `/ingredients/doublons`) | ClipboardList | existing |
 | Courses | `/grocery-list` | ShoppingCart | existing, renamed |
 | Clients | `/clients` | Users | 3 |
+| Offres | `/offres` (active for `/offres/*` and `/devis`) | emoji 📋 (07) | 07 |
 | Comptabilité | `/comptes/journal` | Landmark | 4 |
 | Paramètres | `/settings` | Settings | existing |
 
@@ -68,6 +69,8 @@ The existing hamburger drawer and the 68px top bar stay (`AdminLayout.tsx:15` `p
 | Doublons d'ingrédients | `/ingredients/doublons` | new |
 | Clients, Client | `/clients`, `/clients/new`, `/clients/:id` | new |
 | Comptabilité | `/comptes/journal`, `/comptes/apercu`, `/comptes/resultats`, `/comptes/previsionnel`, `/comptes/au-reel` | new |
+| Offres, Offre, Devis | `/offres`, `/offres/:id`, `/devis` | new (07) |
+| Prix fournisseur | `/ingredients/prix?fournisseur=` | new (07) |
 | Finances (ancien) | `/finances` | moved `Dashboard.tsx`, slices 2 and 3 only, deleted in slice 4 |
 | Paramètres | `/settings` | extended |
 
@@ -236,7 +239,7 @@ Header: `‹ Semaine 42 ›` with 44px arrows, "12 au 18 octobre", an "Aujourd'h
 
 Laptop (`xl`, 1280px and above): seven columns. Below `xl`, which covers phones and iPads in both orientations, the week is the stacked layout described under Phone. The page opts out of `max-w-wide` through the `fullBleed` outlet context and uses `px-6`; on `/semaine` below `2xl` (1536px) the sidebar renders collapsed by default (`AdminSidebar.tsx:20`, `w-16` at line 106), persisted with `use-local-storage.ts`, overridable by the chevron. Column widths: 1280px gives 156px, 1366px gives 169px, 1440px gives 179px, 1536px with the sidebar open gives 168px. Grid: `grid-cols-[repeat(7,minmax(0,1fr))] gap-2 2xl:gap-3`. Column header on three lines inside the sticky header: "Mar 13" at `text-h3`, "2 évén. · 60 conv." at `text-sm`, "1 240 €" at `text-sm font-semibold`; today's header has a `primary-soft` background with `text-foreground`. One card per event, `min-h-[72px]`: name at `text-base font-medium line-clamp-2`, "60 conv.", "12 lignes · 3 faites", a 4px progress bar; the prestation `Tag` only at `2xl+`, as a `title` tooltip below that. Under the card, the event's lines in category order as `min-h-9` rows at `text-sm`: status dot, recipe name at `line-clamp-2`, portions `font-semibold tabular-nums` on the right; no truncation anywhere in the column. Lines beyond five collapse into "+ 4 lignes". A header toggle "Lignes / Événements" (persisted with `useLocalStorage`) collapses all lines; it defaults to Événements when the viewport is under 800px tall. Columns scroll inside `max-h-[calc(100dvh-220px)]`; the header stays fixed. A column with three events and fifteen lines is about 760px, so on a 768px laptop the busiest day scrolls inside its column; the Lignes / Événements toggle is the overview, and the line count on the card still answers "how much today" when collapsed.
 
-Touch (`touch:` variant, any width): line rows are `min-h-11` and the status dot is a 44px control that cycles todo → doing → done on tap; no long-press anywhere.
+Touch (`touch:` variant, any width): line rows are `min-h-11` and the status dot is a 44px control that cycles todo → doing → done on tap; no long-press anywhere except the lift of a line or task row for a move (07 section 6.11).
 
 Phone (below 1280px): days stacked, today expanded, other days a 56px row "Mar 13 · 2 évén. · 60 conv. · 3/12 faites". Tapping the day row expands it in place under a sticky day header; a chevron "Voir le jour ›" at the right of that header goes to `/jour/:date`. Inside a day: one event header row per event (name, client chip, guests, done count; tap → `/events/:id`), then its line rows at 48px `text-base` (tap → prep sheet). The money strip scrolls horizontally. 375px wireframe, one day expanded:
 
@@ -290,13 +293,13 @@ Interactions: ← → keys and swipe; space is unbound because it scrolls; Escap
 
 Routes `/recipes/:id` (read, default) and `/recipes/:id?mode=edit`.
 
-Read mode renders `RecipeReader` in a `max-w-doc` column: breadcrumb "Recettes / Tarte au citron", first photo full width, title at `text-h1`, meta row of `Tag`s (format, portions, g/pers), description at `text-base`, ingredients list with a `Stepper` defaulting to `recipe.portions` (typed field plus ×2 and ÷2, so 10 → 60 is two taps and a number, not 50 taps), steps at `text-lead` with the "Aa" toggle. Then two collapsed `SectionToggle`s: "Coût matières" (today's six-column table as a `.table` inside `overflow-x-auto`) and "Simulation de prix" (`PricingSimulation` unchanged; the `tva` inputs become a select limited to `VAT_RATES`). Header actions: "Cuisiner" (primary), "Modifier" (opens `?mode=edit`), overflow with Dupliquer, Exporter PDF (bumped to 11pt body), Supprimer. Phone: sticky bottom bar with Cuisiner and Modifier.
+Read mode renders `RecipeReader` in a `max-w-doc` column: breadcrumb "Recettes / Tarte au citron", first photo full width, title at `text-h1`, meta row of `Tag`s (catégorie, portions, g/pers; the recipe's one « Catégorie » replaces the former « Format », 07 section 6.9), description at `text-base`, ingredients list with a `Stepper` defaulting to `recipe.portions` (typed field plus ×2 and ÷2, so 10 → 60 is two taps and a number, not 50 taps), steps at `text-lead` with the "Aa" toggle. Then two collapsed `SectionToggle`s: "Coût matières" (today's six-column table as a `.table` inside `overflow-x-auto`) and "Simulation de prix" (`PricingSimulation` unchanged; the `tva` inputs become a select limited to `VAT_RATES`). Header actions: "Cuisiner" (primary), "Modifier" (opens `?mode=edit`), overflow with Dupliquer, Exporter PDF (bumped to 11pt body), Supprimer. Phone: sticky bottom bar with Cuisiner and Modifier.
 
 Edit mode keeps today's `RecipeDetail.tsx` JSX in slice 1, with the `Editable*` helpers imported from `components/ui/editable.tsx` and a "Terminé" button back to read mode. Reading surfaces never have click-to-edit text.
 
 ### 5.6 Recettes (liste)
 
-Route `/recipes`. Laptop keeps the three-column card grid: photo `aspect-[3/2]` or a 160px tinted block with a `BookOpen` icon, name at `text-h2` Playfair, description at `text-sm` two lines, meta at `text-sm`. Phone switches to full-width `ListRow`s with a 64px thumbnail. Format chips come from `settings.recipeCategories` plus values found on recipes (as `Recipes.tsx:85` already unions them). Import and export modals keep their logic, restyled with `FieldLabel` and `text-base` inputs. Search sticky under the top bar on phones. No emoji per format (section 9, Q9).
+Route `/recipes`. Laptop keeps the three-column card grid: photo `aspect-[3/2]` or a 160px tinted block with a `BookOpen` icon, name at `text-h2` Playfair, description at `text-sm` two lines, meta at `text-sm`. Phone switches to full-width `ListRow`s with a 64px thumbnail. Category tabs come from `settings.courses` plus values found on recipes (07 section 6.9; the former format chips read `settings.recipeCategories`). Import and export modals keep their logic, restyled with `FieldLabel` and `text-base` inputs. Search sticky under the top bar on phones. No emoji per format (section 9, Q9).
 
 ### 5.7 Événement
 
@@ -368,7 +371,7 @@ Route `/comptes/au-reel?ym=2026-10`. Month ‹ ›. `ListRow`s, one per CA sales
 
 ### 5.17 Paramètres
 
-Route `/settings`, a `max-w-doc` column of sections at `text-base` with 44px rows: Formats de recette (today's `recipeCategories`), Catégories du menu (courses, ordered, ▲▼), Types de prestation (key, label, default VAT), Fournisseurs (name, address, phone), Charges fixes (editable list with Dans le résultat, Depuis, Jusqu'au), Objectifs par année (slice 2 ships CA annuel HTVA and mois actifs; slice 5 adds the rest), Années précédentes (per year: 12 monthly cells, a per-type list, a period list, a note), Société (name, VAT number, address, date de constitution for the export header), Doublons ignorés (with "Reprendre"), À propos (version). Saves go through `PATCH /admin/settings` with the extended DTO. Renaming a category offers "Renommer aussi sur 42 lignes d'événement", which groups the lines by event and sends one `PUT /admin/events/:id/lines` per event, sequentially, with the renamed category. No AI section until slice 6 ships.
+Route `/settings`, a `max-w-doc` column of sections at `text-base` with 44px rows: Catégories (one ordered list, `settings.courses`, that classes recipes and groups menus; it replaced the two lists « Formats de recette » and « Catégories du menu » in 07), Types de prestation (key, label, default VAT), Fournisseurs (name, address, phone), Charges fixes (editable list with Dans le résultat, Depuis, Jusqu'au), Objectifs par année (slice 2 ships CA annuel HTVA and mois actifs; slice 5 adds the rest), Années précédentes (per year: 12 monthly cells, a per-type list, a period list, a note), Société (name, VAT number, address, date de constitution for the export header, and « Factures » : Dans l'application / Dans un autre outil (Odoo), `settings.invoicing`, 07 section 6.2), Doublons ignorés (with "Reprendre"), À propos (version). Saves go through `PATCH /admin/settings` with the extended DTO. Renaming a category offers "Renommer aussi sur 42 lignes d'événement", which groups the lines by event and sends one `PUT /admin/events/:id/lines` per event, sequentially, with the renamed category. No AI section until slice 6 ships.
 
 ## 6. Data model changes
 
@@ -791,7 +794,7 @@ Order of application: tokens (one day, every page changes); `PageHeader`, `Tag`,
 
 Where the category lives: on the line (`EventRecipeLine.course`), with `recipe.defaultCourse` copied in when a line is added. A quiche can be an apéritif at a cocktail and an entrée at a lunch. The list and its order are `settings.courses` (default Apéritif, Entrée, Plat, Dessert, Autre), labelled "Catégories du menu" in the UI because "catégorie" is her word and "service" would collide with "Buffet avec service"; `courses` stays the code name with a comment mapping it to the label. A line whose value is not in the list sorts under Autre without being rewritten.
 
-Three taxonomies, stated once: `recipe.type` and `settings.recipeCategories` (Buffet, Walking dinner, Lunch, Menu semaine) stay as the recipe's service format, unchanged, no migration, relabelled "Formats de recette" in Paramètres; the menu category is on the line; the prestation type (menu à emporter, buffet avec service, ...) is set on the event only and never derived from `recipe.type`. The overlap between the recipe format "Buffet" and the prestation types `buffet_a_emporter` / `buffet_avec_service` is accepted: one describes how a recipe is served, the other what was sold.
+Three taxonomies, stated once (superseded by 07 section 3.1, which merges the first two into one « Catégories » list): `recipe.type` and `settings.recipeCategories` (Buffet, Walking dinner, Lunch, Menu semaine) stay as the recipe's service format, unchanged, no migration, relabelled "Formats de recette" in Paramètres; the menu category is on the line; the prestation type (menu à emporter, buffet avec service, ...) is set on the event only and never derived from `recipe.type`. The overlap between the recipe format "Buffet" and the prestation types `buffet_a_emporter` / `buffet_avec_service` is accepted: one describes how a recipe is served, the other what was sold.
 
 How order is stored: the array order of `event.recipes` inside each category. No `order` field, so nothing to keep in sync. Readers group by category index then array index, so events saved before the change render in their current order under Autre or the recipe's default. ▲▼ swaps with the neighbour inside the group; a category change moves the line to the end of the new group; drag (laptop, HTML5 drag as in `GroceryListPage.tsx`, slice 5) can do both in one drop. All of these call `PUT /admin/events/:id/lines` with the ordered list of `{ lineId, course? }`; the server checks that the set of `lineId`s equals the stored set and returns 409 otherwise, so a stale tab cannot drop a line. PUT never writes portions, notes, prepStatus or prepDate; a laptop tab that reorders after the phone ticked a line keeps the tick. Portions, notes and status go through `PATCH .../lines/:lineId`. `EventDetail.tsx` stops keying rows by `recipeId` (line 276) and deletes `updateRecipePortions` (line 178).
 
@@ -972,6 +975,23 @@ Total: about 47 to 58 days across eleven weeks. If time runs out, stop after sli
 16. In the kitchen, phone or tablet, propped on the counter or in hand? Default: phone in hand for ticking, propped for reading, hence the "Aa" toggle and the 1280px grid breakpoint.
 17. Does Hoona's head count change from week to week? Default: yes, hence the "Convives" field on "Créer la semaine" and "Ajuster les portions aux convives".
 18. Does she have an OpenAI API key, or only a ChatGPT account, and does she still type recipes by hand from paper or photos? Default: no key; slice 6 does not run. What did the Enobase salesperson say their AI does? Default: nothing in the plan depends on the answer.
+
+From `07-offers-pricing-attachments.md` section 10 (October 2026), each with the assumption taken until she answers:
+
+19. Factures. Her install is switched to « Dans un autre outil (Odoo) » at deploy; new installs keep « Dans l'application ». Do deposits (acomptes) also live in Odoo? Assumed yes: in that mode the app proposes neither invoices nor deposits.
+20. Factures. One « CA mensuel » line per month and VAT rate, or the Odoo invoice export? Both are built; assumed she imports when she has the file and types otherwise. An Odoo export (CSV, French columns) is needed to pin the column names; the preview protects her until then.
+21. Factures. Should an event be marked « Facturé » when its Odoo invoice exists? Assumed no: the month totals are enough; « À terminer » only lists events to close.
+22. Offres. Her current offer sheets (Buffet 1, Walking dinner 2…) seed the catalogue; are the prices HTVA per guest? Assumed HTVA per guest; a total food price is available per offer.
+23. Offres. « Portions par convive » defaults to 1 and steps by 0,25; for walking-dinner pieces she types 3. Is that how she counts? Assumed yes.
+24. Devis. The suggested price divides the cost per guest by the raw-material share of the year's objective (30 % when unset). Would she rather use the recipe coefficients (sur place 4, take away 3)? Assumed the objective share; the tile names its rule.
+25. Service, livraison, autres. Always 21 %, or does delivery of food sometimes follow the food rate (6 or 12 %)? Assumed 21 % by default and changeable per line.
+26. Catégories. « Mignardises » is not in her six values. Kept as a seventh category after Dessert on installs that used it (deletable in Paramètres, those recipes then group under « Autre »), or should those recipes become « Dessert »? Assumed kept.
+27. Catégories. « Lunch » and « Menu semaine » recipes become « Plat ». Confirm, or name the category wanted for them.
+28. Semaine. iPad (columns, drop on a column) or phone (stacked days, drop on the L M M J V S D strip)? Both are built; the answer decides which one is tested on a real device first.
+29. Pièces jointes. 20 Mo per file and 20 files per event. Enough for a scanned contract and a few photos? Assumed yes. Should the kitchen staff phones open them? Assumed yes (one admin role today, SEC-2 still open).
+30. Livraison. Should events within a day be ordered by delivery time once most have one? Assumed not yet; they stay by name.
+31. Prix fournisseurs. Do supplier lists arrive as PDF, Excel or in an e-mail? Assumed mostly PDF or paper, so the typed sheet is the main path and the CSV import the second; are their prices HTVA? Assumed HTVA.
+32. Étapes. Scaled quantities move from yellow to light blue so that yellow is her highlighter. Acceptable in the cook mode? Assumed yes.
 
 ## 10. Risks
 

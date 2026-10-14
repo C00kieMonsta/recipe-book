@@ -319,7 +319,7 @@ export default function OfferDetail() {
           </>
         }
         properties={
-          <PropertyList>
+          <PropertyList className="md:[&_dt]:w-48">
             <Property icon="🍽" label="Prestation" kind="select" value={offer.prestationType ?? NONE} options={prestationOptions} colour="gray" onSave={changePrestation} />
             <Property icon="🧾" label="TVA" kind="select" value={offer.vatRate === undefined ? "" : String(offer.vatRate)} options={VAT_OPTIONS} colour="gray" placeholder="Choisir" onSave={(v) => { const rate = parseVat(v); if (rate !== undefined) edit({ vatRate: rate }); }} />
             <Property icon="👥" label="Convives de référence" kind="number" value={offer.guestCountRef} min={1} decimals={0} sub="Sert au calcul du coût et des portions" onSave={(v) => edit({ guestCountRef: Math.max(1, Math.round(v)) })} />
@@ -474,7 +474,7 @@ export default function OfferDetail() {
         open={replaceWith !== null}
         onClose={() => setReplaceWith(null)}
         size="sm"
-        title={`Remplacer le menu de « ${offer.name} » par celui de « ${replaceWith?.name ?? ""} » ?`}
+        title={<span className="whitespace-normal">Remplacer le menu de « {offer.name} » par celui de « {replaceWith?.name ?? ""} » ?</span>}
         footer={
           <>
             <Button variant="default" onClick={() => setReplaceWith(null)}>Annuler</Button>

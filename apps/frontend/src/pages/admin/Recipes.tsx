@@ -215,7 +215,10 @@ export default function Recipes() {
             <span aria-hidden="true" className="hidden px-1 text-icon md:inline">·</span>
             <ViewTabs
               className="hidden md:flex"
-              items={[{ key: "list", label: <><List className="h-4 w-4" /> Liste</> }, { key: "gallery", label: <><LayoutGrid className="h-4 w-4" /> Galerie</> }]}
+              items={[
+                { key: "list", label: <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><List className="h-4 w-4" /> Liste</span> },
+                { key: "gallery", label: <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><LayoutGrid className="h-4 w-4" /> Galerie</span> },
+              ]}
               value={view}
               onChange={(k) => setView(k as View)}
               aria-label="Affichage"

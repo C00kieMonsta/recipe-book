@@ -170,6 +170,8 @@ export default function RecipeDetail() {
   const discardRef = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
+  // Bumped when the ingredient dialog closes: the search remounts closed instead of reopening its list when the dialog hands the focus back.
+  const [searchKey, setSearchKey] = useState(0);
   const [creatingIngredient, setCreatingIngredient] = useState<string | null>(null);
   const [viewingIngredient, setViewingIngredient] = useState<Ingredient | null>(null);
   const [supplierNames, setSupplierNames] = useState(() => DEFAULT_SUPPLIERS.map((s) => s.name));
@@ -253,6 +255,7 @@ export default function RecipeDetail() {
   const openAddRow = () => {
     discardRef.current = false;
     resetRow();
+    setSearchKey(0);
     setAddingIngredient(true);
   };
   const closeAddRow = () => {
@@ -347,6 +350,7 @@ export default function RecipeDetail() {
       setIngredients((prev) => [...prev, created]);
       setNewIng({ ingredientId: created.ingredientId, unit: PRICE_TO_QTY_UNIT[created.unit] || "g" });
       setCreatingIngredient(null);
+      setSearchKey((k) => k + 1);
       setTimeout(() => qtyRef.current?.focus(), 50);
       toast({ title: "Ingrédient créé" });
     } catch {
@@ -416,6 +420,7 @@ export default function RecipeDetail() {
           onUseExisting={(ing) => {
             setNewIng({ ingredientId: ing.ingredientId, unit: PRICE_TO_QTY_UNIT[ing.unit] || "g" });
             setCreatingIngredient(null);
+            setSearchKey((k) => k + 1);
             setTimeout(() => qtyRef.current?.focus(), 50);
           }}
           onSave={handleCreateIngredient}
@@ -503,7 +508,7 @@ export default function RecipeDetail() {
   }
 
   return (
-    <div className="mx-auto max-w-doc">
+    <div className="mx-auto max-w-doc pb-24 md:pb-0">
       <PageHeader
         breadcrumb={[{ label: "Recettes", to: "/recipes" }, { label: recipe.name, to: `/recipes/${id}` }, { label: "Modification" }]}
         iconKey="recette"
@@ -512,7 +517,7 @@ export default function RecipeDetail() {
         actions={
           <>
             <ActionMenu items={menuItems} title={recipe.name} />
-            <Button variant="primary" size="md" icon={<Check />} onClick={() => setMode(false)}>Terminé</Button>
+            <Button variant="primary" size="md" icon={<Check />} onClick={() => setMode(false)} className="hidden md:inline-flex">Terminé</Button>
           </>
         }
         properties={properties}
@@ -655,6 +660,7 @@ export default function RecipeDetail() {
                 <tr className="bg-surface" onKeyDownCapture={onRowKeyDownCapture} onKeyDown={onRowKeyDown} onBlur={onRowBlur}>
                   <td>
                     <SearchSelect
+                      key={searchKey}
                       options={ingredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit.replace("€/", "/")}` }))}
                       value={newIng.ingredientId}
                       onChange={(v) => {
@@ -665,7 +671,7 @@ export default function RecipeDetail() {
                       inputRef={searchRef}
                       placeholder="Rechercher un ingrédient…"
                       onCreateNew={(name) => setCreatingIngredient(name)}
-                      autoFocus
+                      autoFocus={searchKey === 0}
                     />
                   </td>
                   <td>
@@ -718,6 +724,10 @@ export default function RecipeDetail() {
       <Section title="Simulation de prix">
         <PricingSimulation recipe={recipe} totalCost={totalCost} />
       </Section>
+
+      <div className="fixed inset-x-0 bottom-0 z-30 flex gap-2 bg-background p-3 shadow-[0_-1px_0_0_var(--border)] md:hidden">
+        <Button variant="primary" size="lg" icon={<Check />} onClick={() => setMode(false)} className="flex-1">Terminé</Button>
+      </div>
 
       {modals}
     </div>

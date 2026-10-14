@@ -7,6 +7,7 @@ import { api, errorReason, invalidate } from "@/lib/api";
 import { dayMonthShortLabel } from "@/lib/dates";
 import { plural } from "@/lib/use-planning-data";
 import { useToast } from "@/hooks/use-toast";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useTopTitle } from "@/components/admin/AdminLayout";
 import {
   ActionMenu,
@@ -175,7 +176,7 @@ export function DeleteOfferDialog({ offer, onClose, onDeleted }: DeleteOfferDial
       open={offer !== null}
       onClose={onClose}
       size="sm"
-      title={`Supprimer « ${offer?.name ?? ""} » ?`}
+      title={<span className="whitespace-normal">Supprimer « {offer?.name ?? ""} » ?</span>}
       footer={
         <>
           <Button variant="default" onClick={onClose}>Annuler</Button>
@@ -192,6 +193,23 @@ interface OfferRow {
   offer: Offer;
   prestation?: string;
   summary: ReturnType<typeof offerSummary>;
+}
+
+// Rendered once per toolbar slot, so each copy owns its menu state.
+function SortMenu({ value, onChange }: { value: Sort; onChange: (s: Sort) => void }) {
+  const menu = useMenu();
+  return (
+    <div ref={menu.ref} className="relative inline-flex">
+      <Button variant="subtle" size="sm" icon={<ArrowUpDown />} onClick={menu.toggle} aria-haspopup="menu" aria-expanded={menu.open}>
+        Trier
+      </Button>
+      <Menu {...menu.props} align="right" title="Trier">
+        <MenuRadio checked={value === "name"} onSelect={() => onChange("name")}>Nom</MenuRadio>
+        <MenuRadio checked={value === "price"} onSelect={() => onChange("price")}>Prix</MenuRadio>
+        <MenuRadio checked={value === "margin"} onSelect={() => onChange("margin")}>Marge %</MenuRadio>
+      </Menu>
+    </div>
+  );
 }
 
 const stop = (e: MouseEvent) => e.stopPropagation();
@@ -212,10 +230,11 @@ export default function Offers() {
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [sort, setSort] = useState<Sort>("name");
-  const sortMenu = useMenu();
   const [fromEvent, setFromEvent] = useState(false);
   const [deleting, setDeleting] = useState<Offer | null>(null);
   const [busy, setBusy] = useState(false);
+  // Under md the « Devis » button leaves the header for the ⋯ menu.
+  const narrow = useMediaQuery("(max-width: 767px)");
 
   useEffect(() => {
     let cancelled = false;
@@ -316,19 +335,6 @@ export default function Offers() {
     />
   );
 
-  const sortButton = (
-    <div ref={sortMenu.ref} className="relative inline-flex">
-      <Button variant="subtle" size="sm" icon={<ArrowUpDown />} onClick={sortMenu.toggle} aria-haspopup="menu" aria-expanded={sortMenu.open}>
-        Trier
-      </Button>
-      <Menu {...sortMenu.props} align="right" title="Trier">
-        <MenuRadio checked={sort === "name"} onSelect={() => setSort("name")}>Nom</MenuRadio>
-        <MenuRadio checked={sort === "price"} onSelect={() => setSort("price")}>Prix</MenuRadio>
-        <MenuRadio checked={sort === "margin"} onSelect={() => setSort("margin")}>Marge %</MenuRadio>
-      </Menu>
-    </div>
-  );
-
   const rowMenu = (offer: Offer) => (
     <span onClick={stop} className="inline-flex pointer:opacity-0 pointer:focus-within:opacity-100 pointer:[tr:hover_&]:opacity-100">
       <ActionMenu
@@ -360,9 +366,17 @@ export default function Offers() {
         meta={plural(offers.length, "offre")}
         actions={
           <>
-            <Button as={Link} to="/devis" variant="default" size="md">Devis</Button>
-            <ActionMenu title="Offres" items={[{ label: "Depuis un événement…", onClick: () => setFromEvent(true) }]} />
-            <Button variant="primary" size="lg" icon={<Plus />} onClick={createNew} disabled={busy}>Nouvelle offre</Button>
+            <Button as={Link} to="/devis" variant="default" size="md" className="hidden md:inline-flex">Devis</Button>
+            <ActionMenu
+              title="Offres"
+              items={[
+                ...(narrow ? [{ label: "Devis", onClick: () => navigate("/devis") }, { kind: "separator" as const }] : []),
+                { label: "Depuis un événement…", onClick: () => setFromEvent(true) },
+              ]}
+            />
+            <Button variant="primary" size="lg" icon={<Plus />} onClick={createNew} disabled={busy}>
+              <span className="hidden sm:inline">Nouvelle offre</span><span className="sm:hidden">Nouvelle</span>
+            </Button>
           </>
         }
       />
@@ -382,13 +396,13 @@ export default function Offers() {
             right={
               <>
                 {searchOpen ? searchField : <IconButton size="sm" aria-label="Rechercher" icon={<Search />} onClick={() => setSearchOpen(true)} />}
-                {sortButton}
+                <SortMenu value={sort} onChange={setSort} />
               </>
             }
             rightTouch={
               <>
                 <IconButton size="sm" aria-label="Rechercher" icon={<Search />} onClick={() => setSearchOpen((o) => !o)} className={searchOpen ? "bg-active" : ""} />
-                {sortButton}
+                <SortMenu value={sort} onChange={setSort} />
               </>
             }
           />

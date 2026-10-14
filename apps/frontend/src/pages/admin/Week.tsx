@@ -99,6 +99,14 @@ function isTypingTarget(e: KeyboardEvent): boolean {
   return t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable;
 }
 
+// The tap's click lands after pointerup, on the Sheet backdrop by then, so it is dropped before React sees it.
+function swallowNextClick(ms = 400) {
+  const stop = () => { document.removeEventListener("click", swallow, true); window.clearTimeout(timer); };
+  const swallow = (e: Event) => { e.preventDefault(); e.stopPropagation(); stop(); };
+  const timer = window.setTimeout(stop, ms);
+  document.addEventListener("click", swallow, true);
+}
+
 function lineStatus(line: EventRecipeLine): PrepStatus {
   return line.prepStatus ?? "todo";
 }
@@ -346,7 +354,7 @@ export default function Week() {
       if (!readTour().touchDragHintSeen) setDragHint(true);
     },
     onEnd: (date, item) => {
-      if (date === null) setMoveRequest({ kind: item.kind, id: item.id });
+      if (date === null) { swallowNextClick(); setMoveRequest({ kind: item.kind, id: item.id }); }
       else if (date !== item.current) void moveItem(item, date);
     },
   });
