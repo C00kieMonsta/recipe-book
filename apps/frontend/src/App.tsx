@@ -1,5 +1,5 @@
-import { lazy, Suspense } from "react";
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { lazy, Suspense, useEffect } from "react";
+import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { addDays, isoWeekOf, weekdayOf } from "@packages/types";
 import { todayIso } from "@/lib/dates";
 import LoginPage from "@/pages/LoginPage";
@@ -42,14 +42,39 @@ function planningWeek(): string {
   return weekdayOf(today) === 7 ? isoWeekOf(addDays(today, 1)) : isoWeekOf(today);
 }
 
+// The stored week may carry its own query string; the incoming one (?assistant=open) wins on a clash.
+function withSearch(path: string, search: string): string {
+  if (!search) return path;
+  const [base, stored = ""] = path.split("?");
+  const params = new URLSearchParams(stored);
+  new URLSearchParams(search).forEach((value, key) => params.set(key, value));
+  const merged = params.toString();
+  return merged ? `${base}?${merged}` : base;
+}
+
 function HomeRedirect() {
-  return <Navigate to={`/semaine/${planningWeek()}`} replace />;
+  const { search } = useLocation();
+  return <Navigate to={`/semaine/${planningWeek()}${search}`} replace />;
 }
 
 function WeekIndexRedirect() {
   const { search } = useLocation();
   const last = sessionStorage.getItem(LAST_WEEK_KEY);
-  return <Navigate to={last && last.startsWith("/semaine/") ? last : `/semaine/${planningWeek()}${search}`} replace />;
+  return <Navigate to={withSearch(last && last.startsWith("/semaine/") ? last : `/semaine/${planningWeek()}`, search)} replace />;
+}
+
+// Drops ?assistant=open once the sheet has read it, so a week link or the stored last week does not reopen it.
+function AssistantParamCleanup() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (!params.has("assistant")) return;
+    params.delete("assistant");
+    const search = params.toString();
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : "", hash: location.hash }, { replace: true, state: location.state });
+  }, [location, navigate]);
+  return null;
 }
 
 function TodayRedirect() {
@@ -59,7 +84,9 @@ function TodayRedirect() {
 
 export default function App() {
   return (
-    <Routes>
+    <>
+      <AssistantParamCleanup />
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/recipes/:id/cook" element={<RecipeCook />} />
       <Route element={<AdminLayout />}>
@@ -107,6 +134,7 @@ export default function App() {
         <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </>
   );
 }

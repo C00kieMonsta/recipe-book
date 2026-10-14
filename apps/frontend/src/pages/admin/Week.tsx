@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { CalendarDays, ChevronRight, EyeOff, FileText, GripVertical, MoreHorizontal, Pencil, Plus, Printer, Share2, ShoppingCart, Trash2, UserPlus, X } from "lucide-react";
+import { CalendarDays, ChevronRight, EyeOff, FileText, GripVertical, MessageSquare, MoreHorizontal, Pencil, Plus, Printer, Share2, ShoppingCart, Trash2, UserPlus, X } from "lucide-react";
 import type { AppEvent, Client, EventRecipeLine, EventTask, Person, PrepStatus, PrestationTypeSetting, WeekMovedIn } from "@packages/types";
 import {
   addDays,
@@ -29,6 +29,8 @@ import {
   weekPlan,
 } from "@packages/types";
 import { api, ApiError, invalidate, errorReason } from "@/lib/api";
+import { openAssistant } from "@/lib/assistant-compose";
+import { publishAssistantSelection } from "@/lib/assistant-context";
 import { todayIso } from "@/lib/dates";
 import { buildGroceryItems, groceryTitleFor } from "@/lib/grocery";
 import { defaultTaskEventId } from "@/lib/tasks";
@@ -41,7 +43,7 @@ import { useLongPressDrag, type LongPressDrag, type LongPressDragHandlers } from
 import { useToast } from "@/hooks/use-toast";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
 import { useMediaQuery } from "@/hooks/use-media-query";
-import { useFullBleed, useTopTitle } from "@/components/admin/AdminLayout";
+import { useAssistantEnabled, useFullBleed, useTopTitle } from "@/components/admin/AdminLayout";
 import { StatusDot } from "@/components/admin/StatusDot";
 import PersonChips, { PersonChip } from "@/components/admin/PersonChips";
 import PersonPicker from "@/components/admin/PersonPicker";
@@ -155,6 +157,12 @@ export default function Week() {
   const from = location.pathname + location.search;
   const search = location.search;
   useTopTitle(`Semaine ${weekNo}`);
+  const assistant = useAssistantEnabled();
+
+  // The Monday stands for the week in the assistant's context.
+  useEffect(() => {
+    publishAssistantSelection({ date: monday, label: `Semaine ${weekNo}` });
+  }, [monday, weekNo]);
 
   const data = usePlanningData(year, { withLists: true });
   const {
@@ -261,6 +269,8 @@ export default function Week() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e) || modalOpen) return;
+      // Keys pressed inside the assistant sheet stay there.
+      if ((e.target as Element | null)?.closest?.('[role="dialog"]')) return;
       if (e.key === "ArrowLeft") navigate(weekUrl(prevWeek));
       if (e.key === "ArrowRight") navigate(weekUrl(nextWeek));
     };
@@ -633,6 +643,7 @@ export default function Week() {
       {activePeople.map((p) => (
         <MenuItem key={p.personId} icon={<Share2 />} onSelect={() => share(p)}>Partager avec {p.name}</MenuItem>
       ))}
+      {assistant && <MenuItem icon={<MessageSquare />} onSelect={openAssistant}>Demander à l'assistant</MenuItem>}
     </>
   );
 

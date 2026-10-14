@@ -4,6 +4,8 @@ import { Calendar, ChefHat, ChevronDown, ChevronLeft, ChevronRight, Circle, Hash
 import type { PrepStatus } from "@packages/types";
 import { addDays, courseBucket, courseOf, dayLabel, filterByPerson, fmtTime, isoWeekOf, prepDateOf, prepLinesForDate, shortDayLabel } from "@packages/types";
 import { api, ApiError } from "@/lib/api";
+import { publishAssistantSelection } from "@/lib/assistant-context";
+import { dayMonthShortLabel } from "@/lib/dates";
 import { usePlanningData } from "@/lib/use-planning-data";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { useMiseEnPlace } from "@/hooks/use-mise-en-place";
@@ -64,6 +66,11 @@ export default function PrepSheet() {
   const eventDate = event?.date.slice(0, 10) ?? "";
   // The prep day: the pager, the back link and the crumb follow it.
   const date = event && line ? prepDateOf(line, event) : eventDate;
+
+  const eventName = event?.name;
+  useEffect(() => {
+    if (eventId) publishAssistantSelection({ eventId, label: eventName && eventDate ? `${eventName} · ${dayMonthShortLabel(eventDate)}` : undefined });
+  }, [eventId, eventName, eventDate]);
 
   const [portions, setPortions] = useState<number | null>(null);
   const [editPortions, setEditPortions] = useState(false);

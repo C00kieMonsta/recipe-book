@@ -6,6 +6,7 @@ import { fmtEur, signedRevenue } from "@packages/types";
 import { api } from "@/lib/api";
 import { dayMonthShortLabel } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
+import { useAssistantApplied } from "@/hooks/use-assistant-applied";
 import { usePagination } from "@/hooks/use-pagination";
 import {
   PageHeader,
@@ -58,6 +59,7 @@ export default function Events() {
     api.clients.list().then(setClients).catch(() => setClients([]));
     api.settings.get().then((s) => setPrestationTypes(s.prestationTypes ?? [])).catch(() => setPrestationTypes([]));
   }, []);
+  useAssistantApplied(() => { api.events.list().then(setEvents).catch(() => undefined); });
 
   const clientById = useMemo(() => new Map(clients.map((c) => [c.clientId, c])), [clients]);
   const prestationLabel = useMemo(() => new Map(prestationTypes.map((p) => [p.key, p.label])), [prestationTypes]);

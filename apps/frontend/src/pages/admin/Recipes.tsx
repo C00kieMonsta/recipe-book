@@ -5,6 +5,7 @@ import type { Recipe, Ingredient } from "@packages/types";
 import { DEFAULT_COURSES, categoryOptions, fmtEur, recipeCategoryOf } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { useAssistantApplied } from "@/hooks/use-assistant-applied";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { calcRecipeCost } from "@/lib/recipe-helpers";
 import { usePagination } from "@/hooks/use-pagination";
@@ -104,6 +105,7 @@ export default function Recipes() {
       .finally(() => setLoading(false));
 
   useEffect(() => { load(); }, []);
+  useAssistantApplied(() => { void load(); });
 
   const categories = useMemo(() => categoryOptions(courses, recipes), [recipes, courses]);
 

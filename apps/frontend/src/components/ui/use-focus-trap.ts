@@ -5,6 +5,9 @@ export const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled])
 // Counts open overlays so a nested one (Menu inside Dialog) does not clear inert early.
 let openOverlays = 0;
 
+// Open traps in order; only the last one answers Escape and Tab, so a menu over a sheet closes alone.
+const trapStack: symbol[] = [];
+
 // Last element focused outside any overlay: the trigger, even when an autoFocus child already won.
 let lastOutside: HTMLElement | null = null;
 if (typeof document !== "undefined") {
@@ -31,6 +34,8 @@ export function useFocusTrap(panelRef: RefObject<HTMLElement>, open: boolean, on
     if (!panel) return;
     const current = document.activeElement as HTMLElement | null;
     const previous = panel.contains(current) ? lastOutside : current;
+    const token = Symbol("trap");
+    trapStack.push(token);
     setRootInert(true);
 
     if (!panel.contains(current)) {
@@ -39,6 +44,7 @@ export function useFocusTrap(panelRef: RefObject<HTMLElement>, open: boolean, on
     }
 
     const onKey = (e: KeyboardEvent) => {
+      if (trapStack[trapStack.length - 1] !== token) return;
       if (e.key === "Escape") { onCloseRef.current(); return; }
       if (e.key !== "Tab") return;
       const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
@@ -51,6 +57,7 @@ export function useFocusTrap(panelRef: RefObject<HTMLElement>, open: boolean, on
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
+      trapStack.splice(trapStack.indexOf(token), 1);
       setRootInert(false);
       previous?.focus?.();
     };

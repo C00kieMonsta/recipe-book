@@ -33,6 +33,7 @@ import {
   signedRevenue,
 } from "@packages/types";
 import { ApiError, api } from "@/lib/api";
+import { publishAssistantSelection } from "@/lib/assistant-context";
 import { longDayLabel, dayMonthShortLabel, dayMonthLabel, todayIso, ymOf } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
 import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
@@ -201,6 +202,11 @@ export default function ClientDetail() {
 
   useBackLink({ to: "/clients", label: "Clients" });
   useTopTitle(isNew ? "Nouveau client" : form.name);
+
+  const clientName = client?.name;
+  useEffect(() => {
+    if (id) publishAssistantSelection({ clientId: id, label: clientName });
+  }, [id, clientName]);
 
   const loadEvents = useCallback(() => api.events.list().then(setEvents), []);
 

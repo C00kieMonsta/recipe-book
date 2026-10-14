@@ -7,6 +7,7 @@ import {
   parseIsoWeek, parseYmd, personName, prepLinesForDate, prepTasksForDate, scaledIngredients, shortDayLabel, shortEventName, weekPlan,
 } from "@packages/types";
 import { api, ApiError, errorReason } from "@/lib/api";
+import { publishAssistantSelection } from "@/lib/assistant-context";
 import { todayIso } from "@/lib/dates";
 import { buildGroceryItems, groceryTitleFor } from "@/lib/grocery";
 import { defaultTaskEventId } from "@/lib/tasks";
@@ -171,6 +172,10 @@ export default function Day() {
   const today = todayIso();
   const from = (location.state as { from?: string } | null)?.from;
   const here = location.pathname + location.search;
+
+  useEffect(() => {
+    if (valid) publishAssistantSelection({ date: safeDate });
+  }, [valid, safeDate]);
 
   const weekDates = useMemo(() => datesOfIsoWeek(week), [week]);
   // The Thursday decides the ledger year, as on the week page.

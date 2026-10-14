@@ -2,7 +2,9 @@ import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ChevronLeft, ChevronsLeft, LogOut, Menu, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { toggleAssistant } from "@/lib/assistant-compose";
 import { PAGE_ICONS } from "@/lib/page-icons";
+import { useAssistantOpen } from "@/components/assistant/AssistantSheet";
 import { IconButton } from "@/components/ui/Button";
 import Sheet from "@/components/ui/Sheet";
 import { useChrome } from "./AdminLayout";
@@ -38,14 +40,17 @@ export interface AdminSidebarProps {
   hidden?: boolean;
   collapsed?: boolean;
   onCollapse?: () => void;
+  // False hides the « Assistant » cell (health.assistant false).
+  assistant?: boolean;
 }
 
-export default function AdminSidebar({ hidden = false, collapsed = false, onCollapse }: AdminSidebarProps) {
+export default function AdminSidebar({ hidden = false, collapsed = false, onCollapse, assistant = true }: AdminSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuth();
   const { backTo, topTitle } = useChrome();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const assistantOpen = useAssistantOpen();
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
@@ -55,19 +60,35 @@ export default function AdminSidebar({ hidden = false, collapsed = false, onColl
 
   const menuButton = <IconButton size="lg" aria-label="Menu" onClick={() => setMobileOpen(true)} icon={<Menu />} />;
 
+  const openAssistantCell = () => {
+    setMobileOpen(false);
+    toggleAssistant();
+  };
+
+  const rows = menuItems.map((item) => {
+    const isActive = item.isActive(location.pathname);
+    return (
+      <Link key={item.path} to={item.path} aria-current={isActive ? "page" : undefined} className={`${ROW} ${isActive ? ROW_ACTIVE : ""}`}>
+        <span className="w-5 text-center text-base leading-none" aria-hidden="true">{item.icon}</span>
+        <span className="truncate">{item.label}</span>
+      </Link>
+    );
+  });
+  // A button, not a link: it opens the sheet over the current page. Sits after Comptabilité.
+  if (assistant) {
+    rows.splice(
+      menuItems.findIndex((item) => item.path === "/settings"),
+      0,
+      <button key="assistant" type="button" aria-pressed={assistantOpen} onClick={openAssistantCell} className={`${ROW} w-auto ${assistantOpen ? ROW_ACTIVE : ""}`}>
+        <span className="w-5 text-center text-base leading-none" aria-hidden="true">{PAGE_ICONS.assistant}</span>
+        <span className="truncate">Assistant</span>
+      </button>,
+    );
+  }
+
   const nav = (
     <>
-      <nav className="mt-2 flex flex-col">
-        {menuItems.map((item) => {
-          const isActive = item.isActive(location.pathname);
-          return (
-            <Link key={item.path} to={item.path} aria-current={isActive ? "page" : undefined} className={`${ROW} ${isActive ? ROW_ACTIVE : ""}`}>
-              <span className="w-5 text-center text-base leading-none" aria-hidden="true">{item.icon}</span>
-              <span className="truncate">{item.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
+      <nav className="mt-2 flex flex-col">{rows}</nav>
       <button type="button" onClick={handleLogout} className={`${ROW} mb-2 mt-auto w-auto`}>
         <span className="flex w-5 items-center justify-center" aria-hidden="true"><LogOut className="h-4 w-4" /></span>
         Déconnexion

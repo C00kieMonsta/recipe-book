@@ -6,7 +6,9 @@ import autoTable from "jspdf-autotable";
 import type { Recipe, Ingredient, RecipePricing, RecipeIngredient } from "@packages/types";
 import { UNITS_QTY, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS, DEFAULT_COURSES, VAT_RATES, fmtEur, recipeCategoryOf, stripStepMarkup } from "@packages/types";
 import { api, getToken, API_BASE } from "@/lib/api";
+import { publishAssistantSelection } from "@/lib/assistant-context";
 import { useToast } from "@/hooks/use-toast";
+import { useAssistantApplied } from "@/hooks/use-assistant-applied";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { calcRecipeCost, calcIngredientLineCost, fmt, supplierColor } from "@/lib/recipe-helpers";
 import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
@@ -184,6 +186,17 @@ export default function RecipeDetail() {
 
   useBackLink({ to: "/recipes", label: "Recettes" });
   useTopTitle(recipe?.name ?? "");
+
+  const recipeName = recipe?.name;
+  useEffect(() => {
+    if (id) publishAssistantSelection({ recipeId: id, label: recipeName });
+  }, [id, recipeName]);
+
+  useAssistantApplied(() => {
+    if (!id) return;
+    api.recipes.get(id).then(setRecipe).catch(() => undefined);
+    api.ingredients.list().then(setIngredients).catch(() => undefined);
+  });
 
   useEffect(() => {
     if (!id) return;

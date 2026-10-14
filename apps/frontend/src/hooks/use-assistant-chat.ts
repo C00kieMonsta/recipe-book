@@ -9,6 +9,7 @@ import {
 } from "@packages/types";
 import { api, errorReason } from "@/lib/api";
 import { streamChat, type AssistantErrorCode } from "@/lib/assistant-client";
+import { notifyAssistantApplied } from "@/hooks/use-assistant-applied";
 
 // One conversation per browser tab, kept in sessionStorage so it survives a route change and a reload.
 
@@ -109,6 +110,8 @@ export function useAssistantChat(): AssistantChat {
   const liveRef = useRef(true);
   // Mirrors `pending` for the send guard, so two quick Enter presses do not start two turns.
   const busyRef = useRef(false);
+  // Bumped by reset(), so a turn aborted by « Nouvelle conversation » does not append its partial answer to the new thread.
+  const turnRef = useRef(0);
 
   useEffect(() => {
     liveRef.current = true;
@@ -144,6 +147,7 @@ export function useAssistantChat(): AssistantChat {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    const turn = turnRef.current;
 
     void (async () => {
       let answer = "";
@@ -178,7 +182,7 @@ export function useAssistantChat(): AssistantChat {
               break;
           }
         }
-        if (!liveRef.current) return;
+        if (!liveRef.current || turnRef.current !== turn) return;
         // Text plus an error means the turn broke partway; the partial answer is kept.
         if (answer || actions.length) {
           const id = nextId("a");
@@ -220,6 +224,7 @@ export function useAssistantChat(): AssistantChat {
   }, []);
 
   const reset = useCallback(() => {
+    turnRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
     busyRef.current = false;
@@ -281,6 +286,8 @@ export function useAssistantChat(): AssistantChat {
       }
       if (!liveRef.current) return;
       setProposals((prior) => ({ ...prior, ...states }));
+      const applied = batch.filter((action) => states[proposalKey(messageId, action.id)]?.status === "applied").map((action) => action.kind);
+      if (applied.length) notifyAssistantApplied(applied);
     }
   }, [messages, proposals]);
 

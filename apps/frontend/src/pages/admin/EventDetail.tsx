@@ -63,7 +63,10 @@ import {
   shiftPrepDates,
 } from "@packages/types";
 import { api, ApiError, type EventInput } from "@/lib/api";
+import { composeInAssistant, openAssistant } from "@/lib/assistant-compose";
+import { publishAssistantSelection } from "@/lib/assistant-context";
 import { useToast } from "@/hooks/use-toast";
+import { useAssistantApplied } from "@/hooks/use-assistant-applied";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
 import { dayMonthShortLabel, longDayLabel, dayMonthLabel, weekdayOf, todayIso } from "@/lib/dates";
 import { plural } from "@/lib/use-planning-data";
@@ -104,7 +107,7 @@ import TaskDialog, { type TaskDialogValue } from "@/components/admin/TaskDialog"
 import MoveToDayMenu from "@/components/admin/MoveToDayMenu";
 import AttachmentsSection from "@/components/admin/AttachmentsSection";
 import NewRecipeDialog from "@/components/admin/NewRecipeDialog";
-import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
+import { useAssistantEnabled, useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
 import { PaidPopover } from "@/pages/admin/comptes/Journal";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -244,6 +247,13 @@ export default function EventDetail() {
     return () => { cancelled = true; };
   }, [id]);
 
+  useAssistantApplied(() => {
+    if (!id) return;
+    api.events.get(id).then(setEvent).catch(() => undefined);
+    api.recipes.list().then(setRecipes).catch(() => undefined);
+    api.ingredients.list().then(setIngredients).catch(() => undefined);
+  });
+
   const eventYear = event?.date.slice(0, 4);
   const loadEntries = useCallback(() => {
     if (!eventYear) return;
@@ -273,6 +283,14 @@ export default function EventDetail() {
   const backLabel = event ? dayMonthShortLabel(event.date).split(" ").slice(0, 2).join(" ") : "";
   useBackLink(event ? { to: `/jour/${event.date}`, label: backLabel } : null);
   useTopTitle(event?.name ?? "");
+  const assistant = useAssistantEnabled();
+
+  // The sheet sends this event with every message; the label feeds its header chip.
+  const eventName = event?.name;
+  const eventDate = event?.date;
+  useEffect(() => {
+    if (id) publishAssistantSelection({ eventId: id, label: eventName && eventDate ? `${eventName} · ${dayMonthShortLabel(eventDate.slice(0, 10))}` : undefined });
+  }, [id, eventName, eventDate]);
 
   // One-shot URL params from the week and À facturer: open a form, focus a field, then drop the param.
   const loaded = Boolean(event);
@@ -770,6 +788,7 @@ export default function EventDetail() {
     { label: "Enregistrer comme offre type", onClick: () => { setOfferName(event.name); setDialog({ kind: "offer" }); } },
     { label: "Proposition de menu (PDF)", onClick: exportMenu },
     { label: "Exporter les recettes (PDF)", onClick: exportRecipesPdf },
+    ...(assistant ? [{ label: "Demander à l'assistant", onClick: () => { openAssistant(); composeInAssistant(`À propos de ${event.name} : `); } }] : []),
     { kind: "separator" as const },
     { label: "Supprimer", onClick: () => setDialog({ kind: "delete" }), variant: "danger" as const },
   ];

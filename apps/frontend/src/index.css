@@ -147,3 +147,36 @@
 @keyframes pop { from { opacity: 0; transform: translateY(-2px) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+/* Right-hand sheet (the assistant). Plain CSS, outside the layers, so the classes exist before any caller uses them. */
+:root {
+  --sheet-right-w: 480px;     /* width when the Sheet gets none */
+  --assistant-inset: 0px;     /* set by a docked right sheet; the layout keeps that much room on the right */
+}
+/* A margin, not a padding: the page keeps its own padding utilities, which Tailwind emits after this file's plain CSS. */
+.assistant-inset { margin-right: var(--assistant-inset); }
+.sheet-right { position: fixed; display: flex; flex-direction: column; background: var(--background); width: min(var(--sheet-width, var(--sheet-right-w)), 100vw); }
+.sheet-right-modal { top: 0; right: 0; bottom: 0; animation: sheetRight 150ms ease-out forwards; }
+.sheet-right-floating { top: 8px; right: 8px; bottom: 8px; width: min(var(--sheet-width, var(--sheet-right-w)), calc(100vw - 16px)); animation: sheetRight 150ms ease-out forwards; }
+.sheet-right-docked { top: 0; right: 0; bottom: 0; box-shadow: -1px 0 0 var(--border); }
+/* Resize grip: a 6px strip on the left edge with a 2px pill. */
+.sheet-grip { position: absolute; top: 0; bottom: 0; left: 0; z-index: 1; display: flex; width: 6px; align-items: center; justify-content: center; cursor: ew-resize; touch-action: none; outline: none; }
+.sheet-grip-pill { display: block; width: 2px; height: 40px; border-radius: 1px; background: var(--divider); }
+.sheet-grip:hover .sheet-grip-pill { height: 56px; background: var(--icon); }
+.sheet-grip:focus-visible .sheet-grip-pill { height: 56px; background: var(--primary); }
+@media (max-width: 639px) {
+  /* Anchored left: a page that overflows sideways widens the containing block and would push a right-anchored panel off screen. */
+  .sheet-right-modal { top: var(--sheet-vv-top, 0px); right: auto; bottom: auto; left: 0; width: 100vw; height: var(--sheet-vv-height, 100dvh); }
+}
+@keyframes sheetRight { from { transform: translateX(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* The three dots of a running assistant turn. */
+.chat-dots { display: inline-flex; align-items: center; gap: 4px; }
+.chat-dots > span { width: 6px; height: 6px; border-radius: 50%; background: var(--icon); animation: chatDot 1s ease-in-out infinite; }
+.chat-dots > span:nth-child(2) { animation-delay: 150ms; }
+.chat-dots > span:nth-child(3) { animation-delay: 300ms; }
+@keyframes chatDot { 0%, 60%, 100% { transform: none; opacity: 0.5; } 30% { transform: translateY(-3px); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .chat-dots > span { animation: none; }
+  .sheet-right-modal, .sheet-right-floating { animation: none; }
+}

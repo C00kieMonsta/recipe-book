@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AddEventTaskRequest, AppEvent, AppSettings, Client, GroceryList, Ingredient, LedgerEntry, PatchEventTaskRequest, Person, PrepStatus, Recipe, WeekDay } from "@packages/types";
 import { DEFAULT_COURSES } from "@packages/types";
 import { api, ApiError, type EventInput } from "@/lib/api";
+import { useAssistantApplied } from "@/hooks/use-assistant-applied";
 
 export interface LinePatch {
   prepStatus?: PrepStatus;
@@ -100,6 +101,7 @@ export function usePlanningData(ledgerYear?: string | number, options: PlanningD
   const [tick, setTick] = useState(0);
 
   const reload = useCallback(() => setTick((t) => t + 1), []);
+  useAssistantApplied(reload);
 
   useEffect(() => {
     let cancelled = false;

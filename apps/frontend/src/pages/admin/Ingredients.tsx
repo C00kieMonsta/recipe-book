@@ -5,6 +5,7 @@ import type { Ingredient, Recipe } from "@packages/types";
 import { DEFAULT_SUPPLIERS, dayMonthLabel, normalizeIngredientName, todayYmd } from "@packages/types";
 import { api, ApiError, type ImportIngredientsResponse } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { useAssistantApplied } from "@/hooks/use-assistant-applied";
 import { fmt } from "@/lib/recipe-helpers";
 import { cn } from "@/lib/utils";
 import { usePagination } from "@/hooks/use-pagination";
@@ -103,6 +104,7 @@ export default function Ingredients() {
   };
 
   useEffect(() => { load(); }, []);
+  useAssistantApplied(() => { void load(); });
 
   const suppliers = useMemo(() => [...new Set(ingredients.map((i) => i.supplier).filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr")), [ingredients]);
   const recipeCount = useMemo(() => {

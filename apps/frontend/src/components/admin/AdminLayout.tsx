@@ -3,7 +3,9 @@ import { Navigate, Outlet, useLocation, useOutletContext } from "react-router-do
 import { ChevronsRight } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import { api, type HealthResponse } from "@/lib/api";
 import { IconButton } from "@/components/ui/Button";
+import AssistantSheet from "@/components/assistant/AssistantSheet";
 import AdminSidebar from "./AdminSidebar";
 import { TourProvider } from "./TourProvider";
 
@@ -77,6 +79,29 @@ export function useTopTitle(title: string) {
 
 const SIDEBAR_KEY = "recipe-book:sidebar-collapsed";
 
+// One health call per page load, shared by the layout, the sidebar cell and the pages' ⋯ items.
+let healthPromise: Promise<HealthResponse | null> | null = null;
+
+function loadHealth(): Promise<HealthResponse | null> {
+  if (!healthPromise) healthPromise = api.health.get().catch(() => null);
+  return healthPromise;
+}
+
+// False only once /health has said so; a pending or failed call keeps the assistant.
+export function useAssistantEnabled(): boolean {
+  const [enabled, setEnabled] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    void loadHealth().then((health) => {
+      if (alive && health) setEnabled(health.assistant !== false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return enabled;
+}
+
 export default function AdminLayout() {
   const { isAuthenticated } = useAuth();
   const location = useLocation();
@@ -86,6 +111,7 @@ export default function AdminLayout() {
   const [topTitle, setTopTitleState] = useState<string | null>(null);
   const [collapsedPref, setCollapsedPref] = useLocalStorage<boolean | null>(SIDEBAR_KEY, null);
   const collapsed = collapsedPref === true;
+  const assistant = useAssistantEnabled();
   const setFullBleed = useCallback((on: boolean) => setFullBleedState(on), []);
   const setHideChrome = useCallback((on: boolean) => setHideChromeState(on), []);
   const setBackTo = useCallback((next: BackTo | null) => setBackToState(next), []);
@@ -103,7 +129,7 @@ export default function AdminLayout() {
     <ChromeContext.Provider value={{ hideChrome, fullBleed, backTo, topTitle }}>
       <TourProvider>
         <div className="flex min-h-screen">
-          <AdminSidebar hidden={hideChrome} collapsed={collapsed} onCollapse={() => setCollapsedPref(true)} />
+          <AdminSidebar hidden={hideChrome} collapsed={collapsed} onCollapse={() => setCollapsedPref(true)} assistant={assistant} />
           {!hideChrome && collapsed && (
             <IconButton
               size="sm"
@@ -113,11 +139,13 @@ export default function AdminLayout() {
               icon={<ChevronsRight />}
             />
           )}
-          <main className={`flex-1 min-w-0 bg-background ${phoneTop} ${padding}`}>
+          <main className={`flex-1 min-w-0 bg-background assistant-inset ${phoneTop} ${padding}`}>
             <Outlet
               context={{ fullBleed, setFullBleed, hideChrome, setHideChrome, backTo, setBackTo, topTitle, setTopTitle } satisfies AdminLayoutContext}
             />
           </main>
+          {/* Mounted once so the thread and the open state survive route changes; /login and the cook page sit outside this layout. */}
+          <AssistantSheet enabled={assistant} />
         </div>
       </TourProvider>
     </ChromeContext.Provider>
