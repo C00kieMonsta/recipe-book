@@ -29,6 +29,10 @@ import type {
   CreateOfferRequest,
   UpdateOfferRequest,
   ImportLedgerRow,
+  InboxUpload,
+  InboxProposal,
+  InboxConfirmRequest,
+  InboxConfirmResult,
   ImportIngredientsOptions,
   ProposedAction,
   ApplyResponse,
@@ -297,6 +301,14 @@ export const api = {
     lock: withInvalidate(["events", "settings"], (body: LockMonthRequest) => request<LockMonthResponse>("/admin/ledger/lock", json("POST", body))),
     unlock: withInvalidate(["events", "settings"], (body: UnlockMonthRequest) => request<UnlockMonthResponse>("/admin/ledger/unlock", json("POST", body))),
     import: withInvalidate(["events", "settings"], (rows: ImportLedgerRow[]) => request<ImportLedgerResponse>("/admin/ledger/import", json("POST", { rows }))),
+    attachmentUrl: (entryId: string) => request<{ url: string }>(`/admin/ledger/${entryId}/attachment/url`),
+    inbox: {
+      upload: (file: File) => uploadRequest<InboxUpload>("/admin/ledger/inbox/upload", file),
+      extract: (inboxId: string) => request<InboxProposal>("/admin/ledger/inbox/extract", json("POST", { inboxId })),
+      confirm: withInvalidate(["events", "settings"], (items: InboxConfirmRequest["items"]) =>
+        request<{ results: InboxConfirmResult[] }>("/admin/ledger/inbox/confirm", json("POST", { items }))),
+      remove: (inboxId: string) => request<{ ok: true }>(`/admin/ledger/inbox/${inboxId}`, { method: "DELETE" }),
+    },
   },
 };
 

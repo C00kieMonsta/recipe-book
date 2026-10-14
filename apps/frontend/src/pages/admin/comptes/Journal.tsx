@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { CalendarDays, ChevronDown, Download, FileText, Lock, LockOpen, MoreHorizontal, Plus, Upload } from "lucide-react";
+import { CalendarDays, ChevronDown, Download, FileText, Inbox, Lock, LockOpen, MoreHorizontal, Paperclip, Plus, Upload } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import type {
@@ -84,7 +84,7 @@ import {
   useMenuContext,
   type TableColumn,
 } from "@/components/ui";
-import LedgerEntryForm from "@/components/comptes/LedgerEntryForm";
+import LedgerEntryForm, { openLedgerAttachment } from "@/components/comptes/LedgerEntryForm";
 
 const NOT_CONFIGURED = "Comptabilité non configurée : la table ta-ledger n'existe pas encore";
 const PAYMENT_METHODS = Object.keys(PAYMENT_METHOD_LABEL) as PaymentMethod[];
@@ -99,6 +99,30 @@ function shiftYm(ym: string, delta: number): string {
   const d = new Date(Date.UTC(y, m, 1));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
+
+// Where the line came from; hand entries show nothing. Older CSV imports carry only `imported`.
+function SourceTag({ entry }: { entry: LedgerEntry }) {
+  const label = entry.source === "depot" ? "dépôt" : entry.source === "import_csv" || entry.imported ? "import" : null;
+  return label ? <Tag colour="gray" className="ml-2">{label}</Tag> : null;
+}
+
+// Paperclip of a line with an attached invoice; stops the row click.
+function PieceButton({ entry }: { entry: LedgerEntry }) {
+  const touch = useTouchScreen();
+  const { toast } = useToast();
+  if (!entry.attachment) return null;
+  const open = () => {
+    void openLedgerAttachment(entry.entryId, touch).then((ok) => { if (!ok) toast({ title: "Impossible d'ouvrir la pièce jointe", variant: "destructive" }); });
+  };
+  return (
+    <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
+      <IconButton size="sm" aria-label="Pièce" title={`Pièce : ${entry.attachment.name}`} icon={<Paperclip />} onClick={open} />
+    </span>
+  );
+}
+
+// Last column of both books; kept out of the first cells so the table's phone fallback never nests it in a row button.
+const PIECE_COLUMN: TableColumn<LedgerEntry> = { key: "piece", label: "", width: "2.5rem", render: (e) => <PieceButton entry={e} /> };
 
 function PaidTag({ paid }: { paid: boolean }) {
   return <Tag colour={paid ? "green" : "red"}>{paid ? "Réglée" : "Non réglée"}</Tag>;
@@ -322,6 +346,16 @@ export default function Journal() {
     setParam({ prefill: null, client: null });
   }, [prefillClient, loading, settings]);
 
+  // « Voir » from the Dépôt tab: open that line once the year has loaded.
+  const entryParam = params.get("entry");
+  useEffect(() => {
+    if (!entryParam || loading) return;
+    const found = entries.find((e) => e.entryId === entryParam);
+    if (found) setForm({ entry: found });
+    else setNotice("Ligne introuvable");
+    setParam({ entry: null, ...(found ? { book: found.book === "achats" ? "achats" : null, ym: found.date.slice(0, 7) } : {}) });
+  }, [entryParam, loading]);
+
   const openNew = () =>
     setForm({ initial: book === "ventes" ? { book: "ventes", kind: "facture", date: ym === today.slice(0, 7) ? today : `${ym}-01` } : { book: "achats", kind: "mp", date: ym === today.slice(0, 7) ? today : `${ym}-01` } });
 
@@ -414,9 +448,10 @@ export default function Journal() {
                 <>
                   <MenuItem icon={<CalendarDays />} onSelect={openMonthly}>Saisir le CA du mois…</MenuItem>
                   <MenuItem icon={<Upload />} disabled={!settings} onSelect={() => setImportOpen(true)}>Importer des factures (CSV)…</MenuItem>
-                  <MenuSeparator />
                 </>
               )}
+              <MenuItem icon={<Inbox />} to="/comptes/depot">Déposer des factures…</MenuItem>
+              <MenuSeparator />
               <MenuItem icon={<Download />} disabled={!inputs} onSelect={onExport}>Exporter {year} (xlsx)</MenuItem>
               <MenuItem icon={<FileText />} disabled={!settings} onSelect={() => settings && downloadMonthCsv(ym, entries, settings)}>CSV du mois</MenuItem>
               <MenuSeparator />
@@ -463,17 +498,18 @@ export default function Journal() {
   const salesColumns: TableColumn<LedgerEntry>[] = [
     { key: "number", label: "N°", width: "6rem", render: (e) => e.number ?? "" },
     { key: "date", label: "Date", width: "7rem", render: (e) => fmtDateFr(e.date) },
-    { key: "label", label: "Intitulé", render: (e) => <>{e.label}{e.kind !== "facture" && <span className="ml-2 text-muted-foreground">{kindLabel(e)}</span>}{e.imported && <Tag colour="gray" className="ml-2">importée</Tag>}</> },
+    { key: "label", label: "Intitulé", render: (e) => <>{e.label}{e.kind !== "facture" && <span className="ml-2 text-muted-foreground">{kindLabel(e)}</span>}<SourceTag entry={e} /></> },
     { key: "type", label: "Type", render: (e) => (typeOf(e) ? <Tag colour="gray">{typeOf(e)}</Tag> : "") },
     { key: "tvac", label: "Total TVAC", align: "right", render: (e) => fmtEur(e.totalTvac) },
     { key: "htva", label: "HTVA", align: "right", render: (e) => fmtEur(e.htva) },
     { key: "vat", label: "TVA %", align: "right", width: "5rem", render: (e) => `${e.vatRate} %` },
     { key: "paid", label: "Réglé", width: "8rem", render: (e) => <PaidPopover entry={e} onSaved={reload} align="right" /> },
+    PIECE_COLUMN,
   ];
 
   const purchaseColumns: TableColumn<LedgerEntry>[] = [
     { key: "date", label: "Date", width: "7rem", render: (e) => fmtDateFr(e.date) },
-    { key: "label", label: "Intitulé", render: (e) => e.label },
+    { key: "label", label: "Intitulé", render: (e) => <>{e.label}<SourceTag entry={e} /></> },
     { key: "type", label: "Type", render: (e) => <Tag colour="gray">{kindLabel(e)}</Tag> },
     { key: "who", label: "Fournisseur ou Personne", render: (e) => e.personName ?? e.supplier ?? "" },
     { key: "hours", label: "Heures", align: "right", render: (e) => (e.kind === "personnel" && entryHours(e) ? String(entryHours(e)) : "") },
@@ -483,6 +519,7 @@ export default function Journal() {
     { key: "tvac", label: "TVAC", align: "right", render: (e) => fmtEur(e.totalTvac) },
     { key: "number", label: "Réf.", render: (e) => e.number ?? "" },
     { key: "paid", label: "Réglé", width: "8rem", render: (e) => <PaidPopover entry={e} onSaved={reload} align="right" /> },
+    PIECE_COLUMN,
   ];
 
   const emptyText = book === "ventes"
@@ -509,13 +546,16 @@ export default function Journal() {
     <div>
       <div className="divide-y divide-border">
         {shown.map((e) => (
-          <ListRow
-            key={e.entryId}
-            title={<>{e.label}{e.imported && <Tag colour="gray" className="ml-2">importée</Tag>}</>}
-            subtitle={[e.number ? `N° ${e.number}` : "", fmtDateFr(e.date), book === "ventes" ? typeOf(e) : kindLabel(e)].filter(Boolean).join(" · ")}
-            trailing={<><span className="text-foreground">{fmtEur(e.totalTvac)}</span><PaidTag paid={e.paid} /></>}
-            onClick={() => setForm({ entry: e })}
-          />
+          <div key={e.entryId} className="flex items-center gap-1">
+            <ListRow
+              className="min-w-0 flex-1"
+              title={<>{e.label}<SourceTag entry={e} /></>}
+              subtitle={[e.number ? `N° ${e.number}` : "", fmtDateFr(e.date), book === "ventes" ? typeOf(e) : kindLabel(e)].filter(Boolean).join(" · ")}
+              trailing={<><span className="text-foreground">{fmtEur(e.totalTvac)}</span><PaidTag paid={e.paid} /></>}
+              onClick={() => setForm({ entry: e })}
+            />
+            <PieceButton entry={e} />
+          </div>
         ))}
       </div>
       {shown.length === 0 && <EmptyState message={emptyText} action={emptyAction} />}

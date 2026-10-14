@@ -14,6 +14,7 @@ import type {
 import { DEFAULT_PRESTATION_TYPES, VAT_RATES, fmtEur, lastDayOfMonth, monthLabel, round2, splitTvac, sumMoney } from "@packages/types";
 import { api } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
+import { useTouchScreen } from "@/hooks/use-touch-screen";
 import {
   PAYMENT_METHOD_LABEL,
   PURCHASE_KIND_LABEL,
@@ -49,6 +50,21 @@ export interface LedgerEntryFormProps {
 }
 
 const FORM_ID = "ledger-entry-form";
+
+// Opens the presigned file in a new tab; on touch the tab opens before the fetch so popup blockers let it through.
+export async function openLedgerAttachment(entryId: string, touch: boolean): Promise<boolean> {
+  const tab = touch ? window.open("", "_blank") : null;
+  if (tab) tab.opener = null;
+  try {
+    const { url } = await api.ledger.attachmentUrl(entryId);
+    if (tab) tab.location.href = url;
+    else window.open(url, "_blank", "noopener");
+    return true;
+  } catch {
+    tab?.close();
+    return false;
+  }
+}
 
 const SALES_KINDS = Object.keys(SALES_KIND_LABEL) as SalesKind[];
 const PURCHASE_KINDS = Object.keys(PURCHASE_KIND_LABEL) as PurchaseKind[];
@@ -135,6 +151,7 @@ function compact<T extends object>(o: T): T {
 
 export default function LedgerEntryForm(props: LedgerEntryFormProps) {
   const { entry, eventOptions = [], clientOptions = [], onSaved, onCancel, refOptions = [], above, onDeleted } = props;
+  const touch = useTouchScreen();
   const locked = Boolean(props.locked || entry?.locked);
   const bookFixed = Boolean(props.kind || entry);
   const types = props.prestationTypes ?? DEFAULT_PRESTATION_TYPES;
@@ -564,6 +581,13 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
           </div>
         )}
       </div>
+
+      {target?.attachment && (
+        <p className="flex flex-wrap items-center gap-x-1 text-sm text-muted-foreground">
+          <span>Pièce jointe : <span className="text-foreground">{target.attachment.name}</span> ·</span>
+          <Button variant="link" size="sm" onClick={() => { void openLedgerAttachment(target.entryId, touch).then((ok) => { if (!ok) setError("Impossible d'ouvrir la pièce jointe."); }); }}>Ouvrir</Button>
+        </p>
+      )}
 
       {target && (
         <p className="text-sm text-muted-foreground">

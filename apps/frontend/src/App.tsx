@@ -33,6 +33,7 @@ import AuReel from "@/pages/admin/comptes/AuReel";
 import Settings from "@/pages/admin/Settings";
 
 const AFacturer = lazy(() => import("@/pages/admin/comptes/AFacturer"));
+const InvoiceInbox = lazy(() => import("@/pages/admin/comptes/InvoiceInbox"));
 
 const LAST_WEEK_KEY = "recipe-book:last-week";
 
@@ -118,6 +119,14 @@ export default function App() {
         <Route path="/comptes" element={<Navigate to="/comptes/journal" replace />} />
         <Route path="/comptes" element={<ComptesLayout />}>
           <Route path="journal" element={<Journal />} />
+          <Route
+            path="depot"
+            element={
+              <Suspense fallback={<p className="text-base text-muted-foreground">Chargement…</p>}>
+                <InvoiceInbox />
+              </Suspense>
+            }
+          />
           <Route
             path="a-facturer"
             element={
