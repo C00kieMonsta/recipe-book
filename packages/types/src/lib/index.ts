@@ -14,3 +14,4 @@ export * from "./ledger-import";
 export * from "./invoice-inbox";
 export * from "./offers";
 export * from "./quote";
+export * from "./offer-document";
