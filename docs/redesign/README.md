@@ -20,6 +20,7 @@ Plan for the rethink of the app after the caterer's feedback (planning view, rea
 | `06-week-day-transition.md` | The day is the week with one column open: one shared header and row of day heads on the week and the day page, from the owner's production screenshots. |
 | `07-offers-pricing-attachments.md` | Dalia's third feedback: invoices in Odoo, standard offers and a quote page, recipe creation from a menu, supplier price updates, pricing modes and billable extras, attachments, one category list, recipe editor ergonomics, delivery and billing details, bold and highlight in steps. |
 | `08-assistant.md` | The Assistant: a chat sheet on every page that proposes recipes, event changes and price estimates, applied only on click. Key in SSM, Responses API with tools, no new table. |
+| `09-offer-catalogue.md` | The offer catalogue: Dalia's brochures as editable block documents, costed formulas linked to the offers, branded PDFs, her seven 2026 sheets as the starting content. |
 | `10-invoice-inbox.md` | Dépôt de factures: drop PDFs or photos, the document model reads them, a review table proposes the Journal entries, one click adds them with the file attached. |
 | `workings/offers-source-2026.md` | Dalia's seven offer sheets (2025 to 2026) transcribed as the source for the offer catalogue. |
 | `workings/implementation-review.md` | Review of the first implementation against the plan. |
