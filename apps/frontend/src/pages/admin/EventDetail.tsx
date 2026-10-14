@@ -1040,12 +1040,14 @@ export default function EventDetail() {
                   aria-label="Mode de prix"
                   onChange={changePricingMode}
                 />
-                {isTotalMode ? (
-                  <EditableInlineNum value={event.sellingTotal ?? 0} onSave={(v) => save({ pricingMode: "total", sellingTotal: round2(Math.max(0, v)) })} min={0} suffix=" €" />
-                ) : (
-                  <EditableInlineNum value={event.sellingPricePerGuest} onSave={(v) => save({ sellingPricePerGuest: round2(Math.max(0, v)) })} min={0} suffix=" €" />
-                )}
-                <span className="text-sm text-muted-foreground">HTVA</span>
+                <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                  {isTotalMode ? (
+                    <EditableInlineNum value={event.sellingTotal ?? 0} onSave={(v) => save({ pricingMode: "total", sellingTotal: round2(Math.max(0, v)) })} min={0} suffix=" €" />
+                  ) : (
+                    <EditableInlineNum value={event.sellingPricePerGuest} onSave={(v) => save({ sellingPricePerGuest: round2(Math.max(0, v)) })} min={0} suffix=" €" />
+                  )}
+                  <span className="text-sm text-muted-foreground">HTVA</span>
+                </span>
               </div>
             </Property>
             <Property icon={Phone} label="Contact" kind="custom">

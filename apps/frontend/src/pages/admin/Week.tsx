@@ -891,7 +891,7 @@ export default function Week() {
                       </div>
                     );
                   })}
-                  <Button variant="ghost" size="sm" as={Link} to={newEventUrl(day.date)} icon={<Plus />} className="w-full justify-start text-muted-foreground">Nouvel événement</Button>
+                  <Button variant="ghost" size="sm" as={Link} to={newEventUrl(day.date)} icon={<Plus />} className="w-full min-w-0 justify-start overflow-hidden text-muted-foreground"><span className="truncate">Nouvel événement</span></Button>
                   {taskEventId && (composerDay === day.date && !touch ? (
                     <TaskComposer
                       date={day.date}
@@ -902,7 +902,7 @@ export default function Week() {
                       onClose={() => setComposerDay(null)}
                     />
                   ) : (
-                    <Button variant="ghost" size="sm" icon={<Plus />} className="w-full justify-start text-muted-foreground" onClick={() => (touch ? openTaskCreate(day.date) : setComposerDay(day.date))}>Tâche</Button>
+                    <Button variant="ghost" size="sm" icon={<Plus />} className="w-full min-w-0 justify-start overflow-hidden text-muted-foreground" onClick={() => (touch ? openTaskCreate(day.date) : setComposerDay(day.date))}><span className="truncate">Tâche</span></Button>
                   ))}
                 </div>
               </div>
