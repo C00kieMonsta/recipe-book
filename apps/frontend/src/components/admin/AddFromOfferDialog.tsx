@@ -115,10 +115,10 @@ export default function AddFromOfferDialog({ open, onClose, offers, excludeOffer
                   checked={picked.has(i)}
                   disabled={!recipe}
                   onChange={(on) => toggle(i, on)}
-                  className="flex w-full min-h-9 touch:min-h-11 [&>span:last-child]:flex-1"
+                  className="flex h-auto min-h-9 w-full py-1 touch:h-auto touch:min-h-11 [&>span:last-child]:flex-1 [&>span:last-child]:whitespace-normal"
                   label={
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="min-w-0 truncate">
+                    <span className="flex min-w-0 items-baseline gap-2">
+                      <span className="min-w-0 flex-1">
                         {recipe ? recipe.name : <span className="text-danger">Recette supprimée</span>}
                         <span className="text-muted-foreground"> · {portionsPerGuestLabel(line.portionsPerGuest)}</span>
                       </span>

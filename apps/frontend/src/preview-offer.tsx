@@ -65,7 +65,7 @@ function Preview() {
         />
       </Section>
       {created && <p className="mt-4 text-sm text-muted-foreground" data-created>onCreateRecipe: {created}</p>}
-      <pre className="mt-6 text-caption text-muted-foreground" data-lines>{JSON.stringify(lines)}</pre>
+      <pre className="mt-6 whitespace-pre-wrap break-all text-caption text-muted-foreground" data-lines>{JSON.stringify(lines)}</pre>
       <AddFromOfferDialog
         open={dialog}
         onClose={() => setDialog(false)}

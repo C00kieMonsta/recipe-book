@@ -48,9 +48,17 @@ export default function AttachmentsSection({ event, onChange }: AttachmentsSecti
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const dragDepth = useRef(0);
+  const renameRef = useRef<HTMLInputElement>(null);
   const uploading = useRef(false);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+
+  // Focus after the menu (a Sheet on touch) has given focus back to its trigger.
+  useEffect(() => {
+    if (!renamingId) return;
+    renameRef.current?.focus();
+    renameRef.current?.select();
+  }, [renamingId]);
 
   // One upload at a time; the first queued file goes next.
   useEffect(() => {
@@ -167,29 +175,30 @@ export default function AttachmentsSection({ event, onChange }: AttachmentsSecti
     const renaming = renamingId === a.attachmentId;
     const title = renaming ? (
       <input
-        autoFocus
+        ref={renameRef}
         aria-label="Nom du fichier"
         className={EDIT_INPUT}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => onRenameKey(e, a)}
         onBlur={() => void commitRename(a)}
-        onFocus={(e) => e.target.select()}
       />
     ) : (
       <button type="button" className="max-w-full truncate rounded text-left hover:underline focus-visible:outline-none focus-visible:shadow-ring" onClick={() => void open(a)}>
         {a.name}
       </button>
     );
+    const meta = attachmentMeta(a);
     return (
       <ListRow
         key={a.attachmentId}
         className="touch:py-0"
         icon={kindIcon(fileKindOf(a.contentType, a.name))}
         title={title}
+        subtitle={touch ? meta : undefined}
         trailing={
           <>
-            <span className="whitespace-nowrap">{attachmentMeta(a)}</span>
+            {!touch && <span className="whitespace-nowrap">{meta}</span>}
             <ActionMenu
               className="reveal"
               title={a.name}
@@ -215,9 +224,9 @@ export default function AttachmentsSection({ event, onChange }: AttachmentsSecti
       <input ref={inputRef} type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => { if (e.target.files) enqueue(e.target.files); e.target.value = ""; }} />
       <div className={`relative min-h-9 rounded transition-colors ${dragOver ? "bg-selected" : ""}`} {...dropHandlers}>
         {attachments.length === 0 && queue.length === 0 ? (
-          <p className="px-2 py-1.5 text-sm text-muted-foreground">Aucune pièce jointe. Devis signé, plan de salle, photo du lieu…</p>
+          <p className={`px-2 py-1.5 text-sm text-muted-foreground ${dragOver ? "invisible" : ""}`}>Aucune pièce jointe. Devis signé, plan de salle, photo du lieu…</p>
         ) : (
-          <div>
+          <div className={dragOver ? "invisible" : undefined}>
             {attachments.map(renderRow)}
             {queue.map((file, i) => (
               <ListRow
