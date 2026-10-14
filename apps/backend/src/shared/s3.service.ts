@@ -5,7 +5,7 @@ import { ConfigService } from "../config/config.service";
 
 const PRESIGN_EXPIRES = 3600;
 
-export type PresignOptions = { filename?: string; inline?: boolean };
+export type PresignOptions = { filename?: string; inline?: boolean; expiresIn?: number };
 
 @Injectable()
 export class S3Service {
@@ -17,22 +17,23 @@ export class S3Service {
     this.bucket = config.get("S3_BUCKET");
   }
 
-  async upload(key: string, body: Buffer, contentType: string): Promise<void> {
+  async upload(key: string, body: Buffer, contentType: string, metadata?: Record<string, string>): Promise<void> {
     await this.client.send(new PutObjectCommand({
       Bucket: this.bucket,
       Key: key,
       Body: body,
       ContentType: contentType,
+      ...(metadata && { Metadata: metadata }),
     }));
   }
 
-  async get(key: string): Promise<{ body: Buffer; contentType: string }> {
+  async get(key: string): Promise<{ body: Buffer; contentType: string; metadata?: Record<string, string> }> {
     const res = await this.client.send(new GetObjectCommand({
       Bucket: this.bucket,
       Key: key,
     }));
     const body = Buffer.from(await res.Body!.transformToByteArray());
-    return { body, contentType: res.ContentType ?? "application/octet-stream" };
+    return { body, contentType: res.ContentType ?? "application/octet-stream", metadata: res.Metadata };
   }
 
   async delete(key: string): Promise<void> {
@@ -53,6 +54,6 @@ export class S3Service {
       ...(disposition && { ResponseContentDisposition: disposition }),
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return getSignedUrl(this.client as any, command as any, { expiresIn: PRESIGN_EXPIRES });
+    return getSignedUrl(this.client as any, command as any, { expiresIn: opts.expiresIn ?? PRESIGN_EXPIRES });
   }
 }

@@ -1,18 +1,25 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException, Optional, ServiceUnavailableException } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import type {
   CreateLedgerEntryRequest,
   ImportLedgerRow,
+  LedgerAttachment,
   LedgerEntry,
+  LedgerEntrySource,
   LockMonthRequest,
   MonthClose,
   PatchLedgerEntryRequest,
   UnlockMonthRequest,
 } from "@packages/types";
 import { DdbService } from "../shared/ddb.service";
+import { S3Service } from "../shared/s3.service";
 import { SettingsService } from "../settings/settings.service";
 
 const LOCKED = { code: "LOCKED", message: "Mois verrouillé" };
+const ATTACHMENT_URL_SECONDS = 600;
+
+// Fields the server writes itself; the public DTOs never carry them.
+export type EntryProvenance = { source: LedgerEntrySource; attachment?: LedgerAttachment };
 
 export interface ImportInvoicesResult {
   created: number;
@@ -29,7 +36,8 @@ export class LedgerService {
   // Resolved per call so a missing table fails the request, not the boot.
   private get table() { return this.ddb.requireTable("ledger"); }
 
-  constructor(private ddb: DdbService, private settings: SettingsService) {}
+  // S3 is optional so the older specs can build the service without it.
+  constructor(private ddb: DdbService, private settings: SettingsService, @Optional() private s3?: S3Service) {}
 
   async list(year?: string): Promise<LedgerEntry[]> {
     const items = (await this.ddb.scanAll(this.table)) as unknown as LedgerEntry[];
@@ -49,6 +57,10 @@ export class LedgerService {
   }
 
   async create(body: CreateLedgerEntryRequest): Promise<LedgerEntry> {
+    return this.createEntry(body);
+  }
+
+  async createEntry(body: CreateLedgerEntryRequest, provenance?: EntryProvenance): Promise<LedgerEntry> {
     await this.assertOpen(body.date.slice(0, 7));
     const now = new Date().toISOString();
     const entry: LedgerEntry = {
@@ -58,12 +70,18 @@ export class LedgerService {
       paid: paidOf(body),
       createdAt: now,
       updatedAt: now,
+      ...provenance,
     };
     await this.ddb.put(this.table, entry as unknown as Record<string, unknown>);
     return entry;
   }
 
   async replace(entryId: string, body: CreateLedgerEntryRequest): Promise<LedgerEntry> {
+    return this.replaceEntry(entryId, body);
+  }
+
+  // A hand edit keeps the stored attachment and source; a provenance given by the server overrides them.
+  async replaceEntry(entryId: string, body: CreateLedgerEntryRequest, provenance?: EntryProvenance): Promise<LedgerEntry> {
     const stored = await this.getOrFail(entryId);
     if (stored.locked) throw new ConflictException(LOCKED);
     await this.assertOpen(body.date.slice(0, 7));
@@ -75,8 +93,12 @@ export class LedgerService {
       createdAt: stored.createdAt,
       updatedAt: new Date().toISOString(),
       ...(stored.locked !== undefined && { locked: stored.locked }),
+      ...(stored.attachment && { attachment: stored.attachment }),
+      ...(stored.source && { source: stored.source }),
+      ...provenance,
     };
     await this.ddb.put(this.table, entry as unknown as Record<string, unknown>);
+    if (stored.attachment && stored.attachment.key !== entry.attachment?.key) await this.deleteObject(stored.attachment.key);
     return entry;
   }
 
@@ -112,6 +134,7 @@ export class LedgerService {
         book: "ventes" as const,
         kind: "facture" as const,
         imported: true,
+        source: "import_csv" as const,
         number: row.number,
         date: row.date,
         ym,
@@ -141,6 +164,14 @@ export class LedgerService {
     const stored = await this.getOrFail(entryId);
     if (stored.locked) throw new ConflictException(LOCKED);
     await this.ddb.delete(this.table, { entryId });
+    if (stored.attachment) await this.deleteObject(stored.attachment.key);
+  }
+
+  async attachmentUrl(entryId: string): Promise<{ url: string }> {
+    const stored = await this.getOrFail(entryId);
+    if (!stored.attachment) throw new NotFoundException("Aucune pièce jointe");
+    if (!this.s3) throw new ServiceUnavailableException("Stockage indisponible");
+    return { url: await this.s3.presignedUrl(stored.attachment.key, { filename: stored.attachment.name, expiresIn: ATTACHMENT_URL_SECONDS }) };
   }
 
   async lockMonth({ ym, mpSource, rawMaterial, note }: LockMonthRequest): Promise<{ locked: number }> {
@@ -187,5 +218,14 @@ export class LedgerService {
   private async monthEntries(ym: string): Promise<LedgerEntry[]> {
     const items = (await this.ddb.scanAll(this.table)) as unknown as LedgerEntry[];
     return items.filter((e) => e.ym === ym);
+  }
+
+  // Best-effort: a missing object must not block the entry write.
+  private async deleteObject(key: string): Promise<void> {
+    try {
+      await this.s3?.delete(key);
+    } catch (err) {
+      console.warn(JSON.stringify({ action: "ledger:deleteAttachmentObject", key, error: String(err) }));
+    }
   }
 }

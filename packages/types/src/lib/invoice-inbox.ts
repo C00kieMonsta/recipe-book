@@ -86,6 +86,11 @@ function pickVatRate(x: ExtractedInvoice, htva: number, vatAmount: number): { va
   return { vatRate: snapVatRate(asPercent(dominant.rate)), rates };
 }
 
+// Avoids -0, which would not equal 0 in comparisons by Object.is.
+function negative(n: number): number {
+  return n === 0 ? 0 : -Math.abs(n);
+}
+
 function isVentes(x: ExtractedInvoice, companyVat: string | null): boolean {
   const issuer = normalizeVat(x.issuerVat);
   const company = normalizeVat(companyVat);
@@ -154,15 +159,15 @@ export function mapExtractedInvoice(
   const common = { date, number, totalTvac, htva, vatRate, vatAmount };
   if (book === "ventes") {
     const kind = x.kindGuess === "autre" ? "facture" : x.kindGuess;
-    const sign = kind === "note_de_credit" ? -1 : 1;
+    const signed = kind === "note_de_credit" ? negative : Math.abs;
     const entry: CreateLedgerEntryRequest = {
       ...common,
       book: "ventes",
       kind,
       label: cleanText(x.recipientName) ?? (number === undefined ? "Facture" : `Facture ${number}`),
-      totalTvac: sign * Math.abs(totalTvac),
-      htva: sign * Math.abs(htva),
-      vatAmount: sign * Math.abs(vatAmount),
+      totalTvac: signed(totalTvac),
+      htva: signed(htva),
+      vatAmount: signed(vatAmount),
       paid: x.paid ?? false,
     };
     return { entry, flags };

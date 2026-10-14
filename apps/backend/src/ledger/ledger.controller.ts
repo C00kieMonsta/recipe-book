@@ -91,6 +91,11 @@ export class LedgerController {
     return this.ledger.getOrFail(id);
   }
 
+  @Get(":id/attachment/url")
+  async attachmentUrl(@Param("id") id: string) {
+    return this.ledger.attachmentUrl(id);
+  }
+
   @Post()
   async create(@Body() body: unknown) {
     const parsed = createLedgerEntrySchema.safeParse(body);
