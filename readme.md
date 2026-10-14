@@ -1,4 +1,4 @@
-# La Table d'Amélie — Recipe Book
+# La Table d'Amélie, Recipe Book
 
 Internal management tool for a catering business. Handles recipes, ingredients, event planning, cost/margin calculations, and grocery list generation.
 
@@ -81,14 +81,14 @@ The SPA is a pure client-side app. It authenticates with a JWT (stored in `sessi
 
 | Route | Description |
 |---|---|
-| `/` | Dashboard — KPIs, recent events, saved grocery lists |
+| `/` | Dashboard: KPIs, recent events, saved grocery lists |
 | `/recipes` | Recipe list with search/filter |
-| `/recipes/:id` | Recipe detail — editable inline, cost breakdown |
+| `/recipes/:id` | Recipe detail: editable inline, cost breakdown |
 | `/recipes/:id/cook` | Step-by-step cook mode (mobile-friendly) |
 | `/ingredients` | Ingredient catalogue |
-| `/events` | Event list — multi-select + grocery list generation |
-| `/events/:id` | Event detail — cost/margin, PDF recipe export |
-| `/grocery-list` | Grocery list — check items, track stock, save to DB |
+| `/events` | Event list: multi-select + grocery list generation |
+| `/events/:id` | Event detail: cost/margin, PDF recipe export |
+| `/grocery-list` | Grocery list: check items, track stock, save to DB |
 | `/settings` | App settings |
 
 **Build output:** `apps/frontend/dist/` → deployed to S3 + CloudFront.
@@ -108,7 +108,7 @@ The SPA is a pure client-side app. It authenticates with a JWT (stored in `sessi
 | Process manager | PM2 |
 | Reverse proxy | Nginx |
 
-All routes are under `/api/admin/*` and protected by a JWT `AdminGuard`. The API is stateless — secrets are injected via environment variables at boot.
+All routes are under `/api/admin/*` and protected by a JWT `AdminGuard`. The API is stateless; secrets are injected via environment variables at boot.
 
 **Modules:**
 
@@ -121,7 +121,8 @@ All routes are under `/api/admin/*` and protected by a JWT `AdminGuard`. The API
 | `ClientsModule` | `/admin/clients` | `ta-clients-{stage}` |
 | `LedgerModule` | `/admin/ledger` | `ta-ledger-{stage}` |
 | `SettingsModule` | `/admin/settings` | `ta-settings-{stage}` |
-| `AuthModule` | `/admin/auth/login` | — (credentials in env) |
+| `OffersModule` | `/admin/offers` | `ta-settings-{stage}` (item `settingsId = "offers"`) |
+| `AuthModule` | `/admin/auth/login` | none (credentials in env) |
 
 **DynamoDB access pattern:** every module uses a shared `DdbService` that wraps the AWS DocumentClient. All tables use a single string partition key (e.g. `ingredientId`, `recipeId`) with no sort key and pay-per-request billing.
 
@@ -160,8 +161,8 @@ AWS CDK (TypeScript) with three stacks:
 
 ### How it works
 
-1. **Frontend** — built locally (`pnpm build:frontend`) then deployed via CDK or manual S3 upload + CloudFront invalidation.
-2. **Backend** — runs on a single EC2 instance. The `scripts/ec2-bootstrap.sh` User Data script runs once on first boot: pulls secrets from SSM Parameter Store, clones the repo, builds, and starts with PM2.
+1. **Frontend**: built locally (`pnpm build:frontend`) then deployed via CDK or manual S3 upload + CloudFront invalidation.
+2. **Backend**: runs on a single EC2 instance. The `scripts/ec2-bootstrap.sh` User Data script runs once on first boot: pulls secrets from SSM Parameter Store, clones the repo, builds, and starts with PM2.
 
 ### Environment variables (backend)
 
@@ -181,6 +182,27 @@ Stored in AWS SSM Parameter Store under `/la-table-amelie/production/*` and writ
 | `S3_BUCKET` | S3 bucket for recipe photos |
 | `ADMIN_CREDENTIALS` | JSON array of `{email, hash}` (bcrypt) |
 | `JWT_SECRET` | HS256 signing secret (32+ chars) |
+
+### After the deploy that merges categories and moves invoices to Odoo
+
+Both steps are one-off and safe to re-run. `$API` is the API base URL (the `API_BASE_URL` deploy variable) and `$TOKEN` a JWT from `POST $API/api/admin/auth/login`.
+
+1. Persist the merged recipe categories. Until this runs, every read maps the old `type` and `defaultCourse` onto `category` and each save persists one recipe at a time, so nothing depends on it.
+
+   ```bash
+   API=$API SMOKE_EMAIL=<admin email> SMOKE_PASSWORD=<password> node scripts/merge-categories.mjs
+   API=$API SMOKE_EMAIL=<admin email> SMOKE_PASSWORD=<password> node scripts/merge-categories.mjs --apply
+   ```
+
+   The first call prints one line per recipe (`name · type · defaultCourse → category`) and the served `courses` list. The second writes `category` on every recipe that does not store it yet and writes the served list into `settings.courses`. A re-run reports nothing to do.
+
+2. Switch Dalia's install to invoices issued in Odoo. The app then stops proposing invoices and deposits; the Journal gains « Saisir le CA du mois… » and « Importer des factures (CSV)… ». New installs stay in app mode (`invoicing` absent reads as `app`).
+
+   ```bash
+   curl -X PATCH "$API/api/admin/settings" -H "authorization: Bearer $TOKEN" -H "content-type: application/json" -d '{"invoicing":"externe"}'
+   ```
+
+   To go back: the same call with `{"invoicing":"app"}`, or Paramètres › Société › Factures.
 
 ### Adding a new DynamoDB table
 
@@ -216,11 +238,13 @@ The backend connects to real AWS DynamoDB by default. To use DynamoDB Local inst
 | Script | Description |
 |---|---|
 | `scripts/setup-ssm-params.sh` | Store all secrets in SSM (run once before first deploy) |
-| `scripts/ec2-bootstrap.sh` | EC2 User Data — bootstraps the server on first boot |
+| `scripts/ec2-bootstrap.sh` | EC2 User Data, bootstraps the server on first boot |
 | `scripts/create-ec2.sh` | Provision a new EC2 instance |
 | `scripts/setup-s3-cloudfront.sh` | Set up frontend S3/CloudFront manually |
 | `scripts/setup-route53.sh` | DNS configuration |
 | `scripts/attach-cert-cloudfront.sh` | Attach ACM certificate to CloudFront |
+| `scripts/seed-local.mjs` | Seed a realistic week (recipes, clients, events, ledger, two offers) into a local stack |
+| `scripts/merge-categories.mjs` | Persist the merged recipe category and the category list; dry run without `--apply` |
 
 ## Provisioning the clients and ledger tables on an existing deployment
 

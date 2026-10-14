@@ -1,5 +1,7 @@
 import type { VatRate } from "./ledger";
 
+export type InvoicingMode = "app" | "externe";
+
 export interface SettingsSupplier {
   name: string;
   address?: string;
@@ -93,10 +95,14 @@ export interface Person {
 
 export interface AppSettings {
   settingsId: "global";
+  // Served equal to courses and ignored on write; goes away once the merge script has run everywhere.
   recipeCategories: string[];
   suppliers: SettingsSupplier[];
   updatedAt: string;
+  // The one category list: classes recipes and groups menus. Stored key unchanged.
   courses?: string[];
+  // Absent reads as "app"; "externe" means invoices are issued in another tool and the app stops proposing them.
+  invoicing?: InvoicingMode;
   prestationTypes?: PrestationTypeSetting[];
   fixedCharges?: FixedCharge[];
   objectives?: Record<string, YearObjective>;
@@ -108,6 +114,7 @@ export interface AppSettings {
   people?: Person[];
 }
 
+// Kept only for recipe CSV imports written by the old app.
 export const DEFAULT_RECIPE_CATEGORIES = [
   "Buffet",
   "Walking dinner",
@@ -124,9 +131,13 @@ export const DEFAULT_SUPPLIERS: SettingsSupplier[] = [
   { name: "Diamant rouge" },
 ];
 
-export const DEFAULT_COURSES = ["Apéritif", "Entrée", "Plat", "Dessert", "Mignardises", "Autre"];
-// The list stored by installs created before Mignardises existed.
+// Her six values, in her order.
+export const DEFAULT_COURSES = ["Apéritif", "Entrée", "Plat", "Walking dinner", "Buffet", "Dessert"];
+// Lists stored by earlier installs; upgradeCourses maps both onto DEFAULT_COURSES plus "Mignardises", which those installs were served and may use.
 export const LEGACY_DEFAULT_COURSES = ["Apéritif", "Entrée", "Plat", "Dessert", "Autre"];
+export const LEGACY_DEFAULT_COURSES_V2 = ["Apéritif", "Entrée", "Plat", "Dessert", "Mignardises", "Autre"];
+// Old « Format » values that are not categories; Buffet and Walking dinner map to themselves.
+export const LEGACY_TYPE_TO_CATEGORY: Record<string, string> = { Lunch: "Plat", "Menu semaine": "Plat" };
 
 export const DEFAULT_PRESTATION_TYPES: PrestationTypeSetting[] = [
   { key: "menu_a_emporter", label: "Menu à emporter", defaultVatRate: 6 },

@@ -2,9 +2,9 @@ import { ConflictException } from "@nestjs/common";
 import {
   DEFAULT_COURSES,
   DEFAULT_PRESTATION_TYPES,
-  DEFAULT_RECIPE_CATEGORIES,
   DEFAULT_SUPPLIERS,
   LEGACY_DEFAULT_COURSES,
+  LEGACY_DEFAULT_COURSES_V2,
 } from "@packages/types";
 import type { AppSettings } from "@packages/types";
 import type { Tables } from "../config/config.service";
@@ -134,9 +134,10 @@ describe("SettingsService.get", () => {
 
     expect(settings).toEqual({
       settingsId: "global",
-      recipeCategories: DEFAULT_RECIPE_CATEGORIES,
+      recipeCategories: DEFAULT_COURSES,
       suppliers: DEFAULT_SUPPLIERS,
       courses: DEFAULT_COURSES,
+      invoicing: "app",
       prestationTypes: DEFAULT_PRESTATION_TYPES,
       fixedCharges: [],
       objectives: {},
@@ -162,8 +163,8 @@ describe("SettingsService.get", () => {
 
     const settings = await service.get();
 
-    expect(settings.recipeCategories).toEqual(["Buffet"]);
     expect(settings.courses).toEqual(["Plat"]);
+    expect(settings.recipeCategories).toEqual(["Plat"]);
     expect(settings.fixedCharges).toEqual([{ chargeId: "c1", label: "Loyer", category: "frais", monthlyAmount: 100 }]);
     expect(settings.ledgerStartYm).toBe("2026-01");
     expect(settings.updatedAt).toBe("2026-01-01T00:00:00.000Z");
@@ -176,7 +177,7 @@ describe("SettingsService.get", () => {
     expect(settings).not.toHaveProperty("company");
   });
 
-  it("serves the legacy five-item courses list as the six defaults without writing", async () => {
+  it("serves the legacy five-item courses list as the six defaults plus Mignardises without writing", async () => {
     const { ddb, service } = build();
     ddb.seed("settings", {
       settingsId: "global",
@@ -186,11 +187,56 @@ describe("SettingsService.get", () => {
 
     const settings = await service.get();
 
-    expect(settings.courses).toEqual(DEFAULT_COURSES);
-    expect(settings.courses).toHaveLength(6);
-    expect(settings.courses).toContain("Mignardises");
+    expect(settings.courses).toEqual([...DEFAULT_COURSES, "Mignardises"]);
+    expect(settings.courses).toHaveLength(7);
+    expect(settings.recipeCategories).toEqual(settings.courses);
     expect(ddb.raw("settings", GLOBAL_KEY)?.courses).toEqual(LEGACY_DEFAULT_COURSES);
     expect(ddb.raw("settings", GLOBAL_KEY)?.updatedAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(ddb.updates).toHaveLength(0);
+  });
+
+  it("serves the legacy six-item courses list as the same seven values", async () => {
+    const { ddb, service } = build();
+    ddb.seed("settings", {
+      settingsId: "global",
+      courses: [...LEGACY_DEFAULT_COURSES_V2],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const settings = await service.get();
+
+    expect(settings.courses).toEqual([...DEFAULT_COURSES, "Mignardises"]);
+    expect(settings.recipeCategories).toEqual(settings.courses);
+    expect(ddb.raw("settings", GLOBAL_KEY)?.courses).toEqual(LEGACY_DEFAULT_COURSES_V2);
+  });
+
+  it("serves the six defaults when the item has no courses list", async () => {
+    const { ddb, service } = build();
+    ddb.seed("settings", { settingsId: "global", suppliers: [{ name: "Barn" }], updatedAt: "2026-01-01T00:00:00.000Z" });
+
+    const settings = await service.get();
+
+    expect(settings.courses).toEqual(DEFAULT_COURSES);
+    expect(settings.courses).not.toContain("Mignardises");
+    expect(settings.recipeCategories).toEqual(DEFAULT_COURSES);
+    expect(ddb.raw("settings", GLOBAL_KEY)).not.toHaveProperty("courses");
+  });
+
+  it("reads an absent invoicing as app", async () => {
+    const { ddb, service } = build();
+    ddb.seed("settings", { settingsId: "global", courses: ["Plat"], updatedAt: "2026-01-01T00:00:00.000Z" });
+
+    const settings = await service.get();
+
+    expect(settings.invoicing).toBe("app");
+    expect(ddb.raw("settings", GLOBAL_KEY)).not.toHaveProperty("invoicing");
+  });
+
+  it("keeps invoicing externe", async () => {
+    const { ddb, service } = build();
+    ddb.seed("settings", { settingsId: "global", invoicing: "externe", updatedAt: "2026-01-01T00:00:00.000Z" });
+
+    expect((await service.get()).invoicing).toBe("externe");
   });
 });
 
@@ -215,7 +261,7 @@ describe("SettingsService.update", () => {
 
     expect(result.courses).toEqual(["Entrée", "Plat"]);
     expect(result.monthCloses).toEqual({ "2026-10": { mpSource: "saisi", rawMaterial: 1200 } });
-    expect(result.recipeCategories).toEqual(["Buffet"]);
+    expect(result.recipeCategories).toEqual(["Entrée", "Plat"]);
     expect(result.suppliers).toEqual([{ name: "Barn" }]);
     expect(result.objectives).toEqual({ "2026": { annualRevenue: 50000, monthsActive: 10 } });
     expect(result.company).toEqual({ name: "Table d'Amélie", vatNumber: "BE0123", address: "Rue X" });
@@ -263,6 +309,29 @@ describe("SettingsService.update", () => {
     const result = await service.update({ courses: undefined, fixedCharges: [] });
 
     expect(result.courses).toEqual(["Plat"]);
+  });
+
+  it("writes nothing for recipeCategories sent by an old client", async () => {
+    const { ddb, service } = build();
+    ddb.seed("settings", { settingsId: "global", courses: ["Plat"], updatedAt: "2026-01-01T00:00:00.000Z" });
+
+    const result = await service.update({ recipeCategories: ["Buffet"], suppliers: [{ name: "Barn" }] });
+
+    expect(ddb.updates).toHaveLength(1);
+    expect(ddb.updates[0].fields).not.toHaveProperty("recipeCategories");
+    expect(ddb.raw("settings", GLOBAL_KEY)).not.toHaveProperty("recipeCategories");
+    expect(result.recipeCategories).toEqual(["Plat"]);
+    expect(result.suppliers).toEqual([{ name: "Barn" }]);
+  });
+
+  it("keeps invoicing externe once written", async () => {
+    const { ddb, service } = build();
+
+    const result = await service.update({ invoicing: "externe" });
+
+    expect(result.invoicing).toBe("externe");
+    expect(ddb.raw("settings", GLOBAL_KEY)?.invoicing).toBe("externe");
+    expect((await service.get()).invoicing).toBe("externe");
   });
 });
 

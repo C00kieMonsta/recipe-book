@@ -8,11 +8,12 @@ import { EventsModule } from "./events/events.module";
 import { GroceryListsModule } from "./grocery-lists/grocery-lists.module";
 import { ClientsModule } from "./clients/clients.module";
 import { LedgerModule } from "./ledger/ledger.module";
+import { OffersModule } from "./offers/offers.module";
 import { AuthModule } from "./auth/auth.module";
 import { HealthController } from "./health.controller";
 
 @Module({
-  imports: [ConfigModule, SharedModule, IngredientsModule, RecipesModule, SettingsModule, EventsModule, GroceryListsModule, ClientsModule, LedgerModule, AuthModule],
+  imports: [ConfigModule, SharedModule, IngredientsModule, RecipesModule, SettingsModule, EventsModule, GroceryListsModule, ClientsModule, LedgerModule, OffersModule, AuthModule],
   controllers: [HealthController],
 })
 export class AppModule {}

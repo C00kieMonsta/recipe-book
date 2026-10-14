@@ -303,8 +303,11 @@ const hoona = await must("POST", "/api/admin/clients", {
 });
 const dupont = await must("POST", "/api/admin/clients", {
   name: "Famille Dupont", kind: "particulier", contactName: "Claire Dupont", phone: "+32 475 12 34 56", email: "claire.dupont@example.be",
+  address: "Rue des Lilas 4, 1050 Ixelles",
   defaultPrestationType: "buffet_avec_service", defaultVatRate: 12, invoicing: "par_evenement",
 });
+// Same rule as billingFromClient: name, address and VAT number, one per line, blanks dropped.
+const billingFromClient = (c) => [c.name, c.address, c.vatNumber].map((x) => (x ?? "").trim()).filter(Boolean).join("\n");
 const philippson = await must("POST", "/api/admin/clients", {
   name: "Philippson", kind: "entreprise", contactName: "Marc Philippson", email: "office@philippson.example",
   defaultPrestationType: "menu_a_emporter", defaultVatRate: 6, defaultPricePerGuest: 16, defaultGuestCount: 12,
@@ -333,6 +336,8 @@ const mariage = await must("POST", "/api/admin/events", {
   name: "Mariage Dupont", date: "2026-10-17", guestCount: 60, clientId: dupont.clientId,
   prestationType: "buffet_avec_service", vatRate: 12, sellingPricePerGuest: 55,
   contactName: "Claire Dupont", contactEmail: "claire.dupont@example.be",
+  deliveryAddress: "Rue des Lilas 4, 1050 Ixelles", deliveryTime: "11:30", billingDetails: billingFromClient(dupont),
+  revenueLines: [{ label: "Service", amount: 450, vatRate: 21 }],
   recipes: [
     L(R.quiches, 60, "Apéritif"), L(R.houmous, 60, "Apéritif"), L(R.verrines, 60, "Entrée"),
     L(R.poulet, 60, "Plat"), L(R.gratin, 60, "Plat"), L(R.tarte, 60, "Dessert"),
@@ -350,7 +355,7 @@ const mariage = await must("POST", "/api/admin/events", {
 });
 const brunch = await must("POST", "/api/admin/events", {
   name: "Brunch Pirson", date: "2026-10-18", guestCount: 20,
-  prestationType: "brunch", vatRate: 12, sellingPricePerGuest: 32,
+  prestationType: "brunch", vatRate: 12, pricingMode: "total", sellingTotal: 900, sellingPricePerGuest: 45,
   contactName: "Sophie Pirson", contactPhone: "+32 486 22 11 00",
   recipes: [L(R.quiches, 20, "Apéritif"), L(R.caprese, 20, "Entrée"), L(R.mousse, 20, "Dessert")],
   extraCosts: [],
@@ -480,12 +485,27 @@ await must("POST", "/api/admin/ledger", {
 entries++;
 log(`ledger ok (${entries})`);
 
+// ── 7. Offers ────────────────────────────────────────────────────────────────
+const O = (recipeId, portionsPerGuest, course) => ({ recipeId, portionsPerGuest, course });
+const buffet1 = await must("POST", "/api/admin/offers", {
+  name: "Buffet 1", prestationType: "buffet_avec_service", vatRate: 12, guestCountRef: 20,
+  lines: [O(R.houmous, 1, "Apéritif"), O(R.caprese, 1, "Entrée"), O(R.poulet, 1, "Plat"), O(R.gratin, 1, "Plat"), O(R.tarte, 1, "Dessert")],
+  extraCosts: [], revenueLines: [], pricingMode: "par_convive", sellingPricePerGuest: 42,
+});
+const walking2 = await must("POST", "/api/admin/offers", {
+  name: "Walking dinner 2", prestationType: "walking_cocktail", vatRate: 12, guestCountRef: 20,
+  lines: [O(R.quiches, 3, "Apéritif"), O(R.verrines, 2, "Apéritif"), O(R.sables, 2, "Mignardises")],
+  extraCosts: [], revenueLines: [], pricingMode: "par_convive", sellingPricePerGuest: 38,
+});
+log("offers ok (2)");
+
 // ── Summary ──────────────────────────────────────────────────────────────────
-const [events, recipes, ingredients, ledger] = await Promise.all([
+const [events, recipes, ingredients, ledger, offers] = await Promise.all([
   must("GET", "/api/admin/events"),
   must("GET", "/api/admin/recipes"),
   must("GET", "/api/admin/ingredients"),
   must("GET", "/api/admin/ledger?year=2026"),
+  must("GET", "/api/admin/offers"),
 ]);
 console.log(JSON.stringify({
   hoonaTuesdayEventId: hoonaTuesday.eventId,
@@ -495,5 +515,8 @@ console.log(JSON.stringify({
   mariageTaskIds: (mariage.tasks ?? []).map((t) => t.taskId),
   tarteAuCitronRecipeId: R.tarte,
   hoonaClientId: hoona.clientId,
-  counts: { events: events.length, recipes: recipes.length, ingredients: ingredients.length, entries: ledger.length },
+  brunchPirsonEventId: brunch.eventId,
+  buffet1OfferId: buffet1.offerId,
+  walkingDinner2OfferId: walking2.offerId,
+  counts: { events: events.length, recipes: recipes.length, ingredients: ingredients.length, entries: ledger.length, offers: offers.length },
 }, null, 2));

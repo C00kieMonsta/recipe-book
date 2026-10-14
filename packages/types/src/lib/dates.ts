@@ -123,3 +123,10 @@ export function weekLabel(isoWeek: string): string {
   const days = datesOfIsoWeek(isoWeek);
   return rangeLabel(days[0], days[6]);
 }
+
+// "11:30" → "11h30", "09:05" → "9h05"; anything else gives "".
+export function fmtTime(hhmm: string): string {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm);
+  if (!m) return "";
+  return `${Number(m[1])}h${m[2]}`;
+}

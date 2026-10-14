@@ -8,11 +8,14 @@ import {
   auReel,
   auReelYear,
   breakeven,
+  caOfMonth,
   caOfPeriod,
   chargesForMonth,
   COMPARISON_PERIODS,
   incomeStatement,
+  invoicedEventIds,
   isCaEntry,
+  isInvoiceEntry,
   isoc,
   ledgerCaOfMonth,
   mix,
@@ -93,6 +96,16 @@ describe("CA definition", () => {
     expect(isCaEntry({ book: "ventes", kind: "note_de_credit" })).toBe(true);
     expect(isCaEntry({ book: "ventes", kind: "commission" })).toBe(false);
     expect(isCaEntry({ book: "achats", kind: "mp" })).toBe(false);
+  });
+
+  it("ca_mensuel is CA, never an invoice", () => {
+    expect(isCaEntry({ book: "ventes", kind: "ca_mensuel" })).toBe(true);
+    expect(isInvoiceEntry({ book: "ventes", kind: "ca_mensuel" })).toBe(false);
+    const monthly = entry({ date: "2026-10-31", htva: 1200, kind: "ca_mensuel", label: "CA · Octobre 2026", paid: true, eventIds: ["ev"] });
+    expect(ledgerCaOfMonth([monthly], "2026-10")).toBe(1200);
+    expect(caOfMonth(inputs({ entries: [monthly] }), "2026-10")).toEqual({ amount: 1200, source: "ledger" });
+    expect(invoicedEventIds([monthly]).size).toBe(0);
+    expect(aFacturer({ events: [], entries: [{ ...monthly, paid: false }], clients: [] }, "2026-11-15").unpaid).toEqual([]);
   });
 
   it("a month with one facture and one commission yields CA = facture only", () => {
@@ -465,6 +478,19 @@ describe("mix", () => {
     expect(m.rows[m.rows.length - 1].label).toBe("Sans type");
   });
 
+  it("counts a ca_mensuel entry in its type bucket", () => {
+    const monthly = entry({ date: "2026-10-31", htva: 1200, kind: "ca_mensuel", prestationType: "brunch", paid: true });
+    const m = mix(2026, inputs({ entries: [...entries, monthly], settings: s }));
+    expect(m.rows.find((r) => r.type === "brunch")?.caN).toBe(1200);
+    expect(m.totals.caN).toBe(3000);
+  });
+
+  it("averagePricePerGuest of a total-mode event uses the derived per-guest value", () => {
+    const total = event({ eventId: "t", date: "2026-04-01", prestationType: "brunch", pricingMode: "total", sellingTotal: 900, guestCount: 30, sellingPricePerGuest: 0 });
+    const m = mix(2026, inputs({ events: [total], settings: s }));
+    expect(m.rows.find((r) => r.type === "brunch")).toMatchObject({ averagePricePerGuest: 30, nbNecessaires: 5000 / (20 * 30) });
+  });
+
   it("reads N−1 from the ledger when the whole prior year is a ledger year", () => {
     const m = mix(2026, inputs({ entries, settings: settings({ ledgerStartYm: "2025-01" }) }));
     expect(m.rows.find((r) => r.type === "atelier")).toMatchObject({ caN1: 80, caN1Source: "ledger" });
@@ -574,6 +600,24 @@ describe("auReel", () => {
     expect(nov.rows).toEqual([
       expect.objectContaining({ kind: "entry", tag: "facture", entryKind: "facture", htva: 737.5, eventIds: ["frahan"], hours: 12 }),
     ]);
+  });
+
+  it("externe drops the event rows once the month has a ca_mensuel entry; app mode keeps both", () => {
+    const monthly = entry({ date: "2026-10-31", htva: 1200, kind: "ca_mensuel", label: "CA · Octobre 2026", paid: true });
+    const externe = settings({ ...s, invoicing: "externe" });
+    const r = auReel("2026-10", inputs({ entries: [monthly, commission], events: [frahan, hoona], settings: externe, clients }));
+    expect(r.rows.map((row) => [row.kind, row.label, row.htva])).toEqual([["entry", "CA · Octobre 2026", 1200]]);
+    expect(r.totalSigne).toBe(1200);
+    const app = auReel("2026-10", inputs({ entries: [monthly, commission], events: [frahan, hoona], settings: s, clients }));
+    expect(app.rows.map((row) => row.tag)).toEqual(["signe", "signe", "facture"]);
+    expect(app.totalSigne).toBe(3047.5);
+  });
+
+  it("externe keeps the event rows as a forecast while the month has no CA entry", () => {
+    const externe = settings({ ...s, invoicing: "externe" });
+    const r = auReel("2026-10", inputs({ entries: [commission], events: [frahan, hoona], settings: externe, clients }));
+    expect(r.rows.map((row) => [row.tag, row.htva])).toEqual([["signe", 360], ["signe", 1487.5]]);
+    expect(r.totalSigne).toBe(1847.5);
   });
 
   it("uses the month override for hours available", () => {

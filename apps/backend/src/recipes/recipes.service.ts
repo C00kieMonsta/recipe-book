@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import type { ImportRecipeIngredient, Recipe, RecipeIngredient } from "@packages/types";
+import { recipeCategoryOf } from "@packages/types";
 import { DdbService } from "../shared/ddb.service";
 import { S3Service } from "../shared/s3.service";
 import { IngredientLookup, IngredientsService } from "../ingredients/ingredients.service";
@@ -23,16 +24,21 @@ export class RecipesService {
     return { ...recipe, photos: signed };
   }
 
+  // Served shape: the stored fields plus the category derived from the legacy ones when not stored yet.
+  private serve(stored: Recipe): Promise<Recipe> {
+    return this.signPhotos({ ...stored, category: recipeCategoryOf(stored) });
+  }
+
   async getAll(): Promise<Recipe[]> {
     const items = await this.ddb.scanAll(this.table);
     const recipes = items as unknown as Recipe[];
-    return Promise.all(recipes.map((r) => this.signPhotos(r)));
+    return Promise.all(recipes.map((r) => this.serve(r)));
   }
 
   async get(recipeId: string): Promise<Recipe | null> {
     const item = await this.ddb.get(this.table, { recipeId });
     if (!item) return null;
-    return this.signPhotos(item as unknown as Recipe);
+    return this.serve(item as unknown as Recipe);
   }
 
   async getOrFail(recipeId: string): Promise<Recipe> {
@@ -43,9 +49,13 @@ export class RecipesService {
 
   async create(data: Omit<Recipe, "recipeId" | "nameLower" | "createdAt" | "updatedAt">): Promise<Recipe> {
     const now = new Date().toISOString();
+    const { defaultCourse, ...rest } = data;
+    const category = data.category ?? recipeCategoryOf({ type: data.type, defaultCourse });
     const recipe: Recipe = {
       recipeId: randomUUID(),
-      ...data,
+      ...rest,
+      category,
+      type: category,
       nameLower: data.name.toLowerCase(),
       createdAt: now,
       updatedAt: now,
@@ -56,11 +66,18 @@ export class RecipesService {
 
   async update(recipeId: string, fields: Partial<Recipe>): Promise<Recipe> {
     await this.getOrFail(recipeId);
+    const { defaultCourse: _dropped, ...rest } = fields;
     const updates: Record<string, unknown> = {
-      ...fields,
+      ...rest,
       updatedAt: new Date().toISOString(),
     };
     if (fields.name) updates.nameLower = fields.name.toLowerCase();
+    // A category drives both keys; a bare type from an old client is mapped into both.
+    const category = fields.category ?? (fields.type ? recipeCategoryOf({ type: fields.type }) : undefined);
+    if (category) {
+      updates.category = category;
+      updates.type = category;
+    }
     await this.ddb.update(this.table, { recipeId }, updates);
     return this.getOrFail(recipeId);
   }
@@ -98,11 +115,13 @@ export class RecipesService {
         });
       }
 
+      const category = row.category?.trim() || recipeCategoryOf({ type: row.type || "Buffet" });
       const recipe: Recipe = {
         recipeId: randomUUID(),
         name,
         nameLower: name.toLowerCase(),
-        type: row.type || "Buffet",
+        category,
+        type: category,
         portions: row.portions || 1,
         portionWeight: row.portionWeight || 150,
         description: row.description || "",
@@ -133,6 +152,8 @@ export class RecipesService {
 export interface ImportRecipeRow {
   name: string;
   type?: string;
+  // Wins over type when present (the CSV « categorie » column).
+  category?: string;
   portions?: number;
   portionWeight?: number;
   description?: string;

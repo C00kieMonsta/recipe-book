@@ -55,7 +55,15 @@ export const costSnapshotSchema = z
   .strict();
 export type CostSnapshotRequest = z.infer<typeof costSnapshotSchema>;
 
-export const createEventRequestSchema = z.object({
+export const eventRevenueLineSchema = z
+  .object({ label: z.string().trim().min(1).max(60), amount: moneyNonnegative, vatRate })
+  .strict();
+export type EventRevenueLineRequest = z.infer<typeof eventRevenueLineSchema>;
+
+const deliveryTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "heure HH:MM");
+
+// The plain object; create and update derive from it so a refine never blocks .partial().
+const eventFieldsSchema = z.object({
   name: z.string().min(1).trim(),
   date: isoDate,
   guestCount: z.number().int().positive(),
@@ -76,12 +84,40 @@ export const createEventRequestSchema = z.object({
   hoursSpent: z.number().nonnegative().optional(),
   costSnapshot: costSnapshotSchema.optional(),
   assignedTo: personIds.optional(),
+  pricingMode: z.enum(["par_convive", "total"]).optional(),
+  sellingTotal: moneyNonnegative.optional(),
+  revenueLines: z.array(eventRevenueLineSchema).max(10).default([]),
+  deliveryAddress: z.string().trim().max(200).optional(),
+  deliveryTime: deliveryTime.optional(),
+  billingDetails: z.string().trim().max(500).optional(),
+  offerId: z.string().min(1).nullish(),
 });
+
+// Shared with the offer schemas: total mode needs the amount it is priced at.
+export const totalNeedsAmount = (v: { pricingMode?: string; sellingTotal?: number | null }) =>
+  v.pricingMode !== "total" || typeof v.sellingTotal === "number";
+
+export const createEventRequestSchema = eventFieldsSchema.refine(totalNeedsAmount, "prix total requis");
 export type CreateEventRequest = z.infer<typeof createEventRequestSchema>;
 
-// tasks is optional here and undefined means "not sent".
-export const updateEventRequestSchema = createEventRequestSchema.partial();
+// Scalars the editor can clear accept null, stored as a REMOVE; tasks and revenueLines stay undefined when not sent.
+export const updateEventRequestSchema = eventFieldsSchema
+  .partial()
+  .extend({
+    contactName: z.string().trim().nullable().optional(),
+    contactPhone: z.string().trim().nullable().optional(),
+    contactEmail: z.string().trim().nullable().optional(),
+    deliveryAddress: z.string().trim().max(200).nullable().optional(),
+    deliveryTime: deliveryTime.nullable().optional(),
+    billingDetails: z.string().trim().max(500).nullable().optional(),
+    sellingTotal: moneyNonnegative.nullable().optional(),
+    revenueLines: z.array(eventRevenueLineSchema).max(10).optional(),
+  })
+  .refine(totalNeedsAmount, "prix total requis");
 export type UpdateEventRequest = z.infer<typeof updateEventRequestSchema>;
+
+export const renameAttachmentSchema = z.object({ name: z.string().trim().min(1).max(120) }).strict();
+export type RenameAttachmentRequest = z.infer<typeof renameAttachmentSchema>;
 
 export const putEventLinesSchema = z
   .object({

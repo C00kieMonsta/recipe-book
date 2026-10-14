@@ -24,9 +24,13 @@ export interface Recipe {
   recipeId: string;
   name: string;
   nameLower: string;
+  // The one category; filled by RecipesService on every read, stored from the first write after spec 07.
+  category?: string;
+  // Legacy « Format », mirrored to category on write so old CSV exports and scripts keep a value.
   type: string;
   portions: number;
   portionWeight: number;
+  // Legacy; read by recipeCategoryOf when category is absent, never written again.
   defaultCourse?: string;
   description?: string;
   techniques: string[];

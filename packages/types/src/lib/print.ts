@@ -2,7 +2,7 @@ import type { AppEvent, EventRecipeLine, EventTask } from "../entities/event";
 import type { Ingredient } from "../entities/ingredient";
 import type { Recipe } from "../entities/recipe";
 import type { Person, PrestationTypeSetting } from "../entities/settings";
-import { isoWeekOf, longDayLabel, parseIsoWeek, rangeLabel, shortDayLabel } from "./dates";
+import { fmtTime, isoWeekOf, longDayLabel, parseIsoWeek, rangeLabel, shortDayLabel } from "./dates";
 import {
   assigneesOf,
   courseBucket,
@@ -40,6 +40,8 @@ export interface PrintBlock {
   movedIn: boolean;
   // "1 préparation prévue jeu. 15" / "2 préparations prévues jeu. 15, ven. 16"
   movedOutNote?: string;
+  // "Livraison 11h30 · Rue des Lilas 4", event-day blocks only.
+  delivery?: string;
   rows: PrintRow[];
 }
 
@@ -124,6 +126,11 @@ function movedOutNoteOf(event: AppEvent): string | undefined {
   return `${plural(moved.length, "préparation prévue", "préparations prévues")} ${dates.map(shortDayLabel).join(", ")}`;
 }
 
+function deliveryOf(event: AppEvent): string | undefined {
+  const parts = [fmtTime(event.deliveryTime ?? ""), event.deliveryAddress?.trim() ?? ""].filter(Boolean);
+  return parts.length ? `Livraison ${parts.join(" · ")}` : undefined;
+}
+
 function recipeRow(event: AppEvent, line: EventRecipeLine, input: WeekPrintInput): Row {
   const recipe = input.recipeById.get(line.recipeId);
   const assignedTo = assigneesOf(line, event);
@@ -169,6 +176,7 @@ function buildDay(date: string, input: WeekPrintInput): Day {
     heading: eventHeading(event, input),
     movedIn: false,
     movedOutNote: movedOutNoteOf(event),
+    delivery: deliveryOf(event),
     rows: blockRows(event, ownDayLines(event), tasksOn(event, date), input),
   }));
   const movedIn: { event: AppEvent; lines: EventRecipeLine[]; tasks: EventTask[] }[] = [];
@@ -201,6 +209,7 @@ function toPrintRow({ assignedTo: _assignedTo, ...row }: Row): PrintRow {
 function toBlock(block: Block): PrintBlock {
   const out: PrintBlock = { heading: block.heading, movedIn: block.movedIn, rows: block.rows.map(toPrintRow) };
   if (block.movedOutNote) out.movedOutNote = block.movedOutNote;
+  if (block.delivery) out.delivery = block.delivery;
   return out;
 }
 

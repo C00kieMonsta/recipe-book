@@ -43,6 +43,13 @@ export const importIngredientRowSchema = z.object({
 });
 export type ImportIngredientRow = z.infer<typeof importIngredientRowSchema>;
 
+// Query options of the import: "prices" updates matched prices and creates nothing; supplier fills rows without one.
+export const importIngredientsOptionsSchema = z.object({
+  mode: z.enum(["all", "prices"]).default("all"),
+  supplier: z.string().trim().max(60).optional(),
+});
+export type ImportIngredientsOptions = z.infer<typeof importIngredientsOptionsSchema>;
+
 export const mergeIngredientsSchema = z
   .object({ survivorId: z.string().min(1), mergedIds: z.array(z.string().min(1)).min(1) })
   .strict()

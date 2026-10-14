@@ -4,9 +4,9 @@ import type { AppEvent } from "../entities/event";
 import type { LedgerEntry, VatRate } from "../entities/ledger";
 import type { AppSettings } from "../entities/settings";
 import { DEFAULT_PRESTATION_TYPES } from "../entities/settings";
-import { ymOf } from "./dates";
+import { monthLabel, ymOf } from "./dates";
 import { round2, sumMoney } from "./money";
-import { signedRevenue } from "./planning";
+import { foodRevenue, signedRevenue } from "./planning";
 import { invoicedEventIds, isInvoiceEntry } from "./reports";
 
 export type SalesEntryPrefill = Extract<CreateLedgerEntryRequest, { book: "ventes" }>;
@@ -41,16 +41,14 @@ export function defaultVatRate(prestationType: string | undefined, settings: Pic
   return types.find((t) => t.key === prestationType)?.defaultVatRate;
 }
 
-function salesEntry(args: {
-  kind: PrefillKind;
+interface EntryBase {
   date: string;
   label: string;
   prestationType?: string;
   clientId?: string;
-  eventIds: string[];
-  htva: number;
-  vatRate: VatRate;
-}): SalesEntryPrefill {
+}
+
+function salesEntry(args: EntryBase & { kind: PrefillKind; eventIds: string[]; htva: number; vatRate: VatRate }): SalesEntryPrefill {
   const vatAmount = round2((args.htva * args.vatRate) / 100);
   return {
     book: "ventes",
@@ -68,8 +66,29 @@ function salesEntry(args: {
   };
 }
 
+// One facture per distinct VAT rate among the billed lines of the events, ascending; rates summing to 0 are dropped.
+function extraEntriesOf(events: AppEvent[], base: EntryBase): SalesEntryPrefill[] {
+  const byRate = new Map<VatRate, { htva: number; eventIds: string[] }>();
+  for (const e of events) {
+    for (const line of e.revenueLines ?? []) {
+      const bucket = byRate.get(line.vatRate) ?? { htva: 0, eventIds: [] };
+      bucket.htva = sumMoney([bucket.htva, line.amount]);
+      if (!bucket.eventIds.includes(e.eventId)) bucket.eventIds.push(e.eventId);
+      byRate.set(line.vatRate, bucket);
+    }
+  }
+  return [...byRate.entries()]
+    .filter(([, b]) => b.htva !== 0)
+    .sort((a, b) => a[0] - b[0])
+    .map(([vatRate, b]) =>
+      salesEntry({ ...base, kind: "facture", label: `${base.label} · service, livraison, autres`, eventIds: b.eventIds, htva: b.htva, vatRate }),
+    );
+}
+
 export interface EventPrefill {
   entry: SalesEntryPrefill;
+  // One per distinct VAT rate among the billed lines, kind facture; empty for a deposit.
+  extraEntries: SalesEntryPrefill[];
   revenuePrevu: number;
   acomptesRecus: number;
 }
@@ -85,17 +104,21 @@ export function prefillFromEvent(
   const revenuePrevu = signedRevenue(event);
   const acomptesRecus = depositsForEvents([event.eventId], entries);
   const prestationType = event.prestationType ?? client?.defaultPrestationType;
+  const base: EntryBase = {
+    date: event.date,
+    label: client?.name ?? event.name,
+    prestationType,
+    clientId: event.clientId ?? client?.clientId,
+  };
   return {
     entry: salesEntry({
+      ...base,
       kind,
-      date: event.date,
-      label: client?.name ?? event.name,
-      prestationType,
-      clientId: event.clientId ?? client?.clientId,
       eventIds: [event.eventId],
-      htva: round2(revenuePrevu - acomptesRecus),
+      htva: round2(foodRevenue(event) - acomptesRecus),
       vatRate: event.vatRate ?? defaultVatRate(prestationType, settings) ?? 0,
     }),
+    extraEntries: kind === "acompte" ? [] : extraEntriesOf([event], base),
     revenuePrevu,
     acomptesRecus,
   };
@@ -103,6 +126,7 @@ export function prefillFromEvent(
 
 export interface ClientMonthPrefill {
   entry: SalesEntryPrefill;
+  extraEntries: SalesEntryPrefill[];
   events: AppEvent[];
   byMonth: { ym: string; events: AppEvent[]; revenue: number }[];
   revenuePrevu: number;
@@ -145,20 +169,35 @@ export function prefillForClientMonth(
     entries,
   );
   const prestationType = client.defaultPrestationType ?? selected.find((e) => e.prestationType)?.prestationType;
+  const base: EntryBase = { date: lastDayOfMonth(ym), label: client.name, prestationType, clientId: client.clientId };
   return {
     entry: salesEntry({
+      ...base,
       kind: "facture",
-      date: lastDayOfMonth(ym),
-      label: client.name,
-      prestationType,
-      clientId: client.clientId,
       eventIds: selected.map((e) => e.eventId),
-      htva: round2(revenuePrevu - acomptesRecus),
+      htva: round2(sumMoney(selected.map(foodRevenue)) - acomptesRecus),
       vatRate: client.defaultVatRate ?? selected.find((e) => e.vatRate !== undefined)?.vatRate ?? defaultVatRate(prestationType, settings) ?? 0,
     }),
+    extraEntries: extraEntriesOf(selected, base),
     events: selected,
     byMonth,
     revenuePrevu,
     acomptesRecus,
+  };
+}
+
+// Kind ca_mensuel, dated the last day of the month, paid, label "CA · Octobre 2026" unless given.
+export function monthlyRevenueEntry(ym: string, htva: number, vatRate: VatRate, label?: string): SalesEntryPrefill {
+  const vatAmount = round2((htva * vatRate) / 100);
+  return {
+    book: "ventes",
+    kind: "ca_mensuel",
+    date: lastDayOfMonth(ym),
+    label: label ?? `CA · ${monthLabel(ym)}`,
+    htva,
+    vatRate,
+    vatAmount,
+    totalTvac: sumMoney([htva, vatAmount]),
+    paid: true,
   };
 }

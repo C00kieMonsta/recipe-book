@@ -8,6 +8,8 @@ export type SalesKind =
   | "bon_cadeau"
   | "note_de_credit"
   | "commission"
+  // Typed monthly revenue when invoices are issued elsewhere: counts as CA, never as an invoice, never unpaid.
+  | "ca_mensuel"
   | "autre";
 export type PurchaseKind = "mp" | "personnel" | "autre";
 export type PaymentMethod = "virement" | "cash" | "bancontact" | "payconiq" | "autre";

@@ -1,31 +1,140 @@
 import type { Client } from "../entities/client";
 import type { AppEvent, EventRecipeLine, EventTask, PrepStatus } from "../entities/event";
+import type { VatRate } from "../entities/ledger";
 import type { Recipe } from "../entities/recipe";
 import type { Person } from "../entities/settings";
-import { DEFAULT_COURSES, LEGACY_DEFAULT_COURSES } from "../entities/settings";
+import {
+  DEFAULT_COURSES,
+  LEGACY_DEFAULT_COURSES,
+  LEGACY_DEFAULT_COURSES_V2,
+  LEGACY_TYPE_TO_CATEGORY,
+} from "../entities/settings";
 import { addDays, daysBetween, ymOf } from "./dates";
 import { round2, sumMoney } from "./money";
 
 export const FALLBACK_COURSE = "Autre";
 
-export type RecipeLookup = Map<string, Pick<Recipe, "name" | "defaultCourse"> & Partial<Recipe>>;
+export type RecipeLookup = Map<
+  string,
+  Pick<Recipe, "name"> & Partial<Pick<Recipe, "category" | "defaultCourse" | "type" | "ingredients" | "portions">>
+>;
 export type ClientLookup = Map<string, Pick<Client, "name">>;
 
-// Revenue HTVA of an event as sold, the "Signé" figure everywhere.
-export function signedRevenue(event: Pick<AppEvent, "sellingPricePerGuest" | "guestCount">): number {
-  return round2(event.sellingPricePerGuest * event.guestCount);
+export type PricedEvent = Pick<AppEvent, "sellingPricePerGuest" | "guestCount"> &
+  Partial<Pick<AppEvent, "pricingMode" | "sellingTotal" | "revenueLines">>;
+
+function finite(n: unknown): number {
+  return typeof n === "number" && Number.isFinite(n) ? n : 0;
 }
 
-// undefined or [] gives DEFAULT_COURSES; exactly the legacy list gives DEFAULT_COURSES; anything else as is.
+// Food revenue HTVA: the typed total in total mode, else price × guests. A missing or non-finite value counts as 0.
+export function foodRevenue(e: PricedEvent): number {
+  if (e.pricingMode === "total") return round2(finite(e.sellingTotal));
+  return round2(finite(e.sellingPricePerGuest) * finite(e.guestCount));
+}
+
+export function revenueLinesTotal(e: Pick<AppEvent, "revenueLines">): number {
+  return sumMoney((e.revenueLines ?? []).map((l) => finite(l.amount)));
+}
+
+// The "Signé" figure everywhere: food plus the billed lines.
+export function signedRevenue(e: PricedEvent): number {
+  return sumMoney([foodRevenue(e), revenueLinesTotal(e)]);
+}
+
+// Food revenue per guest, 0 when guestCount is 0.
+export function pricePerGuestOf(e: PricedEvent): number {
+  const guests = finite(e.guestCount);
+  if (guests <= 0) return 0;
+  if (e.pricingMode === "total") return round2(foodRevenue(e) / guests);
+  return round2(finite(e.sellingPricePerGuest));
+}
+
+export interface VatBucket {
+  rate: VatRate;
+  htva: number;
+  tva: number;
+  tvac: number;
+}
+
+// Food at the event rate (0 when absent), each billed line at its own rate; buckets merged by rate, ascending, empty buckets dropped.
+export function vatBreakdown(e: PricedEvent & Pick<AppEvent, "vatRate">): VatBucket[] {
+  const byRate = new Map<VatRate, number>();
+  const add = (rate: VatRate, htva: number) => byRate.set(rate, sumMoney([byRate.get(rate) ?? 0, htva]));
+  add(e.vatRate ?? 0, foodRevenue(e));
+  for (const l of e.revenueLines ?? []) add(l.vatRate, finite(l.amount));
+  return [...byRate.entries()]
+    .filter(([, htva]) => htva !== 0)
+    .sort((a, b) => a[0] - b[0])
+    .map(([rate, htva]) => {
+      const tva = round2((htva * rate) / 100);
+      return { rate, htva, tva, tvac: sumMoney([htva, tva]) };
+    });
+}
+
+export function revenueTvac(e: PricedEvent & Pick<AppEvent, "vatRate">): number {
+  return sumMoney(vatBreakdown(e).map((b) => b.tvac));
+}
+
+// category, else defaultCourse unless it is "Autre", else the legacy type mapped, else the type itself, else "Autre".
+export function recipeCategoryOf(r: Partial<Pick<Recipe, "category" | "defaultCourse" | "type">>): string {
+  if (r.category) return r.category;
+  if (r.defaultCourse && r.defaultCourse !== FALLBACK_COURSE) return r.defaultCourse;
+  if (r.type) return LEGACY_TYPE_TO_CATEGORY[r.type] ?? r.type;
+  return FALLBACK_COURSE;
+}
+
+// Raw course of a line: its own value, then the recipe category, then "Autre".
+export function courseOf(
+  line: Pick<EventRecipeLine, "course">,
+  recipe?: Partial<Pick<Recipe, "category" | "defaultCourse" | "type">>,
+): string {
+  return line.course ?? (recipe ? recipeCategoryOf(recipe) : FALLBACK_COURSE);
+}
+
+function sameList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((c, i) => c === b[i]);
+}
+
+// undefined or [] gives DEFAULT_COURSES; the legacy five or the legacy six give DEFAULT_COURSES plus "Mignardises"; anything else as is.
 export function upgradeCourses(stored: string[] | undefined): string[] {
   if (!stored?.length) return DEFAULT_COURSES;
-  const legacy = stored.length === LEGACY_DEFAULT_COURSES.length && stored.every((c, i) => c === LEGACY_DEFAULT_COURSES[i]);
-  return legacy ? DEFAULT_COURSES : stored;
+  if (sameList(stored, LEGACY_DEFAULT_COURSES) || sameList(stored, LEGACY_DEFAULT_COURSES_V2)) {
+    return [...DEFAULT_COURSES, "Mignardises"];
+  }
+  return stored;
 }
 
-// Raw course of a line: its own value, then the recipe default, then "Autre".
-export function courseOf(line: Pick<EventRecipeLine, "course">, recipe?: { defaultCourse?: string }): string {
-  return line.course ?? recipe?.defaultCourse ?? FALLBACK_COURSE;
+// Categories to offer in a select or as tabs: the settings list, then every value used by the recipes that is not in it, alphabetical.
+export function categoryOptions(courses: string[], recipes: Pick<Recipe, "category" | "defaultCourse" | "type">[]): string[] {
+  const extra = new Set<string>();
+  for (const r of recipes) {
+    const c = recipeCategoryOf(r);
+    if (!courses.includes(c)) extra.add(c);
+  }
+  return [...courses, ...[...extra].sort((a, b) => a.localeCompare(b, "fr"))];
+}
+
+export function isIncompleteRecipe(r: Pick<Recipe, "ingredients">): boolean {
+  return !r.ingredients?.length;
+}
+
+// Lines whose recipe exists and has no ingredient.
+export function incompleteCount(lines: Pick<EventRecipeLine, "recipeId">[], recipeById: RecipeLookup): number {
+  let n = 0;
+  for (const line of lines) {
+    const recipe = recipeById.get(line.recipeId);
+    if (recipe && isIncompleteRecipe({ ingredients: recipe.ingredients ?? [] })) n++;
+  }
+  return n;
+}
+
+// "Dupont SA\nRue des Lilas 4, 1050 Ixelles\nBE 0123.456.789"; empty parts dropped.
+export function billingFromClient(c: Pick<Client, "name" | "address" | "vatNumber">): string {
+  return [c.name, c.address, c.vatNumber]
+    .map((part) => part?.trim() ?? "")
+    .filter((part) => part.length > 0)
+    .join("\n");
 }
 
 // Position of a course in the settings list; unknown values sort with "Autre", or last when "Autre" is absent.

@@ -5,6 +5,8 @@ import { ConfigService } from "../config/config.service";
 
 const PRESIGN_EXPIRES = 3600;
 
+export type PresignOptions = { filename?: string; inline?: boolean };
+
 @Injectable()
 export class S3Service {
   private readonly client: S3Client;
@@ -40,8 +42,17 @@ export class S3Service {
     }));
   }
 
-  async presignedUrl(key: string): Promise<string> {
+  // With a filename the browser opens the object inline under that name (or downloads it when inline is false).
+  async presignedUrl(key: string, opts: PresignOptions = {}): Promise<string> {
+    const disposition = opts.filename
+      ? `${opts.inline === false ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(opts.filename)}`
+      : undefined;
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ...(disposition && { ResponseContentDisposition: disposition }),
+    });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return getSignedUrl(this.client as any, new GetObjectCommand({ Bucket: this.bucket, Key: key }) as any, { expiresIn: PRESIGN_EXPIRES });
+    return getSignedUrl(this.client as any, command as any, { expiresIn: PRESIGN_EXPIRES });
   }
 }

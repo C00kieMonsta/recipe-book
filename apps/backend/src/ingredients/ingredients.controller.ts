@@ -1,9 +1,10 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, BadRequestException, HttpCode, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, BadRequestException, HttpCode, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { AdminGuard } from "../auth/admin.guard";
 import {
   createIngredientRequestSchema,
   importIngredientRowSchema,
+  importIngredientsOptionsSchema,
   mergeIngredientsSchema,
   updateIngredientRequestSchema,
 } from "@packages/types";
@@ -52,12 +53,14 @@ export class IngredientsController {
   }
 
   @Post("import")
-  async importIngredients(@Body() body: unknown) {
+  async importIngredients(@Body() body: unknown, @Query() query: unknown) {
+    const options = importIngredientsOptionsSchema.safeParse(query ?? {});
+    if (!options.success) throw new BadRequestException(options.error.issues);
     if (!Array.isArray(body)) throw new BadRequestException("Expected array of ingredient rows");
     const parsed = importRowsSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const result = await this.ingredients.importIngredients(parsed.data);
-    console.log(JSON.stringify({ action: "importIngredients", ...result }));
+    const result = await this.ingredients.importIngredients(parsed.data, options.data);
+    console.log(JSON.stringify({ action: "importIngredients", mode: options.data.mode, ...result }));
     return result;
   }
 

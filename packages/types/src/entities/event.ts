@@ -1,5 +1,24 @@
 import type { VatRate } from "./ledger";
 
+export type PricingMode = "par_convive" | "total";
+
+// A billed line on top of the food price (service, delivery, other): revenue HTVA at its own VAT rate.
+export interface EventRevenueLine {
+  label: string;
+  amount: number;
+  vatRate: VatRate;
+}
+
+export interface EventAttachment {
+  attachmentId: string;
+  // event-files/{eventId}/{attachmentId}{ext}
+  key: string;
+  name: string;
+  contentType: string;
+  size: number;
+  addedAt: string;
+}
+
 export type PrepStatus = "todo" | "doing" | "done";
 
 export interface EventRecipeLine {
@@ -62,7 +81,22 @@ export interface AppEvent {
   // Absent on items written before this spec; the service returns [] in that case.
   tasks?: EventTask[];
   extraCosts: EventExtraCost[];
+  // Absent reads as "par_convive".
+  pricingMode?: PricingMode;
+  // Food price HTVA for the whole event, stored only in total mode.
+  sellingTotal?: number;
+  // In total mode the service derives this as round2(sellingTotal / guestCount) on every write; readers that multiply by guestCount must call foodRevenue instead.
   sellingPricePerGuest: number;
+  revenueLines?: EventRevenueLine[];
+  deliveryAddress?: string;
+  // HH:MM, 24 h.
+  deliveryTime?: string;
+  // Free text: name, address, VAT number, one per line.
+  billingDetails?: string;
+  // Server-owned; never accepted from a create or update body.
+  attachments?: EventAttachment[];
+  // The offer the event was created from, like templateId.
+  offerId?: string;
   notes?: string;
   contactName?: string;
   contactPhone?: string;

@@ -1,7 +1,8 @@
-import { ConflictException } from "@nestjs/common";
-import type { AppSettings, CreateLedgerEntryRequest } from "@packages/types";
+import { BadRequestException, ConflictException } from "@nestjs/common";
+import type { AppSettings, CreateLedgerEntryRequest, ImportLedgerRow } from "@packages/types";
 import { DdbService } from "../shared/ddb.service";
 import { SettingsService } from "../settings/settings.service";
+import { LedgerController } from "./ledger.controller";
 import { LedgerService } from "./ledger.service";
 
 type Item = Record<string, unknown>;
@@ -63,6 +64,18 @@ const sale = (overrides: Partial<CreateLedgerEntryRequest> = {}): CreateLedgerEn
   ...overrides,
 } as CreateLedgerEntryRequest);
 
+const invoice = (overrides: Partial<ImportLedgerRow> = {}): ImportLedgerRow => ({
+  number: "INV/2026/0001",
+  date: "2026-10-05",
+  label: "Dupont SA",
+  htva: 100,
+  vatRate: 21,
+  vatAmount: 21,
+  totalTvac: 121,
+  paid: false,
+  ...overrides,
+});
+
 describe("LedgerService", () => {
   let ddb: FakeDdb;
   let settings: FakeSettings;
@@ -72,6 +85,86 @@ describe("LedgerService", () => {
     ddb = new FakeDdb();
     settings = new FakeSettings();
     service = new LedgerService(ddb as unknown as DdbService, settings as unknown as SettingsService);
+  });
+
+  it("create stores ca_mensuel as paid", async () => {
+    const entry = await service.create(sale({ kind: "ca_mensuel", date: "2026-10-31", label: "CA · Octobre 2026", paid: false }));
+    expect(entry.paid).toBe(true);
+    expect((await service.getOrFail(entry.entryId)).paid).toBe(true);
+    const replaced = await service.replace(entry.entryId, sale({ kind: "ca_mensuel", date: "2026-10-31", paid: false }));
+    expect(replaced.paid).toBe(true);
+  });
+
+  it("importInvoices creates one facture entry per new number", async () => {
+    const result = await service.importInvoices([
+      invoice({ number: "INV/2026/0001" }),
+      invoice({ number: "INV/2026/0002", date: "2026-10-12", label: "Pirson", paid: true, paidAt: "2026-10-20", prestationType: "buffet" }),
+    ]);
+    expect(result).toEqual({ created: 2, updated: 0, skippedLocked: 0 });
+    const all = await service.list();
+    expect(all).toHaveLength(2);
+    expect(all[0]).toMatchObject({
+      book: "ventes", kind: "facture", imported: true, number: "INV/2026/0001", ym: "2026-10", label: "Dupont SA",
+      htva: 100, vatRate: 21, vatAmount: 21, totalTvac: 121, paid: false,
+    });
+    expect(all[0].eventIds).toBeUndefined();
+    expect(all[0].clientId).toBeUndefined();
+    expect("paidAt" in all[0]).toBe(false);
+    expect(all[1]).toMatchObject({ number: "INV/2026/0002", paid: true, paidAt: "2026-10-20", prestationType: "buffet" });
+    expect(all[1].createdAt).toBe(all[1].updatedAt);
+  });
+
+  it("importInvoices updates a known number and creates nothing", async () => {
+    const first = await service.importInvoices([invoice({ number: "INV/2026/0001" }), invoice({ number: "INV/2026/0002", date: "2026-10-12" })]);
+    expect(first.created).toBe(2);
+    const [stored] = await service.list();
+    const again = await service.importInvoices([
+      invoice({ number: "INV/2026/0001", date: "2026-10-07", label: "Dupont SA (corrigée)", htva: 200, vatAmount: 42, totalTvac: 242, paid: true, paidAt: "2026-10-30" }),
+    ]);
+    expect(again).toEqual({ created: 0, updated: 1, skippedLocked: 0 });
+    const all = await service.list();
+    expect(all).toHaveLength(2);
+    const updated = await service.getOrFail(stored.entryId);
+    expect(updated).toMatchObject({
+      entryId: stored.entryId, createdAt: stored.createdAt, number: "INV/2026/0001", date: "2026-10-07",
+      label: "Dupont SA (corrigée)", htva: 200, vatAmount: 42, totalTvac: 242, paid: true, paidAt: "2026-10-30", imported: true,
+    });
+  });
+
+  it("importInvoices ignores a manual entry that carries the same number", async () => {
+    const manual = await service.create(sale({ number: "INV/2026/0001" }));
+    const result = await service.importInvoices([invoice({ number: "INV/2026/0001" })]);
+    expect(result).toEqual({ created: 1, updated: 0, skippedLocked: 0 });
+    expect((await service.getOrFail(manual.entryId)).imported).toBeUndefined();
+    expect(await service.list()).toHaveLength(2);
+  });
+
+  it("importInvoices skips and counts a row in a locked month", async () => {
+    await service.create(sale({ date: "2026-09-05" }));
+    await service.lockMonth({ ym: "2026-09" });
+    const result = await service.importInvoices([
+      invoice({ number: "INV/2026/0001", date: "2026-09-20" }),
+      invoice({ number: "INV/2026/0002", date: "2026-10-12" }),
+    ]);
+    expect(result).toEqual({ created: 1, updated: 0, skippedLocked: 1 });
+    const all = await service.list();
+    expect(all.filter((e) => e.imported)).toHaveLength(1);
+    expect(all.find((e) => e.imported)?.number).toBe("INV/2026/0002");
+  });
+
+  it("import reports an invalid row and imports the others", async () => {
+    const controller = new LedgerController(service);
+    const result = await controller.import({
+      rows: [
+        invoice({ number: "INV/2026/0001" }),
+        { ...invoice({ number: "INV/2026/0002" }), vatAmount: 5 },
+        { ...invoice(), number: "" },
+      ],
+    });
+    expect(result).toEqual({ created: 1, updated: 0, skippedLocked: 0, invalid: ["INV/2026/0002 : HTVA + TVA doit égaler TVAC", expect.stringMatching(/^ligne 3 : /)] });
+    expect(await service.list()).toHaveLength(1);
+    const empty = await controller.import({ rows: [] }).catch((e) => e);
+    expect(empty).toBeInstanceOf(BadRequestException);
   });
 
   it("create computes ym from the date and defaults paid", async () => {

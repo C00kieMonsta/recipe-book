@@ -3,7 +3,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { AdminGuard } from "../auth/admin.guard";
 import { z } from "zod";
-import { createRecipeRequestSchema, importRecipeIngredientSchema, updateRecipeRequestSchema } from "@packages/types";
+import { createRecipeRequestSchema, importRecipeIngredientSchema, listRecipesQuerySchema, updateRecipeRequestSchema } from "@packages/types";
 import { RecipesService, type ImportRecipeRow } from "./recipes.service";
 import { S3Service } from "../shared/s3.service";
 import { randomUUID } from "crypto";
@@ -29,9 +29,11 @@ function mapRow(row: Record<string, string>): ImportRecipeRow | null {
   const name = (get("recette", "nom_recette", "nom", "name", "Recette", "Nom") || "").trim();
   if (!name) return null;
 
+  const category = (get("categorie", "Categorie", "Catégorie", "category", "Category") || "").trim();
   return {
     name,
     type: get("type", "Type") || "Buffet",
+    ...(category ? { category } : {}),
     portions: parseNum(get("portions", "Portions")) || 1,
     portionWeight: parseNum(get("poids_portion", "poids", "portion_weight", "Poids")) || 150,
     description: (get("description", "Description") || "").trim(),
@@ -49,9 +51,11 @@ function mapJsonRow(row: Record<string, unknown>): ImportRecipeRow | null {
   if (!name) return null;
   const ingredients = importIngredientsSchema.safeParse(row.ingredients ?? []);
   if (!ingredients.success) throw new BadRequestException({ recipe: name, issues: ingredients.error.issues });
+  const category = String(row.category || "").trim();
   return {
     name,
     type: String(row.type || "Buffet"),
+    ...(category ? { category } : {}),
     portions: Number(row.portions) || 1,
     portionWeight: Number(row.portionWeight) || 150,
     description: String(row.description || ""),
@@ -74,8 +78,13 @@ export class RecipesController {
   ) {}
 
   @Get()
-  async list() {
-    return this.recipes.getAll();
+  async list(@Query() query: unknown) {
+    const parsed = listRecipesQuerySchema.safeParse(query ?? {});
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const recipes = await this.recipes.getAll();
+    // The served category is filtered; type stays as an alias for older clients.
+    const category = parsed.data.category ?? parsed.data.type;
+    return category ? recipes.filter((r) => r.category === category) : recipes;
   }
 
   @Get("photo")

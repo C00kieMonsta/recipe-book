@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { randomUUID } from "crypto";
 import type {
   CreateLedgerEntryRequest,
+  ImportLedgerRow,
   LedgerEntry,
   LockMonthRequest,
   MonthClose,
@@ -12,6 +13,16 @@ import { DdbService } from "../shared/ddb.service";
 import { SettingsService } from "../settings/settings.service";
 
 const LOCKED = { code: "LOCKED", message: "Mois verrouillé" };
+
+export interface ImportInvoicesResult {
+  created: number;
+  updated: number;
+  skippedLocked: number;
+}
+
+// A typed monthly revenue is never an open invoice.
+const paidOf = (body: CreateLedgerEntryRequest): boolean =>
+  body.book === "ventes" ? body.kind === "ca_mensuel" || body.paid : false;
 
 @Injectable()
 export class LedgerService {
@@ -44,7 +55,7 @@ export class LedgerService {
       ...body,
       entryId: randomUUID(),
       ym: body.date.slice(0, 7),
-      paid: body.book === "ventes" ? body.paid : false,
+      paid: paidOf(body),
       createdAt: now,
       updatedAt: now,
     };
@@ -60,7 +71,7 @@ export class LedgerService {
       ...body,
       entryId: stored.entryId,
       ym: body.date.slice(0, 7),
-      paid: body.book === "ventes" ? body.paid : false,
+      paid: paidOf(body),
       createdAt: stored.createdAt,
       updatedAt: new Date().toISOString(),
       ...(stored.locked !== undefined && { locked: stored.locked }),
@@ -78,6 +89,52 @@ export class LedgerService {
       { paid, paymentMethod, paidAt, description, updatedAt: new Date().toISOString() },
     );
     return this.getOrFail(entryId);
+  }
+
+  // Invoices issued elsewhere, keyed by their number: a known number updates the entry, a new one creates a facture.
+  async importInvoices(rows: ImportLedgerRow[]): Promise<ImportInvoicesResult> {
+    const settings = await this.settings.get();
+    const items = (await this.ddb.scanAll(this.table)) as unknown as LedgerEntry[];
+    const byNumber = new Map<string, LedgerEntry>();
+    for (const e of items) {
+      if (e.book === "ventes" && e.imported === true && e.number) byNumber.set(e.number, e);
+    }
+    const result: ImportInvoicesResult = { created: 0, updated: 0, skippedLocked: 0 };
+    for (const row of rows) {
+      const ym = row.date.slice(0, 7);
+      const stored = byNumber.get(row.number);
+      if (settings.monthCloses?.[ym]?.lockedAt || stored?.locked) {
+        result.skippedLocked += 1;
+        continue;
+      }
+      const now = new Date().toISOString();
+      const fields = {
+        book: "ventes" as const,
+        kind: "facture" as const,
+        imported: true,
+        number: row.number,
+        date: row.date,
+        ym,
+        label: row.label,
+        htva: row.htva,
+        vatRate: row.vatRate,
+        vatAmount: row.vatAmount,
+        totalTvac: row.totalTvac,
+        paid: row.paid,
+        updatedAt: now,
+      };
+      const entry: LedgerEntry = stored
+        ? { ...stored, ...fields, entryId: stored.entryId, createdAt: stored.createdAt }
+        : { entryId: randomUUID(), ...fields, createdAt: now };
+      if (row.paidAt) entry.paidAt = row.paidAt;
+      else delete entry.paidAt;
+      if (row.prestationType) entry.prestationType = row.prestationType;
+      await this.ddb.put(this.table, entry as unknown as Record<string, unknown>);
+      byNumber.set(row.number, entry);
+      if (stored) result.updated += 1;
+      else result.created += 1;
+    }
+    return result;
   }
 
   async remove(entryId: string): Promise<void> {

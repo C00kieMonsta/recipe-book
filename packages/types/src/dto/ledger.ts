@@ -23,7 +23,7 @@ export const salesEntrySchema = z
   .object({
     ...base,
     book: z.literal("ventes"),
-    kind: z.enum(["facture", "acompte", "comptoir", "bon_cadeau", "note_de_credit", "commission", "autre"]),
+    kind: z.enum(["facture", "acompte", "comptoir", "bon_cadeau", "note_de_credit", "commission", "ca_mensuel", "autre"]),
     prestationType: z.string().optional(),
     refEntryId: z.string().optional(),
     paid: z.boolean().default(false),
@@ -80,3 +80,26 @@ export type LockMonthRequest = z.infer<typeof lockMonthSchema>;
 
 export const unlockMonthSchema = z.object({ ym: yearMonth, reason: z.string().trim().min(1) }).strict();
 export type UnlockMonthRequest = z.infer<typeof unlockMonthSchema>;
+
+// One invoice from an external export (Odoo); a credit note keeps negative amounts.
+export const importLedgerRowSchema = z
+  .object({
+    number: z.string().trim().min(1).max(40),
+    date: isoDate,
+    label: z.string().trim().min(1).max(120),
+    htva: money,
+    vatRate,
+    vatAmount: money,
+    totalTvac: money,
+    paid: z.boolean().default(false),
+    paidAt: isoDate.optional(),
+    prestationType: z.string().optional(),
+  })
+  .strict()
+  .refine(vatIdentity, "HTVA + TVA doit égaler TVAC");
+export type ImportLedgerRow = z.infer<typeof importLedgerRowSchema>;
+
+export const importLedgerSchema = z.object({ rows: z.array(importLedgerRowSchema).min(1).max(2000) }).strict();
+export type ImportLedgerRequest = z.infer<typeof importLedgerSchema>;
+// Alias kept so both names resolve.
+export const importLedgerRequestSchema = importLedgerSchema;

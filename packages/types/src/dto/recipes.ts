@@ -22,6 +22,8 @@ const recipePhotoSchema = z.object({
 
 export const createRecipeRequestSchema = z.object({
   name: z.string().min(1).trim(),
+  category: z.string().trim().min(1).max(40).optional(),
+  // Keeps its default so old importers pass; the service mirrors category into it.
   type: z.string().default("Buffet"),
   portions: z.number().int().positive().default(1),
   portionWeight: z.number().nonnegative().default(150),
@@ -53,5 +55,6 @@ export type ImportRecipeIngredient = z.infer<typeof importRecipeIngredientSchema
 export const listRecipesQuerySchema = z.object({
   q: z.string().optional(),
   type: z.string().optional(),
+  category: z.string().optional(),
 });
 export type ListRecipesQuery = z.infer<typeof listRecipesQuerySchema>;

@@ -4,6 +4,7 @@ export * from "./ingredients";
 export * from "./recipes";
 export * from "./settings";
 export * from "./events";
+export * from "./offers";
 export * from "./grocery-lists";
 export * from "./clients";
 export * from "./ledger";

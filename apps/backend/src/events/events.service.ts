@@ -1,10 +1,11 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import type {
   AddEventLineRequest,
   AddEventTaskRequest,
   AppEvent,
   CreateEventRequest,
+  EventAttachment,
   EventRecipeLine,
   EventTask,
   PatchEventLineRequest,
@@ -12,13 +13,23 @@ import type {
   PutEventLinesRequest,
   UpdateEventRequest,
 } from "@packages/types";
-import { shiftPrepDates, tasksOf } from "@packages/types";
+import { ATTACHMENT_TYPES, MAX_ATTACHMENTS, round2, shiftPrepDates, tasksOf } from "@packages/types";
 import { DdbService, UpdateOptions } from "../shared/ddb.service";
+import { S3Service } from "../shared/s3.service";
 
 type IncomingLine = Omit<EventRecipeLine, "lineId"> & { lineId?: string };
 type IncomingTask = Omit<EventTask, "taskId"> & { taskId?: string };
 // A line before normalizeLines: a patch may carry prepDate null to clear it.
 type LooseLine = Omit<EventRecipeLine, "prepDate"> & { prepDate?: string | null };
+
+// The multer fields the service reads; the controller passes the uploaded file as is.
+export type UploadedAttachment = { originalname: string; mimetype: string; size: number; buffer: Buffer };
+
+type PricingFields = Pick<UpdateEventRequest, "pricingMode" | "sellingTotal" | "sellingPricePerGuest" | "guestCount">;
+type PricingWrite = { sellingPricePerGuest?: number; sellingTotal?: number | null };
+
+// Text fields the editor can clear; an empty value is stored as a REMOVE.
+const CLEARABLE_TEXT = ["contactName", "contactPhone", "contactEmail", "deliveryAddress", "deliveryTime", "billingDetails"] as const;
 
 // Drops undefined values so a spread never clears a stored field the caller did not send.
 const definedEntries = <T extends object>(obj: T): Partial<T> =>
@@ -29,6 +40,14 @@ type NonNullFields<T> = { [K in keyof T]: Exclude<T[K], null> };
 // A null on create means "not set", so it is not stored as a NULL attribute.
 const withoutNull = <T extends object>(obj: T): NonNullFields<T> =>
   Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== null)) as NonNullFields<T>;
+
+// Maps "" to null for the clearable text fields and drops the server-owned attachments key.
+const sanitizeFields = <T extends object>(fields: T): T => {
+  const copy: Record<string, unknown> = { ...fields };
+  delete copy.attachments;
+  for (const key of CLEARABLE_TEXT) if (copy[key] === "") copy[key] = null;
+  return copy as T;
+};
 
 const fillLineIds = (lines: IncomingLine[]): EventRecipeLine[] =>
   lines.map((l) => ({ ...l, lineId: l.lineId ?? randomUUID() }));
@@ -56,11 +75,13 @@ const nextStamp = (previous?: string): string => {
   return new Date(Date.parse(previous) + 1).toISOString();
 };
 
+const attachmentsOf = (event: AppEvent): EventAttachment[] => event.attachments ?? [];
+
 @Injectable()
 export class EventsService {
   private get table() { return this.ddb.tables.events; }
 
-  constructor(private ddb: DdbService) {}
+  constructor(private ddb: DdbService, private s3: S3Service) {}
 
   async getAll(): Promise<AppEvent[]> {
     const items = (await this.ddb.scanAll(this.table)) as unknown as AppEvent[];
@@ -80,10 +101,10 @@ export class EventsService {
 
   async create(data: CreateEventRequest): Promise<AppEvent> {
     const now = new Date().toISOString();
-    const { costSnapshot, ...rest } = data;
+    const { costSnapshot, ...rest } = sanitizeFields(data);
     const event: AppEvent = {
       eventId: randomUUID(),
-      ...withoutNull(rest),
+      ...withoutNull({ ...rest, ...this.applyPricing(undefined, data) }),
       recipes: normalizeLines(fillLineIds(data.recipes), data.date),
       tasks: fillTaskIds(data.tasks),
       ...(costSnapshot && { costSnapshot: { ...costSnapshot, takenAt: now } }),
@@ -99,7 +120,7 @@ export class EventsService {
   async update(eventId: string, fields: UpdateEventRequest): Promise<AppEvent> {
     return this.withFreshEvent(eventId, async (stored) => {
       const now = new Date().toISOString();
-      const updates: Record<string, unknown> = { ...fields };
+      const updates: Record<string, unknown> = { ...sanitizeFields(fields), ...this.applyPricing(stored, fields) };
       if (fields.name) updates.nameLower = fields.name.toLowerCase();
       let recipes = fields.recipes ? this.mergeLines(stored.recipes, fields.recipes) : undefined;
       let tasks = fields.tasks ? this.mergeTasks(tasksOf(stored), fields.tasks) : undefined;
@@ -120,7 +141,10 @@ export class EventsService {
     });
   }
 
+  // Deletes the attachment objects best-effort before the item; an unknown event is a no-op.
   async delete(eventId: string): Promise<void> {
+    const stored = (await this.ddb.get(this.table, { eventId })) as AppEvent | null;
+    for (const a of stored ? attachmentsOf(stored) : []) await this.deleteObject(a.key);
     await this.ddb.delete(this.table, { eventId });
   }
 
@@ -185,6 +209,86 @@ export class EventsService {
     });
   }
 
+  // Uploads to S3 first, then appends under the guard; the object is removed when the write fails.
+  async addAttachment(eventId: string, file: UploadedAttachment): Promise<AppEvent> {
+    return this.withFreshEvent(eventId, async (stored) => {
+      const current = attachmentsOf(stored);
+      if (current.length >= MAX_ATTACHMENTS) throw new BadRequestException(`${MAX_ATTACHMENTS} pièces jointes maximum`);
+      const ext = ATTACHMENT_TYPES[file.mimetype];
+      if (ext === undefined) throw new BadRequestException("Format non pris en charge");
+      const attachmentId = randomUUID();
+      const key = `event-files/${eventId}/${attachmentId}${ext}`;
+      await this.s3.upload(key, file.buffer, file.mimetype);
+      const attachment: EventAttachment = {
+        attachmentId,
+        key,
+        name: file.originalname.trim().slice(0, 120) || `fichier${ext}`,
+        contentType: file.mimetype,
+        size: file.size,
+        addedAt: new Date().toISOString(),
+      };
+      try {
+        return await this.writeFields(stored, { attachments: [...current, attachment] });
+      } catch (err) {
+        await this.deleteObject(key);
+        throw err;
+      }
+    });
+  }
+
+  async renameAttachment(eventId: string, attachmentId: string, name: string): Promise<AppEvent> {
+    return this.withFreshEvent(eventId, (stored) => {
+      const current = attachmentsOf(stored);
+      if (!current.some((a) => a.attachmentId === attachmentId)) throw new NotFoundException("Attachment not found");
+      const attachments = current.map((a) => (a.attachmentId === attachmentId ? { ...a, name } : a));
+      return this.writeFields(stored, { attachments });
+    });
+  }
+
+  async removeAttachment(eventId: string, attachmentId: string): Promise<AppEvent> {
+    return this.withFreshEvent(eventId, async (stored) => {
+      const current = attachmentsOf(stored);
+      const target = current.find((a) => a.attachmentId === attachmentId);
+      if (!target) throw new NotFoundException("Attachment not found");
+      await this.deleteObject(target.key);
+      return this.writeFields(stored, { attachments: current.filter((a) => a.attachmentId !== attachmentId) });
+    });
+  }
+
+  async attachmentUrl(eventId: string, attachmentId: string): Promise<{ url: string }> {
+    const stored = await this.getOrFail(eventId);
+    const target = attachmentsOf(stored).find((a) => a.attachmentId === attachmentId);
+    if (!target) throw new NotFoundException("Attachment not found");
+    return { url: await this.s3.presignedUrl(target.key, { filename: target.name }) };
+  }
+
+  // In total mode the per-guest price is derived from the total; back in par_convive the total is removed.
+  private applyPricing(stored: AppEvent | undefined, fields: PricingFields): PricingWrite {
+    const mode = fields.pricingMode ?? stored?.pricingMode ?? "par_convive";
+    if (mode === "total") {
+      const touched = ["pricingMode", "sellingTotal", "guestCount", "sellingPricePerGuest"].some((k) => k in fields);
+      if (!touched) return {};
+      const total = fields.sellingTotal ?? stored?.sellingTotal ?? 0;
+      const guests = (fields.guestCount ?? stored?.guestCount) || 1;
+      return { sellingPricePerGuest: round2(total / guests) };
+    }
+    const hadTotal = stored?.pricingMode === "total" || stored?.sellingTotal !== undefined;
+    if (!hadTotal && fields.sellingTotal === undefined) return {};
+    return {
+      sellingTotal: null,
+      ...(fields.sellingPricePerGuest !== undefined && { sellingPricePerGuest: fields.sellingPricePerGuest }),
+    };
+  }
+
+  // Best-effort: a missing object must not block the event write.
+  private async deleteObject(key: string): Promise<void> {
+    try {
+      await this.s3.delete(key);
+    } catch (err) {
+      console.warn(JSON.stringify({ action: "deleteAttachmentObject", key, error: String(err) }));
+    }
+  }
+
   // Runs op on a fresh read and retries up to four times, with a short jittered pause, when another write moved updatedAt in between.
   private async withFreshEvent(eventId: string, op: (stored: AppEvent) => Promise<AppEvent>): Promise<AppEvent> {
     for (let attempt = 0; ; attempt++) {
@@ -209,7 +313,7 @@ export class EventsService {
   // Writes the arrays only when updatedAt still matches the read they were computed from.
   private async writeFields(
     stored: AppEvent,
-    fields: { recipes?: EventRecipeLine[]; tasks?: EventTask[] },
+    fields: { recipes?: EventRecipeLine[]; tasks?: EventTask[]; attachments?: EventAttachment[] },
   ): Promise<AppEvent> {
     const updates = { ...definedEntries(fields), updatedAt: nextStamp(stored.updatedAt) };
     await this.ddb.update(this.table, { eventId: stored.eventId }, updates, this.guardFor(stored));

@@ -4,6 +4,7 @@ import {
   dayLabel,
   daysBetween,
   endOfWeekSunday,
+  fmtTime,
   isoWeekOf,
   longDayLabel,
   monthLabel,
@@ -137,5 +138,20 @@ describe("shortDayLabel", () => {
   it("gives the short weekday with a dot and the day number", () => {
     expect(shortDayLabel("2026-10-15")).toBe("jeu. 15");
     expect(shortDayLabel("2026-10-17")).toBe("sam. 17");
+  });
+});
+
+describe("fmtTime", () => {
+  it("prints HH:MM as 11h30 and drops the leading zero of the hour", () => {
+    expect(fmtTime("11:30")).toBe("11h30");
+    expect(fmtTime("09:05")).toBe("9h05");
+    expect(fmtTime("00:00")).toBe("0h00");
+    expect(fmtTime("23:59")).toBe("23h59");
+  });
+  it("gives an empty string for an invalid value", () => {
+    expect(fmtTime("")).toBe("");
+    expect(fmtTime("9h30")).toBe("");
+    expect(fmtTime("24:00")).toBe("");
+    expect(fmtTime("11:30:00")).toBe("");
   });
 });

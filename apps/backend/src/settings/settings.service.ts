@@ -1,11 +1,6 @@
 import { ConflictException, Injectable } from "@nestjs/common";
 import type { AppSettings } from "@packages/types";
-import {
-  DEFAULT_PRESTATION_TYPES,
-  DEFAULT_RECIPE_CATEGORIES,
-  DEFAULT_SUPPLIERS,
-  upgradeCourses,
-} from "@packages/types";
+import { DEFAULT_PRESTATION_TYPES, DEFAULT_SUPPLIERS, upgradeCourses } from "@packages/types";
 import { DdbService, UpdateOptions } from "../shared/ddb.service";
 
 const GLOBAL_ID = "global";
@@ -21,14 +16,16 @@ const guardFor = (current: { updatedAt?: unknown }): UpdateOptions =>
     : { condition: "attribute_not_exists(#ua)", names: { "#ua": "updatedAt" } };
 
 // company and ledgerStartYm have no default and stay absent until set.
-// A legacy five-item courses list is served as the six defaults; nothing is written until the next save.
+// A legacy courses list is served upgraded and recipeCategories is served equal to courses; nothing is written until the next save.
 function withDefaults(stored: Partial<AppSettings>): AppSettings {
+  const courses = upgradeCourses(stored.courses);
   return {
     ...stored,
     settingsId: GLOBAL_ID,
-    recipeCategories: stored.recipeCategories ?? DEFAULT_RECIPE_CATEGORIES,
+    recipeCategories: courses,
     suppliers: stored.suppliers ?? DEFAULT_SUPPLIERS,
-    courses: upgradeCourses(stored.courses),
+    courses,
+    invoicing: stored.invoicing ?? "app",
     prestationTypes: stored.prestationTypes ?? DEFAULT_PRESTATION_TYPES,
     fixedCharges: stored.fixedCharges ?? [],
     objectives: stored.objectives ?? {},
@@ -56,6 +53,8 @@ export class SettingsService {
   async update(fields: SettingsUpdate): Promise<AppSettings> {
     const { updatedAt: expected, ...rest } = fields;
     const given = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
+    // Served as an alias of courses, so an old client that still sends it writes nothing for that key.
+    delete given.recipeCategories;
     const updatedAt = new Date().toISOString();
     const key = { settingsId: GLOBAL_ID };
     const current = await this.ddb.get(this.table, key);

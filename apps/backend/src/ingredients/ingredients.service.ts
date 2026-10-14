@@ -6,6 +6,7 @@ import type {
   GroceryList,
   GroceryListItem,
   ImportIngredientRow,
+  ImportIngredientsOptions,
   Ingredient,
   Recipe,
   RecipeIngredient,
@@ -29,8 +30,8 @@ export type MergeResult =
   | { ok: true; recipesUpdated: number; listsUpdated: number; removed: number; preexisting: number }
   | { ok: false; recipesUpdated: number; listsUpdated: number; failures: MergeFailure[]; preexisting: number };
 
-export interface ImportIngredientsResult { created: number; updated: number; unmatched: string[] }
-
+// unmatched: the unit family differs; notFound: no match in prices mode (nothing created).
+export interface ImportIngredientsResult { created: number; updated: number; unmatched: string[]; notFound: string[] }
 
 // Finds an ingredient by name: exact nameLower, then normalized name, then normalized alias.
 export class IngredientLookup {
@@ -165,6 +166,7 @@ export class IngredientsService {
       ingredientId: randomUUID(),
       ...data,
       nameLower: data.name.toLowerCase(),
+      priceUpdatedAt: now,
       createdAt: now,
       updatedAt: now,
     };
@@ -177,11 +179,14 @@ export class IngredientsService {
     if (fields.unit && PRICE_TO_QTY_UNIT[fields.unit] !== PRICE_TO_QTY_UNIT[stored.unit]) {
       await this.assertUnused(ingredientId, "UNIT_IN_USE");
     }
+    const now = new Date().toISOString();
     const updates: Record<string, unknown> = {
       ...fields,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
     };
     if (fields.name) updates.nameLower = fields.name.toLowerCase();
+    // An unchanged price counts as a confirmation.
+    if ("price" in fields) updates.priceUpdatedAt = now;
     await this.ddb.update(this.table, { ingredientId }, updates);
     return this.getOrFail(ingredientId);
   }
@@ -314,19 +319,25 @@ export class IngredientsService {
     return { ok: true, recipesUpdated, listsUpdated, removed: mergedRows.length, preexisting };
   }
 
-  async importIngredients(rows: ImportIngredientRow[]): Promise<ImportIngredientsResult> {
+  async importIngredients(
+    rows: ImportIngredientRow[],
+    options: ImportIngredientsOptions = { mode: "all" },
+  ): Promise<ImportIngredientsResult> {
     const existing = await this.getAll();
     const lookup = new IngredientLookup(existing);
     const now = new Date().toISOString();
+    const pricesOnly = options.mode === "prices";
 
     const toCreate: Ingredient[] = [];
     const toUpdate: Array<{ ingredientId: string; fields: Record<string, unknown> }> = [];
     const unmatched: string[] = [];
+    const notFound: string[] = [];
 
     for (const row of rows) {
       const name = row.nom.trim();
       const nameLower = name.toLowerCase();
       if (!nameLower) continue;
+      const supplier = row.fournisseur || options.supplier || "";
 
       const match = lookup.find(name);
       if (match) {
@@ -339,11 +350,14 @@ export class IngredientsService {
           fields: {
             price: row.prix_htva,
             unit: row.unite,
-            supplier: row.fournisseur || match.supplier,
+            supplier: supplier || match.supplier,
             comment: row.commentaire || match.comment,
+            priceUpdatedAt: now,
             updatedAt: now,
           },
         });
+      } else if (pricesOnly) {
+        notFound.push(name);
       } else {
         const ingredient: Ingredient = {
           ingredientId: randomUUID(),
@@ -351,8 +365,9 @@ export class IngredientsService {
           nameLower,
           price: row.prix_htva,
           unit: row.unite,
-          supplier: row.fournisseur,
+          supplier,
           comment: row.commentaire,
+          priceUpdatedAt: now,
           createdAt: now,
           updatedAt: now,
         };
@@ -371,6 +386,6 @@ export class IngredientsService {
       this.ddb.update(this.table, { ingredientId }, fields),
     ));
 
-    return { created: toCreate.length, updated: toUpdate.length, unmatched };
+    return { created: toCreate.length, updated: toUpdate.length, unmatched, notFound };
   }
 }

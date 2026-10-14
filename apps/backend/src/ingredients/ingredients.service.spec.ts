@@ -249,6 +249,14 @@ describe("IngredientsService", () => {
       ]);
     });
 
+    it("keeps the survivor's priceUpdatedAt", async () => {
+      await ddb.put("ingredients", ing({ ingredientId: "oeuf", name: "Oeuf", priceUpdatedAt: "2025-06-01T00:00:00.000Z" }) as unknown as Item);
+      await ddb.put("ingredients", ing({ ingredientId: "oeufs", name: "Oeufs", priceUpdatedAt: "2026-03-01T00:00:00.000Z" }) as unknown as Item);
+      await service.merge("oeuf", ["oeufs"]);
+      const survivor = await ddb.get("ingredients", { ingredientId: "oeuf" }) as unknown as Ingredient;
+      expect(survivor.priceUpdatedAt).toBe("2025-06-01T00:00:00.000Z");
+    });
+
     it("404s when the survivor is missing", async () => {
       await expect(service.merge("ghost", ["oeufs"])).rejects.toBeInstanceOf(NotFoundException);
       expect(ddb.updates).toHaveLength(0);
@@ -341,6 +349,31 @@ describe("IngredientsService", () => {
       expect(updated.price).toBe(0.4);
       expect(updated.unit).toBe("€/pièce");
     });
+
+    it("sets priceUpdatedAt on an update with price, even unchanged, and leaves it on an update without price", async () => {
+      await ddb.put("ingredients", ing({ ingredientId: "sel", name: "Sel", price: 2, priceUpdatedAt: "2025-01-01T00:00:00.000Z" }) as unknown as Item);
+
+      const renamed = await service.update("sel", { name: "Sel fin" });
+      expect(renamed.priceUpdatedAt).toBe("2025-01-01T00:00:00.000Z");
+      expect("priceUpdatedAt" in ddb.updates[0].fields).toBe(false);
+
+      const confirmed = await service.update("sel", { price: 2 });
+      expect(confirmed.price).toBe(2);
+      expect(confirmed.priceUpdatedAt).not.toBe("2025-01-01T00:00:00.000Z");
+      expect(confirmed.priceUpdatedAt).toBe(confirmed.updatedAt);
+
+      const never = await service.update("oeuf", { supplier: "Vds" });
+      expect(never.priceUpdatedAt).toBeUndefined();
+    });
+  });
+
+  describe("create", () => {
+    it("sets priceUpdatedAt to the creation time", async () => {
+      const created = await service.create({ name: "Sucre", price: 1.2, unit: "€/kg", supplier: "Barn" });
+      expect(created.priceUpdatedAt).toBe(created.createdAt);
+      const stored = await ddb.get("ingredients", { ingredientId: created.ingredientId }) as unknown as Ingredient;
+      expect(stored.priceUpdatedAt).toBe(created.createdAt);
+    });
   });
 
   describe("delete", () => {
@@ -410,7 +443,7 @@ describe("IngredientsService", () => {
       const result = await service.importIngredients([
         { nom: "Oeufs", prix_htva: 0.4, unite: "€/pièce", fournisseur: "Vds" },
       ]);
-      expect(result).toEqual({ created: 0, updated: 1, unmatched: [] });
+      expect(result).toEqual({ created: 0, updated: 1, unmatched: [], notFound: [] });
       const survivor = await ddb.get("ingredients", { ingredientId: "oeuf" }) as unknown as Ingredient;
       expect(survivor.price).toBe(0.4);
       expect(survivor.supplier).toBe("Vds");
@@ -422,7 +455,7 @@ describe("IngredientsService", () => {
       const result = await service.importIngredients([
         { nom: "OEUF BIO", prix_htva: 0.5, unite: "€/pièce", fournisseur: "Vds" },
       ]);
-      expect(result).toEqual({ created: 0, updated: 1, unmatched: [] });
+      expect(result).toEqual({ created: 0, updated: 1, unmatched: [], notFound: [] });
       expect(ddb.updates[0].key).toEqual({ ingredientId: "oeuf-bio-live" });
     });
 
@@ -430,12 +463,12 @@ describe("IngredientsService", () => {
       await ddb.put("ingredients", ing({ ingredientId: "farine-t55", name: "Farine T55", unit: "€/kg", supplier: "Metro" }) as unknown as Item);
 
       const kept = await service.importIngredients([{ nom: "Farine T55", prix_htva: 1.3, unite: "€/kg", fournisseur: "" }]);
-      expect(kept).toEqual({ created: 0, updated: 1, unmatched: [] });
+      expect(kept).toEqual({ created: 0, updated: 1, unmatched: [], notFound: [] });
       expect(ddb.updates[0].key).toEqual({ ingredientId: "farine-t55" });
       expect(ddb.updates[0].fields).toMatchObject({ price: 1.3, supplier: "Metro" });
 
       const replaced = await service.importIngredients([{ nom: "Farine T55", prix_htva: 1.4, unite: "€/kg", fournisseur: "Colruyt" }]);
-      expect(replaced).toEqual({ created: 0, updated: 1, unmatched: [] });
+      expect(replaced).toEqual({ created: 0, updated: 1, unmatched: [], notFound: [] });
       expect(ddb.updates[1].fields).toMatchObject({ price: 1.4, supplier: "Colruyt" });
       const stored = await ddb.get("ingredients", { ingredientId: "farine-t55" }) as unknown as Ingredient;
       expect(stored.supplier).toBe("Colruyt");
@@ -446,11 +479,52 @@ describe("IngredientsService", () => {
         { nom: "Farine", prix_htva: 2, unite: "€/pièce", fournisseur: "Vds" },
         { nom: "Sucre", prix_htva: 1.5, unite: "€/kg", fournisseur: "Vds" },
       ]);
-      expect(result).toEqual({ created: 1, updated: 0, unmatched: ["Farine"] });
+      expect(result).toEqual({ created: 1, updated: 0, unmatched: ["Farine"], notFound: [] });
       const farine = await ddb.get("ingredients", { ingredientId: "farine" }) as unknown as Ingredient;
       expect(farine.unit).toBe("€/kg");
       expect(farine.price).toBe(1);
       expect(ddb.rows("ingredients").size).toBe(3);
+    });
+
+    it("sets priceUpdatedAt on created and updated rows", async () => {
+      await service.importIngredients([
+        { nom: "Oeuf", prix_htva: 0.35, unite: "€/pièce", fournisseur: "" },
+        { nom: "Sucre", prix_htva: 1.5, unite: "€/kg", fournisseur: "Vds" },
+      ]);
+      const oeuf = await ddb.get("ingredients", { ingredientId: "oeuf" }) as unknown as Ingredient;
+      expect(oeuf.priceUpdatedAt).toBe(oeuf.updatedAt);
+      expect(oeuf.priceUpdatedAt).not.toBe("2026-01-01T00:00:00.000Z");
+      const sucre = [...ddb.rows("ingredients").values()].find((i) => i.name === "Sucre") as unknown as Ingredient;
+      expect(sucre.priceUpdatedAt).toBe(sucre.createdAt);
+      const farine = await ddb.get("ingredients", { ingredientId: "farine" }) as unknown as Ingredient;
+      expect(farine.priceUpdatedAt).toBeUndefined();
+    });
+
+    it("prices mode updates the matched price, lists notFound and creates nothing", async () => {
+      const result = await service.importIngredients([
+        { nom: "Oeufs", prix_htva: 0.45, unite: "€/pièce", fournisseur: "" },
+        { nom: "Filet de poulet 1 kg", prix_htva: 9.9, unite: "€/kg", fournisseur: "" },
+        { nom: "Farine", prix_htva: 2, unite: "€/pièce", fournisseur: "" },
+      ], { mode: "prices" });
+      expect(result).toEqual({ created: 0, updated: 1, unmatched: ["Farine"], notFound: ["Filet de poulet 1 kg"] });
+      const oeuf = await ddb.get("ingredients", { ingredientId: "oeuf" }) as unknown as Ingredient;
+      expect(oeuf.price).toBe(0.45);
+      expect(oeuf.priceUpdatedAt).toBe(oeuf.updatedAt);
+      expect(ddb.rows("ingredients").size).toBe(2);
+    });
+
+    it("fills rows without a supplier from options.supplier and leaves a row's own", async () => {
+      const result = await service.importIngredients([
+        { nom: "Oeuf", prix_htva: 0.4, unite: "€/pièce", fournisseur: "" },
+        { nom: "Sucre", prix_htva: 1.5, unite: "€/kg", fournisseur: "" },
+        { nom: "Sel", prix_htva: 0.8, unite: "€/kg", fournisseur: "Delhaize" },
+      ], { mode: "all", supplier: "Vds" });
+      expect(result).toEqual({ created: 2, updated: 1, unmatched: [], notFound: [] });
+      const oeuf = await ddb.get("ingredients", { ingredientId: "oeuf" }) as unknown as Ingredient;
+      expect(oeuf.supplier).toBe("Vds");
+      const rows = [...ddb.rows("ingredients").values()];
+      expect(rows.find((i) => i.name === "Sucre")?.supplier).toBe("Vds");
+      expect(rows.find((i) => i.name === "Sel")?.supplier).toBe("Delhaize");
     });
   });
 });

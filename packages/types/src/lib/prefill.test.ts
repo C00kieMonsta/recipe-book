@@ -3,7 +3,7 @@ import type { Client } from "../entities/client";
 import type { AppEvent } from "../entities/event";
 import type { LedgerEntry } from "../entities/ledger";
 import type { AppSettings } from "../entities/settings";
-import { depositsForEvents, eventBillingStatus, lastDayOfMonth, prefillForClientMonth, prefillFromEvent } from "./prefill";
+import { depositsForEvents, eventBillingStatus, lastDayOfMonth, monthlyRevenueEntry, prefillForClientMonth, prefillFromEvent } from "./prefill";
 
 let seq = 0;
 
@@ -73,6 +73,7 @@ describe("prefillFromEvent", () => {
     expect(p).toEqual({
       revenuePrevu: 1487.5,
       acomptesRecus: 750,
+      extraEntries: [],
       entry: {
         book: "ventes",
         kind: "facture",
@@ -104,6 +105,82 @@ describe("prefillFromEvent", () => {
     const custom: Pick<AppSettings, "prestationTypes"> = { prestationTypes: [{ key: "menu_a_emporter", label: "Menu", defaultVatRate: 12 }] };
     expect(prefillFromEvent(noType, hoona, [], custom, "facture").entry.vatRate).toBe(12);
     expect(prefillFromEvent(event({ eventId: "y", date: "2026-10-01" }), undefined, [], settings, "facture").entry).toMatchObject({ vatRate: 0, vatAmount: 0, totalTvac: 200 });
+  });
+
+  it("invoices the food at its rate and the billed lines in one extra entry per rate", () => {
+    const ev = event({
+      eventId: "dupont",
+      name: "Mariage Dupont",
+      date: "2026-10-17",
+      clientId: "hoona",
+      guestCount: 60,
+      sellingPricePerGuest: 40,
+      vatRate: 12,
+      revenueLines: [
+        { label: "Service", amount: 450, vatRate: 21 },
+        { label: "Livraison", amount: 50, vatRate: 21 },
+      ],
+    });
+    const p = prefillFromEvent(ev, hoona, [], settings, "facture");
+    expect(p.revenuePrevu).toBe(2900);
+    expect(p.entry).toMatchObject({ kind: "facture", label: "Hoona", htva: 2400, vatRate: 12, vatAmount: 288, totalTvac: 2688, eventIds: ["dupont"] });
+    expect(p.extraEntries).toHaveLength(1);
+    expect(p.extraEntries[0]).toEqual({
+      book: "ventes",
+      kind: "facture",
+      date: "2026-10-17",
+      label: "Hoona · service, livraison, autres",
+      prestationType: "menu_a_emporter",
+      clientId: "hoona",
+      eventIds: ["dupont"],
+      htva: 500,
+      vatRate: 21,
+      vatAmount: 105,
+      totalTvac: 605,
+      paid: false,
+    });
+    expect(createLedgerEntrySchema.safeParse(p.extraEntries[0]).success).toBe(true);
+  });
+
+  it("takes deposits off the food part only and gives a deposit no extra entries", () => {
+    const ev = event({
+      eventId: "dupont",
+      date: "2026-10-17",
+      guestCount: 60,
+      sellingPricePerGuest: 40,
+      vatRate: 12,
+      revenueLines: [{ label: "Service", amount: 450, vatRate: 21 }],
+    });
+    const deposit = entry({ date: "2026-09-01", htva: 700, kind: "acompte", eventIds: ["dupont"], paid: true });
+    const invoice = prefillFromEvent(ev, undefined, [deposit], settings, "facture");
+    expect(invoice).toMatchObject({ revenuePrevu: 2850, acomptesRecus: 700 });
+    expect(invoice.entry.htva).toBe(1700);
+    expect(invoice.extraEntries.map((e) => e.htva)).toEqual([450]);
+    const acompte = prefillFromEvent(ev, undefined, [], settings, "acompte");
+    expect(acompte.entry).toMatchObject({ kind: "acompte", htva: 2400, paid: true });
+    expect(acompte.extraEntries).toEqual([]);
+  });
+
+  it("uses the typed total in total mode and groups lines by rate in ascending order", () => {
+    const ev = event({
+      eventId: "brunch",
+      date: "2026-10-17",
+      guestCount: 3,
+      sellingPricePerGuest: 333.33,
+      pricingMode: "total",
+      sellingTotal: 1000,
+      revenueLines: [
+        { label: "Service", amount: 100, vatRate: 21 },
+        { label: "Boissons", amount: 60, vatRate: 6 },
+        { label: "Livraison", amount: 25, vatRate: 21 },
+      ],
+    });
+    const p = prefillFromEvent(ev, undefined, [], settings, "facture");
+    expect(p.entry.htva).toBe(1000);
+    expect(p.extraEntries.map((e) => [e.vatRate, e.htva])).toEqual([
+      [6, 60],
+      [21, 125],
+    ]);
   });
 });
 
@@ -151,6 +228,56 @@ describe("prefillForClientMonth", () => {
     const p = prefillForClientMonth(hoona, events, covered, settings, "2026-10");
     expect(p.events).toEqual([]);
     expect(p.entry).toMatchObject({ htva: 0, totalTvac: 0, eventIds: [] });
+    expect(p.extraEntries).toEqual([]);
+  });
+
+  it("sums the billed lines across events per rate and keeps the food in the main entry", () => {
+    const withLines = events.map((e) =>
+      e.eventId === "oct-3"
+        ? { ...e, revenueLines: [{ label: "Service", amount: 100, vatRate: 21 as const }, { label: "Boissons", amount: 30, vatRate: 6 as const }] }
+        : e.eventId === "oct-10"
+          ? { ...e, revenueLines: [{ label: "Livraison", amount: 40, vatRate: 21 as const }] }
+          : e,
+    );
+    const p = prefillForClientMonth(hoona, withLines, entries, settings, "2026-10");
+    expect(p).toMatchObject({ revenuePrevu: 1202.5, acomptesRecus: 100 });
+    expect(p.entry).toMatchObject({ htva: 932.5, vatRate: 6, eventIds: ["sep-15", "oct-3", "oct-10"] });
+    expect(p.byMonth.map((g) => g.revenue)).toEqual([360, 842.5]);
+    expect(p.extraEntries.map((e) => [e.vatRate, e.htva, e.eventIds])).toEqual([
+      [6, 30, ["oct-3"]],
+      [21, 140, ["oct-3", "oct-10"]],
+    ]);
+    expect(p.extraEntries[0]).toMatchObject({
+      kind: "facture",
+      date: "2026-10-31",
+      label: "Hoona · service, livraison, autres",
+      prestationType: "menu_a_emporter",
+      clientId: "hoona",
+      paid: false,
+    });
+    for (const e of p.extraEntries) expect(createLedgerEntrySchema.safeParse(e).success).toBe(true);
+  });
+});
+
+describe("monthlyRevenueEntry", () => {
+  it("builds a paid ca_mensuel entry on the last day of the month", () => {
+    const e = monthlyRevenueEntry("2026-10", 1200, 12);
+    expect(e).toEqual({
+      book: "ventes",
+      kind: "ca_mensuel",
+      date: "2026-10-31",
+      label: "CA · Octobre 2026",
+      htva: 1200,
+      vatRate: 12,
+      vatAmount: 144,
+      totalTvac: 1344,
+      paid: true,
+    });
+    expect(createLedgerEntrySchema.safeParse(e).success).toBe(true);
+  });
+
+  it("keeps a given label and handles February", () => {
+    expect(monthlyRevenueEntry("2024-02", 100, 0, "Comptoir février")).toMatchObject({ date: "2024-02-29", label: "Comptoir février", vatAmount: 0, totalTvac: 100 });
   });
 });
 

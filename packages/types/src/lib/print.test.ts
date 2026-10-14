@@ -119,10 +119,46 @@ describe("weekPrintPages, whole week", () => {
     expect(rows.map((r) => [r.label, r.course])).toEqual([
       ["Poulet basquaise", "Plat"],
       ["Tarte citron", "Dessert"],
-      ["Sablés bretons", "Mignardises"],
       ["Mini quiches", "Autre"],
+      ["Sablés bretons", "Autre"],
     ]);
     expect(rows[0]).toMatchObject({ kind: "recipe", done: false, portions: 10, initials: [] });
+    const withMignardises = weekPrintPages(input({ events: [ev], courses: [...DEFAULT_COURSES, "Mignardises"] }));
+    expect(withMignardises[0].sections[0].blocks[0].rows.map((r) => r.course)).toEqual(["Plat", "Dessert", "Mignardises", "Autre"]);
+  });
+
+  it("captions an event-day block with the delivery time and address", () => {
+    const delivered = event({
+      eventId: "Mariage Dupont",
+      date: "2026-10-14",
+      deliveryTime: "11:30",
+      deliveryAddress: "Rue des Lilas 4",
+      recipes: [line("poulet")],
+    });
+    const plain = event({ eventId: "Zèbre", date: "2026-10-14", recipes: [line("tarte")] });
+    const [page] = weekPrintPages(input({ events: [plain, delivered] }));
+    const blocks = page.sections[0].blocks;
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].delivery).toBe("Livraison 11h30 · Rue des Lilas 4");
+    expect(blocks[1].delivery).toBeUndefined();
+    expect("delivery" in blocks[1]).toBe(false);
+  });
+
+  it("prints either delivery part alone and none on a moved-in block", () => {
+    const timeOnly = event({ eventId: "A", date: "2026-10-14", deliveryTime: "09:05", recipes: [line("poulet")] });
+    const addressOnly = event({ eventId: "B", date: "2026-10-14", deliveryAddress: "  Grand-Place 1 ", recipes: [line("poulet")] });
+    const badTime = event({ eventId: "C", date: "2026-10-14", deliveryTime: "9h30", recipes: [line("poulet")] });
+    const [page] = weekPrintPages(input({ events: [timeOnly, addressOnly, badTime] }));
+    expect(page.sections[0].blocks.map((b) => b.delivery)).toEqual(["Livraison 9h05", "Livraison Grand-Place 1", undefined]);
+    const moved = event({
+      eventId: "Mariage Dupont",
+      date: "2026-10-17",
+      deliveryTime: "11:30",
+      recipes: [line("sables", { prepDate: "2026-10-15" })],
+    });
+    const pages = weekPrintPages(input({ events: [moved] }));
+    expect(pages[0].sections[0].blocks[0].movedIn).toBe(true);
+    expect(pages[0].sections[0].blocks[0].delivery).toBeUndefined();
   });
 
   it("prints a moved line under its event on the prep day, with a note on the event day", () => {

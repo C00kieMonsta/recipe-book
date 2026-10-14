@@ -1,12 +1,29 @@
-import { Controller, Get, Post, Patch, Put, Delete, Param, Body, BadRequestException, UseGuards } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Put,
+  Delete,
+  Param,
+  Body,
+  BadRequestException,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { AdminGuard } from "../auth/admin.guard";
 import {
+  ATTACHMENT_TYPES,
+  MAX_ATTACHMENT_BYTES,
   addEventLineSchema,
   addEventTaskSchema,
   createEventRequestSchema,
   patchEventLineSchema,
   patchEventTaskSchema,
   putEventLinesSchema,
+  renameAttachmentSchema,
   updateEventRequestSchema,
 } from "@packages/types";
 import { EventsService } from "./events.service";
@@ -89,5 +106,35 @@ export class EventsController {
   @Delete(":id/tasks/:taskId")
   async removeTask(@Param("id") id: string, @Param("taskId") taskId: string) {
     return this.events.removeTask(id, taskId);
+  }
+
+  // A file over the size limit surfaces as 413 through Nest's multer mapping.
+  @Post(":id/attachments")
+  @UseInterceptors(FileInterceptor("file", {
+    limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 },
+    fileFilter: (_req, f, cb) => cb(null, f.mimetype in ATTACHMENT_TYPES),
+  }))
+  async addAttachment(@Param("id") id: string, @UploadedFile() file?: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException("Fichier manquant ou format non pris en charge (PDF, image, Word, Excel ou texte)");
+    }
+    return this.events.addAttachment(id, file);
+  }
+
+  @Patch(":id/attachments/:attachmentId")
+  async renameAttachment(@Param("id") id: string, @Param("attachmentId") attachmentId: string, @Body() body: unknown) {
+    const parsed = renameAttachmentSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    return this.events.renameAttachment(id, attachmentId, parsed.data.name);
+  }
+
+  @Delete(":id/attachments/:attachmentId")
+  async removeAttachment(@Param("id") id: string, @Param("attachmentId") attachmentId: string) {
+    return this.events.removeAttachment(id, attachmentId);
+  }
+
+  @Get(":id/attachments/:attachmentId/url")
+  async attachmentUrl(@Param("id") id: string, @Param("attachmentId") attachmentId: string) {
+    return this.events.attachmentUrl(id, attachmentId);
   }
 }

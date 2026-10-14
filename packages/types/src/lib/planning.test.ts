@@ -1,14 +1,21 @@
 import type { AppEvent, EventRecipeLine } from "../entities/event";
 import type { Person } from "../entities/settings";
-import { DEFAULT_COURSES, LEGACY_DEFAULT_COURSES } from "../entities/settings";
+import { DEFAULT_COURSES, LEGACY_DEFAULT_COURSES, LEGACY_DEFAULT_COURSES_V2 } from "../entities/settings";
+import { sumMoney } from "./money";
 import {
   assigneesOf,
+  billingFromClient,
+  categoryOptions,
   courseIndex,
+  courseOf,
   dayItems,
   filterByPerson,
+  foodRevenue,
   groupByCourse,
   groupByPerson,
   groupByRecipe,
+  incompleteCount,
+  isIncompleteRecipe,
   isMoved,
   isWeekdayLabel,
   monthSignedRevenue,
@@ -19,6 +26,10 @@ import {
   prepDateOf,
   prepLinesForDate,
   prepTasksForDate,
+  pricePerGuestOf,
+  recipeCategoryOf,
+  revenueLinesTotal,
+  revenueTvac,
   shiftPrepDates,
   shortEventName,
   signedRevenue,
@@ -27,6 +38,7 @@ import {
   tasksOf,
   tasksOn,
   upgradeCourses,
+  vatBreakdown,
   weekPlan,
   type DayItem,
   type RecipeLookup,
@@ -57,21 +69,24 @@ function event(partial: Partial<AppEvent> & Pick<AppEvent, "eventId" | "date">):
   };
 }
 
+const SEVEN = [...DEFAULT_COURSES, "Mignardises"];
+
 describe("courseIndex", () => {
-  it("returns the position in the list", () => {
+  it("returns the position in the six-value list", () => {
+    expect(DEFAULT_COURSES).toEqual(["Apéritif", "Entrée", "Plat", "Walking dinner", "Buffet", "Dessert"]);
     expect(courseIndex("Plat", DEFAULT_COURSES)).toBe(2);
+    expect(courseIndex("Dessert", DEFAULT_COURSES)).toBe(5);
   });
-  it("sends undefined and unknown values under Autre", () => {
-    expect(courseIndex(undefined, DEFAULT_COURSES)).toBe(5);
-    expect(courseIndex("Fromage", DEFAULT_COURSES)).toBe(5);
-  });
-  it("places Mignardises between Dessert and Autre", () => {
-    expect(courseIndex("Dessert", DEFAULT_COURSES)).toBe(3);
-    expect(courseIndex("Mignardises", DEFAULT_COURSES)).toBe(4);
-    expect(courseIndex("Autre", DEFAULT_COURSES)).toBe(5);
-  });
-  it("sorts unknown values last when Autre is not in the list", () => {
+  it("sends undefined, unknown values and Autre last when Autre is not in the list", () => {
+    expect(courseIndex(undefined, DEFAULT_COURSES)).toBe(6);
+    expect(courseIndex("Fromage", DEFAULT_COURSES)).toBe(6);
+    expect(courseIndex("Mignardises", DEFAULT_COURSES)).toBe(6);
+    expect(courseIndex("Autre", DEFAULT_COURSES)).toBe(6);
     expect(courseIndex("Fromage", ["Entrée", "Plat"])).toBe(2);
+  });
+  it("places Mignardises after Dessert when the list carries it, and unknown values with Autre", () => {
+    expect(courseIndex("Mignardises", SEVEN)).toBe(6);
+    expect(courseIndex("Fromage", [...SEVEN, "Autre"])).toBe(7);
   });
 });
 
@@ -89,13 +104,14 @@ describe("sortEventLines", () => {
     expect(sorted.map((l) => l.lineId)).toEqual(["d", "f", "c", "b", "a", "e"]);
     expect(lines.map((l) => l.lineId)).toEqual(["a", "b", "c", "d", "e", "f"]);
   });
-  it("puts a Mignardises line after Dessert and before Autre", () => {
+  it("puts a Mignardises line after Dessert when the list carries it, else with the unknown values", () => {
     const lines = [
       line("poulet", { lineId: "autre" }),
       line("tarte", { lineId: "mign", course: "Mignardises" }),
       line("tarte", { lineId: "dessert" }),
     ];
-    expect(sortEventLines(lines, DEFAULT_COURSES, recipeById).map((l) => l.lineId)).toEqual(["dessert", "mign", "autre"]);
+    expect(sortEventLines(lines, SEVEN, recipeById).map((l) => l.lineId)).toEqual(["dessert", "mign", "autre"]);
+    expect(sortEventLines(lines, DEFAULT_COURSES, recipeById).map((l) => l.lineId)).toEqual(["dessert", "autre", "mign"]);
   });
 });
 
@@ -108,6 +124,22 @@ describe("groupByCourse", () => {
       ["Dessert", ["c"]],
       ["Autre", ["a"]],
     ]);
+  });
+  it("follows the six-value list and buckets a Mignardises line under Autre when the list lacks it", () => {
+    const lines = [
+      line("tarte", { lineId: "mign", course: "Mignardises" }),
+      line("poulet", { lineId: "buffet", course: "Buffet" }),
+      line("tarte", { lineId: "dessert" }),
+      line("quiche", { lineId: "walking", course: "Walking dinner" }),
+    ];
+    const groups = groupByCourse(lines, DEFAULT_COURSES, recipeById);
+    expect(groups.map((g) => [g.course, g.lines.map((l) => l.lineId)])).toEqual([
+      ["Walking dinner", ["walking"]],
+      ["Buffet", ["buffet"]],
+      ["Dessert", ["dessert"]],
+      ["Autre", ["mign"]],
+    ]);
+    expect(groupByCourse(lines, SEVEN, recipeById).map((g) => g.course)).toEqual(["Walking dinner", "Buffet", "Dessert", "Mignardises"]);
   });
 });
 
@@ -315,11 +347,15 @@ describe("weekPlan.peopleByDay", () => {
 });
 
 describe("upgradeCourses", () => {
-  it("serves the default list for undefined, [] and the legacy list", () => {
+  it("serves the six defaults for undefined and []", () => {
     expect(upgradeCourses(undefined)).toBe(DEFAULT_COURSES);
     expect(upgradeCourses([])).toBe(DEFAULT_COURSES);
-    expect(upgradeCourses([...LEGACY_DEFAULT_COURSES])).toBe(DEFAULT_COURSES);
-    expect(DEFAULT_COURSES).toEqual(["Apéritif", "Entrée", "Plat", "Dessert", "Mignardises", "Autre"]);
+  });
+  it("serves the six plus Mignardises for the legacy five and for the V2 six", () => {
+    const seven = ["Apéritif", "Entrée", "Plat", "Walking dinner", "Buffet", "Dessert", "Mignardises"];
+    expect(upgradeCourses([...LEGACY_DEFAULT_COURSES])).toEqual(seven);
+    expect(upgradeCourses([...LEGACY_DEFAULT_COURSES_V2])).toEqual(seven);
+    expect(upgradeCourses([...LEGACY_DEFAULT_COURSES])).toHaveLength(7);
   });
   it("keeps a custom list as is", () => {
     const custom = ["Plat", "Dessert"];
@@ -437,7 +473,7 @@ describe("moved lines and tasks on a day", () => {
       moved: true,
       date: "2026-10-15",
       eventDate: "2026-10-17",
-      course: "Mignardises",
+      course: "Autre",
       clientName: "Dupont",
       assignedTo: ["kristoff"],
       ownAssignment: true,
@@ -548,5 +584,146 @@ describe("moved lines and tasks on a day", () => {
     expect(plan.days[3]).toMatchObject({ linesTotal: 2, linesDone: 2 });
     expect(plan.days[5]).toMatchObject({ linesTotal: 1, linesDone: 1 });
     expect(plan).toMatchObject({ linesTotal: 3, linesDone: 3 });
+  });
+});
+
+describe("foodRevenue, signedRevenue and pricePerGuestOf", () => {
+  it("returns the typed total in total mode, not price × guests", () => {
+    const e = { pricingMode: "total" as const, sellingTotal: 1000, sellingPricePerGuest: 333.33, guestCount: 3 };
+    expect(foodRevenue(e)).toBe(1000);
+    expect(foodRevenue(e)).not.toBe(333.33 * 3);
+    expect(pricePerGuestOf(e)).toBe(333.33);
+  });
+  it("behaves as today when pricingMode is absent", () => {
+    expect(foodRevenue({ sellingPricePerGuest: 19.99, guestCount: 3 })).toBe(59.97);
+    expect(signedRevenue({ sellingPricePerGuest: 19.99, guestCount: 3 })).toBe(59.97);
+    expect(pricePerGuestOf({ sellingPricePerGuest: 19.99, guestCount: 3 })).toBe(19.99);
+  });
+  it("never returns NaN and gives 0 per guest without guests", () => {
+    expect(foodRevenue({ pricingMode: "total", sellingPricePerGuest: 0, guestCount: 3 })).toBe(0);
+    expect(foodRevenue({ sellingPricePerGuest: Number.NaN, guestCount: 3 })).toBe(0);
+    expect(pricePerGuestOf({ sellingPricePerGuest: 20, guestCount: 0 })).toBe(0);
+    expect(pricePerGuestOf({ pricingMode: "total", sellingTotal: 500, sellingPricePerGuest: 0, guestCount: 0 })).toBe(0);
+  });
+  it("signedRevenue adds the billed lines at 21 % and 6 %", () => {
+    const e = {
+      sellingPricePerGuest: 20,
+      guestCount: 10,
+      revenueLines: [
+        { label: "Service", amount: 150.5, vatRate: 21 as const },
+        { label: "Livraison", amount: 30, vatRate: 6 as const },
+      ],
+    };
+    expect(revenueLinesTotal(e)).toBe(180.5);
+    expect(signedRevenue(e)).toBe(380.5);
+    expect(revenueLinesTotal({})).toBe(0);
+  });
+  it("weekPlan and monthSignedRevenue include the billed lines", () => {
+    const ev = event({
+      eventId: "a",
+      date: "2026-10-12",
+      guestCount: 10,
+      sellingPricePerGuest: 20,
+      revenueLines: [{ label: "Service", amount: 50, vatRate: 21 }],
+    });
+    expect(weekPlan([ev], "2026-10-12").signedRevenue).toBe(250);
+    expect(monthSignedRevenue([ev], "2026-10")).toBe(250);
+  });
+});
+
+describe("vatBreakdown and revenueTvac", () => {
+  const e = {
+    sellingPricePerGuest: 50,
+    guestCount: 10,
+    vatRate: 12 as const,
+    revenueLines: [
+      { label: "Service", amount: 100, vatRate: 21 as const },
+      { label: "Livraison", amount: 50.5, vatRate: 21 as const },
+    ],
+  };
+  it("gives one bucket per rate, ascending, with tvac equal to htva + tva", () => {
+    const buckets = vatBreakdown(e);
+    expect(buckets).toEqual([
+      { rate: 12, htva: 500, tva: 60, tvac: 560 },
+      { rate: 21, htva: 150.5, tva: 31.61, tvac: 182.11 },
+    ]);
+    for (const b of buckets) expect(b.tvac).toBe(sumMoney([b.htva, b.tva]));
+  });
+  it("revenueTvac equals the sum of the buckets", () => {
+    expect(revenueTvac(e)).toBe(742.11);
+  });
+  it("puts the food at 0 % when the event has no rate and drops empty buckets", () => {
+    expect(vatBreakdown({ sellingPricePerGuest: 10, guestCount: 2, vatRate: undefined })).toEqual([{ rate: 0, htva: 20, tva: 0, tvac: 20 }]);
+    expect(vatBreakdown({ sellingPricePerGuest: 0, guestCount: 2, vatRate: 12, revenueLines: [{ label: "x", amount: 0, vatRate: 21 }] })).toEqual([]);
+  });
+});
+
+describe("recipeCategoryOf and courseOf", () => {
+  it("prefers category, then defaultCourse", () => {
+    expect(recipeCategoryOf({ category: "Buffet", defaultCourse: "Plat", type: "Lunch" })).toBe("Buffet");
+    expect(recipeCategoryOf({ defaultCourse: "Dessert", type: "Lunch" })).toBe("Dessert");
+  });
+  it("skips defaultCourse Autre and maps the legacy type", () => {
+    expect(recipeCategoryOf({ defaultCourse: "Autre", type: "Lunch" })).toBe("Plat");
+    expect(recipeCategoryOf({ type: "Menu semaine" })).toBe("Plat");
+    expect(recipeCategoryOf({ type: "Walking dinner" })).toBe("Walking dinner");
+  });
+  it("keeps an unknown custom type and falls back to Autre", () => {
+    expect(recipeCategoryOf({ type: "Fromage" })).toBe("Fromage");
+    expect(recipeCategoryOf({})).toBe("Autre");
+    expect(recipeCategoryOf({ type: "", defaultCourse: "Autre" })).toBe("Autre");
+  });
+  it("courseOf: the line override wins, then the recipe category, then Autre", () => {
+    expect(courseOf({ course: "Entrée" }, { category: "Plat" })).toBe("Entrée");
+    expect(courseOf({}, { category: "Plat" })).toBe("Plat");
+    expect(courseOf({}, { type: "Lunch" })).toBe("Plat");
+    expect(courseOf({}, { defaultCourse: "Apéritif" })).toBe("Apéritif");
+    expect(courseOf({})).toBe("Autre");
+  });
+});
+
+describe("categoryOptions", () => {
+  it("appends the values used by recipes that are not in the list, alphabetical", () => {
+    const recipes = [
+      { category: "Mignardises", type: "Mignardises" },
+      { type: "Plat" },
+      { type: "Fromage" },
+      { category: "Mignardises", type: "Buffet" },
+    ];
+    expect(categoryOptions(DEFAULT_COURSES, recipes)).toEqual([...DEFAULT_COURSES, "Fromage", "Mignardises"]);
+  });
+  it("returns the list as is when every recipe is in it", () => {
+    expect(categoryOptions(DEFAULT_COURSES, [{ type: "Lunch" }, { category: "Dessert", type: "Buffet" }])).toEqual(DEFAULT_COURSES);
+    expect(categoryOptions(DEFAULT_COURSES, [])).toEqual(DEFAULT_COURSES);
+  });
+});
+
+describe("isIncompleteRecipe and incompleteCount", () => {
+  const lookup: RecipeLookup = new Map([
+    ["empty", { name: "Houmous maison", ingredients: [] }],
+    ["full", { name: "Mini quiches", ingredients: [{ ingredientId: "oeuf", qty: 2, unit: "pièce", lossPct: 0 }] }],
+  ]);
+  it("isIncompleteRecipe is true without ingredients", () => {
+    expect(isIncompleteRecipe({ ingredients: [] })).toBe(true);
+    expect(isIncompleteRecipe({ ingredients: [{ ingredientId: "oeuf", qty: 2, unit: "pièce", lossPct: 0 }] })).toBe(false);
+  });
+  it("incompleteCount counts known recipes without ingredients and ignores unknown ids", () => {
+    const lines = [{ recipeId: "empty" }, { recipeId: "full" }, { recipeId: "ghost" }, { recipeId: "empty" }];
+    expect(incompleteCount(lines, lookup)).toBe(2);
+    expect(incompleteCount([{ recipeId: "ghost" }], lookup)).toBe(0);
+    expect(incompleteCount([], lookup)).toBe(0);
+  });
+});
+
+describe("billingFromClient", () => {
+  it("joins name, address and VAT number with newlines", () => {
+    expect(billingFromClient({ name: "Dupont SA", address: "Rue des Lilas 4, 1050 Ixelles", vatNumber: "BE 0123.456.789" })).toBe(
+      "Dupont SA\nRue des Lilas 4, 1050 Ixelles\nBE 0123.456.789",
+    );
+  });
+  it("gives two lines without a VAT number and drops blank parts", () => {
+    expect(billingFromClient({ name: "Dupont SA", address: "Rue des Lilas 4, 1050 Ixelles" })).toBe("Dupont SA\nRue des Lilas 4, 1050 Ixelles");
+    expect(billingFromClient({ name: " Dupont SA ", address: "  ", vatNumber: "BE 0123.456.789" })).toBe("Dupont SA\nBE 0123.456.789");
+    expect(billingFromClient({ name: "Dupont SA" })).toBe("Dupont SA");
   });
 });

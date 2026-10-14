@@ -272,6 +272,31 @@ describe("weekChecklist", () => {
     expect(items[1]).toEqual({ kind: "not_configured", clients: false, ledger: true });
   });
 
+  it("no_price fires on the food revenue, so a total-mode event at 0 is flagged and one priced by total is not", () => {
+    const events = [
+      event({ eventId: "zero", date: "2026-10-20", pricingMode: "total", sellingTotal: 0, sellingPricePerGuest: 0 }),
+      event({ eventId: "priced", date: "2026-10-21", pricingMode: "total", sellingTotal: 500, sellingPricePerGuest: 0 }),
+    ];
+    const items = weekChecklist(inputs({ events }));
+    expect(items.filter((i) => i.kind === "no_price")).toEqual([{ kind: "no_price", eventId: "zero", name: "zero", date: "2026-10-20" }]);
+  });
+
+  it("externe keeps to_close and drops the four invoice kinds; app mode keeps them", () => {
+    const mensuel = client({ clientId: "m", name: "Mensuel", invoicing: "mensuelle" });
+    const events = [
+      event({ eventId: "past", date: "2026-10-10", name: "Mariage Dupont" }),
+      event({ eventId: "done", date: "2026-10-09", status: "completed" }),
+      event({ eventId: "mon", date: "2026-09-09", status: "completed", clientId: "m" }),
+    ];
+    const entries = [entry({ date: "2026-09-20" })];
+    const externe = weekChecklist(inputs({ clients: [mensuel], events, entries, invoicing: "externe" }));
+    expect(kinds(externe)).toEqual(["to_close", "empty_week"]);
+    expect(externe[0]).toEqual({ kind: "to_close", events: [{ eventId: "past", name: "Mariage Dupont", date: "2026-10-10" }] });
+    const app = weekChecklist(inputs({ clients: [mensuel], events, entries, invoicing: "app" }));
+    expect(kinds(app)).toEqual(["to_close", "to_invoice", "to_invoice_month", "unpaid", "empty_week"]);
+    expect(kinds(weekChecklist(inputs({ clients: [mensuel], events, entries })))).toEqual(kinds(app));
+  });
+
   it("keeps the documented order across kinds", () => {
     const hoona = client({
       clientId: "hoona",

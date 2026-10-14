@@ -42,6 +42,8 @@ export interface Ingredient {
   comment?: string;
   aliases?: string[];
   mergedFrom?: string[];
+  // Set by the service whenever a price is written, even unchanged; absent on items never priced since spec 07.
+  priceUpdatedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

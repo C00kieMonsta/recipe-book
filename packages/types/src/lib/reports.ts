@@ -6,7 +6,7 @@ import { DEFAULT_PRESTATION_TYPES } from "../entities/settings";
 import { calcEventCost } from "./costing";
 import { daysBetween, ymOf } from "./dates";
 import { round2, sumMoney } from "./money";
-import { shortEventName, signedRevenue } from "./planning";
+import { pricePerGuestOf, shortEventName, signedRevenue } from "./planning";
 
 // Everything the Comptabilité pages need; every figure is derived from this at render time.
 export interface ReportInputs {
@@ -25,7 +25,7 @@ export const SANS_TYPE = "Sans type";
 export const DEFAULT_CORPORATE_TAX_RATE = 0.25;
 export const DEFAULT_TREASURY_MONTHS = 3;
 
-export const CA_KINDS: SalesKind[] = ["facture", "acompte", "comptoir", "bon_cadeau", "note_de_credit", "autre"];
+export const CA_KINDS: SalesKind[] = ["facture", "acompte", "comptoir", "bon_cadeau", "note_de_credit", "ca_mensuel", "autre"];
 
 // The one definition of CA: sales entries of a CA kind. Commissions are "Autres produits".
 export function isCaEntry(entry: Pick<LedgerEntry, "book" | "kind">): boolean {
@@ -527,7 +527,7 @@ export function mix(year: number, inputs: ReportInputs): Mix {
     const target = bucket.type !== undefined ? objective?.byPrestation?.find((b) => b.type === bucket.type) : undefined;
     const typed = events.filter((e) => e.prestationType === bucket.type && bucket.type !== undefined);
     const ofYear = typed.filter((e) => yearOf(ymOf(e.date)) === year);
-    const averagePricePerGuest = average((ofYear.length ? ofYear : typed).map((e) => e.sellingPricePerGuest));
+    const averagePricePerGuest = average((ofYear.length ? ofYear : typed).map(pricePerGuestOf));
     let nbNecessaires: number | undefined = target?.eventsNeeded;
     if (nbNecessaires === undefined && target && target.guestsPerEvent && averagePricePerGuest) {
       nbNecessaires = target.amount / (target.guestsPerEvent * averagePricePerGuest);
@@ -774,7 +774,9 @@ export function auReel(ym: string, inputs: ReportInputs): AuReel {
         hours: isInvoiceEntry(e) && linked.length ? linked.reduce((a, b) => a + b, 0) : undefined,
       };
     });
-  const eventRows: AuReelRow[] = eventsOfMonth(events, ym)
+  // Externe: once the month's CA is in the ledger, the events are no longer a forecast.
+  const ledgerOnly = settings.invoicing === "externe" && entryRows.length > 0;
+  const eventRows: AuReelRow[] = (ledgerOnly ? [] : eventsOfMonth(events, ym))
     .filter((e) => !invoiced.has(e.eventId))
     .map((e) => ({
       kind: "event",

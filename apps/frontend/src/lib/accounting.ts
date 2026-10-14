@@ -76,6 +76,7 @@ export const SALES_KIND_LABEL: Record<SalesKind, string> = {
   bon_cadeau: "Bon cadeau",
   note_de_credit: "Note de crédit",
   commission: "Commission",
+  ca_mensuel: "CA mensuel",
   autre: "Autre",
 };
 
