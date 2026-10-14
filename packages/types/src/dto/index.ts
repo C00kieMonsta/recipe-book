@@ -5,6 +5,7 @@ export * from "./recipes";
 export * from "./settings";
 export * from "./events";
 export * from "./offers";
+export * from "./offer-documents";
 export * from "./grocery-lists";
 export * from "./clients";
 export * from "./ledger";

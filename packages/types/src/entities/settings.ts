@@ -81,7 +81,15 @@ export interface CompanySettings {
   vatNumber: string;
   address: string;
   constitutedOn?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  // Hex; the band colour of the PDF. DEFAULT_BRAND_ACCENT when absent.
+  accent?: string;
 }
+
+// The salmon of her sheets, sampled from the title band. Editable in Paramètres › Société.
+export const DEFAULT_BRAND_ACCENT = "#E8847A";
 
 export interface Person {
   // Slug of the name at creation, never changes.
@@ -112,6 +120,9 @@ export interface AppSettings {
   company?: CompanySettings;
   ignoredDuplicateGroups?: string[];
   people?: Person[];
+  // S3 keys of the brand images (brand/logo.png, brand/banner.jpg). Written only by the brand endpoints; never in a PATCH body.
+  brandLogoKey?: string;
+  brandBannerKey?: string;
 }
 
 // Kept only for recipe CSV imports written by the old app.

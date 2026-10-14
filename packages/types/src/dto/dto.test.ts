@@ -26,7 +26,9 @@ import { createOfferSchema, offerLineSchema, updateOfferSchema } from "./offers"
 import { importIngredientRowSchema, importIngredientsOptionsSchema, mergeIngredientsSchema } from "./ingredients";
 import { createRecipeRequestSchema, importRecipeIngredientSchema, listRecipesQuerySchema, updateRecipeRequestSchema } from "./recipes";
 import { clientTemplateSchema, createClientSchema, templateLineSchema, updateClientSchema } from "./clients";
-import { personSchema, updateSettingsRequestSchema } from "./settings";
+import { companySettingsSchema, personSchema, updateSettingsRequestSchema } from "./settings";
+import { createOfferDocumentSchema, docRowSchema, docSectionSchema, updateOfferDocumentSchema } from "./offer-documents";
+import { DEFAULT_DOC_CONDITIONS, DEFAULT_DOC_SERVICES, DEFAULT_DOC_VAT_LINES } from "../entities/offer-document";
 
 const sale = {
   book: "ventes" as const,
@@ -296,6 +298,78 @@ describe("offer schemas", () => {
   });
 });
 
+describe("offer document schemas", () => {
+  const plat = (rowId: string, extra: Record<string, unknown> = {}) => ({ rowId, kind: "plat" as const, text: "Houmous", ...extra });
+  it("create defaults services, conditions, vatLines and prestationLabel", () => {
+    const r = createOfferDocumentSchema.safeParse({ title: "Offre buffets", year: 2026 });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.services).toEqual(DEFAULT_DOC_SERVICES);
+      expect(r.data.conditions).toBe(DEFAULT_DOC_CONDITIONS);
+      expect(r.data.vatLines).toEqual(DEFAULT_DOC_VAT_LINES);
+      expect(r.data.prestationLabel).toBe("À emporter");
+      expect(r.data.sections).toEqual([]);
+    }
+    expect(createOfferDocumentSchema.safeParse({ title: " ", year: 2026 }).success).toBe(false);
+    expect(createOfferDocumentSchema.safeParse({ title: "Offre", year: 2026, foo: 1 }).success).toBe(false);
+  });
+  it("choice is refused on a plat row", () => {
+    const choice = { count: 1, scope: "table" };
+    expect(docRowSchema.safeParse(plat("r1", { choice })).success).toBe(false);
+    expect(docRowSchema.safeParse({ rowId: "r1", kind: "sous_titre", text: "Entrées", choice }).success).toBe(true);
+    expect(docRowSchema.safeParse({ rowId: "R1", kind: "plat", text: "x" }).success).toBe(false);
+  });
+  it("a priced row needs a unit kind on the row or on the section", () => {
+    const section = { sectionId: "s1", title: "Carte", rows: [plat("r1", { price: 4.5 })] };
+    expect(docSectionSchema.safeParse(section).success).toBe(false);
+    expect(docSectionSchema.safeParse({ ...section, unitKind: "piece" }).success).toBe(true);
+    expect(docSectionSchema.safeParse({ ...section, rows: [plat("r1", { price: 4.5, unitKind: "piece" })] }).success).toBe(true);
+    expect(docSectionSchema.safeParse({ ...section, rows: [plat("r1", { priceNote: "à voir ensemble" })] }).success).toBe(true);
+  });
+  it("two rows with the same id are refused, across sections and services", () => {
+    const base = { title: "Offre", year: 2026 };
+    const sections = [{ sectionId: "s1", title: "A", rows: [plat("r1"), plat("r1")] }];
+    expect(createOfferDocumentSchema.safeParse({ ...base, sections }).success).toBe(false);
+    const across = [
+      { sectionId: "s1", title: "A", rows: [plat("r1")] },
+      { sectionId: "s2", title: "B", rows: [plat("r1")] },
+    ];
+    expect(createOfferDocumentSchema.safeParse({ ...base, sections: across }).success).toBe(false);
+    const sameSection = [
+      { sectionId: "s1", title: "A", rows: [plat("r1")] },
+      { sectionId: "s1", title: "B", rows: [plat("r2")] },
+    ];
+    expect(createOfferDocumentSchema.safeParse({ ...base, sections: sameSection }).success).toBe(false);
+    const services = { shown: true, title: "SERVICES", rows: [plat("r1")] };
+    const withServices = [{ sectionId: "s1", title: "A", rows: [plat("r1")] }];
+    expect(createOfferDocumentSchema.safeParse({ ...base, sections: withServices, services }).success).toBe(false);
+    expect(createOfferDocumentSchema.safeParse({ ...base, sections: withServices }).success).toBe(true);
+  });
+  it("301 rows are refused, 300 accepted", () => {
+    const rows = (n: number, prefix: string) => Array.from({ length: n }, (_, i) => plat(`${prefix}-${i}`));
+    const sections = (total: number) => [
+      { sectionId: "s1", title: "A", rows: rows(120, "a") },
+      { sectionId: "s2", title: "B", rows: rows(120, "b") },
+      { sectionId: "s3", title: "C", rows: rows(total - 240, "c") },
+    ];
+    expect(createOfferDocumentSchema.safeParse({ title: "Offre", year: 2026, sections: sections(300) }).success).toBe(true);
+    expect(createOfferDocumentSchema.safeParse({ title: "Offre", year: 2026, sections: sections(301) }).success).toBe(false);
+    expect(updateOfferDocumentSchema.safeParse({ sections: sections(301) }).success).toBe(false);
+  });
+  it("update accepts null to clear scalars and carries the stamp", () => {
+    const r = updateOfferDocumentSchema.safeParse({ note: null, season: null, minGuests: null, updatedAt: "2026-10-14T10:00:00.000Z" });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.note).toBeNull();
+      expect(r.data.season).toBeNull();
+      expect(r.data.prestationLabel).toBeUndefined();
+    }
+    expect(updateOfferDocumentSchema.safeParse({ archived: true }).success).toBe(true);
+    expect(updateOfferDocumentSchema.safeParse({ documentId: "d1" }).success).toBe(false);
+    expect(updateOfferDocumentSchema.safeParse({ title: null }).success).toBe(false);
+  });
+});
+
 describe("other schemas", () => {
   it("merge refuses survivor in mergedIds", () => {
     expect(mergeIngredientsSchema.safeParse({ survivorId: "a", mergedIds: ["a"] }).success).toBe(false);
@@ -366,6 +440,18 @@ describe("other schemas", () => {
     expect(r.success).toBe(true);
     expect(updateSettingsRequestSchema.safeParse({ objectives: { "2026": { annualRevenue: 1 } } }).success).toBe(false);
     expect(updateSettingsRequestSchema.safeParse({ fixedCharges: [{ chargeId: "c", label: "x", category: "social", monthlyAmount: 1, from: "2026-1" }] }).success).toBe(false);
+  });
+  it("company accent is a hex colour and the brand keys are stripped from a PATCH", () => {
+    const company = { name: "SRL", vatNumber: "BE0", address: "Rue" };
+    expect(companySettingsSchema.safeParse({ ...company, accent: "red" }).success).toBe(false);
+    expect(companySettingsSchema.safeParse({ ...company, accent: "#e8847a" }).success).toBe(true);
+    expect(companySettingsSchema.safeParse({ ...company, phone: "+32 2 000 00 00", email: "dalia@example.com", website: "latabledamelie.be" }).success).toBe(true);
+    const r = updateSettingsRequestSchema.safeParse({ brandLogoKey: "brand/logo.png", brandBannerKey: "brand/banner.jpg", invoicing: "app" });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data).toEqual({ invoicing: "app" });
+      expect("brandLogoKey" in r.data).toBe(false);
+    }
   });
   it("settings invoicing is app or externe", () => {
     expect(updateSettingsRequestSchema.safeParse({ invoicing: "externe" }).success).toBe(true);

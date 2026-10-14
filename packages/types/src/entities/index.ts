@@ -3,6 +3,7 @@ export * from "./recipe";
 export * from "./settings";
 export * from "./event";
 export * from "./offer";
+export * from "./offer-document";
 export * from "./grocery-list";
 export * from "./client";
 export * from "./ledger";

@@ -24,7 +24,11 @@ import {
   Table,
   EmptyState,
   Tag,
+  Menu,
+  MenuItem,
+  useMenu,
 } from "@/components/ui";
+import GroceryFromEventsDialog from "@/components/admin/GroceryFromEventsDialog";
 import { fmt, fmtUnitPrice } from "@/lib/recipe-helpers";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -235,6 +239,21 @@ export default function GroceryListPage() {
     setEditing(true); setOpenRows(new Set());
   };
 
+  const [fromEventsOpen, setFromEventsOpen] = useState(false);
+  const newMenu = useMenu();
+
+  // A list built from events arrives already saved; open it like any saved list.
+  const openCreated = async (listId: string) => {
+    setFromEventsOpen(false);
+    try {
+      const created = await api.groceryLists.get(listId);
+      setSavedLists((prev) => [created, ...prev.filter((l) => l.listId !== created.listId)]);
+      selectList(created);
+    } catch {
+      setSearchParams({ id: listId }, { replace: true });
+    }
+  };
+
   const startNewList = () => {
     clearTimeout(autoSaveTimer.current);
     dirtyRef.current = false;
@@ -354,13 +373,21 @@ export default function GroceryListPage() {
           iconKey="courses"
           title="Courses"
           meta={`${savedLists.length} liste${savedLists.length > 1 ? "s" : ""}`}
-          actions={<Button variant="primary" size="lg" icon={<Plus />} onClick={startNewList}>Nouvelle liste</Button>}
+          actions={(
+            <div ref={newMenu.ref} className="relative inline-flex">
+              <Button variant="primary" size="lg" icon={<Plus />} onClick={newMenu.toggle} aria-haspopup="menu" aria-expanded={newMenu.open}>Nouvelle liste</Button>
+              <Menu {...newMenu.props} align="right" title="Nouvelle liste" aria-label="Nouvelle liste">
+                <MenuItem icon={<ShoppingCart />} onSelect={() => setFromEventsOpen(true)}>Depuis les événements…</MenuItem>
+                <MenuItem icon={<Plus />} onSelect={startNewList}>Liste vide</MenuItem>
+              </Menu>
+            </div>
+          )}
         />
         <Table<GroceryList>
           rows={savedLists}
           rowKey={(l) => l.listId}
           onRowClick={selectList}
-          empty={<EmptyState message={<>Aucune liste de courses. <Link to={`/semaine/${isoWeekOf(todayIso())}`} className="text-primary hover:underline">Créer la liste de la semaine</Link> depuis la case « Ce qui manque pour la semaine », ou créez-en une à la main.</>} action={{ label: "+ Nouvelle liste", onClick: startNewList }} />}
+          empty={<EmptyState message={<>Aucune liste de courses. Créez-la depuis les événements d'une période, depuis la <Link to={`/semaine/${isoWeekOf(todayIso())}`} className="text-primary hover:underline">semaine</Link>, ou à la main.</>} action={{ label: "+ Depuis les événements", onClick: () => setFromEventsOpen(true) }} />}
           columns={[
             { key: "title", label: "Titre", render: (l) => <span className="font-medium">{l.title}</span> },
             { key: "range", label: "Période", width: "200px", render: (l) => (l.range ? rangeLabel(l.range.from, l.range.to) : "") },
@@ -369,6 +396,7 @@ export default function GroceryListPage() {
             { key: "updated", label: "Maj", width: "110px", render: (l) => new Date(l.updatedAt).toLocaleDateString("fr-BE", { day: "numeric", month: "short" }) },
           ]}
         />
+        <GroceryFromEventsDialog open={fromEventsOpen} onClose={() => setFromEventsOpen(false)} onCreated={openCreated} />
       </div>
     );
   }

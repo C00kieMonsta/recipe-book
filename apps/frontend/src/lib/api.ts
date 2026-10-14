@@ -30,6 +30,8 @@ import type {
   UpdateOfferRequest,
   ImportLedgerRow,
   ImportIngredientsOptions,
+  ProposedAction,
+  ApplyResponse,
 } from "@packages/types";
 
 export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
@@ -74,16 +76,18 @@ async function parseResponse<T>(res: Response): Promise<T> {
   } catch {
     data = null;
   }
-  if (!res.ok) {
-    const d = (data ?? {}) as { message?: unknown; error?: unknown };
-    const msg = res.status === 413
-      ? "Fichier trop volumineux"
-      : Array.isArray(d.message)
-        ? d.message.map((m) => (m && typeof m === "object" && "message" in m ? String((m as { message: unknown }).message) : String(m))).join(", ")
-        : (typeof d.message === "string" && d.message) || (typeof d.error === "string" && d.error) || `Request failed: ${res.status}`;
-    throw new ApiError(msg, res.status, data);
-  }
+  if (!res.ok) throw new ApiError(apiErrorMessage(res.status, data), res.status, data);
   return data as T;
+}
+
+// The server's words for a failed call: a Nest message, a Zod issues array, or the status.
+export function apiErrorMessage(status: number, body: unknown): string {
+  const d = (body ?? {}) as { message?: unknown; error?: unknown };
+  if (status === 413) return "Fichier trop volumineux";
+  if (Array.isArray(d.message)) {
+    return d.message.map((m) => (m && typeof m === "object" && "message" in m ? String((m as { message: unknown }).message) : String(m))).join(", ");
+  }
+  return (typeof d.message === "string" && d.message) || (typeof d.error === "string" && d.error) || `Request failed: ${status}`;
 }
 
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
@@ -181,6 +185,8 @@ export interface UnlockMonthResponse { unlocked: number }
 export interface HealthResponse {
   status: string;
   tables: { clients: boolean; ledger: boolean };
+  // True when the API has an OpenAI key source; the assistant cell and shortcut hide when false.
+  assistant: boolean;
 }
 
 export interface CreateGroceryListRequest {
@@ -276,6 +282,11 @@ export const api = {
     instantiate: withInvalidate(["events", "clients"], (id: string, body: InstantiateRequest) => request<InstantiateResponse>(`/admin/clients/${id}/instantiate`, json("POST", body))),
     linkEvents: withInvalidate(["events", "clients"], (id: string, body: LinkEventsRequest) => request<LinkEventsResponse>(`/admin/clients/${id}/link-events`, json("POST", body))),
   },
+  assistant: {
+    // Proposals run through the regular services, so every list the page behind the sheet may show is refreshed.
+    apply: withInvalidate(["events", "recipes", "ingredients"], (actions: ProposedAction[]) =>
+      request<ApplyResponse>("/admin/assistant/apply", json("POST", { actions }))),
+  },
   ledger: {
     list: (year?: number | string) => request<LedgerEntry[]>(`/admin/ledger${year !== undefined ? `?year=${year}` : ""}`),
     get: (id: string) => request<LedgerEntry>(`/admin/ledger/${id}`),
@@ -288,6 +299,8 @@ export const api = {
     import: withInvalidate(["events", "settings"], (rows: ImportLedgerRow[]) => request<ImportLedgerResponse>("/admin/ledger/import", json("POST", { rows }))),
   },
 };
+
+export const fetchHealth = api.health.get;
 
 // The server's own words for a failed call, for toasts that would otherwise hide the cause.
 export function errorReason(e: unknown): string {

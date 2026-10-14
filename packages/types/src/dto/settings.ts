@@ -88,6 +88,10 @@ export const companySettingsSchema = z
     vatNumber: z.string().trim(),
     address: z.string().trim(),
     constitutedOn: isoDate.optional(),
+    phone: z.string().trim().max(40).optional(),
+    email: z.string().trim().max(80).optional(),
+    website: z.string().trim().max(80).optional(),
+    accent: z.string().regex(/^#[0-9a-fA-F]{6}$/, "couleur hex").optional(),
   })
   .strict();
 
