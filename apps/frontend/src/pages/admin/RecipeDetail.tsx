@@ -563,7 +563,7 @@ export default function RecipeDetail() {
                       autoFocus
                     />
                     <div className="flex gap-2 touch:order-3">
-                      <Button variant="primary" size="sm" icon={<Check />} onClick={() => handleSaveStep(i)}>OK</Button>
+                      <Button variant="default" size="sm" icon={<Check />} onClick={() => handleSaveStep(i)}>OK</Button>
                       <Button variant="subtle" size="sm" onClick={() => setEditingStep(null)}>Annuler</Button>
                     </div>
                   </div>

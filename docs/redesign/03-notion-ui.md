@@ -356,7 +356,7 @@ Colour tokens are now opaque or fixed-alpha, so slash modifiers stop working. Ru
 | `border-destructive/40` | `shadow-outline text-danger` | 1 |
 | `font-serif` | delete the class | 40 |
 | `bg-foreground text-background` (dark active segment) | `bg-active font-medium text-foreground` | 7 |
-| `bg-primary-soft` | `bg-selected` when it marks selection or today; `bg-muted` when it is decoration (avatars, thumbnails); `bg-tag-yellow-bg` on `<mark>` | 31, by hand |
+| `bg-primary-soft` | `bg-selected` when it marks selection or today; `bg-muted` when it is decoration (avatars, thumbnails); `bg-selected` on the scaled-quantity `<mark>` and `bg-tag-yellow-bg` on the `==surligné==` `<mark>` (07) | 31, by hand |
 | `rounded-full` on tags, chips and filter pills | `rounded-sm`; keep `rounded-full` only on avatars, the today circle, progress tracks | 38, by hand |
 | `animate-fade-up` | keep (alias) | 13 |
 
@@ -608,7 +608,7 @@ Renders `.table` on `md` and up (sticky header `sticky top-0 bg-background`). Be
 
 **`MoneyTile.tsx`**. `"block rounded-lg bg-surface p-3"` (link variant adds `hover:bg-hover`); label `"text-sm text-muted-foreground"`; value `"mt-0.5 text-h3 tabular-nums"`; sub `"text-caption text-muted-foreground"`; progress track `"h-1 rounded-full bg-divider"`, fill `"bg-primary"`, tick `"w-px bg-divider"`, tick label `"text-caption text-muted-foreground"`. Tiles in a grid use `gap-2`; a group of tiles reads as one `bg-surface` stat row when the caller wraps them in `"grid rounded-lg bg-surface divide-x divide-border"` and passes `flat` (no own background).
 
-**`RecipeReader.tsx`**. Ingredient list `ul "mt-2"` (no `divide-y`); rows `li "flex min-h-8 items-center gap-2 touch:min-h-11"`; tick button becomes `<Checkbox shape="circle">` (only when `checkable`); name `"min-w-0 flex-1"`; qty `"shrink-0 font-medium tabular-nums"` with unit `"font-normal text-muted-foreground"`. Headings `text-h3`. Steps `ol "mt-3 space-y-3"`, number `span "w-6 shrink-0 text-right text-muted-foreground tabular-nums"` (no circle badge), text `"min-w-0 flex-1 whitespace-pre-wrap"`. `<mark>` in `StepText`: `"rounded-sm bg-tag-yellow-bg px-0.5 text-inherit"`. `size="xl"` keeps `text-lead`.
+**`RecipeReader.tsx`**. Ingredient list `ul "mt-2"` (no `divide-y`); rows `li "flex min-h-8 items-center gap-2 touch:min-h-11"`; tick button becomes `<Checkbox shape="circle">` (only when `checkable`); name `"min-w-0 flex-1"`; qty `"shrink-0 font-medium tabular-nums"` with unit `"font-normal text-muted-foreground"`. Headings `text-h3`. Steps `ol "mt-3 space-y-3"`, number `span "w-6 shrink-0 text-right text-muted-foreground tabular-nums"` (no circle badge), text `"min-w-0 flex-1 whitespace-pre-wrap"`. `StepText` renders through `scaleStepSegments` (07 section 4.6): a scaled quantity is `<mark className="rounded-sm bg-selected px-0.5 text-inherit">` (light blue), her own `==surligné==` is `<mark className="rounded-sm bg-tag-yellow-bg px-0.5 text-inherit">` (yellow), `**gras**` is `<strong>`; the markers never show. `size="xl"` keeps `text-lead`.
 
 **`editable.tsx`**. `EditableText` display `"${className} prop-value"`, empty `"text-placeholder"` (no italic); editing input/textarea: same font classes plus `"-mx-1.5 w-full rounded bg-input-bg px-1.5 shadow-ring outline-none"` (no bottom border). `EditableInlineText` / `EditableInlineNum`: display `strong "prop-value font-medium"`, editing `input "-mx-1 w-32 rounded bg-input-bg px-1 shadow-ring outline-none font-medium"`. `EditableNum`: `className="input-field w-20 text-right tabular-nums"`. `EditableType` becomes `<SelectPill colour="gray">`. `EditableStatus` becomes `<SelectPill>` with `upcoming: blue`, `completed: green`. All follow the 14 rules above.
 
@@ -630,7 +630,7 @@ Renders `.table` on `md` and up (sticky header `sticky top-0 bg-background`). Be
 
 `src/lib/page-icons.ts` (new):
 ```ts
-export const PAGE_ICONS = { semaine: "📅", evenements: "🎉", recettes: "📖", ingredients: "🧅", courses: "🛒", clients: "👥", comptabilite: "💶", parametres: "⚙️", recette: "📖", evenement: "🎉", client: "🏢", particulier: "👤", fiche: "🔪" } as const;
+export const PAGE_ICONS = { semaine: "📅", evenements: "🎉", recettes: "📖", ingredients: "🧅", courses: "🛒", clients: "👥", comptabilite: "💶", parametres: "⚙️", recette: "📖", evenement: "🎉", client: "🏢", particulier: "👤", fiche: "🔪", offres: "📋", offre: "📋", devis: "🧮" } as const;
 ```
 
 **`PlanningBar.tsx`**. Becomes a thin wrapper around `Toolbar`: `left` = `ViewTabs [Semaine] [Jour] [Par personne]` (the tab reads « Jour » in both views, no « · Aujourd'hui » suffix); `center` = `DateNav` alone, with `labelClassName="md:min-w-[15rem] justify-start"` and `todayAlways`, so ‹, › and « Aujourd'hui » sit at the same x in both views; `right` = the page's slot (the Grouper `SelectPill` on the Jour page, `FilterButton`, ⋯, + Nouveau). Delete `BACK_BTN`, the `h1` (moves to `PageHeader` on the page), `below`, `TODAY_BTN`, `after`. `DayStrip` stays the second row: `"sticky top-topbar z-20 bg-background py-1 md:static xl:hidden"`, shown below `xl` for both views and hidden at `xl` on both pages, where `DayHeads` carries the dates (06 section 6.2).
@@ -676,6 +676,7 @@ Phone chrome, common to every screen: top bar 44px white with a hairline, left `
 │  🧅 Ingrédients          │
 │  🛒 Courses              │
 │  👥 Clients              │
+│  📋 Offres               │  active on /offres and /devis (07)
 │  💶 Comptabilité         │
 │  ⚙️ Paramètres           │
 │                          │
@@ -738,7 +739,7 @@ Removed: the 84px rail with labels under icons, the rail toggle, the gradient ro
  …
 ```
 
-Rules: the title has no arrows; `DateNav` lives in the toolbar, its label at `md:min-w-[15rem]` so ‹ and › keep their x on Jour. "Aujourd'hui" is always rendered after › and `disabled` on the current week. "Filtrer ▾" always renders; it opens the FilterMenu with two radio groups (Client, Personne) and the check "Masquer les lignes faites" (`?masquer=faites`, carried to the day links); active values show as blue chips under the toolbar; `Filtrer · 1` when set. Everything above the row of days (title, meta, toolbar, callouts) is the `PlanningFrame` shared with Jour (3.3); the row of days is `DayHeads` at `xl` and the `DayStrip` below, both shared with Jour. ⋯ holds: section "Afficher" with check rows "Afficher les lignes" / "Afficher les événements"; Courses de la semaine; Imprimer; Imprimer par personne; Partager avec Kristoff / Amélie. "+ Nouveau" goes to `/events/new?date=<monday or today>`. Today's column: no tint; the date number gets the red 20px circle. Past days `opacity-60`. Swipe still changes the week on touch.
+Rules: the title has no arrows; `DateNav` lives in the toolbar, its label at `md:min-w-[15rem]` so ‹ and › keep their x on Jour. "Aujourd'hui" is always rendered after › and `disabled` on the current week. "Filtrer ▾" always renders; it opens the FilterMenu with two radio groups (Client, Personne) and the check "Masquer les lignes faites" (`?masquer=faites`, carried to the day links); active values show as blue chips under the toolbar; `Filtrer · 1` when set. Everything above the row of days (title, meta, toolbar, callouts) is the `PlanningFrame` shared with Jour (3.3); the row of days is `DayHeads` at `xl` and the `DayStrip` below, both shared with Jour. ⋯ holds: section "Afficher" with check rows "Afficher les lignes" / "Afficher les événements"; Courses de la semaine; Imprimer; Imprimer par personne; Partager avec Kristoff / Amélie. "+ Nouveau" goes to `/events/new?date=<monday or today>`. Today's column: no tint; the date number gets the red 20px circle. Past days `opacity-60`. Swipe still changes the week on touch, except while a row is lifted. Touch: holding a line or task row 450 ms lifts it (dimmed row, `DragGhost` under the finger, strip cells, day headers and columns tinted `bg-selected`); drop on a day moves it, release elsewhere opens « Déplacer au… » (07 section 6.11). Laptop: the whole row is draggable, the grip stays as the hint.
 
 Removed: the dark "Semaine | Jour" and "Lignes | Événements" segments, the two selects, the bordered "Courses de la semaine", the bordered ⋯, the bordered checklist card and its "Réduire ^" link, the orange action links, the right-aligned "Signé / Mois" block, the orange "Aujourd'hui", the "19 au 25 octobre ▾" bordered picker, the serif title, the ‹ › around the title, the always-visible column "+", the beige today column, the hover `StatusDots` row, the "· Aujourd'hui" suffix of the Jour tab, the seven per-column sticky heads (one shared row instead).
 
@@ -850,7 +851,7 @@ Removed: the right-side card with the three-segment status and the brown Cuisine
  ×   Tarte au citron                               Étape 2 / 6     44px bar, 16/600 + 14 grey
      60 portions · Famille Dupont
  ───────────────────────────────────────────────────
- Quantités adaptées pour 60 portions (recette de base : 10)         12 grey
+ Quantités adaptées pour 60 portions, en bleu (recette de base : 10)  12 grey
  1. Sabler [750 g] de beurre froid …                              16 grey (previous step)
  2. Étaler la pâte sur 3 mm et foncer un cercle de 26 cm.         28px sans (36 desktop), #37352f
     Piquer le fond et cuire à blanc 20 minutes à 170 °C.
@@ -860,7 +861,7 @@ Removed: the right-side card with the three-segment status and the brown Cuisine
  [‹ Précédent]                                  [Suivant ›]        44px, default + primary
 ```
 
-Rules: scaled numbers use the yellow tag tint; the pane and the Sheet use circle checkboxes, 16px rows, with the portions `Stepper` in the header. On the last step "Suivant" becomes "Terminer": it sets the line to `done` and returns to the day (or the fiche) it came from. Swipe stays.
+Rules: scaled numbers use the light blue selection tint (`bg-selected`); her own highlights (`==…==`) use the yellow tag tint and `**…**` renders bold, markers hidden; the pane and the Sheet use circle checkboxes, 16px rows, with the portions `Stepper` in the header. On the last step "Suivant" becomes "Terminer": it sets the line to `done` and returns to the day (or the fiche) it came from. Swipe stays.
 
 Removed: the serif step text, the tinted "‹ Jour" back (now ×), the brown primary, the beige ingredient bar, the 2xl footer radius (now 6px).
 
@@ -874,27 +875,35 @@ Removed: the serif step text, the tinted "‹ Jour" back (now ×), the brown pri
  👥 Convives        60
  🍽 Prestation      (Buffet avec service ▾)
  🏢 Client          Famille Dupont
- 💶 Prix / convive  55 € HTVA
+ 💶 Prix            (par convive ▾) 55,00 € HTVA                                          gray SelectPill par convive | total food; total food adds the sub « soit 55,00 € / convive »
  ☎ Contact          Claire Dupont · Ajouter un téléphone · claire.dupont@example.be       three inline texts, each with a placeholder
+ 📍 Livraison       Rue des Lilas 4, 1050 Ixelles · 11h30                                 inline address · inline time (native time input while editing)
+ 🧾 Facturation     Famille Dupont / Rue des Lilas 4, 1050 Ixelles / BE 0123.456.789      multiline; link « Reprendre le client » or muted « Depuis la fiche client »
  🏷 Statut          (À venir ▾) (Acompte reçu)                                            status SelectPill + read-only billing tag
  👩‍🍳 Équipe          (KR) Kristoff  (AM) Amélie  +                                         + opens PersonPicker
  ⏱ Heures passées   0 h                                                                   editable number
  ─────────────────────────────────────────────────────────────
   Coût matières      Revenu HTVA       Marge            Marge %       stat row, bg #f7f7f5, divide-x, values 20/600
-  424,50 € estimé    3 300,00 €        2 455,50 €       74,4 %
+  424,50 € estimé    3 750,00 €        2 905,50 €       77,5 %       subs: « 1 recette sans coût », « dont 450 € service, livraison, autres »
+  TVAC 3 877,50 € · 12 % sur 3 300 € · 21 % sur 450 €                 caption under the row (vatBreakdown)
 
- Menu · 6 lignes                                        + Recette    20/600, ghost action
+ Menu · 7 lignes · 1 à compléter                        + Recette    20/600, ghost action
  Apéritif                                                            16/600 group label (no toggle)
    ⠿ ○ Mini quiches lorraines                 60 port.   (KR)   ⋯     36px rows; handle and ⋯ on hover
    ⠿ ● Houmous de betterave · Se garde 4 j    60 port.   (AM)   ⋯
  Entrée
    ⠿ ○ Verrines saumon fumé citron            60 port.   (KR)   ⋯
  …
-   + Ajouter une recette                                             ghost row, opens the recipe SearchSelect inline
+   ⠿ ○ Houmous maison (Sans ingrédients)      60 port.          ⋯     gray Tag; ⋯ gains « Compléter la recette »
+   + Ajouter une recette                                             ghost row, opens the recipe SearchSelect inline; « + Créer « Houmous maison » » when nothing matches
+ Pièces jointes · 2 fichiers · 3,4 Mo                   + Ajouter    AttachmentsSection (07 section 6.1); drop zone on pointer screens
+   📄 plan-salle.pdf                       1,2 Mo · 12 oct.    ⋯     36px rows, lucide icon by fileKindOf; ⋯ Ouvrir, Renommer, Supprimer
  Coûts supplémentaires · 420,00 €                       + Ajouter
    Location vaisselle          (Location ▾)   180 €    ×(hover)
    Extra service Kristoff 8h   (Personnel ▾)  240 €    ×(hover)
- Facturation                    [Enregistrer un acompte]  [+ Créer la facture]     default 32 + primary 32
+ Service, livraison, autres · 450,00 € HTVA             + Ajouter    billed lines, revenue; each with its own VAT rate, 21 % by default
+   Service                                   450 €     (21 % ▾)  ×(hover)
+ Facturation                    [Enregistrer un acompte]  [+ Créer la facture]     default 32 + primary 32; both absent in externe mode
    Acompte · Acompte Mariage Dupont · 2 octobre · 446,43 € HTVA        (Payé le 2 octobre)
  Notes
    Allergie noix pour 2 invités                                      multiline block, placeholder "Ajouter une note…"
@@ -908,10 +917,15 @@ Removed: the serif step text, the tinted "‹ Jour" back (now ×), the brown pri
  Convives     60
  Prestation   (Buffet avec service ▾)
  Client       Famille Dupont
- Prix/conv.   55 € HTVA
+ Prix         (par convive ▾) 55,00 € HTVA
  Contact      Claire Dupont
               claire.dupont@example.be
               Ajouter un téléphone
+ Livraison    Rue des Lilas 4, 1050 Ixelles
+              11h30
+ Facturation  Famille Dupont
+              Rue des Lilas 4, 1050 Ixelles
+              BE 0123.456.789
  Statut       (À venir ▾) (Acompte reçu)
  Équipe       (KR) Kristoff (AM) Amélie +
  [Terminer l'événement]                        default, full width 44px
@@ -923,7 +937,7 @@ Removed: the serif step text, the tinted "‹ Jour" back (now ×), the brown pri
   …
 ```
 
-Rules: every editable fact is a property row. The course select leaves the rows (the group label says it); row ⋯ holds Changer de catégorie ▸, Monter, Descendre, Modifier les portions, Attribuer, Note, Ouvrir la fiche, Retirer. Portions are an `EditableInlineNum`. The event status pill offers À venir / Terminé; choosing Terminé runs the same handler as the button. "Terminer l'événement" stays a visible default button (primary once the date is past). The only blue primary is "Créer la facture". Categories are plain 16/600 labels, not toggles.
+Rules: every editable fact is a property row. The course select leaves the rows (the group label says it); row ⋯ holds Changer de catégorie ▸, Monter, Descendre, Modifier les portions, Attribuer, Note, Ouvrir la fiche, Retirer. Portions are an `EditableInlineNum`. The event status pill offers À venir / Terminé; choosing Terminé runs the same handler as the button. "Terminer l'événement" stays a visible default button (primary once the date is past). The only blue primary is "Créer la facture"; in externe invoicing mode (07 section 6.8) it is absent and the Facturation section reads « Les factures se font dans un autre outil (Odoo). ». Categories are plain 16/600 labels, not toggles. Property order since 07: Date, Convives, Prestation, Client, Prix, Contact, Livraison, Facturation, Statut, Équipe, Heures passées; the Prix pill switches between « par convive » and « total food », both HTVA. Sections in order: Menu, Tâches, Pièces jointes, Coûts supplémentaires, Service, livraison, autres, Facturation, Notes. ⋯ gains « Enregistrer comme offre type ».
 
 Removed: the meta sentence with inline fields, the 6 category selects, the 6 up/down arrow pairs, the 6 bordered ⋯, the 2 permanently visible kind selects, the 4 bordered money cards, the pill-shaped bordered team toggles, the brown Terminer button, the "Heures" section (now a property), the category `SectionToggle`s, the bordered "+ Recette" and "+ Ajouter", the bordered Notes textarea, the serif title.
 
@@ -955,7 +969,7 @@ Removed: the dark "À venir" pill and its two outlined siblings, the client sele
 ```
  Recettes / Tarte au citron                                   [Modifier]   ⋯   [+ Cuisiner]     default 32, ghost, primary 36
  📖 Tarte au citron                                                                             40/700
- 🏷 Format         (Buffet ▾)
+ 🏷 Catégorie      (Dessert ▾)
  👥 Portions       10
  ⚖ Poids/pers      110 g
  💶 Coût           2,14 € / portion                                                             computed, grey sub "21,40 € pour 10"
@@ -976,7 +990,7 @@ Removed: the dark "À venir" pill and its two outlined siblings, the client sele
 ```
  ‹ Recettes        Tarte au citron        ⋯
  📖 Tarte au citron                       30/700
- Format       (Buffet ▾)
+ Catégorie    (Dessert ▾)
  Portions     10
  Poids/pers   110 g
  Pâte sablée maison et crème au citron …
@@ -992,7 +1006,7 @@ Removed: the dark "À venir" pill and its two outlined siblings, the client sele
  [🍳 Cuisiner]                [Modifier]   44px, primary + default
 ```
 
-Rules: the three grey chips become property rows; "Aa" moves into ⋯ ("Texte plus grand"); ⋯ also holds Dupliquer, Exporter, Supprimer. Cost and price simulation are toggle blocks with 16/600 titles. Photo, when present, sits above the title at `aspect-[3/2] rounded-lg` with no card.
+Rules: the three grey chips become property rows; « Catégorie » is the recipe's one category (07 section 6.9; « Format » no longer exists), a SelectPill over `settings.courses`; "Aa" moves into ⋯ ("Texte plus grand"); ⋯ also holds Dupliquer, Exporter, Supprimer. Cost and price simulation are toggle blocks with 16/600 titles. Edit mode (`?mode=edit`): the add-ingredient row has no blue check (product, quantity, Enter saves and opens the next row; a 44px « Ajouter » on touch); a focused step shows the ghost « Gras » and « Surligner » buttons (`StepToolbar`), always under the textarea on touch; on phones a sticky « Terminé » bar replaces the Cuisiner / Modifier bar. Photo, when present, sits above the title at `aspect-[3/2] rounded-lg` with no card.
 
 Removed: the three pill chips, the floating "Aa", the 10px-radius bordered stepper, the circled step numbers, the divided ingredient rows, the rounded card around the photo, the brown bottom bar, the serif title.
 
@@ -1002,23 +1016,23 @@ Removed: the three pill chips, the floating "Aa", the 10px-radius bordered stepp
 ```
  📖 Recettes                                                       [+ Nouvelle recette]
  32 recettes
- [Toutes] [Buffet] [Plat] [Dessert] [Apéritif]   ·   [Liste] [Galerie]        🔍   Trier ▾   ⋯
+ [Toutes] [Apéritif] [Entrée] [Plat] [Walking dinner] [Buffet] [Dessert]   ·   [Liste] [Galerie]        🔍   Trier ▾   ⋯
  ──────────────────────────────────────────────────────────────────────────── hairline
  Galerie:
  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐
  │  photo 3:2 │ │            │ │            │ │            │   cards: shadow-card, radius 6, hover bg
  │ Tarte au   │ │ Poulet     │ │ …          │ │            │   title 14/500, meta 12 grey
- │ (Buffet) 10 p │ (Plat) 30 p│ │            │ │            │
+ │ (Dessert) 10 p│ (Plat) 30 p│ │            │ │            │
  └────────────┘ └────────────┘ └────────────┘ └────────────┘
  Liste (Table):
- Nom                        Format     Portions   Coût / port.   Poids
- 📖 Tarte au citron          (Buffet)   10         2,14 €         110 g       36px rows
+ Nom                        Catégorie  Portions   Coût / port.   Poids
+ 📖 Tarte au citron          (Dessert)  10         2,14 €         110 g       36px rows
  32 résultats                                            ‹ 1 2 3 ›
 ```
 
-375: type tabs scrolling; `🔍 ⋯ + Nouvelle`; always the list (44px `ListRow`s with a 40px thumbnail).
+375: category tabs scrolling; `🔍 ⋯ + Nouvelle`; always the list (44px `ListRow`s with a 40px thumbnail).
 
-Rules: type chips become view tabs (first group); Liste | Galerie is a second small tab pair, persisted in localStorage, default Galerie on desktop. ⋯ holds Exporter Excel, Importer, Doublons. The duplicate warning stays as a 16px `AlertTriangle` in `text-tag-orange-fg` before the name.
+Rules: the category tabs (`settings.courses` then any value in use, `recipe.category`) are the first group, Trier offers « Catégorie »; Liste | Galerie is a second small tab pair, persisted in localStorage, default Galerie on desktop. ⋯ holds Exporter Excel, Importer, Doublons. The duplicate warning stays as a 16px `AlertTriangle` in `text-tag-orange-fg` before the name.
 
 Removed: the full-width bordered search, the pill chips, the bordered ⋯, the bordered gallery cards, the brown button, the serif title.
 
@@ -1177,17 +1191,21 @@ Removed: bordered tiles, bordered selects, the serif title.
  ⚙️ Paramètres                                                          [Enregistrer]     primary 32, only when dirty
  [Général] [Catalogue] [Équipe] [Finances] [Société]                                      ViewTabs bound to the URL hash
  ──────────────────────────────────────────────────────────────────────────── hairline
+ (Général)
+ Visite guidée                                                        Vue le 14 octobre 2026
+  Dix étapes pour voir comment planifier la semaine …      [Démarrer la visite]
  (Catalogue)
- Fournisseurs                                                          + Ajouter          20/600, ghost action
-  ● Barn            Adresse…          Téléphone…                        ⋯(hover)          32px rows, inline edit on click
-  ● Vds             Adresse…          Téléphone…                        ⋯
- Formats de recette                                                    + Ajouter
-  ⠿ Buffet                                                              ⋯
- Catégories du menu                                                    + Ajouter
-  ⠿ Apéritif                                                            ⋯
+ Catégories                                                            + Ajouter une catégorie
+  Classent les recettes et groupent le menu d'un événement : apéritif, entrée, plat…        14 grey
+  ⠿ Apéritif                                                            ⋯                 one list (07); Formats de recette and Catégories du menu are gone
+  ⠿ Entrée                                                              ⋯
  Types de prestation                                                   + Ajouter
   Nom                  Clé                   TVA
   Menu à emporter      menu_a_emporter       (6 % ▾)                    ⋯
+ Fournisseurs                                                          + Ajouter          20/600, ghost action
+  ● Barn            Adresse…          Téléphone…                        ⋯(hover)          32px rows, inline edit on click
+  ● Vds             Adresse…          Téléphone…                        ⋯
+ Doublons ignorés      rows with ⋯ "Rétablir"
  (Équipe)
  Équipe                                                                + Ajouter une personne
   Les personnes à qui les événements et les lignes sont assignés. …                       14 grey
@@ -1202,11 +1220,11 @@ Removed: bordered tiles, bordered selects, the serif title.
  Objectifs par année   (year SelectPill)      property list; monthly grids stay 12 `.input-field input-compact`
  Années précédentes    (year SelectPill)      property list
  (Société)
- Société               property list (Nom, Numéro de TVA, Adresse, Date de constitution, Début du journal)
- Doublons ignorés      rows with ⋯ "Rétablir"
+ Société               property list (Nom, Numéro de TVA, Adresse, Date de constitution, Début du journal, Factures)
+   Factures            (Dans l'application ▾)                             select: Dans l'application | Dans un autre outil (Odoo); in externe mode the sub reads « L'application ne propose plus de créer les factures ni les acomptes. Le chiffre d'affaires du mois se saisit ou s'importe dans le Journal. »
  À propos              version, tables as green/gray tags
 ```
-Tabs: Général = Formats de recette, Catégories du menu; Catalogue = Types de prestation, Fournisseurs, Doublons ignorés; Équipe; Finances = Charges fixes, Objectifs par année, Années précédentes; Société = Société, À propos. Hashes `#general`, `#catalogue`, `#equipe`, `#finances`, `#societe`; the existing `#objectifs` lands on Finances and `#apropos` on Société.
+Tabs: Général = Visite guidée; Catalogue = Catégories, Types de prestation, Fournisseurs, Doublons ignorés; Équipe; Finances = Charges fixes, Objectifs par année, Années précédentes; Société = Société (with Factures), À propos. Hashes `#general`, `#catalogue`, `#equipe`, `#finances`, `#societe`; the existing `#objectifs` lands on Finances and `#apropos` on Société.
 
 375: tabs scroll; rows 44px with ⋯ visible; a charge row opens a Sheet with its six fields as a property list; "Enregistrer" is a sticky bottom bar when dirty.
 
@@ -1347,12 +1365,12 @@ Regenerate the 16 screenshots at the same routes and viewports. Each check is pa
 
 **`v2-cook-375.png` (Cuisiner, 375)**
 - Header 44px: × ghost, title 16/600, "Étape 2 / 6" 14 grey.
-- Current step 28px sans `#37352f`; previous step 16px `#787774`; scaled numbers on `#fbf3db`.
+- Current step 28px sans `#37352f`; previous step 16px `#787774`; scaled numbers on the light blue selection tint (`rgba(35,131,226,0.07)`); her `==surligné==` on `#fbf3db`; legend « … en bleu (recette de base : 10) ».
 - "☰ Ingrédients (5) · 60 portions" row 44px on `#f7f7f5`; footer "Précédent" default + "Suivant" blue, 44px, radius 6. On step 6 the button reads "Terminer".
 
 **`v2-event-1366.png` (Événement, 1366)**
 - Header: breadcrumb, "Terminer l'événement" as a default (white, hairline) 32px button, ⋯ ghost. No brown.
-- Title "🎉 Mariage Dupont" 40/700; property list of 10 rows (Date, Convives, Prestation pill, Client link, Prix, Contact, Statut pills, Équipe avatars + "+", Heures passées); hover on a value shows the grey background only on that value.
+- Title "🎉 Mariage Dupont" 40/700; property list of 11 rows (Date, Convives, Prestation pill, Client link, Prix with its par convive | total food pill, Contact, Livraison, Facturation, Statut pills, Équipe avatars + "+", Heures passées); hover on a value shows the grey background only on that value.
 - Stat row on `#f7f7f5` with four columns, no borders, values 20/600.
 - Menu: category labels 16/600; rows 36px with handle and ⋯ hidden until hover; no `<select>` in rows; no up/down arrows. "+ Ajouter une recette" ghost row at the end.
 - Extra costs: kind as a pastel pill; × on hover. Facturation: default + blue 32px buttons. Notes: plain paragraph, hover background.
@@ -1361,7 +1379,7 @@ Regenerate the 16 screenshots at the same routes and viewports. Each check is pa
 - Top bar "‹ Sam 17" + "Mariage Dupont"; property names 112px; rows 44px; "Terminer l'événement" full-width default 44px; stat grid 2×2 on `#f7f7f5`; menu rows 44px with ⋯ visible and no handle.
 
 **`recipe-375.png` (Recette, 375)**
-- Property rows Format (pill), Portions, Poids/pers; no grey chips; no floating "Aa".
+- Property rows Catégorie (pill), Portions, Poids/pers; no grey chips; no floating "Aa".
 - Stepper: ghost 44px − + buttons, grey-fill input, ×2 ÷2 as text; no borders.
 - Ingredient rows 44px, no dividers; step numbers grey without circles; toggles 16/600.
 - Sticky bar: blue "Cuisiner" 44px + default "Modifier" 44px.

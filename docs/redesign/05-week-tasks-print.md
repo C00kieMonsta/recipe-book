@@ -37,7 +37,7 @@ French words used in every label, menu, toast and empty state. English names are
 | déplacé, un autre jour | A line whose jour de préparation differs from the event day. | `isMoved(line, event)` |
 | « pour sam. 17 · Mariage Dupont » | Header of a group of items prepared today for an event on another day. | `WeekDay.movedIn` |
 | Déplacer au… | The one menu label that moves a line or a task to another day. Same label on the week, the day page, the fiche and the event page. | `MoveToDayMenu` |
-| Catégories du menu, catégorie | The courses list in Paramètres and the per-line select. « Mignardises » is one of them. | `settings.courses`, `line.course` |
+| Catégories du menu, catégorie | The courses list in Paramètres and the per-line select. « Mignardises » is one of them. Superseded by `07-offers-pricing-attachments.md` (sections 2 and 3.1): one list « Catégories » classes recipes and groups menus, default Apéritif, Entrée, Plat, Walking dinner, Buffet, Dessert; installs that had Mignardises keep it as a seventh value. | `settings.courses`, `line.course`, `recipe.category` |
 | Ce qui manque pour la semaine 42 | The week box. | `WeekChecklist` |
 | Imprimer la semaine… | The ⋯ item on the week and the day that opens the print page. | `/semaine/:isoWeek/imprimer` |
 | Équipe, personne | Unchanged. | `Person`, `assignedTo` |
@@ -121,7 +121,7 @@ export const patchEventLineSchema = eventRecipeLineSchema
 
 `packages/types/src/dto/clients.ts`: `templateLineSchema` is unchanged (it already omits `prepDate`). Templates do not carry tasks in this iteration.
 
-`packages/types/src/entities/settings.ts`:
+`packages/types/src/entities/settings.ts` (this default list is superseded by 07 section 3.1: `DEFAULT_COURSES` is now her six values without Mignardises or Autre, and this list survives as `LEGACY_DEFAULT_COURSES_V2`):
 
 ```ts
 export const DEFAULT_COURSES = ["Apéritif", "Entrée", "Plat", "Dessert", "Mignardises", "Autre"];
@@ -681,7 +681,7 @@ Menu grouped by category:
 
 ### 6.8 Paramètres (`apps/frontend/src/pages/admin/Settings.tsx`)
 
-- « Catégories du menu » section: first child `<p className="text-sm text-muted-foreground">Ordre des services sur les menus, la journée, les fiches et l'impression.</p>`. Editing unchanged.
+- « Catégories du menu » section: first child `<p className="text-sm text-muted-foreground">Ordre des services sur les menus, la journée, les fiches et l'impression.</p>`. Editing unchanged. (Since 07 section 6.2 the section is « Catégories », merged with « Formats de recette », on the Catalogue tab.)
 - Line 135 fallback already uses `DEFAULT_COURSES`; the import picks up the six-item list. No other change. The upgrade rule is server-side (5.3).
 
 ### 6.9 Week checklist box (`apps/frontend/src/components/admin/WeekChecklist.tsx`)

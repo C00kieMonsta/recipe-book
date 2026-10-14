@@ -420,8 +420,8 @@ export default function Offers() {
               rowHref={(r) => `/offres/${r.offer.offerId}`}
               empty={<EmptyState message={tableEmpty} />}
               columns={[
-                { key: "name", label: "Nom", render: (r) => <span className="font-medium">{r.offer.name}</span> },
-                { key: "prestation", label: "Prestation", render: (r) => (r.prestation ? <Tag colour="gray">{r.prestation}</Tag> : "") },
+                { key: "name", label: "Nom", width: "220px", render: (r) => <span className="font-medium">{r.offer.name}</span> },
+                { key: "prestation", label: "Prestation", width: "1%", className: "whitespace-nowrap", render: (r) => (r.prestation ? <Tag colour="gray">{r.prestation}</Tag> : "") },
                 {
                   key: "recipes",
                   label: "Recettes",
@@ -462,7 +462,7 @@ export default function Offers() {
                     </>
                   ),
                 },
-                { key: "actions", label: "", width: "40px", align: "right", render: (r) => rowMenu(r.offer) },
+                { key: "actions", label: "", width: "40px", align: "right", trailing: true, render: (r) => rowMenu(r.offer) },
               ]}
             />
           </div>

@@ -476,7 +476,7 @@ export default function EventDetail() {
       portions: Math.max(1, Math.round(event.guestCount)),
       course: recipe.category,
     }));
-    toast({ title: "Recette créée et ajoutée" });
+    toast({ title: "Recette créée et ajoutée", action: { label: "Compléter", onClick: () => navigate(`/recipes/${recipe.recipeId}/edit?retour=/events/${id}`) } });
   };
 
   const removeLine = async (lineId: string) => {
@@ -647,8 +647,8 @@ export default function EventDetail() {
     if (!name) return;
     setBusy(true);
     try {
-      await api.offers.create(offerFromEvent(event, name));
-      toast({ title: `Offre « ${name} » enregistrée` });
+      const offer = await api.offers.create(offerFromEvent(event, name));
+      toast({ title: `Offre « ${name} » enregistrée`, action: { label: "Ouvrir", onClick: () => navigate(`/offres/${offer.offerId}`) } });
       setDialog(null);
     } catch (e) {
       toast({ title: e instanceof ApiError ? e.message : "Erreur lors de l'enregistrement de l'offre", variant: "destructive" });

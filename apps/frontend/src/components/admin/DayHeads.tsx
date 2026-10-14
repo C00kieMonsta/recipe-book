@@ -98,8 +98,8 @@ export default function DayHeads({ dates, plan, started, today, selected, href, 
           </div>
         );
       })}
-      {/* Floats under the row so the columns do not shift under the finger. */}
-      {dragging && <p className="absolute inset-x-0 top-full z-10 bg-background text-caption leading-none text-muted-foreground">Déposez sur un jour</p>}
+      {/* Takes the pb-1 gap instead of floating over the first card. */}
+      {dragging && <p className="col-span-7 -mb-1 h-3 text-caption leading-none text-muted-foreground">Déposez sur un jour</p>}
     </div>
   );
 }

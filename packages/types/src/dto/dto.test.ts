@@ -195,6 +195,12 @@ describe("event schemas", () => {
     expect(updateEventRequestSchema.safeParse({ pricingMode: "total" }).success).toBe(false);
     expect(updateEventRequestSchema.safeParse({ pricingMode: "total", sellingTotal: null }).success).toBe(false);
     expect(updateEventRequestSchema.safeParse({ pricingMode: "total", sellingTotal: 900 }).success).toBe(true);
+  });
+
+  it("clears deliveryTime on null or an empty string", () => {
+    expect(updateEventRequestSchema.safeParse({ deliveryTime: "" }).success).toBe(true);
+    expect(updateEventRequestSchema.safeParse({ deliveryTime: null }).success).toBe(true);
+    expect(updateEventRequestSchema.safeParse({ deliveryTime: "9h30" }).success).toBe(false);
     expect(updateEventRequestSchema.safeParse({ pricingMode: "par_convive", sellingTotal: null }).success).toBe(true);
     expect(updateEventRequestSchema.safeParse({ guestCount: 40 }).success).toBe(true);
   });

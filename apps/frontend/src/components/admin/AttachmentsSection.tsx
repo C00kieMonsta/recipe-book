@@ -184,7 +184,7 @@ export default function AttachmentsSection({ event, onChange }: AttachmentsSecti
         onBlur={() => void commitRename(a)}
       />
     ) : (
-      <button type="button" className="max-w-full truncate rounded text-left hover:underline focus-visible:outline-none focus-visible:shadow-ring" onClick={() => void open(a)}>
+      <button type="button" className="block max-w-full truncate rounded text-left hover:underline focus-visible:outline-none focus-visible:shadow-ring touch:min-h-11 touch:w-full touch:py-2.5" onClick={() => void open(a)}>
         {a.name}
       </button>
     );

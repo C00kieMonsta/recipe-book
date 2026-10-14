@@ -744,6 +744,8 @@ export default function Week() {
       today={today}
       stripHref={dayUrl}
       linkState={state}
+      dropDay={lift.target}
+      dragging={lift.dragging}
     />
   );
 
@@ -973,10 +975,10 @@ export default function Week() {
                   );
                 })}
                 {!empty && (
-                  <Button variant="ghost" size="sm" as={Link} to={newEventUrl(day.date)} icon={<Plus />} className="mt-1 w-full justify-start text-muted-foreground">Nouvel événement</Button>
+                  <Button variant="ghost" size="sm" as={Link} to={newEventUrl(day.date)} icon={<Plus />} className="mt-1 w-full min-w-0 justify-start overflow-hidden text-muted-foreground"><span className="truncate">Nouvel événement</span></Button>
                 )}
                 {taskEventId && (
-                  <Button variant="ghost" size="sm" icon={<Plus />} className="mt-1 w-full justify-start text-muted-foreground" onClick={() => openTaskCreate(day.date)}>Tâche</Button>
+                  <Button variant="ghost" size="sm" icon={<Plus />} className="mt-1 w-full min-w-0 justify-start overflow-hidden text-muted-foreground" onClick={() => openTaskCreate(day.date)}><span className="truncate">Tâche</span></Button>
                 )}
                 <div className="my-2 h-px bg-border" aria-hidden="true" />
               </section>

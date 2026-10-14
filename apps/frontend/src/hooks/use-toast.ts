@@ -5,6 +5,7 @@ export interface Toast {
   title: string;
   description?: string;
   variant?: "default" | "destructive";
+  action?: { label: string; onClick: () => void };
 }
 
 type Action =

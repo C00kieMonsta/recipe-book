@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type KeyboardEvent } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Save, Plus, X, ImagePlus } from "lucide-react";
 import type { RecipeIngredient, RecipePricing, RecipePhoto, Ingredient } from "@packages/types";
 import { UNITS_QTY, DEFAULT_COURSES, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS, recipeCategoryOf } from "@packages/types";
@@ -32,6 +32,10 @@ export default function RecipeEditor() {
   const { id } = useParams<{ id: string }>();
   const isNew = !id || id === "new";
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const retour = searchParams.get("retour");
+  // « Compléter la recette » from an event comes back to that event.
+  const backTo = retour && retour.startsWith("/") ? retour : `/recipes/${id}`;
   const { toast } = useToast();
   const [allIngredients, setAllIngredients] = useState<Ingredient[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -51,7 +55,7 @@ export default function RecipeEditor() {
   const focusStep = useRef<number | null>(null);
 
   const title = isNew ? "Nouvelle recette" : "Modifier la recette";
-  useBackLink({ to: isNew ? "/recipes" : `/recipes/${id}`, label: "Recettes" });
+  useBackLink({ to: isNew ? "/recipes" : backTo, label: retour ? "Retour" : "Recettes" });
   useTopTitle(title);
 
   useEffect(() => {
@@ -173,7 +177,7 @@ export default function RecipeEditor() {
       } else {
         await api.recipes.update(id!, data);
         toast({ title: "Recette modifiée" });
-        navigate(`/recipes/${id}`);
+        navigate(backTo);
       }
     } catch {
       toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" });
@@ -193,7 +197,7 @@ export default function RecipeEditor() {
 
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
 
-  const cancel = () => navigate(isNew ? "/recipes" : `/recipes/${id}`);
+  const cancel = () => navigate(isNew ? "/recipes" : backTo);
   const footer = (
     <>
       <Button variant="default" size="md" onClick={cancel}>Annuler</Button>

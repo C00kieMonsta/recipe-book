@@ -845,6 +845,8 @@ export default function Day() {
       selected={safeDate}
       stripHref={dayUrl}
       linkState={location.state}
+      dropDay={lift.target}
+      dragging={lift.dragging}
     />
   );
 

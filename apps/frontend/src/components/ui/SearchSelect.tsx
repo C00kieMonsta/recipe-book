@@ -137,7 +137,7 @@ export default function SearchSelect({
         onKeyDown={onKeyDown}
       />
       {listOpen && (
-        <div ref={listRef} id={listId} role="listbox" className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-lg bg-background py-1 shadow-menu">
+        <div ref={listRef} id={listId} role="listbox" className="absolute z-50 mt-1 max-h-64 w-full min-w-[16rem] max-w-[calc(100vw-2rem)] overflow-auto rounded-lg bg-background py-1 shadow-menu">
           {filtered.map((opt, i) => (
             <button
               key={opt.value}

@@ -63,10 +63,11 @@ export default function PageHeader({ breadcrumb, breadcrumbOnPhone = false, titl
             )}
           </h1>
           {meta && <div className="mt-1 text-base text-muted-foreground">{meta}</div>}
-          {properties}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
       </div>
+      {/* Below the title row so the property rows get the whole header width. */}
+      {properties}
     </header>
   );
 }

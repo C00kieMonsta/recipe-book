@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type RefObject } from "react";
+import { fmtEur } from "@packages/types";
 import { cn } from "@/lib/utils";
 import NumericInput from "./NumericInput";
 import SelectPill from "./SelectPill";
@@ -138,6 +139,8 @@ export function EditableInlineText({ value, onSave, placeholder }: {
   );
 }
 
+const fmtNum = (n: number) => new Intl.NumberFormat("fr-BE", { maximumFractionDigits: 2 }).format(n);
+
 export function EditableInlineNum({ value, onSave, suffix, min }: {
   value: number;
   onSave: (v: number) => void;
@@ -146,6 +149,7 @@ export function EditableInlineNum({ value, onSave, suffix, min }: {
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(String(value));
+  const money = suffix?.trim() === "€";
 
   useEffect(() => { if (!editing) setText(String(value)); }, [value, editing]);
 
@@ -187,7 +191,7 @@ export function EditableInlineNum({ value, onSave, suffix, min }: {
       onClick={() => setEditing(true)}
       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
     >
-      {value}{suffix || ""}
+      {money ? fmtEur(value) : `${fmtNum(value)}${suffix || ""}`}
     </strong>
   );
 }

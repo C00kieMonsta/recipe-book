@@ -31,12 +31,15 @@ export interface PlanningBarProps {
   linkState?: unknown;
   onTouchStart?: (e: React.TouchEvent) => void;
   onTouchEnd?: (e: React.TouchEvent) => void;
+  // Touch drag: the strip tints, the target cell gets the ring and the caption shows.
+  dropDay?: string | null;
+  dragging?: boolean;
 }
 
 // One toolbar row shared by the week and the day page, then the seven-day strip.
 export default function PlanningBar(props: PlanningBarProps) {
   const { view, weekHref, dayHref, personHref, dateLabel, onPrev, onNext, onPick, pickValue, isToday, onToday, right, rightTouch, filters } = props;
-  const { dates, counts, today, selected, stripHref, linkState, onTouchStart, onTouchEnd } = props;
+  const { dates, counts, today, selected, stripHref, linkState, onTouchStart, onTouchEnd, dropDay, dragging } = props;
 
   const tabs = [
     { key: "week", label: "Semaine", to: weekHref },
@@ -70,7 +73,7 @@ export default function PlanningBar(props: PlanningBarProps) {
       </div>
       {/* At xl the DayHeads row carries the seven days on both pages, so the strip would repeat every date. */}
       <div className="no-print sticky top-topbar z-20 -mx-4 bg-background px-4 py-1 md:static md:mx-0 md:px-0 xl:hidden">
-        <DayStrip dates={dates} counts={counts} today={today} selected={selected} href={stripHref} state={linkState} />
+        <DayStrip dates={dates} counts={counts} today={today} selected={selected} href={stripHref} state={linkState} dropDay={dropDay} dragging={dragging} />
       </div>
     </>
   );

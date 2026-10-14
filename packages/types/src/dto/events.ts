@@ -108,7 +108,7 @@ export const updateEventRequestSchema = eventFieldsSchema
     contactPhone: z.string().trim().nullable().optional(),
     contactEmail: z.string().trim().nullable().optional(),
     deliveryAddress: z.string().trim().max(200).nullable().optional(),
-    deliveryTime: deliveryTime.nullable().optional(),
+    deliveryTime: z.union([deliveryTime, z.literal("")]).nullable().optional(),
     billingDetails: z.string().trim().max(500).nullable().optional(),
     sellingTotal: moneyNonnegative.nullable().optional(),
     revenueLines: z.array(eventRevenueLineSchema).max(10).optional(),
