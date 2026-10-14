@@ -235,6 +235,40 @@ describe("EventsService", () => {
     it("404s on an unknown event", async () => {
       await expect(service.update("nope", { name: "x" })).rejects.toBeInstanceOf(NotFoundException);
     });
+
+    it("guards the write on the updatedAt it read and bumps it", async () => {
+      const event = await service.update("e1", { name: "Baptême" });
+      expect(ddb.updates).toHaveLength(1);
+      expect(ddb.updates[0].options.condition).toBe("#ua = :expected");
+      expect(ddb.updates[0].options.values?.[":expected"]).toBe("2026-01-01T00:00:00.000Z");
+      expect(ddb.updates[0].fields.updatedAt).toBe(event.updatedAt);
+      expect(event.updatedAt > "2026-01-01T00:00:00.000Z").toBe(true);
+    });
+
+    it("re-reads and retries when a line tick landed between its read and its write", async () => {
+      // The phone marks line a done while the editor's date change is in flight.
+      ddb.beforeUpdate = () => {
+        const row = ddb.rows("events").get("e1") as Item;
+        row.recipes = (row.recipes as Item[]).map((l) => (l.lineId === "b" ? { ...l, prepStatus: "done" } : l));
+        row.updatedAt = "2026-01-02T00:00:00.000Z";
+        ddb.beforeUpdate = undefined;
+      };
+      const reads = jest.spyOn(service, "getOrFail");
+      const event = await service.update("e1", { date: "2026-06-02" });
+      expect(ddb.updates).toHaveLength(2);
+      expect(ddb.updates[1].options.values).toEqual({ ":expected": "2026-01-02T00:00:00.000Z" });
+      // Two fresh reads before the writes, one re-read after the write that went through.
+      expect(reads).toHaveBeenCalledTimes(3);
+      expect(event.date).toBe("2026-06-02");
+      expect(event.recipes[1].prepStatus).toBe("done");
+    });
+
+    it("succeeds after three condition failures within the five-attempt budget", async () => {
+      ddb.failUpdatesWith.push(conditionFailure(), conditionFailure(), conditionFailure());
+      const event = await service.update("e1", { name: "Baptême" });
+      expect(ddb.updates).toHaveLength(4);
+      expect(event.nameLower).toBe("baptême");
+    });
   });
 
   describe("line operations", () => {
@@ -276,7 +310,7 @@ describe("EventsService", () => {
       expect(event.updatedAt > "2026-01-01T00:00:00.000Z").toBe(true);
     });
 
-    it("patchLine retries once when updatedAt moved under it", async () => {
+    it("patchLine re-reads and retries when updatedAt moved under it", async () => {
       // The phone ticks line a between the laptop's read and its write.
       ddb.beforeUpdate = () => {
         const row = ddb.rows("events").get("e1") as Item;
@@ -302,8 +336,15 @@ describe("EventsService", () => {
       await call.catch((err: ConflictException) => {
         expect(err.getResponse()).toEqual({ code: "LINES_CHANGED", missing: [] });
       });
-      expect(ddb.updates).toHaveLength(2);
+      expect(ddb.updates).toHaveLength(5);
       expect((await service.getOrFail("e1")).recipes).toHaveLength(3);
+    });
+
+    it("line writes succeed when the event stops moving before the budget runs out", async () => {
+      ddb.failUpdatesWith.push(conditionFailure(), conditionFailure(), conditionFailure());
+      const event = await service.patchLine("e1", "b", { prepStatus: "done" });
+      expect(ddb.updates).toHaveLength(4);
+      expect(event.recipes[1].prepStatus).toBe("done");
     });
 
     it("line endpoints work on an event stored without a recipes attribute", async () => {
@@ -436,7 +477,7 @@ describe("EventsService", () => {
       await call.catch((err: ConflictException) => {
         expect(err.getResponse()).toEqual({ code: "LINES_CHANGED", missing: [] });
       });
-      expect(ddb.updates).toHaveLength(2);
+      expect(ddb.updates).toHaveLength(5);
       expect((await service.getOrFail("e1")).tasks).toHaveLength(2);
     });
 

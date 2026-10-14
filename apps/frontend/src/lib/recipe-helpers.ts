@@ -1,5 +1,5 @@
 import type { Ingredient, Recipe } from "@packages/types";
-import { calcRecipeCost as calcRecipeCostByMap } from "@packages/types";
+import { calcRecipeCost as calcRecipeCostByMap, fmtEur } from "@packages/types";
 
 export { calcIngredientLineCost, calcEventCost, scaleQty } from "@packages/types";
 
@@ -9,8 +9,9 @@ export function calcRecipeCost(recipe: Recipe, ingredients: Ingredient[] | Map<s
   return calcRecipeCostByMap(recipe, byId);
 }
 
+// « 1 234,56 € », the same fr-BE format as the rest of the app.
 export function fmt(n: number): string {
-  return (n || 0).toFixed(2) + " €";
+  return fmtEur(n || 0);
 }
 
 // Eight tints that keep dark text readable; the dot and border uses take the string as is.
@@ -35,4 +36,9 @@ function hashName(name: string): number {
 export function supplierColor(name: string): string {
   if (!name) return "hsl(20 10% 60%)";
   return SUPPLIER_PALETTE[hashName(name.trim().toLowerCase()) % SUPPLIER_PALETTE.length];
+}
+
+// "3,50 €/kg": the unit already carries the euro sign.
+export function fmtUnitPrice(price: number, unit: string): string {
+  return unit.startsWith("€") ? `${fmt(price)}${unit.slice(1)}` : `${fmt(price)} ${unit}`;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Link } from "react-router-dom";
 import type { Person } from "@packages/types";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
@@ -19,6 +19,8 @@ export interface PersonPickerProps {
   title?: string;
   // Popover side on pointer screens.
   align?: "left" | "right";
+  // Element focused when the panel closes; defaults to the first button next to the panel.
+  returnFocusRef?: RefObject<HTMLElement>;
   className?: string;
 }
 
@@ -27,7 +29,7 @@ const ROW_TOUCH = "flex h-11 w-auto items-center gap-2 rounded-none px-4 text-ba
 
 // Checkbox rows; a Menu panel on pointer screens and a bottom Sheet on touch screens.
 // Mount it inside a `relative` element next to the chips; the parent owns the open state.
-export default function PersonPicker({ value, options, onChange, allowInherit = false, onNext, onClose, title = "Assigner", align = "left", className = "" }: PersonPickerProps) {
+export default function PersonPicker({ value, options, onChange, allowInherit = false, onNext, onClose, title = "Assigner", align = "left", returnFocusRef, className = "" }: PersonPickerProps) {
   const ref = useRef<HTMLDivElement>(null);
   const touch = useTouchScreen();
   const active = options.filter((p) => p.active);
@@ -48,6 +50,19 @@ export default function PersonPicker({ value, options, onChange, allowInherit = 
       document.removeEventListener("keydown", key);
     };
   }, [onClose, touch]);
+
+  // Give focus back to the trigger when the panel unmounts.
+  useEffect(() => {
+    if (touch) return;
+    const parent = ref.current?.parentElement;
+    const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    return () => {
+      const active = document.activeElement;
+      if (active && active !== document.body && !parent?.contains(active)) return;
+      const target = returnFocusRef?.current ?? (opener?.isConnected ? opener : null) ?? parent?.querySelector<HTMLElement>("button") ?? null;
+      target?.focus();
+    };
+  }, [touch, returnFocusRef]);
 
   const toggle = (id: string) => onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
   const row = touch ? ROW_TOUCH : ROW;

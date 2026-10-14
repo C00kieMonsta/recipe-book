@@ -19,6 +19,7 @@ Plan for the rethink of the app after the caterer's feedback (planning view, rea
 | `05-week-tasks-print.md` | Dalia's second feedback: client from the event, menu categories with Mignardises, the week box reworded, tasks without a recipe and preparations moved to another day, a printable week. |
 | `06-week-day-transition.md` | The day is the week with one column open: one shared header and row of day heads on the week and the day page, from the owner's production screenshots. |
 | `workings/implementation-review.md` | Review of the first implementation against the plan. |
+| `workings/qa-review-2026-10-14.md` | Full code review and QA (seven reviewers, two QA runs, adversarial verification): what was confirmed, fixed and deferred. |
 | `workings/first-run-review.md` | Five first-time personas walking the running app, the judge's sixteen fixes, what the tour explains, what is deferred. |
 
 The plan, the planning iteration, the Notion UI and the first-run pass are implemented on main (October 2026). Section 9 of `REDESIGN.md` (questions for the caterer and the accountant) and the deferred list in `workings/first-run-review.md` are the open items.

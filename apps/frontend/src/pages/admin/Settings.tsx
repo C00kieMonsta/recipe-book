@@ -26,7 +26,7 @@ import {
   slugifyPersonId,
   sumMoney,
 } from "@packages/types";
-import { api, type HealthResponse } from "@/lib/api";
+import { api, ApiError, invalidate, type HealthResponse } from "@/lib/api";
 import { supplierColor } from "@/lib/recipe-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { useTopTitle } from "@/components/admin/AdminLayout";
@@ -71,6 +71,8 @@ interface Draft {
   company: CompanySettings;
   ledgerStartYm?: string;
   ignoredDuplicateGroups: string[];
+  // Sent back on save so the backend can refuse a stale draft.
+  updatedAt?: string;
 }
 
 const CHARGE_CATEGORIES: { value: FixedChargeCategory; label: string }[] = [
@@ -142,6 +144,7 @@ function fromSettings(s: AppSettings): Draft {
     company: s.company ?? { name: "", vatNumber: "", address: "" },
     ledgerStartYm: s.ledgerStartYm,
     ignoredDuplicateGroups: s.ignoredDuplicateGroups ?? [],
+    updatedAt: s.updatedAt,
   };
 }
 
@@ -312,7 +315,7 @@ function OptNumValue({ value, onChange, placeholder = "Vide", suffix, min, step,
       role="button"
       tabIndex={0}
       aria-label={ariaLabel}
-      className={`prop-value inline-flex min-h-6 items-center tabular-nums ${className}`}
+      className={`prop-value inline-flex min-h-6 items-center tabular-nums touch:min-h-11 ${className}`}
       onClick={() => setEditing(true)}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditing(true); } }}
     >
@@ -335,7 +338,7 @@ function MonthValue({ value, onChange, placeholder = "Vide", ariaLabel }: { valu
         role="button"
         tabIndex={0}
         aria-label={ariaLabel}
-        className="prop-value inline-flex min-h-6 items-center tabular-nums"
+        className="prop-value inline-flex min-h-6 items-center tabular-nums touch:min-h-11"
         onClick={open}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}
       >
@@ -508,6 +511,7 @@ export default function Settings() {
         company,
         ledgerStartYm: draft.ledgerStartYm || undefined,
         ignoredDuplicateGroups: draft.ignoredDuplicateGroups,
+        updatedAt: draft.updatedAt,
       });
       setDraft(fromSettings(updated));
       setDirty(false);
@@ -524,7 +528,19 @@ export default function Settings() {
         }
       }
     } catch (e) {
-      toast({ title: (e as Error).message || "Erreur", variant: "destructive" });
+      if (e instanceof ApiError && e.status === 409) {
+        invalidate("settings");
+        try {
+          const fresh = await api.settings.get();
+          setDraft(fromSettings(fresh));
+          setDirty(false);
+        } catch {
+          // The toast below already tells the user to expect a reload.
+        }
+        toast({ title: "Modifié ailleurs, le formulaire a été rechargé", variant: "destructive" });
+      } else {
+        toast({ title: (e as Error).message || "Erreur", variant: "destructive" });
+      }
     } finally {
       setSaving(false);
     }

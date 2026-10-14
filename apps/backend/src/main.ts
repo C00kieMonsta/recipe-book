@@ -1,10 +1,17 @@
 import "dotenv/config";
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { logger: ["error", "warn", "log"] });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+    logger: ["error", "warn", "log"],
+  });
+  // A full CSV import is one body; the default 100 kB cap refused it with a bare 413.
+  app.useBodyParser("json", { limit: "2mb" });
+  app.useBodyParser("urlencoded", { extended: true, limit: "2mb" });
 
   app.setGlobalPrefix("api", { exclude: ["health", "api/health"] });
 

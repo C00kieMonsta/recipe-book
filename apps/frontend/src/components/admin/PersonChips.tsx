@@ -55,12 +55,12 @@ export default function PersonChips({ personIds, people, size = "md", inherited 
   const names = personIds.map((id) => personName(people, id)).join(", ");
 
   const inner = (
-    <span className={`inline-flex items-center -space-x-1 ${inherited ? "opacity-50" : ""}`}>
+    <span className={`inline-flex items-center gap-0.5 ${inherited ? "opacity-50" : ""}`}>
       {shown.map((id) => (
-        <PersonChip key={id} personId={id} people={people} size={size} className="ring-1 ring-background" />
+        <PersonChip key={id} personId={id} people={people} size={size} />
       ))}
       {extra > 0 && (
-        <span className={`${CIRCLE} text-muted-foreground ring-1 ring-background ${SIZE[size]}`} aria-hidden="true">
+        <span className={`${CIRCLE} text-muted-foreground ${SIZE[size]}`} aria-hidden="true">
           +{extra}
         </span>
       )}

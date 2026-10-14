@@ -11,7 +11,7 @@ import Dialog from "./Dialog";
 interface IngredientFormModalProps {
   ingredient: Partial<Ingredient>;
   supplierNames: string[];
-  onSave: (data: Partial<Ingredient>) => void;
+  onSave: (data: Partial<Ingredient>) => void | Promise<void>;
   onCancel: () => void;
   onDelete?: () => void;
   existing?: Ingredient[];
@@ -21,6 +21,7 @@ interface IngredientFormModalProps {
 export default function IngredientFormModal({ ingredient, supplierNames, onSave, onCancel, onDelete, existing, onUseExisting }: IngredientFormModalProps) {
   const [form, setForm] = useState({ ...ingredient });
   const [localSuppliers, setLocalSuppliers] = useState(supplierNames);
+  const [busy, setBusy] = useState(false);
   const u = (k: string, v: unknown) => setForm((p) => ({ ...p, [k]: v }));
 
   const supplierOptions = localSuppliers.map((s) => ({ value: s, label: s }));
@@ -38,6 +39,12 @@ export default function IngredientFormModal({ ingredient, supplierNames, onSave,
     return existingKeys.find((e) => e.key === key)?.ingredient ?? null;
   }, [isCreate, form.name, existingKeys]);
 
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    try { await onSave(form); } finally { setBusy(false); }
+  };
+
   const footer = (
     <div className="flex w-full flex-wrap items-center justify-between gap-2">
       <div>
@@ -47,7 +54,7 @@ export default function IngredientFormModal({ ingredient, supplierNames, onSave,
       </div>
       <div className="flex gap-2">
         <Button variant="default" size="md" onClick={onCancel}>Annuler</Button>
-        <Button variant="primary" size="md" onClick={() => onSave(form)}>Enregistrer</Button>
+        <Button variant="primary" size="md" onClick={save} disabled={busy}>Enregistrer</Button>
       </div>
     </div>
   );

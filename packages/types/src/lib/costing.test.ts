@@ -226,4 +226,9 @@ describe("buildCostSnapshot", () => {
   it("handles an event without lines", () => {
     expect(buildCostSnapshot({ recipes: [], extraCosts: [] }, new Map(), new Map())).toEqual({ rawMaterial: 0, extrasTotal: 0, lines: [] });
   });
+  it("buildCostSnapshot treats recipe portions 0 as 1", () => {
+    const snapshot = buildCostSnapshot({ recipes: [{ lineId: "a", recipeId: "r", portions: 2 }], extraCosts: [] }, new Map([["r", 10]]), new Map([["r", 0]]));
+    expect(snapshot.rawMaterial).toBe(20);
+    expect(snapshot.lines[0].unitCost).toBe(10);
+  });
 });

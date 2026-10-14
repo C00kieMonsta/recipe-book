@@ -414,6 +414,21 @@ describe("IngredientsService", () => {
       expect(ddb.updates[0].key).toEqual({ ingredientId: "oeuf-bio-live" });
     });
 
+    it("keeps the stored supplier when the row has none and replaces it when the row names one", async () => {
+      await ddb.put("ingredients", ing({ ingredientId: "farine-t55", name: "Farine T55", unit: "€/kg", supplier: "Metro" }) as unknown as Item);
+
+      const kept = await service.importIngredients([{ nom: "Farine T55", prix_htva: 1.3, unite: "€/kg", fournisseur: "" }]);
+      expect(kept).toEqual({ created: 0, updated: 1, unmatched: [] });
+      expect(ddb.updates[0].key).toEqual({ ingredientId: "farine-t55" });
+      expect(ddb.updates[0].fields).toMatchObject({ price: 1.3, supplier: "Metro" });
+
+      const replaced = await service.importIngredients([{ nom: "Farine T55", prix_htva: 1.4, unite: "€/kg", fournisseur: "Colruyt" }]);
+      expect(replaced).toEqual({ created: 0, updated: 1, unmatched: [] });
+      expect(ddb.updates[1].fields).toMatchObject({ price: 1.4, supplier: "Colruyt" });
+      const stored = await ddb.get("ingredients", { ingredientId: "farine-t55" }) as unknown as Ingredient;
+      expect(stored.supplier).toBe("Colruyt");
+    });
+
     it("skips a unit-family mismatch instead of overwriting the unit", async () => {
       const result = await service.importIngredients([
         { nom: "Farine", prix_htva: 2, unite: "€/pièce", fournisseur: "Vds" },

@@ -1,5 +1,5 @@
 import { createLedgerEntrySchema, patchLedgerEntrySchema, lockMonthSchema } from "./ledger";
-import { money, moneyNonnegative } from "./primitives";
+import { isoDate, money, moneyNonnegative, yearMonth } from "./primitives";
 import {
   addEventLineSchema,
   addEventTaskSchema,
@@ -32,6 +32,15 @@ describe("primitives", () => {
     expect(money.safeParse(12.345).success).toBe(false);
     expect(money.safeParse(-12.34).success).toBe(true);
     expect(moneyNonnegative.safeParse(-12.34).success).toBe(false);
+  });
+  it("isoDate and yearMonth reject impossible dates", () => {
+    expect(isoDate.safeParse("2026-02-28").success).toBe(true);
+    expect(isoDate.safeParse("2024-02-29").success).toBe(true);
+    expect(isoDate.safeParse("2026-02-30").success).toBe(false);
+    expect(isoDate.safeParse("2026-13-45").success).toBe(false);
+    expect(yearMonth.safeParse("2026-12").success).toBe(true);
+    expect(yearMonth.safeParse("2026-13").success).toBe(false);
+    expect(yearMonth.safeParse("2026-00").success).toBe(false);
   });
 });
 

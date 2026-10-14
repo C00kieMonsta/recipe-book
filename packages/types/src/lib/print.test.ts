@@ -266,6 +266,21 @@ describe("weekPrintPages, by person", () => {
     expect(pages[0].caption).toBeUndefined();
   });
 
+  it("prints rows of an inactive person on their own page", () => {
+    const ev = event({ eventId: "Dîner", date: "2026-10-14", recipes: [line("poulet", { lineId: "a", portions: 1, assignedTo: ["old"] }), line("poulet", { lineId: "b", portions: 1 })] });
+    const pages = weekPrintPages(input({ events: [ev], byPerson: true }));
+    expect(pages.map((p) => p.title)).toEqual(["Ancien · semaine 42", "Sans personne · semaine 42"]);
+    expect(pages[0].sections[0].blocks[0].rows).toEqual([
+      { kind: "recipe", done: false, label: "Poulet basquaise", course: "Plat", portions: 1, initials: ["AN"] },
+    ]);
+    expect(pages[1].sections[0].blocks[0].rows).toHaveLength(1);
+  });
+
+  it("names a deleted person by id on their page", () => {
+    const ev = event({ eventId: "Dîner", date: "2026-10-14", recipes: [line("poulet", { assignedTo: ["ghost"] })] });
+    expect(weekPrintPages(input({ events: [ev], byPerson: true })).map((p) => p.title)).toEqual(["ghost · semaine 42"]);
+  });
+
   it("gives only that person's page with personId", () => {
     const pages = weekPrintPages(input({ events: [shared], byPerson: true, personId: "kristoff" }));
     expect(pages.map((p) => p.title)).toEqual(["Kristoff · semaine 42"]);

@@ -26,7 +26,7 @@ import type {
   DuplicateMember,
 } from "@packages/types";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
+export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 // The health route is also served under the api prefix so it goes through the same distribution path as the API.
 const HEALTH_URL = `${API_BASE.replace(/\/$/, "")}/health`;
 const TOKEN_KEY = "admin_token";
@@ -54,9 +54,11 @@ export function setToken(token: string | null, persist = false) {
   (persist ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
 }
 
+// Sends the browser to the login page and keeps the current page so it reopens after signing in.
 function handleUnauthorized() {
   setToken(null);
-  window.location.href = "/login";
+  const here = window.location.pathname + window.location.search;
+  window.location.href = here.startsWith("/login") ? "/login" : `/login?next=${encodeURIComponent(here)}`;
 }
 
 async function parseResponse<T>(res: Response): Promise<T> {
@@ -68,9 +70,11 @@ async function parseResponse<T>(res: Response): Promise<T> {
   }
   if (!res.ok) {
     const d = (data ?? {}) as { message?: unknown; error?: unknown };
-    const msg = Array.isArray(d.message)
-      ? d.message.join(", ")
-      : (typeof d.message === "string" && d.message) || (typeof d.error === "string" && d.error) || `Request failed: ${res.status}`;
+    const msg = res.status === 413
+      ? "Fichier trop volumineux, divisez le CSV"
+      : Array.isArray(d.message)
+        ? d.message.join(", ")
+        : (typeof d.message === "string" && d.message) || (typeof d.error === "string" && d.error) || `Request failed: ${res.status}`;
     throw new ApiError(msg, res.status, data);
   }
   return data as T;
@@ -113,11 +117,13 @@ function cached<T>(key: string, fetcher: () => Promise<T>, ttl = DEFAULT_TTL): (
       if (entry.promise) return entry.promise;
       if (Date.now() - entry.ts < ttl) return entry.data;
     }
-    const promise = fetcher().then((data) => {
-      cache.set(key, { data, ts: Date.now() });
+    // Only the request that still owns the entry may store or clear it; invalidate() during the fetch leaves the key empty.
+    let promise: Promise<T>;
+    promise = fetcher().then((data) => {
+      if (cache.get(key)?.promise === promise) cache.set(key, { data, ts: Date.now() });
       return data;
     }).catch((err) => {
-      cache.delete(key);
+      if (cache.get(key)?.promise === promise) cache.delete(key);
       throw err;
     });
     cache.set(key, { ...entry, promise, data: entry?.data as T, ts: entry?.ts ?? 0 });

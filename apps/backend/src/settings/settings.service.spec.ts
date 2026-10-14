@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import {
   DEFAULT_COURSES,
   DEFAULT_PRESTATION_TYPES,
@@ -35,6 +36,8 @@ class FakeDdb {
   };
 
   private readonly store = new Map<string, Map<string, Item>>();
+  updates: Array<{ key: Record<string, string>; fields: Item; options: UpdateOptions }> = [];
+  failNextUpdateWith?: Error;
 
   requireTable(name: "clients" | "ledger"): string {
     const table = this.tables[name];
@@ -57,11 +60,20 @@ class FakeDdb {
     await this.put(table, item);
   }
 
-  async update(table: string, key: Record<string, string>, fields: Item, _options: UpdateOptions = {}) {
+  async update(table: string, key: Record<string, string>, fields: Item, options: UpdateOptions = {}) {
+    this.updates.push({ key, fields: structuredClone(fields), options });
+    if (this.failNextUpdateWith) {
+      const err = this.failNextUpdateWith;
+      this.failNextUpdateWith = undefined;
+      throw err;
+    }
     const rows = this.rows(table);
     const id = this.keyOf(table, key);
     const row = rows.get(id);
     if (!row) throw new Error("ConditionalCheckFailedException");
+    const stale = options.condition === "#ua = :expected" && row.updatedAt !== options.values?.[":expected"];
+    const present = options.condition === "attribute_not_exists(#ua)" && row.updatedAt !== undefined;
+    if (stale || present) throw Object.assign(new Error("cond"), { name: "ConditionalCheckFailedException" });
     for (const [k, v] of Object.entries(fields)) {
       if (v === null) delete row[k];
       else if (v !== undefined) row[k] = structuredClone(v);
@@ -251,5 +263,82 @@ describe("SettingsService.update", () => {
     const result = await service.update({ courses: undefined, fixedCharges: [] });
 
     expect(result.courses).toEqual(["Plat"]);
+  });
+});
+
+describe("SettingsService.update with the loaded updatedAt", () => {
+  const seeded = () => {
+    const built = build();
+    built.ddb.seed("settings", { settingsId: "global", courses: ["Plat"], updatedAt: "2026-01-01T00:00:00.000Z" });
+    return built;
+  };
+
+  it("409s SETTINGS_CHANGED on a stale updatedAt and writes nothing", async () => {
+    const { ddb, service } = seeded();
+
+    const call = service.update({ courses: ["Entrée"], updatedAt: "2025-12-31T00:00:00.000Z" });
+
+    await expect(call).rejects.toBeInstanceOf(ConflictException);
+    await call.catch((err: ConflictException) => {
+      expect(err.getResponse()).toEqual({ code: "SETTINGS_CHANGED" });
+    });
+    expect(ddb.updates).toHaveLength(0);
+    expect(ddb.raw("settings", GLOBAL_KEY)?.courses).toEqual(["Plat"]);
+  });
+
+  it("writes with the updatedAt condition when the stamp matches and does not store the stamp it was sent", async () => {
+    const { ddb, service } = seeded();
+
+    const result = await service.update({ courses: ["Entrée"], updatedAt: "2026-01-01T00:00:00.000Z" });
+
+    expect(ddb.updates).toHaveLength(1);
+    expect(ddb.updates[0].options).toEqual({
+      condition: "#ua = :expected",
+      names: { "#ua": "updatedAt" },
+      values: { ":expected": "2026-01-01T00:00:00.000Z" },
+    });
+    expect(result.courses).toEqual(["Entrée"]);
+    expect(result.updatedAt).not.toBe("2026-01-01T00:00:00.000Z");
+    expect(ddb.updates[0].fields.updatedAt).toBe(result.updatedAt);
+  });
+
+  it("writes without a condition when the client sends no updatedAt", async () => {
+    const { ddb, service } = seeded();
+
+    await service.update({ courses: ["Entrée"] });
+
+    expect(ddb.updates).toHaveLength(1);
+    expect(ddb.updates[0].options).toEqual({});
+  });
+
+  it("guards a legacy row without updatedAt on the attribute being absent", async () => {
+    const { ddb, service } = build();
+    ddb.seed("settings", { settingsId: "global", courses: ["Plat"] });
+    const loaded = await service.get();
+
+    const result = await service.update({ courses: ["Entrée"], updatedAt: loaded.updatedAt });
+
+    expect(ddb.updates[0].options).toEqual({ condition: "attribute_not_exists(#ua)", names: { "#ua": "updatedAt" } });
+    expect(result.courses).toEqual(["Entrée"]);
+    expect(typeof ddb.raw("settings", GLOBAL_KEY)?.updatedAt).toBe("string");
+  });
+
+  it("maps a conditional write failure to 409 SETTINGS_CHANGED", async () => {
+    const { ddb, service } = seeded();
+    ddb.failNextUpdateWith = Object.assign(new Error("cond"), { name: "ConditionalCheckFailedException" });
+
+    const call = service.update({ courses: ["Entrée"], updatedAt: "2026-01-01T00:00:00.000Z" });
+
+    await expect(call).rejects.toBeInstanceOf(ConflictException);
+    await call.catch((err: ConflictException) => {
+      expect(err.getResponse()).toEqual({ code: "SETTINGS_CHANGED" });
+    });
+  });
+
+  it("rethrows other write errors untouched", async () => {
+    const { ddb, service } = seeded();
+    ddb.failNextUpdateWith = new Error("throttled");
+
+    await expect(service.update({ courses: ["Entrée"], updatedAt: "2026-01-01T00:00:00.000Z" })).rejects.toThrow("throttled");
   });
 });

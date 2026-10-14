@@ -5,7 +5,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Recipe, Ingredient, RecipePricing, RecipeIngredient } from "@packages/types";
 import { UNITS_QTY, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS, DEFAULT_RECIPE_CATEGORIES, VAT_RATES, fmtEur } from "@packages/types";
-import { api } from "@/lib/api";
+import { api, getToken, API_BASE } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { calcRecipeCost, calcIngredientLineCost, fmt, supplierColor } from "@/lib/recipe-helpers";
@@ -115,8 +115,7 @@ async function exportPdf(recipe: Recipe, ingredients: Ingredient[]) {
 }
 
 async function loadPhotoForPdf(key: string): Promise<{ dataUrl: string; width: number; height: number }> {
-  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
-  const token = sessionStorage.getItem("admin_token");
+  const token = getToken();
   const res = await fetch(`${API_BASE}/admin/recipes/photo?key=${encodeURIComponent(key)}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
@@ -568,7 +567,7 @@ export default function RecipeDetail() {
                 <tr className="bg-surface">
                   <td>
                     <SearchSelect
-                      options={ingredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))}
+                      options={ingredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit.replace("€/", "/")}` }))}
                       value={newIng.ingredientId}
                       onChange={(v) => {
                         const ing = ingredients.find((i) => i.ingredientId === v);

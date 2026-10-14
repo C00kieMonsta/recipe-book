@@ -279,6 +279,17 @@ function perPersonPages(days: Day[], input: WeekPrintInput): PrintPage[] {
   const candidates = input.personId
     ? [input.people.find((p) => p.personId === input.personId) ?? { personId: input.personId, name: input.personId, active: true }]
     : input.people.filter((p) => p.active);
+  if (!input.personId) {
+    // Rows assigned to an inactive or deleted person get their own page, as groupByPerson does on the Day page.
+    const listed = new Set(candidates.map((p) => p.personId));
+    for (const row of days.flatMap((d) => d.blocks.flatMap((b) => b.rows))) {
+      for (const id of row.assignedTo) {
+        if (listed.has(id)) continue;
+        listed.add(id);
+        candidates.push({ personId: id, name: personName(input.people, id), active: false });
+      }
+    }
+  }
   for (const person of candidates) {
     const page = personPage(days, `${person.name} · semaine ${n}`, (r) => r.assignedTo.includes(person.personId), input.people, person.personId);
     if (page) pages.push(page);

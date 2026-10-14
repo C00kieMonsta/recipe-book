@@ -42,7 +42,7 @@ export type PropertyProps = PropertyBase & (
 );
 
 const DT = "flex h-[34px] w-40 shrink-0 items-center gap-1.5 text-sm text-muted-foreground touch:h-11 touch:w-40";
-const DD = "flex min-h-[34px] min-w-0 flex-1 flex-wrap items-center gap-1 py-1.5 text-base touch:min-h-11";
+const DD = "flex min-h-[34px] min-w-0 flex-1 flex-wrap items-center gap-1 py-1.5 text-base touch:min-h-11 touch:py-0";
 const INPUT = "-mx-1.5 w-full min-w-0 rounded bg-input-bg px-1.5 text-base shadow-ring outline-none";
 
 const dateFmt = new Intl.DateTimeFormat("fr-BE", { weekday: "short", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
@@ -154,7 +154,7 @@ function TextValue({ value, onCommit, placeholder, numeric, suffix, className }:
     <span
       role="button"
       tabIndex={0}
-      className={cn("prop-value min-h-6 w-full", className)}
+      className={cn("prop-value min-h-6 w-full break-words touch:flex touch:min-h-11 touch:items-center", className)}
       onClick={() => setEditing(true)}
       onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditing(true); } }}
     >
@@ -194,7 +194,7 @@ function MultilineValue({ value, onCommit, placeholder }: { value: string; onCom
     <span
       role="button"
       tabIndex={0}
-      className="prop-value min-h-6 w-full whitespace-pre-wrap"
+      className="prop-value min-h-6 w-full whitespace-pre-wrap touch:flex touch:min-h-11 touch:items-center"
       onClick={() => setEditing(true)}
       onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
     >
@@ -215,7 +215,7 @@ function DateValue({ value, onCommit, placeholder, format }: { value: string; on
       <span
         role="button"
         tabIndex={0}
-        className="prop-value w-full"
+        className="prop-value min-h-6 w-full touch:flex touch:min-h-11 touch:items-center"
         onClick={open}
         onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}
       >

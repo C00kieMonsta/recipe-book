@@ -7,6 +7,7 @@ import { createRecipeRequestSchema, importRecipeIngredientSchema, updateRecipeRe
 import { RecipesService, type ImportRecipeRow } from "./recipes.service";
 import { S3Service } from "../shared/s3.service";
 import { randomUUID } from "crypto";
+import { extname } from "path";
 
 const importIngredientsSchema = z.array(importRecipeIngredientSchema);
 
@@ -114,6 +115,7 @@ export class RecipesController {
   @Post("import")
   async importRecipes(@Body() body: unknown) {
     if (!Array.isArray(body)) throw new BadRequestException("Expected array of recipe rows");
+    if (body.length > 2000) throw new BadRequestException("Maximum 2000 lignes par import");
     const rows = (body as Record<string, unknown>[]).map((row) => {
       if (row.ingredients && Array.isArray(row.ingredients)) return mapJsonRow(row);
       return mapRow(row as Record<string, string>);
@@ -124,12 +126,16 @@ export class RecipesController {
   }
 
   @Post("upload-photo")
-  @UseInterceptors(FileInterceptor("file"))
-  async uploadPhoto(@UploadedFile() file: Express.Multer.File) {
-    if (!file) throw new BadRequestException("No file uploaded");
-    if (!file.mimetype.startsWith("image/")) throw new BadRequestException("File must be an image");
+  @UseInterceptors(FileInterceptor("file", {
+    limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+    fileFilter: (_req, f, cb) => cb(null, /^image\/(jpeg|png|webp|heic)$/.test(f.mimetype)),
+  }))
+  async uploadPhoto(@UploadedFile() file?: Express.Multer.File) {
+    if (!file) throw new BadRequestException("Photo manquante ou format non pris en charge (JPEG, PNG, WebP ou HEIC)");
 
-    const key = `recipe-photos/${randomUUID()}-${file.originalname}`;
+    // The client file name never reaches S3; only a sanitised extension does.
+    const ext = extname(file.originalname).toLowerCase().replace(/[^a-z0-9.]/g, "");
+    const key = `recipe-photos/${randomUUID()}${ext}`;
     await this.s3.upload(key, file.buffer, file.mimetype);
     const url = await this.s3.presignedUrl(key);
 

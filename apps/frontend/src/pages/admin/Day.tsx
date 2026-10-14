@@ -242,7 +242,7 @@ export default function Day() {
   const canAddTask = defaultEventId !== "";
 
   const recipeCostById = useMemo(() => new Map(recipes.map((r) => [r.recipeId, calcRecipeCost(r, ingredientById)])), [recipes, ingredientById]);
-  const recipePortionsById = useMemo(() => new Map(recipes.map((r) => [r.recipeId, r.portions])), [recipes]);
+  const recipePortionsById = useMemo(() => new Map(recipes.map((r) => [r.recipeId, r.portions || 1])), [recipes]);
 
   const visible = useCallback(
     <T extends { prepStatus: PrepStatus }>(ls: T[]): T[] => doneLast(hideDone ? ls.filter((l) => l.prepStatus !== "done") : ls),
@@ -359,8 +359,9 @@ export default function Day() {
       if (e.key === "ArrowRight") navigate(dayUrl(addDays(safeDate, 1)), { state: location.state });
       if (e.key === "Escape") navigate(weekUrl);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Capture phase, so an open overlay is still in the DOM when overlayOpen() runs.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [navigate, safeDate, dayUrl, weekUrl, location.state]);
 
   const onTouchStart = (e: React.TouchEvent) => {
@@ -395,10 +396,10 @@ export default function Day() {
       } else {
         await patchTask(item.eventId, item.taskId, { prepStatus: status });
       }
-    } catch {
-      toast({ title: "Erreur lors de la mise à jour du statut", variant: "destructive" });
+    } catch (e) {
+      writeError(e, item.eventId, "Erreur lors de la mise à jour du statut");
     }
-  }, [patchLine, patchTask, toast]);
+  }, [patchLine, patchTask, writeError]);
 
   const setAllStatus = async (ls: DayItem[], status: PrepStatus) => {
     for (const l of ls) if (l.prepStatus !== status) await setStatus(l, status);

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { Navigate, Outlet, useOutletContext } from "react-router-dom";
+import { Navigate, Outlet, useLocation, useOutletContext } from "react-router-dom";
 import { ChevronsRight } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocalStorage } from "@/hooks/use-local-storage";
@@ -79,6 +79,7 @@ const SIDEBAR_KEY = "recipe-book:sidebar-collapsed";
 
 export default function AdminLayout() {
   const { isAuthenticated } = useAuth();
+  const location = useLocation();
   const [fullBleed, setFullBleedState] = useState(false);
   const [hideChrome, setHideChromeState] = useState(false);
   const [backTo, setBackToState] = useState<BackTo | null>(null);
@@ -91,7 +92,8 @@ export default function AdminLayout() {
   const setTopTitle = useCallback((next: string | null) => setTopTitleState(next), []);
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    // The target travels in the query string so it survives a refresh on the login page.
+    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   }
 
   const padding = fullBleed ? "px-4 pb-8 md:px-6 md:pt-6" : "px-4 pb-8 md:px-12 md:pt-10 xl:px-24";

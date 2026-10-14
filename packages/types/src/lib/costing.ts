@@ -93,7 +93,7 @@ export function buildCostSnapshot(
   recipePortionsById: Map<string, number>,
 ): CostSnapshotRequest {
   const lines = (event.recipes ?? []).map((l) => {
-    const unitCost = (recipeCostById.get(l.recipeId) ?? 0) / (recipePortionsById.get(l.recipeId) ?? 1);
+    const unitCost = (recipeCostById.get(l.recipeId) ?? 0) / (recipePortionsById.get(l.recipeId) || 1);
     return { lineId: l.lineId, recipeId: l.recipeId, portions: l.portions, unitCost };
   });
   return {

@@ -18,6 +18,7 @@ import { DEFAULT_COURSES, DEFAULT_PRESTATION_TYPES, VAT_RATES, groupByCourse } f
 import { api, ApiError, type EventInput } from "@/lib/api";
 import { longDayLabel, todayIso, weekdayOf } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
+import { safeReturn } from "@/lib/safe-return";
 import { calcEventCost, calcRecipeCost, fmt } from "@/lib/recipe-helpers";
 import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
 import { FieldLabel, NumericInput, PageHeader, Section, Tag, Button, IconButton, SearchSelect, MoneyTile } from "@/components/ui";
@@ -37,11 +38,6 @@ const EXTRA_KINDS: { value: ExtraCostKind; label: string }[] = [
 
 const NEW_CLIENT = "__new__";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-// Only an in-app path is honoured as a return target.
-function safeReturn(raw: string | null): string | null {
-  return raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : null;
-}
 
 const PERSON_TOGGLE = "inline-flex h-8 items-center gap-1.5 rounded-sm pl-1 pr-2.5 text-sm shadow-outline hover:bg-hover touch:h-11 touch:text-base";
 const PERSON_ON = "bg-selected text-primary shadow-[0_0_0_1px_rgba(35,131,226,0.35)] hover:bg-selected";
@@ -116,6 +112,23 @@ export default function EventEditor() {
     setContactEmail((prev) => prev || c.email || "");
   };
 
+  // Copies the client's template for the weekday of `date`; a later date change does not re-apply it.
+  const applyClientTemplate = (c: Client, date: string, types: PrestationTypeSetting[]) => {
+    const t = c.templates.find((x) => x.weekday === weekdayOf(date));
+    if (!t) return;
+    setName((prev) => prev || `${c.name} · ${longDayLabel(date)}`);
+    setGuestCount(t.guestCount);
+    guestCountTouched.current = true;
+    setSellingPricePerGuest(t.sellingPricePerGuest);
+    setPrestationType(t.prestationType ?? c.defaultPrestationType ?? "");
+    setVatRate(t.vatRate ?? c.defaultVatRate ?? defaultVatFor(types, t.prestationType ?? c.defaultPrestationType));
+    setRecipes(t.recipes.map((l) => ({ recipeId: l.recipeId, portions: l.portions, course: l.course, notes: l.notes })));
+    setExtraCosts(t.extraCosts);
+    setNotes(t.notes ?? "");
+    setTemplateId(t.templateId);
+    setAssignedTo(t.assignedTo ?? []);
+  };
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -160,20 +173,7 @@ export default function EventEditor() {
           if (c) {
             setClientId(c.clientId);
             applyClientDefaults(c, types);
-            const t = c.templates.find((x) => x.weekday === weekdayOf(startDate));
-            if (t) {
-              setName(`${c.name} · ${longDayLabel(startDate)}`);
-              setGuestCount(t.guestCount);
-              guestCountTouched.current = true;
-              setSellingPricePerGuest(t.sellingPricePerGuest);
-              setPrestationType(t.prestationType ?? c.defaultPrestationType ?? "");
-              setVatRate(t.vatRate ?? c.defaultVatRate ?? defaultVatFor(types, t.prestationType ?? c.defaultPrestationType));
-              setRecipes(t.recipes.map((l) => ({ recipeId: l.recipeId, portions: l.portions, course: l.course, notes: l.notes })));
-              setExtraCosts(t.extraCosts);
-              setNotes(t.notes ?? "");
-              setTemplateId(t.templateId);
-              setAssignedTo(t.assignedTo ?? []);
-            }
+            applyClientTemplate(c, startDate, types);
           }
         }
       } catch {
@@ -358,7 +358,10 @@ export default function EventEditor() {
     if (value === NEW_CLIENT) { setNewClientOpen(true); return; }
     setClientId(value);
     const c = clients.find((x) => x.clientId === value);
-    if (c) applyClientDefaults(c, prestationTypes);
+    if (!c) return;
+    applyClientDefaults(c, prestationTypes);
+    // Only a new event with an empty menu takes the template, so saved lines are never overwritten.
+    if (!currentId && recipes.length === 0) applyClientTemplate(c, date, prestationTypes);
   };
 
   const onClientCreated = (c: Client) => {

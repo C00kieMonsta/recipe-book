@@ -182,6 +182,8 @@ export function personnelShareOfMonth(entry: LedgerEntry, ym: string): number {
 export interface IncomeRow {
   ym: string;
   ca: number;
+  caSource: CaSource;
+  caNote?: string;
   mp: RawMaterialOfMonth;
   margeBrute: number;
   autresProduits: number;
@@ -244,7 +246,8 @@ export function incomeStatement(year: number, inputs: ReportInputs, scenario: Sc
     const monthEntries = entriesOfMonth(entries, ym);
     const completed = eventsOfMonth(events, ym).filter((e) => e.status === "completed");
     const extras = completed.map((e) => calcEventCost(e, inputs.recipeCostById, inputs.recipePortionsById).extras);
-    const ca = ledgerCaOfMonth(entries, ym);
+    const caFig = caOfMonth(inputs, ym);
+    const ca = caFig.amount ?? 0;
     const mp = rawMaterialOfMonth(ym, { ...inputs, monthClose: settings.monthCloses?.[ym] });
     const autresProduits = commissionsOfMonth(entries, ym);
     const chargesFixes = chargesForMonth(settings.fixedCharges, ym, "avec", "resultat");
@@ -261,6 +264,8 @@ export function incomeStatement(year: number, inputs: ReportInputs, scenario: Sc
     return {
       ym,
       ca,
+      caSource: caFig.source,
+      caNote: caFig.note,
       mp,
       margeBrute: sumMoney([ca, -mp.amount]),
       autresProduits,
@@ -372,8 +377,14 @@ export interface Apercu {
 
 export const COMPARISON_PERIODS: { from: string; to: string }[] = [
   { from: "01-01", to: "04-30" },
-  { from: "04-30", to: "06-30" },
+  { from: "05-01", to: "06-30" },
 ];
+
+// The workbook labels the second period from 30 April, so a typed byPeriod may start on either day, with or without the year.
+function matchesFrom(typedFrom: string, mmdd: string, year: number): boolean {
+  const accepted = mmdd === "05-01" ? ["05-01", "04-30"] : [mmdd];
+  return accepted.some((a) => typedFrom === a || typedFrom === `${year}-${a}`);
+}
 
 function sumDefined(xs: (number | undefined)[]): number | undefined {
   const defined = xs.filter((x): x is number => x !== undefined);
@@ -409,7 +420,7 @@ export function caOfPeriod(
   }
   const actuals = inputs.settings.yearActuals?.[String(year)];
   const typed = actuals?.byPeriod?.find(
-    (p) => (p.from === period.from || p.from === from) && (p.to === period.to || p.to === to),
+    (p) => matchesFrom(p.from, period.from, year) && (p.to === period.to || p.to === to),
   );
   return typed ? { amount: typed.amount, source: "saisi", note: actuals?.note } : {};
 }

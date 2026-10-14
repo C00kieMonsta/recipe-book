@@ -114,5 +114,7 @@ export const updateSettingsRequestSchema = z.object({
   company: companySettingsSchema.optional(),
   ignoredDuplicateGroups: z.array(z.string()).optional(),
   people: z.array(personSchema).max(30).optional(),
+  // The updatedAt the client loaded; when sent, the save is refused with 409 if the document moved since.
+  updatedAt: z.string().optional(),
 });
 export type UpdateSettingsRequest = z.infer<typeof updateSettingsRequestSchema>;

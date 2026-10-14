@@ -54,6 +54,16 @@ export function FilterButton({ count, children, onClear, title = "Filtrer", clas
 
   useEffect(() => { if (!open) setDraftState({}); }, [open]);
 
+  // Give focus back to the Filtrer button when the panel closes.
+  useEffect(() => {
+    if (!open || touch) return;
+    return () => {
+      const active = document.activeElement;
+      if (active && active !== document.body && !wrapRef.current?.contains(active)) return;
+      wrapRef.current?.querySelector<HTMLElement>("button")?.focus();
+    };
+  }, [open, touch]);
+
   const ctx: FilterContextValue = {
     touch,
     draft,
@@ -84,15 +94,13 @@ export function FilterButton({ count, children, onClear, title = "Filtrer", clas
     return (
       <FilterContext.Provider value={ctx}>
         {trigger}
-        <Sheet
-          open={open}
-          onClose={() => setOpen(false)}
-          title={title}
-          headerRight={onClear ? <Button variant="subtle" size="sm" onClick={() => { onClear(); setOpen(false); }}>Effacer</Button> : undefined}
-        >
-          <div className="flex flex-col pb-2">{children}</div>
-          <div className="px-4 pt-2">
-            <Button variant="primary" size="lg" className="w-full" onClick={apply}>Appliquer</Button>
+        <Sheet open={open} onClose={() => setOpen(false)} title={title} className="flex flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+            <div className="flex flex-col">{children}</div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 border-t border-border px-4 pt-3">
+            {onClear && <Button variant="ghost" size="lg" onClick={() => { onClear(); setOpen(false); }}>Effacer</Button>}
+            <Button variant="primary" size="lg" className="flex-1" onClick={apply}>Appliquer</Button>
           </div>
         </Sheet>
       </FilterContext.Provider>

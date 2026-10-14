@@ -10,6 +10,7 @@ import {
   breakeven,
   caOfPeriod,
   chargesForMonth,
+  COMPARISON_PERIODS,
   incomeStatement,
   isCaEntry,
   isoc,
@@ -354,6 +355,26 @@ describe("apercu", () => {
     expect(a.autresProduits).toEqual({ n: 25, n1: undefined });
   });
 
+  it("incomeStatement reads typed CA before ledgerStartYm", () => {
+    const st = incomeStatement(
+      2026,
+      inputs({
+        recipeCostById: new Map(),
+        recipePortionsById: new Map(),
+        settings: settings({
+          ledgerStartYm: "2026-04",
+          yearActuals: { "2026": { monthly: { "01": 5000 } } },
+          fixedCharges: [charge({ chargeId: "c", label: "loyer", category: "frais", monthlyAmount: 1000 })],
+        }),
+      }),
+    );
+    expect(st.months[0].ca).toBe(5000);
+    expect(st.months[0].caSource).toBe("saisi");
+    expect(st.months[0].resultat).toBe(4000);
+    expect(st.months[3].caSource).toBe("ledger");
+    expect(st.annual.ca).toBe(5000);
+  });
+
   it("computes delta and reads the ledger everywhere when no start is set", () => {
     const a = apercu(2026, inputs({ entries: [entry({ date: "2025-03-01", htva: 100 }), entry({ date: "2026-03-01", htva: 150 })] }));
     expect(a.rows[2]).toMatchObject({ caN1: { amount: 100, source: "ledger" }, caN: { amount: 150, source: "ledger" }, delta: 0.5, objectif: undefined, atteint: undefined });
@@ -387,6 +408,13 @@ describe("apercu", () => {
     const partial = inputs({ entries: ledgerEntries, settings: settings({ ledgerStartYm: "2026-02" }) });
     expect(caOfPeriod(partial, 2026, { from: "01-01", to: "04-30" })).toEqual({});
     expect(caOfPeriod(partial, 2026, { from: "04-30", to: "06-30" })).toEqual({ amount: 75, source: "ledger" });
+  });
+
+  it("caOfPeriod counts 30 April once", () => {
+    const one = inputs({ entries: [entry({ date: "2026-04-30", htva: 100 })] });
+    expect(COMPARISON_PERIODS.map((p) => caOfPeriod(one, 2026, p).amount)).toEqual([100, 0]);
+    const typed = inputs({ settings: settings({ ledgerStartYm: "2026-12", yearActuals: { "2026": { byPeriod: [{ from: "04-30", to: "06-30", amount: 20381 }] } } }) });
+    expect(caOfPeriod(typed, 2026, COMPARISON_PERIODS[1]).amount).toBe(20381);
   });
 });
 

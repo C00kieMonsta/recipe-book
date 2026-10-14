@@ -92,6 +92,7 @@ function PaidMenuBody({ entry, onSaved, onClose }: { entry: LedgerEntry; onSaved
     const body: PatchLedgerEntryRequest = { paid: next };
     if (next && method) body.paymentMethod = method as PaymentMethod;
     if (next && paidAt) body.paidAt = paidAt;
+    if (!next) { body.paidAt = null; body.paymentMethod = null; }
     try {
       await api.ledger.patch(entry.entryId, body);
       onClose();
@@ -532,7 +533,7 @@ export default function Journal() {
           layout="dialog"
           entry={form.entry}
           initial={form.initial}
-          locked={form.entry ? locked || form.entry.locked : false}
+          locked={form.entry ? locked || form.entry.locked : locked}
           eventOptions={eventOptions}
           clientOptions={clientOptions}
           prestationTypes={settings?.prestationTypes}

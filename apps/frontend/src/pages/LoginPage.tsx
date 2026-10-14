@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { safeReturn } from "@/lib/safe-return";
 import { Button, Checkbox, FieldLabel, IconButton } from "@/components/ui";
 
 export default function LoginPage() {
@@ -13,6 +14,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const { login } = useAuth();
   const navigate = useNavigate();
+  const { search } = useLocation();
   const { toast } = useToast();
 
   const handleSubmit = async (e: FormEvent) => {
@@ -20,7 +22,8 @@ export default function LoginPage() {
     setError(null);
     const success = await login(email, password, remember);
     if (success) {
-      navigate("/");
+      const target = safeReturn(new URLSearchParams(search).get("next")) ?? "/";
+      navigate(target, { replace: true });
     } else {
       setError("Identifiants invalides");
       toast({ title: "Identifiants invalides", variant: "destructive" });

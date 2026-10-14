@@ -174,11 +174,9 @@ export default function Resultats() {
   const purchasesOf = (ym: string) => entries.filter((e) => e.book === "achats" && e.kind === "mp" && e.date.slice(0, 7) === ym);
 
   const mpCell = (r: IncomeRow) => (
-    <button type="button" onClick={() => setMpRow(r)} className="-mx-1 flex h-7 flex-col items-end justify-center rounded px-1 text-right hover:bg-hover touch:h-11" aria-label={`Source MP ${monthLabel(r.ym)}`}>
-      <span className="flex items-center gap-1 tabular-nums">
-        {fmtEur(r.mp.amount)}
-        <Tag colour={r.mp.source === "saisi" ? "gray" : r.mp.source === "achats" ? "purple" : "blue"}>{MP_LABEL[r.mp.source]}</Tag>
-      </span>
+    <button type="button" onClick={() => setMpRow(r)} className="-mx-1 inline-flex flex-wrap items-center justify-end gap-1 rounded px-1 py-0.5 text-right hover:bg-hover" aria-label={`Source MP ${monthLabel(r.ym)}`}>
+      <span className="tabular-nums">{fmtEur(r.mp.amount)}</span>
+      <Tag colour={r.mp.source === "saisi" ? "gray" : r.mp.source === "achats" ? "purple" : "blue"}>{MP_LABEL[r.mp.source]}</Tag>
     </button>
   );
 
@@ -198,19 +196,37 @@ export default function Resultats() {
 
   const neg = (n: number) => (n < 0 ? "text-danger" : "");
 
+  // Short header with the full wording on hover, so the columns fit at 1366 without a hidden scroll.
+  const head = (short: string, full: string) => <span title={full}>{short}</span>;
+  const wrap = "whitespace-normal";
+
+  // Tags sit inline when the column has room and wrap under the amount otherwise; inline-flex keeps the phone list on one line.
+  const caCell = (r: IncomeRow) => (
+    <span className="inline-flex flex-wrap items-center justify-end gap-1">
+      {fmtEur(r.ca)}
+      {r.caSource === "saisi" && <span title={r.caNote} className="inline-flex"><Tag colour="gray">saisi</Tag></span>}
+    </span>
+  );
+
+  const resultatCell = (resultat: number, margePct: number | undefined) => (
+    <span className="inline-flex flex-col items-end">
+      <span className={`font-medium ${neg(resultat)}`}>{signed(resultat)}</span>
+      {margePct !== undefined && <span className="text-caption font-normal text-muted-foreground">{fmtPct(margePct)}</span>}
+    </span>
+  );
+
   const columns: TableColumn<IncomeRow>[] = [
     { key: "month", label: "Mois", render: (r) => <Link to={`/comptes/journal?ym=${r.ym}`} className="font-medium hover:underline">{monthName(r.ym)}</Link> },
-    { key: "ca", label: "CA HTVA", align: "right", render: (r) => fmtEur(r.ca) },
-    { key: "mp", label: "Coûts MP", align: "right", render: (r) => <span className="flex flex-col items-end">{mpCell(r)}{mpNote(r)}</span> },
-    { key: "marge", label: "Marge brute", align: "right", render: (r) => signed(r.margeBrute) },
-    { key: "autresProduits", label: "Autres produits", align: "right", render: (r) => fmtEur(r.autresProduits) },
-    { key: "charges", label: "Charges fixes", align: "right", render: (r) => fmtEur(r.chargesFixes) },
-    { key: "personnel", label: "Personnel extra", align: "right", render: (r) => <Link to={`/comptes/journal?book=achats&kind=personnel&ym=${r.ym}`} className="tabular-nums hover:underline">{fmtEur(r.personnelExtra)}</Link> },
-    { key: "autresCouts", label: "Autres coûts", align: "right", render: (r) => fmtEur(r.autresCouts) },
-    { key: "resultat", label: "Résultat avant impôts", align: "right", render: (r) => <span className={`font-medium ${neg(r.resultat)}`}>{signed(r.resultat)}</span> },
-    { key: "margePct", label: "Marge %", align: "right", render: (r) => fmtPct(r.margePct) },
-    { key: "impots", label: "Impôts (estimation)", align: "right", render: (r) => fmtEur(r.impots) },
-    { key: "net", label: "Résultat net", align: "right", trailing: true, render: (r) => <span className={`font-medium ${neg(r.resultatNet)}`}>{signed(r.resultatNet)}</span> },
+    { key: "ca", label: "CA HTVA", align: "right", className: wrap, render: caCell },
+    { key: "mp", label: "Coûts MP", align: "right", className: wrap, render: (r) => <span className="inline-flex flex-col items-end">{mpCell(r)}{mpNote(r)}</span> },
+    { key: "marge", label: "Marge brute", align: "right", className: wrap, render: (r) => signed(r.margeBrute) },
+    { key: "autresProduits", label: head("Autres prod.", "Autres produits"), align: "right", className: wrap, render: (r) => fmtEur(r.autresProduits) },
+    { key: "charges", label: "Charges fixes", align: "right", className: wrap, render: (r) => fmtEur(r.chargesFixes) },
+    { key: "personnel", label: head("Pers. extra", "Personnel extra"), align: "right", className: wrap, render: (r) => <Link to={`/comptes/journal?book=achats&kind=personnel&ym=${r.ym}`} className="tabular-nums hover:underline">{fmtEur(r.personnelExtra)}</Link> },
+    { key: "autresCouts", label: head("Autres coûts", "Autres coûts (location, transport, divers)"), align: "right", className: wrap, render: (r) => fmtEur(r.autresCouts) },
+    { key: "resultat", label: head("Rés. av. impôts", "Résultat avant impôts, et en dessous la marge en % du CA"), align: "right", className: wrap, render: (r) => resultatCell(r.resultat, r.margePct) },
+    { key: "impots", label: head("Impôts (est.)", "Impôts (estimation)"), align: "right", className: wrap, render: (r) => fmtEur(r.impots) },
+    { key: "net", label: head("Rés. net", "Résultat net"), align: "right", className: wrap, trailing: true, render: (r) => <span className={`font-medium ${neg(r.resultatNet)}`}>{signed(r.resultatNet)}</span> },
   ];
 
   const scenarioPill = (
@@ -250,7 +266,7 @@ export default function Resultats() {
               columns={columns}
               rows={st.months}
               rowKey={(r) => r.ym}
-              className="md:overflow-x-auto"
+              className="md:overflow-x-auto [&_td]:px-1.5 [&_th]:px-1.5"
               footer={{
                 month: "Total année",
                 ca: fmtEur(st.annual.ca),
@@ -260,8 +276,7 @@ export default function Resultats() {
                 charges: fmtEur(st.annual.chargesFixes),
                 personnel: fmtEur(st.annual.personnelExtra),
                 autresCouts: fmtEur(st.annual.autresCouts),
-                resultat: <span className={neg(st.annual.resultat)}>{signed(st.annual.resultat)}</span>,
-                margePct: fmtPct(st.annual.margePct),
+                resultat: resultatCell(st.annual.resultat, st.annual.margePct),
                 impots: <span className="inline-flex items-center gap-1">{fmtEur(st.annual.impots)}{st.annual.impotsSource === "reel" && <Tag colour="green">réel</Tag>}</span>,
                 net: <span className={neg(st.annual.resultatNet)}>{signed(st.annual.resultatNet)}</span>,
               }}

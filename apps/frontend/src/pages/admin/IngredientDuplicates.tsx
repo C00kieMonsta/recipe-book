@@ -6,7 +6,7 @@ import { PRICE_TO_QTY_UNIT, damerauLevenshtein, normalizeIngredientName } from "
 import { api, ApiError } from "@/lib/api";
 import type { DuplicateGroupDetail, DuplicateMemberDetail } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { fmt } from "@/lib/recipe-helpers";
+import { fmt, fmtUnitPrice } from "@/lib/recipe-helpers";
 import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
 import { PageHeader, Tag, SearchSelect, SupplierTag, Section, Button, Callout, Checkbox, EmptyState, type TagColour } from "@/components/ui";
 
@@ -234,7 +234,7 @@ export default function IngredientDuplicates() {
 
   const totalMembers = groups.reduce((n, g) => n + g.members.length, 0);
   const ingredientOptions = useMemo(
-    () => [...ingredients].sort((a, b) => a.name.localeCompare(b.name, "fr")).map((i) => ({ value: i.ingredientId, label: i.name, detail: `${fmt(i.price)} ${i.unit}` })),
+    () => [...ingredients].sort((a, b) => a.name.localeCompare(b.name, "fr")).map((i) => ({ value: i.ingredientId, label: i.name, detail: fmtUnitPrice(i.price, i.unit) })),
     [ingredients],
   );
 
@@ -306,7 +306,7 @@ export default function IngredientDuplicates() {
                           {isSurvivor ? <Tag colour="blue">Conservé</Tag> : <Tag colour={conf.colour}>{conf.label}</Tag>}
                         </div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
-                          <span className="tabular-nums">{fmt(m.price)} {m.unit}</span>
+                          <span className="tabular-nums">{fmtUnitPrice(m.price, m.unit)}</span>
                           {m.supplier && (<><span aria-hidden="true">·</span><SupplierTag name={m.supplier} /></>)}
                           <span aria-hidden="true">·</span>
                           <span>dans {recipeCount} recette{recipeCount > 1 ? "s" : ""} · {listCount} liste{listCount > 1 ? "s" : ""}</span>

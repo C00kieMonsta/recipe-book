@@ -27,7 +27,7 @@ import {
   weekdayOf,
   weekPlan,
 } from "@packages/types";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, invalidate } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { buildGroceryItems, groceryTitleFor } from "@/lib/grocery";
 import { defaultTaskEventId } from "@/lib/tasks";
@@ -176,7 +176,7 @@ export default function Week() {
   // Under md the full right group wraps and overflows, so narrow pointer windows get the touch group.
   const narrow = useMediaQuery("(max-width: 767px)");
   const compact = touch || narrow;
-  const { active: tourActive } = useTour();
+  const { active: tourActive, seenAt, dismissedOffer } = useTour();
   const menu = useMenu();
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const dayRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -265,8 +265,10 @@ export default function Week() {
 
   // Phone: today is brought into view once loaded; on a Sunday looking at next week, the first day with events.
   // The tour scrolls to its own anchor, so this waits until it ends.
+  // While the first-visit callout is still offered the page stays at the top so it can be seen.
   useEffect(() => {
     if (loading || tourActive || window.innerWidth >= 1280) return;
+    if (!seenAt && !dismissedOffer) return;
     const target = todayInWeek ? today : weekdayOf(today) === 7 ? plan.days.find((d) => d.events.length > 0)?.date : undefined;
     if (target && target !== dates[0]) scrollToDay(target);
   }, [safeWeek, loading, tourActive]);
@@ -292,6 +294,7 @@ export default function Week() {
   const conflict = (e: unknown): boolean => {
     if (!(e instanceof ApiError) || e.status !== 409) return false;
     toast({ title: "Le menu a changé ailleurs, il a été rechargé", variant: "destructive" });
+    invalidate("events");
     reload();
     return true;
   };
@@ -763,7 +766,7 @@ export default function Week() {
             const taskEventId = taskEventFor(day.date);
             const dropHere = Boolean(drag) && dropDay === day.date;
             return (
-              <div key={day.date} className={`group min-w-0 ${past ? "opacity-60" : ""}`}>
+              <div key={day.date} className={`group min-w-0 ${past ? "opacity-60 hover:opacity-100 focus-within:opacity-100" : ""}`}>
                 <div
                   className={cn("space-y-2 px-0.5 pb-2", dropHere && "rounded-lg bg-selected")}
                   onDragOver={canDrag && drag ? (e) => { e.preventDefault(); setDropDay(day.date); } : undefined}
@@ -863,7 +866,7 @@ export default function Week() {
             const shared = rowShared(true, "right");
             const taskEventId = taskEventFor(day.date);
             return (
-              <section key={day.date} ref={(el) => { dayRefs.current[day.date] = el; }} className={`scroll-mt-24 md:scroll-mt-0 ${past ? "opacity-60" : ""}`}>
+              <section key={day.date} ref={(el) => { dayRefs.current[day.date] = el; }} className={`scroll-mt-24 md:scroll-mt-0 ${past ? "opacity-60 hover:opacity-100 focus-within:opacity-100" : ""}`}>
                 <div className="sticky top-[96px] z-10 -mx-4 flex min-h-11 items-center gap-1 bg-background px-4 md:static md:mx-0 md:px-0">
                   <Link to={dayUrl(day.date)} state={state} data-tour={i === 0 ? "week-day" : undefined} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded hover:bg-hover">
                     <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold">

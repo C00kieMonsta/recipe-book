@@ -334,7 +334,7 @@ export class IngredientsService {
           fields: {
             price: row.prix_htva,
             unit: row.unite,
-            supplier: row.fournisseur,
+            supplier: row.fournisseur || match.supplier,
             comment: row.commentaire || match.comment,
             updatedAt: now,
           },

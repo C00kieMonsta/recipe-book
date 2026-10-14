@@ -64,6 +64,21 @@ interface Snapshot {
 // The last fetch, kept across mounts so the next planning page renders with content instead of « Chargement… ».
 let last: Snapshot | null = null;
 
+// Bumped by every replaceEvent so a list fetched before a write is not applied over it.
+let writes = 0;
+
+// One promise chain per event so writes reach the server in order and never race each other.
+const chains = new Map<string, Promise<unknown>>();
+
+function queued<T>(eventId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = chains.get(eventId) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(fn);
+  chains.set(eventId, next);
+  const clear = () => { if (chains.get(eventId) === next) chains.delete(eventId); };
+  next.then(clear, clear);
+  return next;
+}
+
 const snapshotKey = (ledgerYear: string | number | undefined, withLists: boolean) => `${ledgerYear}|${withLists}`;
 
 // Loads events, recipes, ingredients, settings and clients; the ledger only when a year is given.
@@ -93,6 +108,7 @@ export function usePlanningData(ledgerYear?: string | number, options: PlanningD
     // A refetch over a snapshot keeps the content on screen.
     if (last?.key !== key) setLoading(true);
     setError(null);
+    const seen = writes;
     Promise.all([
       api.events.list(),
       api.recipes.list(),
@@ -112,8 +128,16 @@ export function usePlanningData(ledgerYear?: string | number, options: PlanningD
     ])
       .then(([ev, re, ing, se, cl, en, gl]) => {
         if (cancelled) return;
+        setRecipes(re); setIngredients(ing); setSettings(se); setClients(cl); setEntries(en); setGroceryLists(gl);
+        // A write landed while the list was in flight: keep the local events and fetch the list again.
+        if (writes !== seen) {
+          const events = last?.key === key ? last.events : ev;
+          last = { key, events, recipes: re, ingredients: ing, settings: se, clients: cl, clientsConfigured: clientsOk, entries: en, ledgerConfigured: ledgerOk, groceryLists: gl };
+          setTick((t) => t + 1);
+          return;
+        }
         last = { key, events: ev, recipes: re, ingredients: ing, settings: se, clients: cl, clientsConfigured: clientsOk, entries: en, ledgerConfigured: ledgerOk, groceryLists: gl };
-        setEvents(ev); setRecipes(re); setIngredients(ing); setSettings(se); setClients(cl); setEntries(en); setGroceryLists(gl);
+        setEvents(ev);
       })
       .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : "Erreur de chargement"); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -121,6 +145,7 @@ export function usePlanningData(ledgerYear?: string | number, options: PlanningD
   }, [key, ledgerYear, withLists, tick]);
 
   const replaceEvent = useCallback((event: AppEvent) => {
+    writes += 1;
     if (last) last = { ...last, events: last.events.map((e) => (e.eventId === event.eventId ? event : e)) };
     setEvents((prev) => prev.map((e) => (e.eventId === event.eventId ? event : e)));
   }, []);
@@ -132,25 +157,25 @@ export function usePlanningData(ledgerYear?: string | number, options: PlanningD
   }, [replaceEvent]);
 
   const patchLine = useCallback(async (eventId: string, lineId: string, patch: LinePatch) => {
-    const updated = await api.events.lines.patch(eventId, lineId, patch);
+    const updated = await queued(eventId, () => api.events.lines.patch(eventId, lineId, patch));
     replaceEvent(updated);
     return updated;
   }, [replaceEvent]);
 
   const addTask = useCallback(async (eventId: string, task: AddEventTaskRequest) => {
-    const updated = await api.events.tasks.add(eventId, task);
+    const updated = await queued(eventId, () => api.events.tasks.add(eventId, task));
     replaceEvent(updated);
     return updated;
   }, [replaceEvent]);
 
   const patchTask = useCallback(async (eventId: string, taskId: string, patch: TaskPatch) => {
-    const updated = await api.events.tasks.patch(eventId, taskId, patch);
+    const updated = await queued(eventId, () => api.events.tasks.patch(eventId, taskId, patch));
     replaceEvent(updated);
     return updated;
   }, [replaceEvent]);
 
   const removeTask = useCallback(async (eventId: string, taskId: string) => {
-    const updated = await api.events.tasks.remove(eventId, taskId);
+    const updated = await queued(eventId, () => api.events.tasks.remove(eventId, taskId));
     replaceEvent(updated);
     return updated;
   }, [replaceEvent]);

@@ -13,7 +13,7 @@ import type {
   UpdateEventRequest,
 } from "@packages/types";
 import { shiftPrepDates, tasksOf } from "@packages/types";
-import { DdbService } from "../shared/ddb.service";
+import { DdbService, UpdateOptions } from "../shared/ddb.service";
 
 type IncomingLine = Omit<EventRecipeLine, "lineId"> & { lineId?: string };
 type IncomingTask = Omit<EventTask, "taskId"> & { taskId?: string };
@@ -95,26 +95,29 @@ export class EventsService {
     return event;
   }
 
+  // Guarded like the line and task writes, so a stale editor save cannot overwrite a status tick that landed in between.
   async update(eventId: string, fields: UpdateEventRequest): Promise<AppEvent> {
-    const stored = await this.getOrFail(eventId);
-    const now = new Date().toISOString();
-    const updates: Record<string, unknown> = { ...fields, updatedAt: now };
-    if (fields.name) updates.nameLower = fields.name.toLowerCase();
-    let recipes = fields.recipes ? this.mergeLines(stored.recipes, fields.recipes) : undefined;
-    let tasks = fields.tasks ? this.mergeTasks(tasksOf(stored), fields.tasks) : undefined;
-    if (fields.date && fields.date !== stored.date.slice(0, 10)) {
-      const shifted = shiftPrepDates(
-        { date: stored.date, recipes: recipes ?? stored.recipes, tasks: tasks ?? tasksOf(stored) },
-        fields.date,
-      );
-      recipes = shifted.recipes;
-      tasks = shifted.tasks;
-    }
-    if (recipes) updates.recipes = normalizeLines(recipes, fields.date ?? stored.date);
-    if (tasks) updates.tasks = tasks;
-    if (fields.costSnapshot) updates.costSnapshot = { ...fields.costSnapshot, takenAt: now };
-    await this.ddb.update(this.table, { eventId }, updates);
-    return this.getOrFail(eventId);
+    return this.withFreshEvent(eventId, async (stored) => {
+      const now = new Date().toISOString();
+      const updates: Record<string, unknown> = { ...fields };
+      if (fields.name) updates.nameLower = fields.name.toLowerCase();
+      let recipes = fields.recipes ? this.mergeLines(stored.recipes, fields.recipes) : undefined;
+      let tasks = fields.tasks ? this.mergeTasks(tasksOf(stored), fields.tasks) : undefined;
+      if (fields.date && fields.date !== stored.date.slice(0, 10)) {
+        const shifted = shiftPrepDates(
+          { date: stored.date, recipes: recipes ?? stored.recipes, tasks: tasks ?? tasksOf(stored) },
+          fields.date,
+        );
+        recipes = shifted.recipes;
+        tasks = shifted.tasks;
+      }
+      if (recipes) updates.recipes = normalizeLines(recipes, fields.date ?? stored.date);
+      if (tasks) updates.tasks = tasks;
+      if (fields.costSnapshot) updates.costSnapshot = { ...fields.costSnapshot, takenAt: now };
+      updates.updatedAt = nextStamp(stored.updatedAt);
+      await this.ddb.update(this.table, { eventId }, updates, this.guardFor(stored));
+      return this.getOrFail(eventId);
+    });
   }
 
   async delete(eventId: string): Promise<void> {
@@ -182,7 +185,7 @@ export class EventsService {
     });
   }
 
-  // Runs op on a fresh read and retries once when another write moved updatedAt in between.
+  // Runs op on a fresh read and retries up to four times, with a short jittered pause, when another write moved updatedAt in between.
   private async withFreshEvent(eventId: string, op: (stored: AppEvent) => Promise<AppEvent>): Promise<AppEvent> {
     for (let attempt = 0; ; attempt++) {
       const stored = await this.getOrFail(eventId);
@@ -190,9 +193,17 @@ export class EventsService {
         return await op(stored);
       } catch (err) {
         if (!isConditionFailure(err)) throw err;
-        if (attempt >= 1) throw new ConflictException({ code: "LINES_CHANGED", missing: [] });
+        if (attempt >= 4) throw new ConflictException({ code: "LINES_CHANGED", missing: [] });
+        await new Promise((r) => setTimeout(r, 20 + Math.random() * 30));
       }
     }
+  }
+
+  // Condition that passes only when updatedAt is still the one read; rows written before the field existed must still lack it.
+  private guardFor(stored: AppEvent): UpdateOptions {
+    return stored.updatedAt
+      ? { condition: "#ua = :expected", names: { "#ua": "updatedAt" }, values: { ":expected": stored.updatedAt } }
+      : { condition: "attribute_not_exists(#ua)", names: { "#ua": "updatedAt" } };
   }
 
   // Writes the arrays only when updatedAt still matches the read they were computed from.
@@ -200,11 +211,8 @@ export class EventsService {
     stored: AppEvent,
     fields: { recipes?: EventRecipeLine[]; tasks?: EventTask[] },
   ): Promise<AppEvent> {
-    const guard = stored.updatedAt
-      ? { condition: "#ua = :expected", names: { "#ua": "updatedAt" }, values: { ":expected": stored.updatedAt } }
-      : { condition: "attribute_not_exists(#ua)", names: { "#ua": "updatedAt" } };
     const updates = { ...definedEntries(fields), updatedAt: nextStamp(stored.updatedAt) };
-    await this.ddb.update(this.table, { eventId: stored.eventId }, updates, guard);
+    await this.ddb.update(this.table, { eventId: stored.eventId }, updates, this.guardFor(stored));
     return this.getOrFail(stored.eventId);
   }
 

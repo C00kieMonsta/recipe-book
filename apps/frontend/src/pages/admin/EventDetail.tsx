@@ -1328,7 +1328,7 @@ function InlineContact({ value, onSave, placeholder, inputMode }: { value: strin
       tabIndex={0}
       onClick={() => setEditing(true)}
       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
-      className={`prop-value inline-flex min-h-6 shrink-0 items-center whitespace-nowrap text-base ${value ? "" : "no-print text-placeholder"}`}
+      className={`prop-value inline-flex min-h-6 min-w-0 items-center text-base [overflow-wrap:anywhere] touch:min-h-11 ${value ? "" : "no-print text-placeholder"}`}
     >
       {value || placeholder}
     </span>

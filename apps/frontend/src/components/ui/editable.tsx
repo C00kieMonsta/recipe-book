@@ -83,7 +83,7 @@ export function EditableText({ value, onSave, className, inputClassName, placeho
     <div
       role="button"
       tabIndex={0}
-      className={cn(className, "prop-value", multiline && "whitespace-pre-wrap", !value && placeholder && "text-placeholder")}
+      className={cn(className, "prop-value touch:inline-flex touch:min-h-11 touch:items-center", multiline && "whitespace-pre-wrap", !value && placeholder && "text-placeholder")}
       onClick={() => setEditing(true)}
       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
     >
@@ -129,7 +129,7 @@ export function EditableInlineText({ value, onSave, placeholder }: {
     <strong
       role="button"
       tabIndex={0}
-      className="prop-value font-medium"
+      className="prop-value font-medium touch:inline-flex touch:min-h-11 touch:items-center"
       onClick={() => setEditing(true)}
       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
     >
@@ -183,7 +183,7 @@ export function EditableInlineNum({ value, onSave, suffix, min }: {
     <strong
       role="button"
       tabIndex={0}
-      className="prop-value font-medium tabular-nums"
+      className="prop-value font-medium tabular-nums touch:inline-flex touch:min-h-11 touch:items-center"
       onClick={() => setEditing(true)}
       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
     >

@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import ListRow from "./ListRow";
 
@@ -55,6 +55,30 @@ export default function Table<T>({ columns, rows, rowKey, onRowClick, rowHref, f
   const phoneSub = columns.slice(1).filter((c) => !c.trailing).slice(0, 2);
   const phoneTrailing = columns.filter((c) => c.trailing);
 
+  const phoneFooter = columns.filter((c, i) => i === 0 || c.trailing);
+
+  // The link goes in the first cell with content, so an empty number column does not get an invisible focus target.
+  const linkColumn = (row: T) => {
+    const i = columns.findIndex((c) => { const v = cell(c, row); return v !== "" && v !== null && v !== undefined && v !== false; });
+    return i < 0 ? 0 : i;
+  };
+
+  // That cell carries a real link or button so the keyboard reaches the row.
+  const titleCell = (content: ReactNode, row: T) => {
+    if (rowHref) {
+      return (
+        <Link to={rowHref(row)} className="rounded focus-visible:outline-none focus-visible:shadow-ring" onClick={(e) => { e.stopPropagation(); onRowClick?.(row); }}>
+          {content}
+        </Link>
+      );
+    }
+    return (
+      <button type="button" className="rounded text-left focus-visible:outline-none focus-visible:shadow-ring" onClick={(e) => { e.stopPropagation(); onRowClick?.(row); }}>
+        {content}
+      </button>
+    );
+  };
+
   if (rows.length === 0 && empty) return <>{empty}</>;
 
   return (
@@ -82,8 +106,10 @@ export default function Table<T>({ columns, rows, rowKey, onRowClick, rowHref, f
                     className={cn(interactive && "cursor-pointer")}
                     onClick={interactive ? () => { onRowClick?.(row); if (rowHref) navigate(rowHref(row)); } : undefined}
                   >
-                    {columns.map((c) => (
-                      <td key={c.key} className={cn(ALIGN[c.align ?? "left"], c.align === "right" && "tabular-nums", c.className)}>{cell(c, row)}</td>
+                    {columns.map((c, ci) => (
+                      <td key={c.key} className={cn(ALIGN[c.align ?? "left"], c.align === "right" && "tabular-nums", c.className)}>
+                        {interactive && ci === linkColumn(row) ? titleCell(cell(c, row), row) : cell(c, row)}
+                      </td>
                     ))}
                   </tr>
                 ))}
@@ -124,7 +150,7 @@ export default function Table<T>({ columns, rows, rowKey, onRowClick, rowHref, f
         ))}
         {footer && (
           <div className="mt-1 flex items-center justify-between border-t border-divider pt-2 text-sm font-semibold">
-            {columns.filter((c) => footer[c.key] !== undefined).map((c) => <span key={c.key} className={cn(c.align === "right" && "tabular-nums")}>{footer[c.key]}</span>)}
+            {phoneFooter.filter((c) => footer[c.key] !== undefined).map((c) => <span key={c.key} className={cn(c.align === "right" && "tabular-nums")}>{footer[c.key]}</span>)}
           </div>
         )}
       </div>

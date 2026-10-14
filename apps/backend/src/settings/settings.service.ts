@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { ConflictException, Injectable } from "@nestjs/common";
 import type { AppSettings } from "@packages/types";
 import {
   DEFAULT_PRESTATION_TYPES,
@@ -6,11 +6,19 @@ import {
   DEFAULT_SUPPLIERS,
   upgradeCourses,
 } from "@packages/types";
-import { DdbService } from "../shared/ddb.service";
+import { DdbService, UpdateOptions } from "../shared/ddb.service";
 
 const GLOBAL_ID = "global";
 
-export type SettingsUpdate = Partial<Omit<AppSettings, "settingsId" | "updatedAt">>;
+export type SettingsUpdate = Partial<Omit<AppSettings, "settingsId" | "updatedAt">> & { updatedAt?: string };
+
+const isConditionFailure = (err: unknown) => (err as { name?: string }).name === "ConditionalCheckFailedException";
+
+// Legacy rows have no updatedAt, so the guard is a presence check rather than an equality on the stamp get() fabricates.
+const guardFor = (current: { updatedAt?: unknown }): UpdateOptions =>
+  typeof current.updatedAt === "string"
+    ? { condition: "#ua = :expected", names: { "#ua": "updatedAt" }, values: { ":expected": current.updatedAt } }
+    : { condition: "attribute_not_exists(#ua)", names: { "#ua": "updatedAt" } };
 
 // company and ledgerStartYm have no default and stay absent until set.
 // A legacy five-item courses list is served as the six defaults; nothing is written until the next save.
@@ -44,8 +52,10 @@ export class SettingsService {
 
   // Writes only the keys given, so a save from one tab keeps sections saved by another.
   // A record such as objectives is still replaced whole by what the client sends.
+  // A client that sends the updatedAt it loaded gets 409 SETTINGS_CHANGED when the document moved since; scripts that send none write unguarded.
   async update(fields: SettingsUpdate): Promise<AppSettings> {
-    const given = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
+    const { updatedAt: expected, ...rest } = fields;
+    const given = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
     const updatedAt = new Date().toISOString();
     const key = { settingsId: GLOBAL_ID };
     const current = await this.ddb.get(this.table, key);
@@ -55,10 +65,20 @@ export class SettingsService {
         await this.ddb.putIfAbsent(this.table, item, "settingsId");
         return this.get();
       } catch (err) {
-        if ((err as { name?: string }).name !== "ConditionalCheckFailedException") throw err;
+        if (!isConditionFailure(err)) throw err;
       }
     }
-    await this.ddb.update(this.table, key, { ...given, updatedAt });
+    const stored = current ?? {};
+    if (expected !== undefined && typeof stored.updatedAt === "string" && expected !== stored.updatedAt) {
+      throw new ConflictException({ code: "SETTINGS_CHANGED" });
+    }
+    const guard = expected === undefined ? {} : guardFor(stored);
+    try {
+      await this.ddb.update(this.table, key, { ...given, updatedAt }, guard);
+    } catch (err) {
+      if (isConditionFailure(err)) throw new ConflictException({ code: "SETTINGS_CHANGED" });
+      throw err;
+    }
     return this.get();
   }
 }

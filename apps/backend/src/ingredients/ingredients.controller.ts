@@ -8,7 +8,7 @@ import {
   updateIngredientRequestSchema,
 } from "@packages/types";
 
-const importRowsSchema = z.array(importIngredientRowSchema);
+const importRowsSchema = z.array(importIngredientRowSchema).max(2000, "Maximum 2000 lignes par import");
 import { IngredientsService } from "./ingredients.service";
 
 @UseGuards(AdminGuard)

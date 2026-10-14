@@ -25,7 +25,7 @@ import {
   EmptyState,
   Tag,
 } from "@/components/ui";
-import { fmt } from "@/lib/recipe-helpers";
+import { fmt, fmtUnitPrice } from "@/lib/recipe-helpers";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -360,7 +360,7 @@ export default function GroceryListPage() {
           rows={savedLists}
           rowKey={(l) => l.listId}
           onRowClick={selectList}
-          empty={<EmptyState message={<>Aucune liste de courses. <Link to={`/semaine/${isoWeekOf(todayIso())}`} className="text-primary hover:underline">Créer la liste de la semaine</Link> depuis la case « À faire avant la semaine », ou créez-en une à la main.</>} action={{ label: "+ Nouvelle liste", onClick: startNewList }} />}
+          empty={<EmptyState message={<>Aucune liste de courses. <Link to={`/semaine/${isoWeekOf(todayIso())}`} className="text-primary hover:underline">Créer la liste de la semaine</Link> depuis la case « Ce qui manque pour la semaine », ou créez-en une à la main.</>} action={{ label: "+ Nouvelle liste", onClick: startNewList }} />}
           columns={[
             { key: "title", label: "Titre", render: (l) => <span className="font-medium">{l.title}</span> },
             { key: "range", label: "Période", width: "200px", render: (l) => (l.range ? rangeLabel(l.range.from, l.range.to) : "") },
@@ -502,7 +502,7 @@ export default function GroceryListPage() {
         {addingIng ? (
           <div className="flex flex-wrap items-center gap-2">
             <SearchSelect
-              options={availableIngs.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit}` }))}
+              options={availableIngs.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: fmtUnitPrice(ig.price, ig.unit) }))}
               value={newIngId}
               onChange={(v) => {
                 setNewIngId(v);

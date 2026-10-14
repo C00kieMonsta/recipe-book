@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import { Link } from "react-router-dom";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,15 @@ interface MenuContextValue {
 }
 
 const MenuContext = createContext<MenuContextValue>({ close: () => {}, touch: false });
+
+function menuItems(panel: HTMLElement | null): HTMLElement[] {
+  return panel ? Array.from(panel.querySelectorAll<HTMLElement>("[role^=menuitem]:not([disabled])")) : [];
+}
+
+function focusItem(panel: HTMLElement | null, index: number) {
+  const items = menuItems(panel);
+  if (items.length) items[Math.max(0, Math.min(index, items.length - 1))].focus();
+}
 
 export interface MenuProps {
   open: boolean;
@@ -50,6 +59,31 @@ export function Menu({ open, onClose, anchorRef, align = "left", title, children
     setFlip(a.bottom + h > window.innerHeight && a.top - h >= 0);
   }, [open, touch, anchorRef]);
 
+  // Focus the first item on open; give focus back to the trigger on close unless an item navigated.
+  useEffect(() => {
+    if (!open || touch) return;
+    const href = window.location.href;
+    const items = menuItems(panelRef.current);
+    const current = items.findIndex((el) => el.hasAttribute("data-selected") || el.getAttribute("aria-checked") === "true");
+    focusItem(panelRef.current, Math.max(0, current));
+    return () => {
+      if (window.location.href !== href) return;
+      const active = document.activeElement;
+      if (active && active !== document.body && !anchorRef?.current?.contains(active)) return;
+      anchorRef?.current?.querySelector<HTMLElement>("button")?.focus();
+    };
+  }, [open, touch, anchorRef]);
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = menuItems(panelRef.current);
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); return; }
+    if (e.key === "ArrowDown") { e.preventDefault(); focusItem(panelRef.current, index < 0 ? 0 : (index + 1) % items.length); return; }
+    if (e.key === "ArrowUp") { e.preventDefault(); focusItem(panelRef.current, index < 0 ? items.length - 1 : (index - 1 + items.length) % items.length); return; }
+    if (e.key === "Home") { e.preventDefault(); focusItem(panelRef.current, 0); return; }
+    if (e.key === "End") { e.preventDefault(); focusItem(panelRef.current, items.length - 1); }
+  };
+
   useEffect(() => {
     if (!open || touch) return;
     const down = (e: MouseEvent | TouchEvent) => {
@@ -86,6 +120,7 @@ export function Menu({ open, onClose, anchorRef, align = "left", title, children
         ref={panelRef}
         role="menu"
         aria-label={ariaLabel}
+        onKeyDown={onKeyDown}
         className={cn(
           "absolute z-50 min-w-[200px] max-w-[320px] rounded-lg bg-background py-1 shadow-menu animate-pop",
           flip ? "bottom-full mb-1" : "top-full mt-1",
@@ -99,7 +134,7 @@ export function Menu({ open, onClose, anchorRef, align = "left", title, children
   );
 }
 
-export const MENU_ITEM = "mx-1 flex h-7 cursor-pointer items-center gap-2 rounded px-2 text-left text-sm hover:bg-hover aria-selected:bg-hover disabled:pointer-events-none disabled:opacity-50";
+export const MENU_ITEM = "mx-1 flex h-7 cursor-pointer items-center gap-2 rounded px-2 text-left text-sm hover:bg-hover data-[selected]:bg-hover disabled:pointer-events-none disabled:opacity-50";
 export const MENU_ITEM_TOUCH = "mx-0 h-11 rounded-none px-4 text-base";
 
 export interface MenuItemProps {
@@ -129,20 +164,20 @@ export function MenuItem({ icon, children, trailing, onSelect, to, href, danger 
   const handle = () => { onSelect?.(); if (closeOnSelect) close(); };
   if (to) {
     return (
-      <Link to={to} role="menuitem" className={classes} onClick={handle} aria-selected={selected || undefined}>
+      <Link to={to} role="menuitem" className={classes} onClick={handle} data-selected={selected || undefined}>
         {content}
       </Link>
     );
   }
   if (href) {
     return (
-      <a href={href} role="menuitem" className={classes} onClick={handle} aria-selected={selected || undefined} target="_blank" rel="noreferrer">
+      <a href={href} role="menuitem" className={classes} onClick={handle} data-selected={selected || undefined} target="_blank" rel="noreferrer">
         {content}
       </a>
     );
   }
   return (
-    <button type="button" role="menuitem" className={classes} onClick={handle} disabled={disabled} aria-selected={selected || undefined}>
+    <button type="button" role="menuitem" className={classes} onClick={handle} disabled={disabled} data-selected={selected || undefined}>
       {content}
     </button>
   );

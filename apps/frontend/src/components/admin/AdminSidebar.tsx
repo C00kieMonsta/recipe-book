@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ChevronLeft, ChevronsLeft, LogOut, Menu } from "lucide-react";
+import { ChevronLeft, ChevronsLeft, LogOut, Menu, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { PAGE_ICONS } from "@/lib/page-icons";
 import { IconButton } from "@/components/ui/Button";
@@ -110,7 +110,13 @@ export default function AdminSidebar({ hidden = false, collapsed = false, onColl
       </div>
 
       {/* Phone drawer */}
-      <Sheet open={mobileOpen} onClose={() => setMobileOpen(false)} side="left" aria-label="Menu">
+      <Sheet
+        open={mobileOpen}
+        onClose={() => setMobileOpen(false)}
+        side="left"
+        aria-label="Menu"
+        headerRight={<IconButton size="md" aria-label="Fermer" onClick={() => setMobileOpen(false)} icon={<X />} />}
+      >
         <div className="flex h-full min-h-full flex-col">
           <div className="mx-1 mt-1 flex h-11 items-center gap-2 rounded px-2">{brand}</div>
           {nav}

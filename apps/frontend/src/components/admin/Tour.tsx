@@ -198,7 +198,8 @@ export default function Tour({ step, index, total, phase, rect, anchor, phone, f
   let box: DOMRect | null = null;
   if (anchored && rect) {
     if (phone && h !== null) {
-      const top = Math.max(rect.top, topbar);
+      // An anchor inside the fixed top bar keeps its own top, otherwise the box would be a sliver under the bar.
+      const top = anchor && isFixed(anchor) ? rect.top : Math.max(rect.top, topbar);
       const bottom = Math.min(rect.bottom, window.innerHeight - h - MARGIN);
       box = bottom > top ? new DOMRect(rect.left, top, rect.width, bottom - top) : null;
     } else {
