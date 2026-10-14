@@ -11,5 +11,6 @@ export * from "./print";
 export * from "./step-markup";
 export * from "./files";
 export * from "./ledger-import";
+export * from "./invoice-inbox";
 export * from "./offers";
 export * from "./quote";

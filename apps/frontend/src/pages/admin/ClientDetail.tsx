@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Archive, ArchiveRestore, Trash2, Plus, X, User, Phone, Mail, MapPin, Hash, Receipt, Percent, Euro, Users, FileText, Search } from "lucide-react";
+import { Archive, ArchiveRestore, Calculator, Trash2, Plus, X, User, Phone, Mail, MapPin, Hash, Receipt, Percent, Euro, Users, FileText, Search } from "lucide-react";
 import type {
   AppEvent,
   AppSettings,
@@ -19,7 +19,19 @@ import type {
   VatRate,
   Weekday,
 } from "@packages/types";
-import { DEFAULT_COURSES, DEFAULT_PRESTATION_TYPES, VAT_RATES, fmtEur, isWeekdayLabel, round2 } from "@packages/types";
+import {
+  DEFAULT_COURSES,
+  DEFAULT_PRESTATION_TYPES,
+  VAT_RATES,
+  courseOf,
+  fmtEur,
+  isIncompleteRecipe,
+  isWeekdayLabel,
+  pricePerGuestOf,
+  recipeCategoryOf,
+  round2,
+  signedRevenue,
+} from "@packages/types";
 import { ApiError, api } from "@/lib/api";
 import { longDayLabel, dayMonthShortLabel, dayMonthLabel, todayIso, ymOf } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
@@ -42,6 +54,7 @@ import {
   EditableInlineNum,
 } from "@/components/ui";
 import { PersonAssign } from "@/components/admin/PersonPicker";
+import NewRecipeDialog from "@/components/admin/NewRecipeDialog";
 
 const WEEKDAYS: { value: Weekday; label: string }[] = [
   { value: 1, label: "Lundi" },
@@ -121,7 +134,7 @@ function templateFromEvent(ev: AppEvent, weekday: Weekday, existing?: ClientTemp
     name: existing?.name ?? ev.name,
     weekday,
     guestCount: ev.guestCount,
-    sellingPricePerGuest: ev.sellingPricePerGuest,
+    sellingPricePerGuest: pricePerGuestOf(ev),
     prestationType: ev.prestationType,
     vatRate: ev.vatRate,
     recipes: ev.recipes.map((l) => ({ recipeId: l.recipeId, portions: l.portions, course: l.course, notes: l.notes })),
@@ -176,6 +189,7 @@ export default function ClientDetail() {
 
   const [editing, setEditing] = useState<ClientTemplate | null>(null);
   const [pickFor, setPickFor] = useState<Weekday | null>(null);
+  const [newRecipe, setNewRecipe] = useState<{ name: string } | null>(null);
 
   const pending = useRef<UpdateClientRequest>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -298,6 +312,17 @@ export default function ClientDetail() {
     });
   };
 
+  // Appends a line to the template being edited, portions = its guest count.
+  const addTemplateLine = (r: Recipe) => {
+    setEditing((prev) => prev ? { ...prev, recipes: [...prev.recipes, { recipeId: r.recipeId, portions: prev.guestCount || 1, course: recipeCategoryOf(r) }] } : prev);
+  };
+
+  const onRecipeCreated = (r: Recipe) => {
+    setRecipes((prev) => [...prev, r]);
+    addTemplateLine(r);
+    toast({ title: "Recette créée et ajoutée" });
+  };
+
   const applyEvent = (ev: AppEvent, weekday: Weekday) => {
     const existing = templates.find((t) => t.weekday === weekday);
     if (existing && !window.confirm(`Remplacer le modèle du ${WEEKDAYS.find((w) => w.value === weekday)?.label.toLowerCase()} par cet événement ?`)) return;
@@ -411,6 +436,8 @@ export default function ClientDetail() {
               <ActionMenu
                 title={form.name}
                 items={[
+                  { label: "Faire un devis", icon: <Calculator />, onClick: () => navigate(`/devis?client=${id}`) },
+                  { kind: "separator" },
                   client?.active === false
                     ? { label: "Réactiver", icon: <ArchiveRestore />, onClick: () => void setActive(true) }
                     : { label: "Archiver", icon: <Archive />, onClick: () => void setActive(false) },
@@ -495,7 +522,7 @@ export default function ClientDetail() {
                       trailing={
                         <>
                           {inv !== undefined && <StatusTag status="invoiced" label={inv ? `Facturé n° ${inv}` : "Facturé"} />}
-                          <Tag colour="gray">Signé {fmtEur((ev.sellingPricePerGuest || 0) * (ev.guestCount || 0))}</Tag>
+                          <Tag colour="gray">Signé {fmtEur(signedRevenue(ev))}</Tag>
                         </>
                       }
                     />
@@ -536,7 +563,7 @@ export default function ClientDetail() {
 
       <Dialog
         open={editing !== null}
-        onClose={() => setEditing(null)}
+        onClose={() => { if (newRecipe === null) setEditing(null); }}
         title={editing ? (editing.templateId ? `Modèle du ${WEEKDAYS.find((w) => w.value === editing.weekday)?.label.toLowerCase()}` : `Nouveau modèle du ${WEEKDAYS.find((w) => w.value === editing.weekday)?.label.toLowerCase()}`) : ""}
         size="md"
         footer={editing ? (
@@ -554,9 +581,21 @@ export default function ClientDetail() {
             courses={courses}
             prestationTypes={prestationTypes}
             onChange={setEditing}
+            onCreateRecipe={(name) => setNewRecipe({ name })}
           />
         )}
       </Dialog>
+
+      <NewRecipeDialog
+        open={newRecipe !== null}
+        onClose={() => setNewRecipe(null)}
+        initial={newRecipe ?? { name: "" }}
+        categories={courses}
+        existing={recipes}
+        defaultPortions={editing?.guestCount || 1}
+        onCreated={onRecipeCreated}
+        onUseExisting={(recipeId) => { const r = recipeById.get(recipeId); if (r) addTemplateLine(r); }}
+      />
     </div>
   );
 }
@@ -575,7 +614,7 @@ function TemplateRow({ dayLabel, template: t, recipeById, courses, prestationLab
 }) {
   const lines = useMemo(() => {
     const order = (c: string) => { const i = courses.indexOf(c); return i === -1 ? courses.length : i; };
-    return [...t.recipes].sort((a, b) => order(a.course || recipeById.get(a.recipeId)?.defaultCourse || "Autre") - order(b.course || recipeById.get(b.recipeId)?.defaultCourse || "Autre"));
+    return [...t.recipes].sort((a, b) => order(courseOf(a, recipeById.get(a.recipeId))) - order(courseOf(b, recipeById.get(b.recipeId))));
   }, [t.recipes, recipeById, courses]);
 
   const title = !isWeekdayLabel(t.name) && t.name !== dayLabel ? t.name : undefined;
@@ -657,16 +696,17 @@ function EventPicker({ events, clientId, onPick }: {
   );
 }
 
-function TemplateEditor({ template: t, recipes, courses, prestationTypes, onChange }: {
+function TemplateEditor({ template: t, recipes, courses, prestationTypes, onChange, onCreateRecipe }: {
   template: ClientTemplate;
   recipes: Recipe[];
   courses: string[];
   prestationTypes: PrestationTypeSetting[];
   onChange: (t: ClientTemplate) => void;
+  onCreateRecipe: (name: string) => void;
 }) {
   const recipeById = useMemo(() => new Map(recipes.map((r) => [r.recipeId, r])), [recipes]);
   const options = useMemo(
-    () => [...recipes].sort((a, b) => a.name.localeCompare(b.name, "fr")).map((r) => ({ value: r.recipeId, label: r.name, detail: r.type })),
+    () => [...recipes].sort((a, b) => a.name.localeCompare(b.name, "fr")).map((r) => ({ value: r.recipeId, label: r.name, detail: recipeCategoryOf(r) })),
     [recipes],
   );
   const set = (patch: Partial<ClientTemplate>) => onChange({ ...t, ...patch });
@@ -700,16 +740,22 @@ function TemplateEditor({ template: t, recipes, courses, prestationTypes, onChan
       <h3 className="mt-5 text-base font-semibold">Recettes</h3>
       {t.recipes.length > 0 && (
         <ul className="mt-1">
-          {t.recipes.map((l, i) => (
-            <li key={`${l.recipeId}-${i}`} className="group flex min-h-9 items-center gap-2 rounded px-1 hover:bg-hover touch:min-h-11">
-              <span className="min-w-0 flex-1 truncate">{recipeById.get(l.recipeId)?.name ?? "Recette inconnue"}</span>
-              <SelectPill value={l.course ?? ""} options={courseOptions} colour="gray" placeholder="Catégorie" align="right" aria-label="Catégorie" onChange={(v) => setLine(i, { course: v || undefined })} />
-              <span className="w-20 text-right tabular-nums">
-                <EditableInlineNum value={l.portions || 0} min={1} onSave={(v) => setLine(i, { portions: Math.round(v) })} suffix=" port." />
-              </span>
-              <IconButton size="sm" aria-label="Retirer" onClick={() => set({ recipes: t.recipes.filter((_, j) => j !== i) })} icon={<X />} className="reveal" />
-            </li>
-          ))}
+          {t.recipes.map((l, i) => {
+            const recipe = recipeById.get(l.recipeId);
+            return (
+              <li key={`${l.recipeId}-${i}`} className="group flex min-h-9 items-center gap-2 rounded px-1 hover:bg-hover touch:min-h-11">
+                <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2">
+                  <span className="min-w-0 max-w-full truncate">{recipe?.name ?? "Recette inconnue"}</span>
+                  {recipe && isIncompleteRecipe(recipe) && <Tag colour="gray">Sans ingrédients</Tag>}
+                </span>
+                <SelectPill value={l.course ?? ""} options={courseOptions} colour="gray" placeholder="Catégorie" align="right" aria-label="Catégorie" onChange={(v) => setLine(i, { course: v || undefined })} />
+                <span className="w-20 text-right tabular-nums">
+                  <EditableInlineNum value={l.portions || 0} min={1} onSave={(v) => setLine(i, { portions: Math.round(v) })} suffix=" port." />
+                </span>
+                <IconButton size="sm" aria-label="Retirer" onClick={() => set({ recipes: t.recipes.filter((_, j) => j !== i) })} icon={<X />} className="reveal" />
+              </li>
+            );
+          })}
         </ul>
       )}
       <SearchSelect
@@ -720,8 +766,9 @@ function TemplateEditor({ template: t, recipes, courses, prestationTypes, onChan
         onChange={(recipeId) => {
           const r = recipeById.get(recipeId);
           if (!r) return;
-          set({ recipes: [...t.recipes, { recipeId, portions: t.guestCount || 1, course: r.defaultCourse }] });
+          set({ recipes: [...t.recipes, { recipeId, portions: t.guestCount || 1, course: recipeCategoryOf(r) }] });
         }}
+        onCreateNew={onCreateRecipe}
       />
 
       <div className="mt-5 flex items-center justify-between">

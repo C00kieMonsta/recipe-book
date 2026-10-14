@@ -1,12 +1,39 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ChevronDown, Download, FileText, Lock, LockOpen, MoreHorizontal, Plus } from "lucide-react";
-import type { CreateLedgerEntryRequest, LedgerBook, LedgerEntry, MpSource, PatchLedgerEntryRequest, PaymentMethod } from "@packages/types";
-import { clientLabel, fmtEur, isCommissionEntry, prefillForClientMonth, rawMaterialOfMonth, sumMoney } from "@packages/types";
-import { api } from "@/lib/api";
+import { CalendarDays, ChevronDown, Download, FileText, Lock, LockOpen, MoreHorizontal, Plus, Upload } from "lucide-react";
+import Papa from "papaparse";
+import * as XLSX from "xlsx";
+import type {
+  AppSettings,
+  CreateLedgerEntryRequest,
+  ImportLedgerRow,
+  LedgerBook,
+  LedgerEntry,
+  MpSource,
+  OdooField,
+  PatchLedgerEntryRequest,
+  PaymentMethod,
+} from "@packages/types";
+import {
+  DEFAULT_PRESTATION_TYPES,
+  ODOO_HEADERS,
+  ODOO_REQUIRED_FIELDS,
+  clientLabel,
+  detectOdooColumns,
+  fmtEur,
+  isCommissionEntry,
+  lastDayOfMonth,
+  mapOdooRow,
+  odooHeaderKey,
+  prefillForClientMonth,
+  rawMaterialOfMonth,
+  sumMoney,
+} from "@packages/types";
+import { api, type ImportLedgerResponse } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { plural } from "@/lib/use-planning-data";
 import { useReportInputs } from "@/lib/use-report-inputs";
+import { useToast } from "@/hooks/use-toast";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
 import {
   MP_SOURCE_LABEL,
@@ -171,10 +198,25 @@ function StatRowLine({ label, value }: { label: ReactNode; value: ReactNode }) {
   );
 }
 
+interface QueuedForm {
+  initial: Partial<CreateLedgerEntryRequest>;
+  title: string;
+}
+
 interface FormOpen {
   entry?: LedgerEntry;
   initial?: Partial<CreateLedgerEntryRequest>;
   above?: ReactNode;
+  kind?: "facture" | "acompte" | "ca_mensuel";
+  title?: string;
+  // Forms still to open after this one is saved: one invoice per VAT rate of the billed lines.
+  queue?: QueuedForm[];
+}
+
+// « Facture 2 / 2 · service, livraison, autres (21 %) » for each extra entry of a prefill.
+function queueOf(extraEntries: Partial<CreateLedgerEntryRequest>[]): QueuedForm[] {
+  const total = extraEntries.length + 1;
+  return extraEntries.map((initial, i) => ({ initial, title: `Facture ${i + 2} / ${total} · service, livraison, autres (${initial.vatRate ?? 0} %)` }));
 }
 
 export default function Journal() {
@@ -192,9 +234,13 @@ export default function Journal() {
   const typeParam = book === "ventes" ? params.get("type") : null;
 
   const data = useReportInputs(year);
-  const { inputs, entries, events, settings, clients, loading, notConfigured, error, reload } = data;
+  const { inputs, entries, events, settings, clients, invoicing, loading, notConfigured, error, reload } = data;
+  // Invoices issued in another tool (Odoo): the month's revenue is typed or imported.
+  const externe = invoicing === "externe";
+  const { toast } = useToast();
 
   const [form, setForm] = useState<FormOpen | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [lockOpen, setLockOpen] = useState(false);
   const [unlockOpen, setUnlockOpen] = useState(false);
   const [askLock, setAskLock] = useState(false);
@@ -224,6 +270,7 @@ export default function Journal() {
   const acomptes = useMemo(() => monthSales.filter((e) => e.kind === "acompte"), [monthSales]);
   const commissions = useMemo(() => monthSales.filter(isCommissionEntry), [monthSales]);
   const persons = useMemo(() => personSummaries(monthEntries), [monthEntries]);
+  const doubleCount = useMemo(() => monthSales.some((e) => e.kind === "facture") && monthSales.some((e) => e.kind === "ca_mensuel"), [monthSales]);
   const clientById = useMemo(() => new Map(clients.map((c) => [c.clientId, c])), [clients]);
 
   const eventOptions = useMemo(
@@ -251,6 +298,7 @@ export default function Journal() {
     const p = prefillForClientMonth(client, events, entries, settings, ym);
     setForm({
       initial: p.entry,
+      queue: queueOf(p.extraEntries),
       above: (
         <div>
           <div className="flex flex-wrap justify-between gap-2">
@@ -276,6 +324,24 @@ export default function Journal() {
 
   const openNew = () =>
     setForm({ initial: book === "ventes" ? { book: "ventes", kind: "facture", date: ym === today.slice(0, 7) ? today : `${ym}-01` } : { book: "achats", kind: "mp", date: ym === today.slice(0, 7) ? today : `${ym}-01` } });
+
+  // One CA line per month and VAT rate, dated the last day of the month, at the first prestation type's rate.
+  const openMonthly = () => {
+    const vatRate = (settings?.prestationTypes ?? DEFAULT_PRESTATION_TYPES)[0]?.defaultVatRate ?? 0;
+    setForm({ kind: "ca_mensuel", initial: { book: "ventes", kind: "ca_mensuel", date: lastDayOfMonth(ym), vatRate } });
+  };
+
+  const onImported = (result: ImportLedgerResponse) => {
+    setImportOpen(false);
+    const parts = [
+      result.created === 1 ? "1 facture importée" : `${result.created} factures importées`,
+      result.updated === 1 ? "1 mise à jour" : `${result.updated} mises à jour`,
+    ];
+    if (result.skippedLocked > 0) parts.push(result.skippedLocked === 1 ? "1 mois verrouillé" : `${result.skippedLocked} mois verrouillés`);
+    toast({ title: parts.join(" · ") });
+    if (result.invalid.length > 0) setNotice(`Lignes invalides : ${result.invalid.join(" ; ")}`);
+    reload();
+  };
 
   const onExport = () => {
     if (!inputs) return;
@@ -344,6 +410,13 @@ export default function Journal() {
                   <MenuSeparator />
                 </>
               )}
+              {externe && (
+                <>
+                  <MenuItem icon={<CalendarDays />} onSelect={openMonthly}>Saisir le CA du mois…</MenuItem>
+                  <MenuItem icon={<Upload />} disabled={!settings} onSelect={() => setImportOpen(true)}>Importer des factures (CSV)…</MenuItem>
+                  <MenuSeparator />
+                </>
+              )}
               <MenuItem icon={<Download />} disabled={!inputs} onSelect={onExport}>Exporter {year} (xlsx)</MenuItem>
               <MenuItem icon={<FileText />} disabled={!settings} onSelect={() => settings && downloadMonthCsv(ym, entries, settings)}>CSV du mois</MenuItem>
               <MenuSeparator />
@@ -390,7 +463,7 @@ export default function Journal() {
   const salesColumns: TableColumn<LedgerEntry>[] = [
     { key: "number", label: "N°", width: "6rem", render: (e) => e.number ?? "" },
     { key: "date", label: "Date", width: "7rem", render: (e) => fmtDateFr(e.date) },
-    { key: "label", label: "Intitulé", render: (e) => <>{e.label}{e.kind !== "facture" && <span className="ml-2 text-muted-foreground">{kindLabel(e)}</span>}</> },
+    { key: "label", label: "Intitulé", render: (e) => <>{e.label}{e.kind !== "facture" && <span className="ml-2 text-muted-foreground">{kindLabel(e)}</span>}{e.imported && <Tag colour="gray" className="ml-2">importée</Tag>}</> },
     { key: "type", label: "Type", render: (e) => (typeOf(e) ? <Tag colour="gray">{typeOf(e)}</Tag> : "") },
     { key: "tvac", label: "Total TVAC", align: "right", render: (e) => fmtEur(e.totalTvac) },
     { key: "htva", label: "HTVA", align: "right", render: (e) => fmtEur(e.htva) },
@@ -412,7 +485,10 @@ export default function Journal() {
     { key: "paid", label: "Réglé", width: "8rem", render: (e) => <PaidPopover entry={e} onSaved={reload} align="right" /> },
   ];
 
-  const emptyText = book === "ventes" ? `Aucune ligne pour ${monthLabel(ym)}.` : `Aucun achat pour ${monthLabel(ym)}.`;
+  const emptyText = book === "ventes"
+    ? externe ? "Aucune vente ce mois. Saisissez le CA du mois ou importez les factures." : `Aucune ligne pour ${monthLabel(ym)}.`
+    : `Aucun achat pour ${monthLabel(ym)}.`;
+  const emptyAction = book === "ventes" && externe ? { label: "Saisir le CA du mois", onClick: openMonthly } : { label: "+ Nouvelle ligne", onClick: openNew };
 
   const table = (
     <Table
@@ -420,7 +496,7 @@ export default function Journal() {
       rows={shown}
       rowKey={(e) => e.entryId}
       onRowClick={(e) => setForm({ entry: e })}
-      empty={<EmptyState message={emptyText} action={{ label: "+ Nouvelle ligne", onClick: openNew }} />}
+      empty={<EmptyState message={emptyText} action={emptyAction} />}
       footer={
         book === "ventes"
           ? { label: "Total", tvac: fmtEur(sales.tvac), htva: fmtEur(sales.htva) }
@@ -435,14 +511,14 @@ export default function Journal() {
         {shown.map((e) => (
           <ListRow
             key={e.entryId}
-            title={e.label}
+            title={<>{e.label}{e.imported && <Tag colour="gray" className="ml-2">importée</Tag>}</>}
             subtitle={[e.number ? `N° ${e.number}` : "", fmtDateFr(e.date), book === "ventes" ? typeOf(e) : kindLabel(e)].filter(Boolean).join(" · ")}
             trailing={<><span className="text-foreground">{fmtEur(e.totalTvac)}</span><PaidTag paid={e.paid} /></>}
             onClick={() => setForm({ entry: e })}
           />
         ))}
       </div>
-      {shown.length === 0 && <EmptyState message={emptyText} action={{ label: "+ Nouvelle ligne", onClick: openNew }} />}
+      {shown.length === 0 && <EmptyState message={emptyText} action={emptyAction} />}
       <div className="sticky bottom-0 -mx-4 mt-2 border-t border-divider bg-background px-4 py-2 text-sm tabular-nums">
         {book === "ventes" ? (
           <>
@@ -521,6 +597,11 @@ export default function Journal() {
       ) : (
         <>
           {statLine}
+          {book === "ventes" && doubleCount && (
+            <div className="mt-3">
+              <Callout tone="warning">Ce mois contient des factures et un CA mensuel : le chiffre d'affaires est compté deux fois.</Callout>
+            </div>
+          )}
           <div className="mt-3 hidden md:block">{table}</div>
           <div className="mt-3 md:hidden">{phoneList}</div>
           {book === "ventes" && salesDetail}
@@ -530,19 +611,32 @@ export default function Journal() {
 
       {form && (
         <LedgerEntryForm
+          key={`${form.entry?.entryId ?? "new"}-${form.queue?.length ?? 0}`}
           layout="dialog"
           entry={form.entry}
           initial={form.initial}
+          kind={form.kind}
+          title={form.title}
+          allowMonthly={externe}
           locked={form.entry ? locked || form.entry.locked : locked}
           eventOptions={eventOptions}
           clientOptions={clientOptions}
           prestationTypes={settings?.prestationTypes}
           refOptions={refOptions}
           above={form.above}
-          onSaved={(_saved, next) => { reload(); if (!next?.keepOpen) setForm(null); }}
+          onSaved={(_saved, next) => {
+            reload();
+            if (next?.keepOpen) return;
+            const [head, ...rest] = form.queue ?? [];
+            setForm(head ? { kind: "facture", initial: head.initial, title: head.title, queue: rest } : null);
+          }}
           onCancel={() => setForm(null)}
           onDeleted={() => { reload(); setForm(null); }}
         />
+      )}
+
+      {importOpen && settings && (
+        <ImportInvoicesDialog entries={entries} settings={settings} onImported={onImported} onCancel={() => setImportOpen(false)} />
       )}
 
       {lockOpen && inputs && (
@@ -687,6 +781,211 @@ function UnlockDialog({ ym, onDone, onCancel }: { ym: string; onDone: () => void
         </div>
         {error && <Callout tone="danger">{error}</Callout>}
       </div>
+    </Dialog>
+  );
+}
+
+const ODOO_FIELD_LABEL: Record<OdooField, string> = {
+  number: "Numéro",
+  date: "Date",
+  partner: "Partenaire",
+  untaxed: "Montant HT",
+  tax: "Taxes",
+  total: "Total",
+  status: "État du paiement",
+  paidAt: "Date de paiement",
+};
+
+type PreviewStatus = "new" | "update" | "locked" | "ignored";
+
+interface PreviewRow {
+  id: number;
+  status: PreviewStatus;
+  number: string;
+  row?: ImportLedgerRow;
+  reason?: string;
+}
+
+const PREVIEW_TAG: Record<PreviewStatus, { label: string; colour: "green" | "blue" | "gray" | "red" }> = {
+  new: { label: "Nouvelle", colour: "green" },
+  update: { label: "Mise à jour", colour: "blue" },
+  locked: { label: "Mois verrouillé", colour: "gray" },
+  ignored: { label: "Ignorée", colour: "red" },
+};
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+// Spreadsheet cells as text; dates keep their local calendar day.
+function cellText(v: unknown): string {
+  if (v instanceof Date) return `${v.getFullYear()}-${pad2(v.getMonth() + 1)}-${pad2(v.getDate())}`;
+  if (v === null || v === undefined) return "";
+  return String(v);
+}
+
+function countLabel(n: number, singular: string, pluralForm: string): string {
+  return `${n} ${n === 1 ? singular : pluralForm}`;
+}
+
+// Two steps like the ingredient import: the file, then the preview with one tag per row.
+function ImportInvoicesDialog({
+  entries,
+  settings,
+  onImported,
+  onCancel,
+}: {
+  entries: LedgerEntry[];
+  settings: AppSettings;
+  onImported: (result: ImportLedgerResponse) => void;
+  onCancel: () => void;
+}) {
+  const [step, setStep] = useState<"upload" | "preview">("upload");
+  const [fileName, setFileName] = useState("");
+  const [rows, setRows] = useState<PreviewRow[]>([]);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const importedNumbers = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of entries) if (e.book === "ventes" && e.imported && e.number) set.add(e.number);
+    return set;
+  }, [entries]);
+
+  const processRows = (headers: string[], data: Record<string, string>[]) => {
+    const columns = detectOdooColumns(headers);
+    if (!columns) {
+      const missing = ODOO_REQUIRED_FIELDS.find((f) => !headers.some((h) => ODOO_HEADERS[f].includes(odooHeaderKey(h))));
+      setProblem(`Colonne manquante : ${ODOO_FIELD_LABEL[missing ?? "number"]}. Colonnes lues : ${headers.filter(Boolean).join(", ") || "aucune"}.`);
+      return;
+    }
+    const preview: PreviewRow[] = data.map((raw, i) => {
+      const mapped = mapOdooRow(raw, columns);
+      const rawNumber = columns.number ? String(raw[columns.number] ?? "").trim() : "";
+      if (!mapped.ok) return { id: i, status: "ignored", number: rawNumber || `ligne ${i + 1}`, reason: mapped.reason };
+      const row = mapped.row;
+      const locked = Boolean(settings.monthCloses?.[row.date.slice(0, 7)]?.lockedAt);
+      const status: PreviewStatus = locked ? "locked" : importedNumbers.has(row.number) ? "update" : "new";
+      return { id: i, status, number: row.number, row };
+    });
+    setRows(preview);
+    setStep("preview");
+  };
+
+  const handleFile = (file: File | undefined) => {
+    if (!file) return;
+    setProblem(null);
+    setFileName(file.name);
+    if (/\.xlsx?$/i.test(file.name)) {
+      file.arrayBuffer().then((buf) => {
+        const wb = XLSX.read(buf, { type: "array", cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        if (!ws) { setProblem("Le classeur ne contient aucune feuille."); return; }
+        const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "", raw: true });
+        const headers = json.length ? Object.keys(json[0]) : [];
+        const data = json.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, cellText(v)])));
+        processRows(headers, data);
+      }).catch(() => setProblem("Fichier illisible."));
+      return;
+    }
+    Papa.parse<Record<string, string>>(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => processRows(results.meta.fields ?? [], results.data),
+      error: () => setProblem("Fichier illisible."),
+    });
+  };
+
+  const counts = {
+    new: rows.filter((r) => r.status === "new").length,
+    update: rows.filter((r) => r.status === "update").length,
+    locked: rows.filter((r) => r.status === "locked").length,
+    ignored: rows.filter((r) => r.status === "ignored").length,
+  };
+  const toImport = counts.new + counts.update;
+  const summary = [
+    countLabel(counts.new, "nouvelle", "nouvelles"),
+    countLabel(counts.update, "mise à jour", "mises à jour"),
+    countLabel(counts.ignored, "ignorée", "ignorées"),
+  ];
+  if (counts.locked > 0) summary.push(countLabel(counts.locked, "mois verrouillé", "mois verrouillés"));
+
+  const submit = async () => {
+    const payload = rows.filter((r): r is PreviewRow & { row: ImportLedgerRow } => r.row !== undefined).map((r) => r.row);
+    if (payload.length === 0) return;
+    setImporting(true);
+    setProblem(null);
+    try {
+      onImported(await api.ledger.import(payload));
+    } catch (e) {
+      setProblem(ledgerErrorMessage(e));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const columns: TableColumn<PreviewRow>[] = [
+    {
+      key: "number",
+      label: "Numéro",
+      render: (r) => (
+        <span className="inline-flex items-center gap-2">
+          <Tag colour={PREVIEW_TAG[r.status].colour} title={r.reason}>{PREVIEW_TAG[r.status].label}</Tag>
+          <span className="font-medium">{r.number}</span>
+        </span>
+      ),
+    },
+    { key: "date", label: "Date", width: "7rem", render: (r) => (r.row ? fmtDateFr(r.row.date) : "") },
+    { key: "label", label: "Client", render: (r) => r.row?.label ?? <span className="text-muted-foreground">{r.reason}</span> },
+    { key: "htva", label: "HTVA", align: "right", render: (r) => (r.row ? fmtEur(r.row.htva) : "") },
+    { key: "vat", label: "TVA", align: "right", render: (r) => (r.row ? fmtEur(r.row.vatAmount) : "") },
+    { key: "tvac", label: "TVAC", align: "right", trailing: true, render: (r) => (r.row ? fmtEur(r.row.totalTvac) : "") },
+    { key: "paid", label: "Payé", width: "4rem", trailing: true, render: (r) => (r.row ? (r.row.paid ? "Oui" : "Non") : "") },
+  ];
+
+  const footer = step === "upload" ? (
+    <Button variant="default" size="md" onClick={onCancel}>Annuler</Button>
+  ) : (
+    <div className="flex w-full flex-wrap items-center justify-between gap-2">
+      <Button variant="default" size="md" onClick={() => { setStep("upload"); setRows([]); }}>Changer de fichier</Button>
+      <span className="flex gap-2">
+        <Button variant="default" size="md" onClick={onCancel} disabled={importing}>Annuler</Button>
+        <Button variant="primary" size="md" disabled={importing || toImport === 0} onClick={() => void submit()}>
+          {importing ? "Import en cours…" : `Importer ${countLabel(toImport, "facture", "factures")}`}
+        </Button>
+      </span>
+    </div>
+  );
+
+  return (
+    <Dialog open onClose={onCancel} title="Importer des factures (CSV)" size="lg" footer={footer}>
+      {step === "upload" ? (
+        <div className="flex flex-col gap-3">
+          <button
+            type="button"
+            className="flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg bg-surface p-10 text-muted-foreground hover:bg-hover focus-visible:outline-none focus-visible:shadow-ring"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}
+            onClick={() => fileRef.current?.click()}
+          >
+            <Upload className="h-8 w-8" aria-hidden="true" />
+            <span className="text-base font-medium text-foreground">Déposez l'export Odoo (CSV ou XLSX) ou cliquez pour choisir</span>
+          </button>
+          <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" className="hidden" onChange={(e) => { handleFile(e.target.files?.[0]); e.target.value = ""; }} />
+          <p className="text-caption text-muted-foreground">Export Facturation › Factures clients, avec les colonnes Numéro, Date, Partenaire, Montant HT, Taxes, Total, État du paiement.</p>
+          {problem && <Callout tone="danger">{problem}</Callout>}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface px-4 py-2.5">
+            <span className="text-sm font-medium">{fileName}</span>
+            <span className="text-sm text-muted-foreground">{summary.join(" · ")}</span>
+          </div>
+          <Table columns={columns} rows={rows} rowKey={(r) => String(r.id)} />
+          {problem && <Callout tone="danger">{problem}</Callout>}
+        </div>
+      )}
     </Dialog>
   );
 }

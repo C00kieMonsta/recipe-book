@@ -7,23 +7,40 @@ import type {
   Client,
   EventExtraCost,
   EventRecipeLine,
+  EventRevenueLine,
   ExtraCostKind,
   Ingredient,
   Person,
   PrestationTypeSetting,
+  PricingMode,
   Recipe,
   VatRate,
 } from "@packages/types";
-import { DEFAULT_COURSES, DEFAULT_PRESTATION_TYPES, VAT_RATES, groupByCourse } from "@packages/types";
+import {
+  DEFAULT_COURSES,
+  DEFAULT_PRESTATION_TYPES,
+  VAT_RATES,
+  billingFromClient,
+  foodRevenue,
+  groupByCourse,
+  isIncompleteRecipe,
+  pricePerGuestOf,
+  recipeCategoryOf,
+  revenueLinesTotal,
+  round2,
+  signedRevenue,
+} from "@packages/types";
 import { api, ApiError, type EventInput } from "@/lib/api";
 import { longDayLabel, todayIso, weekdayOf } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
 import { safeReturn } from "@/lib/safe-return";
+import { cn } from "@/lib/utils";
 import { calcEventCost, calcRecipeCost, fmt } from "@/lib/recipe-helpers";
 import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
-import { FieldLabel, NumericInput, PageHeader, Section, Tag, Button, IconButton, SearchSelect, MoneyTile } from "@/components/ui";
+import { FieldLabel, NumericInput, PageHeader, Section, Tag, TAG_BASE, TAG_COLOUR_CLASS, Button, IconButton, SearchSelect, MoneyTile } from "@/components/ui";
 import { PersonChip } from "@/components/admin/PersonChips";
 import NewClientDialog from "@/components/admin/NewClientDialog";
+import NewRecipeDialog, { type NewRecipeInitial } from "@/components/admin/NewRecipeDialog";
 
 // Lines of a not-yet-created event have no lineId; the server fills it on POST.
 type LocalLine = Omit<EventRecipeLine, "lineId"> & { lineId?: string };
@@ -36,11 +53,15 @@ const EXTRA_KINDS: { value: ExtraCostKind; label: string }[] = [
   { value: "autre", label: "Autre" },
 ];
 
+const REVENUE_LABELS = ["Service", "Livraison", "Autres"];
+const MAX_REVENUE_LINES = 10;
+
 const NEW_CLIENT = "__new__";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const PERSON_TOGGLE = "inline-flex h-8 items-center gap-1.5 rounded-sm pl-1 pr-2.5 text-sm shadow-outline hover:bg-hover touch:h-11 touch:text-base";
 const PERSON_ON = "bg-selected text-primary shadow-[0_0_0_1px_rgba(35,131,226,0.35)] hover:bg-selected";
+const MODE_TAG = `${TAG_BASE} h-7 px-2 touch:h-11 touch:px-3 touch:text-base`;
 
 export default function EventEditor() {
   const { id } = useParams<{ id: string }>();
@@ -63,11 +84,17 @@ export default function EventEditor() {
   const [recipes, setRecipes] = useState<LocalLine[]>([]);
   const [localLineVersion, setLocalLineVersion] = useState(0);
   const [extraCosts, setExtraCosts] = useState<EventExtraCost[]>([]);
+  const [revenueLines, setRevenueLines] = useState<EventRevenueLine[]>([]);
+  const [pricingMode, setPricingMode] = useState<PricingMode>("par_convive");
   const [sellingPricePerGuest, setSellingPricePerGuest] = useState(0);
+  const [sellingTotal, setSellingTotal] = useState(0);
   const [notes, setNotes] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactEmail, setContactEmail] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryTime, setDeliveryTime] = useState("");
+  const [billingDetails, setBillingDetails] = useState("");
   const [actualCost, setActualCost] = useState<number | null>(null);
   const [clientId, setClientId] = useState("");
   const [templateId, setTemplateId] = useState("");
@@ -78,9 +105,10 @@ export default function EventEditor() {
 
   const [newClientOpen, setNewClientOpen] = useState(false);
   const [clientsConfigured, setClientsConfigured] = useState(true);
+  const [newRecipe, setNewRecipe] = useState<NewRecipeInitial | null>(null);
 
   const initialized = useRef(false);
-  // Set by addRecipe so only a freshly added line without a category takes the focus.
+  // Set by addLine so only a freshly added line without a category takes the focus.
   const justAdded = useRef(false);
   const savingRef = useRef(false);
   const pendingRef = useRef(false);
@@ -110,6 +138,8 @@ export default function EventEditor() {
     setContactName((prev) => prev || c.contactName || "");
     setContactPhone((prev) => prev || c.phone || "");
     setContactEmail((prev) => prev || c.email || "");
+    setDeliveryAddress((prev) => prev || c.address || "");
+    setBillingDetails((prev) => prev || billingFromClient(c));
   };
 
   // Copies the client's template for the weekday of `date`; a later date change does not re-apply it.
@@ -119,6 +149,8 @@ export default function EventEditor() {
     setName((prev) => prev || `${c.name} · ${longDayLabel(date)}`);
     setGuestCount(t.guestCount);
     guestCountTouched.current = true;
+    // Templates are priced per guest.
+    setPricingMode("par_convive");
     setSellingPricePerGuest(t.sellingPricePerGuest);
     setPrestationType(t.prestationType ?? c.defaultPrestationType ?? "");
     setVatRate(t.vatRate ?? c.defaultVatRate ?? defaultVatFor(types, t.prestationType ?? c.defaultPrestationType));
@@ -154,9 +186,13 @@ export default function EventEditor() {
           setName(ev.name); setDate(ev.date); setGuestCount(ev.guestCount);
           guestCountTouched.current = true;
           setRecipes(ev.recipes); setExtraCosts(ev.extraCosts);
+          setRevenueLines(ev.revenueLines ?? []);
+          setPricingMode(ev.pricingMode ?? "par_convive");
           setSellingPricePerGuest(ev.sellingPricePerGuest);
+          setSellingTotal(ev.sellingTotal ?? 0);
           setNotes(ev.notes || "");
           setContactName(ev.contactName || ""); setContactPhone(ev.contactPhone || ""); setContactEmail(ev.contactEmail || "");
+          setDeliveryAddress(ev.deliveryAddress || ""); setDeliveryTime(ev.deliveryTime || ""); setBillingDetails(ev.billingDetails || "");
           if (ev.actualCost !== undefined) setActualCost(ev.actualCost ?? null);
           setClientId(ev.clientId || "");
           setTemplateId(ev.templateId || "");
@@ -186,14 +222,31 @@ export default function EventEditor() {
     load();
   }, [id]);
 
-  const scalarPayload = useCallback((): Partial<AppEvent> => ({
-    name: name.trim(), date, guestCount, sellingPricePerGuest,
-    extraCosts: extraCosts.filter((c) => c.label.trim()),
-    notes: notes || undefined, actualCost, templateId: templateId || undefined,
-    contactName: contactName || undefined, contactPhone: contactPhone || undefined, contactEmail: contactEmail || undefined,
-    clientId: clientId || undefined, prestationType: prestationType || undefined, vatRate,
-    assignedTo,
-  }), [name, date, guestCount, extraCosts, sellingPricePerGuest, notes, actualCost, templateId, contactName, contactPhone, contactEmail, clientId, prestationType, vatRate, assignedTo]);
+  const priced = useMemo(
+    () => ({ pricingMode, sellingPricePerGuest, sellingTotal, guestCount, revenueLines }),
+    [pricingMode, sellingPricePerGuest, sellingTotal, guestCount, revenueLines],
+  );
+  const foodHtva = foodRevenue(priced);
+  const linesHtva = revenueLinesTotal(priced);
+  const perGuest = pricePerGuestOf(priced);
+
+  const scalarPayload = useCallback((): EventInput => {
+    // An emptied text field clears the stored attribute on update; on create it is left unset.
+    const clearable = (v: string): string | null | undefined => (v ? v : currentId ? null : undefined);
+    return {
+      name: name.trim(), date, guestCount,
+      pricingMode,
+      sellingPricePerGuest: pricingMode === "total" ? perGuest : sellingPricePerGuest,
+      ...(pricingMode === "total" && { sellingTotal }),
+      extraCosts: extraCosts.filter((c) => c.label.trim()),
+      revenueLines: revenueLines.filter((l) => l.label.trim()).map((l) => ({ label: l.label.trim(), amount: l.amount, vatRate: l.vatRate })),
+      notes: notes || undefined, actualCost, templateId: templateId || undefined,
+      contactName: clearable(contactName.trim()), contactPhone: clearable(contactPhone.trim()), contactEmail: clearable(contactEmail.trim()),
+      deliveryAddress: clearable(deliveryAddress.trim()), deliveryTime: clearable(deliveryTime), billingDetails: clearable(billingDetails.trim()),
+      clientId: clientId || undefined, prestationType: prestationType || undefined, vatRate,
+      assignedTo,
+    };
+  }, [name, date, guestCount, pricingMode, perGuest, sellingPricePerGuest, sellingTotal, extraCosts, revenueLines, notes, actualCost, templateId, contactName, contactPhone, contactEmail, deliveryAddress, deliveryTime, billingDetails, clientId, prestationType, vatRate, assignedTo, currentId]);
 
   // Recipes travel in the payload only until the event exists; after that the line endpoints own them.
   const buildPayload = useCallback((): EventInput => {
@@ -244,7 +297,7 @@ export default function EventEditor() {
     clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(() => { autoSaveRef.current(); }, 800);
     return () => clearTimeout(autoSaveTimer.current);
-  }, [name, date, guestCount, extraCosts, sellingPricePerGuest, notes, actualCost, templateId, contactName, contactPhone, contactEmail, clientId, prestationType, vatRate, assignedTo, localLineVersion]);
+  }, [name, date, guestCount, extraCosts, revenueLines, pricingMode, sellingPricePerGuest, sellingTotal, notes, actualCost, templateId, contactName, contactPhone, contactEmail, deliveryAddress, deliveryTime, billingDetails, clientId, prestationType, vatRate, assignedTo, localLineVersion]);
 
   const recipeCostMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -272,21 +325,25 @@ export default function EventEditor() {
   );
   const totalExtraCosts = Object.values(breakdown.extras).reduce((s, v) => s + v, 0);
   const totalCost = breakdown.total;
-  const totalRevenue = sellingPricePerGuest * guestCount;
+  const totalRevenue = signedRevenue(priced);
   const margin = totalRevenue - totalCost;
   const marginPct = totalRevenue > 0 ? (margin / totalRevenue) * 100 : 0;
 
   const recipeOptions = useMemo(
-    () => [...allRecipes].sort((a, b) => a.name.localeCompare(b.name, "fr")).map((r) => ({ value: r.recipeId, label: r.name, detail: r.type })),
+    () => [...allRecipes].sort((a, b) => a.name.localeCompare(b.name, "fr")).map((r) => ({ value: r.recipeId, label: r.name, detail: recipeCategoryOf(r) })),
     [allRecipes],
   );
   const recipeById = useMemo(() => new Map(allRecipes.map((r) => [r.recipeId, r])), [allRecipes]);
+  const recipeCourse = (recipeId: string): string | undefined => {
+    const r = recipeById.get(recipeId);
+    return r ? recipeCategoryOf(r) : undefined;
+  };
 
-  // Lines grouped under their category; lines with no value and no recipe default go last under « Non définie ».
+  // Lines grouped under their category; lines with no value and no known recipe go last under « Non définie ».
   const indexById = useMemo(() => new Map(costLines.map((l, i) => [l.lineId, i])), [costLines]);
   const menuGroups = useMemo(() => {
-    const undefinedLines = costLines.filter((rl) => !rl.course && !recipeById.get(rl.recipeId)?.defaultCourse);
-    const rest = costLines.filter((rl) => rl.course || recipeById.get(rl.recipeId)?.defaultCourse);
+    const undefinedLines = costLines.filter((rl) => !rl.course && !recipeById.has(rl.recipeId));
+    const rest = costLines.filter((rl) => rl.course || recipeById.has(rl.recipeId));
     const groups = groupByCourse(rest, courses, recipeById);
     return undefinedLines.length > 0 ? [...groups, { course: "Non définie", lines: undefinedLines }] : groups;
   }, [costLines, courses, recipeById]);
@@ -313,16 +370,24 @@ export default function EventEditor() {
     setLocalLineVersion((v) => v + 1);
   };
 
-  const addRecipe = (recipeId: string) => {
-    if (recipes.some((r) => r.recipeId === recipeId) && !window.confirm("Cette recette est déjà dans le menu. Ajouter une seconde ligne ?")) return;
-    const rec = allRecipes.find((r) => r.recipeId === recipeId);
-    const line: LocalLine = { recipeId, portions: Math.max(1, Math.round(guestCount)), course: rec?.defaultCourse };
+  const addLine = (recipeId: string, course: string | undefined) => {
+    const line: LocalLine = { recipeId, portions: Math.max(1, Math.round(guestCount)), course };
     justAdded.current = true;
     if (currentId) {
       runLineOp(() => api.events.lines.add(currentId, { recipeId: line.recipeId, portions: line.portions, course: line.course }));
     } else {
       touchLocalLines([...recipes, line]);
     }
+  };
+
+  const addRecipe = (recipeId: string) => {
+    if (recipes.some((r) => r.recipeId === recipeId) && !window.confirm("Cette recette est déjà dans le menu. Ajouter une seconde ligne ?")) return;
+    addLine(recipeId, recipeCourse(recipeId));
+  };
+
+  const onRecipeCreated = (recipe: Recipe) => {
+    setAllRecipes((prev) => [...prev, recipe]);
+    addLine(recipe.recipeId, recipeCategoryOf(recipe));
   };
 
   const patchLine = (i: number, patch: { portions?: number; course?: string }) => {
@@ -353,6 +418,22 @@ export default function EventEditor() {
     setExtraCosts(next);
   };
   const removeExtraCost = (i: number) => setExtraCosts(extraCosts.filter((_, idx) => idx !== i));
+
+  const addRevenueLine = () => setRevenueLines([...revenueLines, { label: "Service", amount: 0, vatRate: 21 }]);
+  const updateRevenueLine = (i: number, patch: Partial<EventRevenueLine>) => {
+    const next = [...revenueLines];
+    next[i] = { ...next[i], ...patch };
+    setRevenueLines(next);
+  };
+  const removeRevenueLine = (i: number) => setRevenueLines(revenueLines.filter((_, idx) => idx !== i));
+
+  // Switching to total prefills price × guests; switching back divides.
+  const switchPricingMode = (mode: PricingMode) => {
+    if (mode === pricingMode) return;
+    if (mode === "total") setSellingTotal(round2(sellingPricePerGuest * guestCount));
+    else setSellingPricePerGuest(perGuest);
+    setPricingMode(mode);
+  };
 
   const onClientChange = (value: string) => {
     if (value === NEW_CLIENT) { setNewClientOpen(true); return; }
@@ -412,6 +493,20 @@ export default function EventEditor() {
       <Button variant="primary" size="md" icon={<Check />} onClick={handleDone}>Enregistrer</Button>
     </>
   );
+
+  const modeTag = (mode: PricingMode, label: string) => {
+    const on = pricingMode === mode;
+    return (
+      <button
+        type="button"
+        aria-pressed={on}
+        onClick={() => switchPricingMode(mode)}
+        className={cn(MODE_TAG, on ? TAG_COLOUR_CLASS.blue : `${TAG_COLOUR_CLASS.gray} hover:bg-hover`)}
+      >
+        {label}
+      </button>
+    );
+  };
 
   return (
     <div className="mx-auto max-w-doc">
@@ -492,9 +587,22 @@ export default function EventEditor() {
             <FieldLabel htmlFor="ev-guests">Nombre de convives</FieldLabel>
             <NumericInput id="ev-guests" className="input-field" value={guestCount} onChange={(v) => { guestCountTouched.current = true; setGuestCount(Math.max(1, Math.round(v))); }} min={1} />
           </div>
-          <div>
-            <FieldLabel htmlFor="ev-price">Prix de vente par convive HTVA (€)</FieldLabel>
-            <NumericInput id="ev-price" className="input-field" value={sellingPricePerGuest} onChange={setSellingPricePerGuest} />
+          <div className="sm:col-span-2">
+            <FieldLabel htmlFor="ev-price">Prix de vente HTVA</FieldLabel>
+            <div className="flex flex-wrap items-center gap-3">
+              <div role="group" aria-label="Mode de prix" className="flex items-center gap-1">
+                {modeTag("par_convive", "Par convive")}
+                {modeTag("total", "Total food")}
+              </div>
+              {pricingMode === "total" ? (
+                <NumericInput id="ev-price" className="input-field w-32 text-right" value={sellingTotal} onChange={setSellingTotal} min={0} suffix="€" />
+              ) : (
+                <NumericInput id="ev-price" className="input-field w-32 text-right" value={sellingPricePerGuest} onChange={setSellingPricePerGuest} min={0} suffix="€ / convive" />
+              )}
+            </div>
+            {pricingMode === "total" && (
+              <p className="mt-1 text-caption text-muted-foreground">soit {fmt(perGuest)} / convive</p>
+            )}
           </div>
           <div className="sm:col-span-2">
             <FieldLabel htmlFor="ev-notes">Notes</FieldLabel>
@@ -517,14 +625,25 @@ export default function EventEditor() {
             <FieldLabel htmlFor="ev-contact-email">Email</FieldLabel>
             <input id="ev-contact-email" className="input-field" type="email" placeholder="email@exemple.com" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
           </div>
+          <div className="sm:col-span-2">
+            <FieldLabel htmlFor="ev-delivery-address">Adresse de livraison</FieldLabel>
+            <input id="ev-delivery-address" className="input-field" maxLength={200} value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} />
+          </div>
+          <div>
+            <FieldLabel htmlFor="ev-delivery-time">Heure de livraison</FieldLabel>
+            <input id="ev-delivery-time" className="input-field" type="time" value={deliveryTime} onChange={(e) => setDeliveryTime(e.target.value)} />
+          </div>
+          <div className="sm:col-span-3">
+            <FieldLabel htmlFor="ev-billing">Coordonnées de facturation</FieldLabel>
+            <textarea id="ev-billing" className="input-field !min-h-0" rows={2} maxLength={500} placeholder="Nom, adresse, n° de TVA" value={billingDetails} onChange={(e) => setBillingDetails(e.target.value)} />
+          </div>
         </div>
       </Section>
 
       <Section title="Menu" meta={recipes.length > 0 ? `${recipes.length} ligne${recipes.length > 1 ? "s" : ""}` : undefined}>
-        {allRecipes.length === 0 ? (
+        <SearchSelect options={recipeOptions} value="" onChange={addRecipe} placeholder="Ajouter une recette…" onCreateNew={(q) => setNewRecipe({ name: q })} />
+        {allRecipes.length === 0 && (
           <p className="mt-1 text-sm text-muted-foreground">Aucune recette pour l'instant · <Link to="/recipes" className="text-primary hover:underline">Créer une recette</Link></p>
-        ) : (
-          <SearchSelect options={recipeOptions} value="" onChange={addRecipe} placeholder="Ajouter une recette…" />
         )}
 
         {recipes.length > 0 && (
@@ -538,20 +657,23 @@ export default function EventEditor() {
                     const rec = recipeById.get(rl.recipeId);
                     const costPerPortion = (recipeCostMap.get(rl.recipeId) || 0) / (recipePortionMap.get(rl.recipeId) || 1);
                     const lineCost = costPerPortion * rl.portions;
-                    const courseValue = rl.course ?? rec?.defaultCourse ?? "";
+                    const courseValue = rl.course ?? recipeCourse(rl.recipeId) ?? "";
                     const focusSelect = !courseValue && justAdded.current && rl.lineId === lastLineId;
                     return (
                       <li key={rl.lineId} className="py-3">
                         <div className="flex items-center justify-between gap-3">
-                          <Link to={`/recipes/${rl.recipeId}`} className="min-w-0 flex-1 truncate text-sm font-medium hover:underline touch:text-base">
-                            {rec?.name || "Recette inconnue"}
-                          </Link>
+                          <div className="flex min-w-0 flex-1 items-center gap-2">
+                            <Link to={`/recipes/${rl.recipeId}`} className="min-w-0 truncate text-sm font-medium hover:underline touch:text-base">
+                              {rec?.name || "Recette inconnue"}
+                            </Link>
+                            {rec && isIncompleteRecipe(rec) && <Tag colour="gray">Sans ingrédients</Tag>}
+                          </div>
                           <IconButton size="sm" aria-label="Retirer la recette" onClick={() => removeRecipeLine(i)} icon={<X />} />
                         </div>
                         <div className="mt-2 flex flex-wrap items-end gap-3">
                           <div className="w-36">
                             <FieldLabel htmlFor={`ev-line-course-${i}`}>Catégorie</FieldLabel>
-                            <select id={`ev-line-course-${i}`} className="input-field" value={courseValue} autoFocus={focusSelect} onChange={(e) => patchLine(i, { course: e.target.value || rec?.defaultCourse || "Autre" })}>
+                            <select id={`ev-line-course-${i}`} className="input-field" value={courseValue} autoFocus={focusSelect} onChange={(e) => patchLine(i, { course: e.target.value || recipeCourse(rl.recipeId) || "Autre" })}>
                               {!courseValue && <option value="">Non définie</option>}
                               {courseOptions(courseValue).map((c) => <option key={c} value={c}>{c}</option>)}
                             </select>
@@ -578,6 +700,17 @@ export default function EventEditor() {
           </div>
         )}
       </Section>
+
+      <NewRecipeDialog
+        open={newRecipe !== null}
+        onClose={() => setNewRecipe(null)}
+        initial={newRecipe ?? { name: "" }}
+        categories={courses}
+        existing={allRecipes}
+        defaultPortions={Math.max(1, Math.round(guestCount))}
+        onCreated={onRecipeCreated}
+        onUseExisting={addRecipe}
+      />
 
       {clientsConfigured && (
         <NewClientDialog
@@ -613,6 +746,33 @@ export default function EventEditor() {
         )}
       </Section>
 
+      <Section
+        title="Service, livraison, autres"
+        action={<Button variant="subtle" size="sm" icon={<Plus />} onClick={addRevenueLine} disabled={revenueLines.length >= MAX_REVENUE_LINES}>Ajouter</Button>}
+      >
+        <p className="mb-2 text-caption text-muted-foreground">Facturés en plus du prix food, TVA 21 % par défaut.</p>
+        {revenueLines.length === 0 && <p className="text-sm text-muted-foreground">Aucun supplément.</p>}
+        <datalist id="ev-revenue-labels">
+          {REVENUE_LABELS.map((l) => <option key={l} value={l} />)}
+        </datalist>
+        {revenueLines.map((rl, i) => (
+          <div key={i} className="mb-2 flex flex-wrap items-center gap-2">
+            <input className="input-field min-w-[10rem] flex-1" list="ev-revenue-labels" placeholder="Intitulé" aria-label="Intitulé" maxLength={60} value={rl.label} onChange={(e) => updateRevenueLine(i, { label: e.target.value })} />
+            <NumericInput className="input-field w-28 text-right" aria-label="Montant HTVA" value={rl.amount} onChange={(v) => updateRevenueLine(i, { amount: v })} min={0} />
+            <select className="input-field w-24" aria-label="TVA" value={String(rl.vatRate)} onChange={(e) => updateRevenueLine(i, { vatRate: Number(e.target.value) as VatRate })}>
+              {VAT_RATES.map((r) => <option key={r} value={String(r)}>{r} %</option>)}
+            </select>
+            <IconButton size="md" aria-label="Retirer le supplément" onClick={() => removeRevenueLine(i)} icon={<X />} />
+          </div>
+        ))}
+        {revenueLines.length > 0 && (
+          <div className="flex justify-between border-t border-divider py-3 text-sm font-semibold">
+            <span>Sous-total</span>
+            <span className="tabular-nums">{fmt(linesHtva)}</span>
+          </div>
+        )}
+      </Section>
+
       <Section title="Résumé financier">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="text-sm">
@@ -638,11 +798,13 @@ export default function EventEditor() {
         )}
         <div className="mt-4 grid grid-cols-2 overflow-hidden rounded-lg bg-surface md:grid-cols-4 md:divide-x md:divide-border">
           <MoneyTile flat label="Coût total HTVA" value={fmt(totalCost)} />
+          <MoneyTile flat label="Revenu food HTVA" value={fmt(foodHtva)} />
+          <MoneyTile flat label="Service, livraison, autres" value={fmt(linesHtva)} />
           <MoneyTile flat label="Revenu total HTVA" value={fmt(totalRevenue)} />
+        </div>
+        <div className="mt-2 grid grid-cols-2 overflow-hidden rounded-lg bg-surface md:grid-cols-4 md:divide-x md:divide-border">
           <MoneyTile flat label="Marge HTVA" value={<span className={margin >= 0 ? "text-success" : "text-danger"}>{fmt(margin)}</span>} />
           <MoneyTile flat label="Marge %" value={<span className={marginPct >= 0 ? "text-success" : "text-danger"}>{marginPct.toFixed(1).replace(".", ",")} %</span>} />
-        </div>
-        <div className="mt-2 grid grid-cols-2 overflow-hidden rounded-lg bg-surface md:divide-x md:divide-border">
           <MoneyTile flat label="Coût/convive HTVA" value={fmt(guestCount > 0 ? totalCost / guestCount : 0)} />
           <MoneyTile flat label="Marge/convive HTVA" value={<span className={margin >= 0 ? "text-success" : "text-danger"}>{fmt(guestCount > 0 ? margin / guestCount : 0)}</span>} />
         </div>

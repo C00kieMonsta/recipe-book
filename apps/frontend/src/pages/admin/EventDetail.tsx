@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation, Link } from "react-router-dom";
-import { Calendar, Users, Building2, Euro, Phone, Circle, Clock, GripVertical, Plus, X, Check } from "lucide-react";
+import { Calendar, Users, Building2, Phone, Circle, Clock, GripVertical, Plus, X, Check } from "lucide-react";
 import type {
   AppEvent,
   AppSettings,
@@ -9,22 +9,38 @@ import type {
   EventCostSnapshot,
   EventExtraCost,
   EventRecipeLine,
+  EventRevenueLine,
   EventTask,
   ExtraCostKind,
   Ingredient,
+  InvoicingMode,
   LedgerEntry,
   PatchEventTaskRequest,
   Person,
   PrepStatus,
+  PricingMode,
   Recipe,
+  SalesEntryPrefill,
+  VatRate,
 } from "@packages/types";
 import {
   DEFAULT_COURSES,
   DEFAULT_PRESTATION_TYPES,
+  VAT_RATES,
   calcRecipeCost,
   calcEventCost,
   sumExtraCosts,
   signedRevenue,
+  revenueLinesTotal,
+  revenueTvac,
+  vatBreakdown,
+  pricePerGuestOf,
+  incompleteCount,
+  isIncompleteRecipe,
+  recipeCategoryOf,
+  billingFromClient,
+  offerFromEvent,
+  fmtTime,
   courseOf,
   courseBucket,
   groupByCourse,
@@ -46,11 +62,12 @@ import {
   prepDateOf,
   shiftPrepDates,
 } from "@packages/types";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, type EventInput } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
 import { dayMonthShortLabel, longDayLabel, dayMonthLabel, weekdayOf, todayIso } from "@/lib/dates";
 import { plural } from "@/lib/use-planning-data";
+import { exportMenuPdf, pricingLines } from "@/lib/menu-pdf";
 import {
   PageHeader,
   Section,
@@ -85,6 +102,8 @@ import PersonPicker from "@/components/admin/PersonPicker";
 import NewClientDialog from "@/components/admin/NewClientDialog";
 import TaskDialog, { type TaskDialogValue } from "@/components/admin/TaskDialog";
 import MoveToDayMenu from "@/components/admin/MoveToDayMenu";
+import AttachmentsSection from "@/components/admin/AttachmentsSection";
+import NewRecipeDialog from "@/components/admin/NewRecipeDialog";
 import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
 import { PaidPopover } from "@/pages/admin/comptes/Journal";
 import { jsPDF } from "jspdf";
@@ -102,6 +121,16 @@ const EXTRA_KINDS: { value: ExtraCostKind; label: string }[] = [
 
 const WEEKDAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
 
+const PRICING_MODES: { value: PricingMode; label: string }[] = [
+  { value: "par_convive", label: "par convive" },
+  { value: "total", label: "total food" },
+];
+const PRICING_TOOLTIP = "En total food, le prix ne change pas quand les convives changent.";
+const VAT_OPTIONS = VAT_RATES.map((r) => ({ value: String(r), label: `${r} %` }));
+const REVENUE_LABELS = ["Service", "Livraison", "Autres"];
+const REVENUE_LABELS_ID = "revenue-line-labels";
+const EXTERNE_NOTE = "Les factures se font dans un autre outil (Odoo).";
+
 const ENTRY_KIND_LABEL: Record<string, string> = {
   facture: "Facture",
   acompte: "Acompte",
@@ -117,6 +146,11 @@ const STATUS_LABEL: Record<PrepStatus, string> = { todo: "À préparer", doing: 
 
 function safeFileName(name: string): string {
   return name.replace(/[^a-zA-Z0-9àâéèêëïîôùûüç\s-]/g, "").trim() || "evenement";
+}
+
+// « 3 300 € » for a whole amount, « 32,50 € » otherwise.
+function fmtEurShort(n: number): string {
+  return Number.isInteger(n) ? fmtEur(n).replace(",00", "") : fmtEur(n);
 }
 
 // "jeudi 15 octobre", for use after "le".
@@ -157,8 +191,11 @@ export default function EventDetail() {
     | { kind: "adjust" }
     | { kind: "duplicate" }
     | { kind: "template" }
+    | { kind: "offer" }
     | null
   >(null);
+  const [newRecipe, setNewRecipe] = useState<{ name: string } | null>(null);
+  const [offerName, setOfferName] = useState("");
   const [newClient, setNewClient] = useState<{ name: string } | null>(null);
   const [taskDialog, setTaskDialog] = useState<TaskDialogState | null>(null);
   const [pickerTaskId, setPickerTaskId] = useState<string | null>(null);
@@ -174,12 +211,15 @@ export default function EventDetail() {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const [billingForm, setBillingForm] = useState<"facture" | "acompte" | null>(null);
+  // The « Facture 2 / 2 » forms, one per VAT rate of the billed lines, after the food invoice is saved.
+  const [extraForm, setExtraForm] = useState<{ entries: SalesEntryPrefill[]; index: number } | null>(null);
   const [pickerLineId, setPickerLineId] = useState<string | null>(null);
   const [teamOpen, setTeamOpen] = useState(false);
   const teamRef = useRef<HTMLDivElement>(null);
   const priceRef = useRef<HTMLDivElement>(null);
   const addRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef(new Map<string, HTMLDivElement>());
+  const revenueRefs = useRef(new Map<number, HTMLDivElement>());
 
   useEffect(() => {
     if (!id) return;
@@ -221,10 +261,9 @@ export default function EventDetail() {
   const recipeCostById = useMemo(() => new Map(recipes.map((r) => [r.recipeId, calcRecipeCost(r, ingredientById)])), [recipes, ingredientById]);
   const recipePortionsById = useMemo(() => new Map(recipes.map((r) => [r.recipeId, r.portions || 1])), [recipes]);
 
-  const courses = useMemo(() => {
-    const list = settings?.courses?.length ? settings.courses : DEFAULT_COURSES;
-    return list.includes("Autre") ? list : [...list, "Autre"];
-  }, [settings]);
+  const categories = useMemo(() => (settings?.courses?.length ? settings.courses : DEFAULT_COURSES), [settings]);
+  const courses = useMemo(() => (categories.includes("Autre") ? categories : [...categories, "Autre"]), [categories]);
+  const invoicing: InvoicingMode = settings?.invoicing ?? "app";
   const prestationTypes = settings?.prestationTypes?.length ? settings.prestationTypes : DEFAULT_PRESTATION_TYPES;
 
   const grouped = useMemo(() => (event ? groupByCourse(event.recipes, courses, recipeById) : []), [event, courses, recipeById]);
@@ -243,7 +282,7 @@ export default function EventDetail() {
     const focus = searchParams.get("focus");
     const ajouter = searchParams.get("ajouter");
     if (!facturer && !focus && !ajouter) return;
-    if (facturer === "1" || facturer === "acompte") {
+    if ((facturer === "1" || facturer === "acompte") && invoicing === "app") {
       setBillingForm(facturer === "acompte" ? "acompte" : "facture");
       setTimeout(() => document.getElementById("facturation")?.scrollIntoView({ block: "start" }), 50);
     }
@@ -255,7 +294,7 @@ export default function EventDetail() {
     const next = new URLSearchParams(searchParams);
     next.delete("facturer"); next.delete("focus"); next.delete("ajouter");
     setSearchParams(next, { replace: true });
-  }, [loaded, searchParams, setSearchParams]);
+  }, [loaded, searchParams, setSearchParams, invoicing]);
 
   // The router does not scroll to #menu or #facturation on its own.
   useEffect(() => {
@@ -263,7 +302,7 @@ export default function EventDetail() {
     document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: "start" });
   }, [loaded, location.hash]);
 
-  const saveField = async (patch: Partial<AppEvent>, okTitle?: string) => {
+  const saveField = async (patch: EventInput, okTitle?: string) => {
     if (!id) return;
     try {
       const updated = await api.events.update(id, patch);
@@ -274,7 +313,7 @@ export default function EventDetail() {
       throw new Error("save failed");
     }
   };
-  const save = (patch: Partial<AppEvent>) => saveField(patch).catch(() => undefined);
+  const save = (patch: EventInput) => saveField(patch).catch(() => undefined);
 
   // Every line call returns the whole event, which replaces the local copy.
   const runLines = async (call: Promise<AppEvent>) => {
@@ -315,9 +354,15 @@ export default function EventDetail() {
   const cost = calcEventCost(event, recipeCostById, recipePortionsById);
   const matieres = cost.rawMaterial + cost.extras.matiere;
   const revenue = signedRevenue(event);
+  const linesTotal = revenueLinesTotal(event);
+  const revenueLines = event.revenueLines ?? [];
   const margin = revenue - cost.total;
   const marginPct = revenue > 0 ? (margin / revenue) * 100 : 0;
-  const costSub = event.actualCost != null ? "réel" : event.costSnapshot ? `figé le ${dayMonthLabel(event.costSnapshot.takenAt)}` : "estimé";
+  const incomplete = incompleteCount(event.recipes, recipeById);
+  const costState = event.actualCost != null ? "réel" : event.costSnapshot ? `figé le ${dayMonthLabel(event.costSnapshot.takenAt)}` : "estimé";
+  const costSub = incomplete > 0 ? `${costState} · ${plural(incomplete, "recette sans coût", "recettes sans coût")}` : costState;
+  const vatBuckets = event.vatRate !== undefined || revenueLines.length > 0 ? vatBreakdown(event) : [];
+  const isTotalMode = event.pricingMode === "total";
   const isPast = event.date < todayIso();
 
   const linkedEntries = entriesForEvent(event.eventId, entries);
@@ -423,6 +468,17 @@ export default function EventDetail() {
     }));
   };
 
+  const addCreatedRecipe = async (recipe: Recipe) => {
+    setRecipes((prev) => (prev.some((r) => r.recipeId === recipe.recipeId) ? prev : [...prev, recipe]));
+    setAddingRecipe(false);
+    await runLines(api.events.lines.add(id, {
+      recipeId: recipe.recipeId,
+      portions: Math.max(1, Math.round(event.guestCount)),
+      course: recipe.category,
+    }));
+    toast({ title: "Recette créée et ajoutée" });
+  };
+
   const removeLine = async (lineId: string) => {
     setDialog(null);
     await runLines(api.events.lines.remove(id, lineId));
@@ -435,6 +491,26 @@ export default function EventDetail() {
   };
   const addExtraCost = () => save({ extraCosts: [...event.extraCosts, { label: "Nouveau coût", amount: 0, kind: "autre" }] });
   const removeExtraCost = (idx: number) => save({ extraCosts: event.extraCosts.filter((_, i) => i !== idx) });
+
+  // ── Service, livraison, autres ────────────────────────────────────────────
+  const updateRevenueLine = (idx: number, patch: Partial<EventRevenueLine>) =>
+    save({ revenueLines: revenueLines.map((l, i) => (i === idx ? { ...l, ...patch } : l)) });
+  const addRevenueLine = async () => {
+    const idx = revenueLines.length;
+    await saveField({ revenueLines: [...revenueLines, { label: "Service", amount: 0, vatRate: 21 }] }).catch(() => undefined);
+    setTimeout(() => revenueRefs.current.get(idx)?.querySelector<HTMLElement>("[data-amount] [role=button]")?.click(), 50);
+  };
+  const removeRevenueLine = (idx: number) => save({ revenueLines: revenueLines.filter((_, i) => i !== idx) });
+
+  // ── Price ─────────────────────────────────────────────────────────────────
+  const changePricingMode = (mode: string) => {
+    if (mode === event.pricingMode || (mode === "par_convive" && !event.pricingMode)) return;
+    if (mode === "total") save({ pricingMode: "total", sellingTotal: round2(event.sellingPricePerGuest * event.guestCount) });
+    else save({ pricingMode: "par_convive", sellingPricePerGuest: pricePerGuestOf(event) });
+  };
+
+  const billingText = event.billingDetails ?? "";
+  const clientBilling = client ? billingFromClient(client) : "";
 
   // ── Overflow actions ──────────────────────────────────────────────────────
   const handleDelete = async () => {
@@ -488,12 +564,19 @@ export default function EventDetail() {
         })),
         tasks: shifted.tasks.map((t) => ({ label: t.label, date: t.date, ...(t.notes ? { notes: t.notes } : {}) })),
         extraCosts: event.extraCosts,
+        pricingMode: event.pricingMode ?? "par_convive",
         sellingPricePerGuest: event.sellingPricePerGuest,
+        ...(event.pricingMode === "total" ? { sellingTotal: event.sellingTotal ?? 0 } : {}),
+        revenueLines: event.revenueLines ?? [],
         notes: event.notes,
         contactName: event.contactName,
         contactPhone: event.contactPhone,
         contactEmail: event.contactEmail,
+        deliveryAddress: event.deliveryAddress,
+        deliveryTime: event.deliveryTime,
+        billingDetails: event.billingDetails,
         clientId: event.clientId,
+        offerId: event.offerId,
         prestationType: event.prestationType,
         vatRate: event.vatRate,
         status: "upcoming" as const,
@@ -511,7 +594,7 @@ export default function EventDetail() {
 
   const templateCopy = (): Omit<ClientTemplateRequest, "name" | "weekday" | "templateId"> => ({
     guestCount: event.guestCount,
-    sellingPricePerGuest: round2(event.sellingPricePerGuest),
+    sellingPricePerGuest: pricePerGuestOf(event),
     prestationType: event.prestationType,
     vatRate: event.vatRate,
     recipes: event.recipes.map((l) => ({
@@ -559,54 +642,44 @@ export default function EventDetail() {
     }
   };
 
+  const saveAsOffer = async () => {
+    const name = offerName.trim();
+    if (!name) return;
+    setBusy(true);
+    try {
+      await api.offers.create(offerFromEvent(event, name));
+      toast({ title: `Offre « ${name} » enregistrée` });
+      setDialog(null);
+    } catch (e) {
+      toast({ title: e instanceof ApiError ? e.message : "Erreur lors de l'enregistrement de l'offre", variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const prestationLabel = event.prestationType ? prestationTypes.find((t) => t.key === event.prestationType)?.label ?? event.prestationType : undefined;
 
-  const exportMenuPdf = () => {
-    const doc = new jsPDF();
-    const m = 15;
-    let y = m + 7;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(18);
-    doc.text(event.name, m, y);
-    y += 8;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(11);
-    doc.text(`${longDayLabel(event.date)} ${event.date.slice(0, 4)}`, m, y);
-    y += 6;
-    const priceLine = [`${event.guestCount} convives`, `${fmtEur(event.sellingPricePerGuest)} par convive HTVA`];
-    if (prestationLabel) priceLine.push(prestationLabel);
-    doc.text(priceLine.join(" · "), m, y);
-    y += 12;
+  // « Livraison le samedi 17 octobre à 11h30, Rue des Lilas 4 », either part alone when the other is missing.
+  const deliveryLine = (() => {
+    const time = event.deliveryTime ? fmtTime(event.deliveryTime) : "";
+    const address = event.deliveryAddress?.trim() ?? "";
+    if (!time && !address) return undefined;
+    return `Livraison le ${dayPhrase(event.date)}${time ? ` à ${time}` : ""}${address ? `, ${address}` : ""}`;
+  })();
 
-    for (const group of grouped) {
-      if (y > 260) { doc.addPage(); y = m; }
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(13);
-      doc.text(group.course, m, y);
-      y += 7;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(11);
-      for (const line of group.lines) {
-        if (y > 275) { doc.addPage(); y = m; }
-        doc.text(recipeById.get(line.recipeId)?.name ?? line.recipeId, m + 4, y);
-        y += 6;
-      }
-      y += 4;
-    }
-
+  const exportMenu = () => {
     const contact = [client?.name ?? event.contactName, event.contactPhone, event.contactEmail].filter(Boolean);
-    if (contact.length > 0) {
-      if (y > 270) { doc.addPage(); y = m; }
-      y += 4;
-      doc.setFontSize(11);
-      doc.text(`Contact : ${contact.join(" · ")}`, m, y);
-      y += 6;
-    }
-    if (settings?.company?.name) {
-      doc.setFontSize(11);
-      doc.text(settings.company.name, m, y + 4);
-    }
-    doc.save(`menu-${safeFileName(event.name)}.pdf`);
+    exportMenuPdf({
+      title: event.name,
+      dateLine: `${longDayLabel(event.date)} ${event.date.slice(0, 4)}`,
+      guestCount: event.guestCount,
+      priceLines: pricingLines(event, prestationLabel),
+      groups: grouped.map((g) => ({ course: g.course, recipes: g.lines.map((l) => recipeById.get(l.recipeId)?.name ?? l.recipeId) })),
+      contact: contact.length > 0 ? contact.join(" · ") : undefined,
+      delivery: deliveryLine,
+      company: settings?.company?.name,
+      fileName: `menu-${safeFileName(event.name)}.pdf`,
+    });
   };
 
   const exportRecipesPdf = () => {
@@ -694,7 +767,8 @@ export default function EventDetail() {
       ? [{ label: "Enregistrer comme modèle", onClick: () => { setTemplateWeekday(weekdayOf(event.date)); setDialog({ kind: "template" }); } }]
       : []),
     ...(event.clientId && event.templateId ? [{ label: "Mettre à jour le modèle", onClick: updateTemplate }] : []),
-    { label: "Proposition de menu (PDF)", onClick: exportMenuPdf },
+    { label: "Enregistrer comme offre type", onClick: () => { setOfferName(event.name); setDialog({ kind: "offer" }); } },
+    { label: "Proposition de menu (PDF)", onClick: exportMenu },
     { label: "Exporter les recettes (PDF)", onClick: exportRecipesPdf },
     { kind: "separator" as const },
     { label: "Supprimer", onClick: () => setDialog({ kind: "delete" }), variant: "danger" as const },
@@ -704,7 +778,7 @@ export default function EventDetail() {
   const prefill = billingForm ? prefillFromEvent(event, client, entries, settings ?? { prestationTypes: undefined }, billingForm) : null;
   const recipeOptions = [...recipes]
     .sort((a, b) => a.name.localeCompare(b.name, "fr"))
-    .map((r) => ({ value: r.recipeId, label: r.name, detail: r.type }));
+    .map((r) => ({ value: r.recipeId, label: r.name, detail: recipeCategoryOf(r) }));
   const clientOptions = [...clients]
     .sort((a, b) => a.name.localeCompare(b.name, "fr"))
     .map((c) => ({ value: c.clientId, label: c.name, detail: c.kind === "particulier" ? "Particulier" : c.kind === "entreprise" ? "Entreprise" : undefined }));
@@ -717,6 +791,7 @@ export default function EventDetail() {
   const renderLine = (group: { course: string; lines: EventRecipeLine[] }, line: EventRecipeLine, index: number) => {
     const recipe = recipeById.get(line.recipeId);
     const status: PrepStatus = line.prepStatus ?? "todo";
+    const needsIngredients = Boolean(recipe) && isIncompleteRecipe({ ingredients: recipe?.ingredients ?? [] });
     const isDropBefore = dropTarget?.course === group.course && dropTarget.lineId === line.lineId;
     const isMoveOpen = moveTarget?.kind === "line" && moveTarget.id === line.lineId;
     return (
@@ -744,6 +819,7 @@ export default function EventDetail() {
             <Link to={`/recipes/${line.recipeId}`} title={recipe?.name} className="text-sm text-foreground hover:underline touch:text-base">
               {recipe?.name ?? "Recette supprimée"}
             </Link>
+            {needsIngredients && <Tag colour="gray" className="ml-1.5 align-text-bottom">Sans ingrédients</Tag>}
             {line.notes && noteLineId !== line.lineId && <span className="block text-sm text-muted-foreground md:inline"><span className="hidden md:inline"> · </span>{line.notes}</span>}
             {isMoved(line, event) && (
               <Tag colour="gray" className="mt-0.5 md:hidden" title={`Préparée le ${dayPhrase(prepDateOf(line, event))}`}>{shortDayLabel(prepDateOf(line, event))}</Tag>
@@ -790,6 +866,7 @@ export default function EventDetail() {
                 { label: "Note", onClick: () => setNoteLineId(line.lineId) },
                 { label: "Déplacer au…", onClick: () => setMoveTarget({ kind: "line", id: line.lineId }) },
                 { kind: "separator" },
+                ...(needsIngredients ? [{ label: "Compléter la recette", onClick: () => navigate(`/recipes/${line.recipeId}/edit?retour=/events/${id}`) }] : []),
                 { label: "Ouvrir la fiche", onClick: () => navigate(`/events/${id}/lines/${line.lineId}`) },
                 { label: "Cuisiner", onClick: () => navigate(`/recipes/${line.recipeId}/cook?portions=${line.portions}&event=${id}&line=${line.lineId}`) },
                 { kind: "separator" },
@@ -953,21 +1030,55 @@ export default function EventDetail() {
             ) : (
               <Property icon={Building2} label="Client" kind="computed" value={<Link to="/settings#apropos" className="text-primary hover:underline">Clients non configurés</Link>} />
             )}
-            <Property icon={Euro} label="Prix / convive" kind="custom">
-              <div ref={priceRef} className="flex items-center gap-1">
-                <EditableInlineNum value={event.sellingPricePerGuest} onSave={(v) => save({ sellingPricePerGuest: round2(Math.max(0, v)) })} min={0} suffix=" €" />
+            <Property icon="💶" label="Prix" kind="custom" sub={isTotalMode ? `soit ${fmtEur(pricePerGuestOf(event))} / convive` : undefined}>
+              <div ref={priceRef} className="flex w-full flex-wrap items-center gap-1">
+                <SelectPill
+                  value={event.pricingMode ?? "par_convive"}
+                  options={PRICING_MODES}
+                  colour="gray"
+                  title={PRICING_TOOLTIP}
+                  aria-label="Mode de prix"
+                  onChange={changePricingMode}
+                />
+                {isTotalMode ? (
+                  <EditableInlineNum value={event.sellingTotal ?? 0} onSave={(v) => save({ pricingMode: "total", sellingTotal: round2(Math.max(0, v)) })} min={0} suffix=" €" />
+                ) : (
+                  <EditableInlineNum value={event.sellingPricePerGuest} onSave={(v) => save({ sellingPricePerGuest: round2(Math.max(0, v)) })} min={0} suffix=" €" />
+                )}
                 <span className="text-sm text-muted-foreground">HTVA</span>
               </div>
             </Property>
             <Property icon={Phone} label="Contact" kind="custom">
               <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0 md:flex-nowrap">
-                <InlineContact value={event.contactName || ""} onSave={(v) => save({ contactName: v })} placeholder="Ajouter un nom" inputMode="text" />
+                <InlineContact value={event.contactName || ""} onSave={(v) => save({ contactName: v || null })} placeholder="Ajouter un nom" inputMode="text" />
                 <Dot className="hidden md:inline" />
-                <InlineContact value={event.contactPhone || ""} onSave={(v) => save({ contactPhone: v })} placeholder="Ajouter un téléphone" inputMode="tel" />
+                <InlineContact value={event.contactPhone || ""} onSave={(v) => save({ contactPhone: v || null })} placeholder="Ajouter un téléphone" inputMode="tel" />
                 <Dot className="hidden md:inline" />
-                <InlineContact value={event.contactEmail || ""} onSave={(v) => save({ contactEmail: v })} placeholder="Ajouter un e-mail" inputMode="email" />
+                <InlineContact value={event.contactEmail || ""} onSave={(v) => save({ contactEmail: v || null })} placeholder="Ajouter un e-mail" inputMode="email" />
               </div>
             </Property>
+            <Property icon="📍" label="Livraison" kind="custom">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0 md:flex-nowrap">
+                <InlineContact value={event.deliveryAddress || ""} onSave={(v) => save({ deliveryAddress: v || null })} placeholder="Ajouter une adresse" inputMode="text" />
+                <Dot className="hidden md:inline" />
+                <InlineTime value={event.deliveryTime || ""} onSave={(v) => save({ deliveryTime: v || null })} placeholder="Heure" />
+              </div>
+            </Property>
+            <Property
+              icon="🧾"
+              label="Facturation"
+              kind="multiline"
+              value={billingText}
+              placeholder="Nom, adresse, n° de TVA pour la facture"
+              onSave={(v) => saveField({ billingDetails: v.trim() || null })}
+              sub={
+                client && clientBilling
+                  ? billingText === clientBilling
+                    ? "Depuis la fiche client"
+                    : <Button variant="link" size="sm" className="-mx-2" onClick={() => save({ billingDetails: clientBilling })}>Reprendre le client</Button>
+                  : undefined
+              }
+            />
             <Property icon={Circle} label="Statut" kind="custom">
               <EditableStatus value={event.status} onSave={(v) => { if (v === "completed") complete(); else reopen(); }} />
               {billing === "facture" && <StatusTag status="invoiced" label={invoiceNumber ? `Facturé n° ${invoiceNumber}` : "Facturé"} />}
@@ -998,15 +1109,20 @@ export default function EventDetail() {
 
       <div className="grid grid-cols-2 overflow-hidden rounded-lg bg-surface md:grid-cols-4 md:divide-x md:divide-border">
         <MoneyTile flat label="Coût matières" value={fmtEur(matieres)} sub={costSub} />
-        <MoneyTile flat label="Revenu HTVA" value={fmtEur(revenue)} />
+        <MoneyTile flat label="Revenu HTVA" value={fmtEur(revenue)} sub={linesTotal > 0 ? `dont ${fmtEurShort(linesTotal)} service, livraison, autres` : undefined} />
         <MoneyTile flat label="Marge" value={fmtEur(margin)} sub={margin < 0 ? "négative" : undefined} />
         <MoneyTile flat label="Marge %" value={`${marginPct.toFixed(1).replace(".", ",")} %`} />
       </div>
+      {vatBuckets.length > 0 && (
+        <p className="mt-1 px-3 text-caption text-muted-foreground">
+          {[`TVAC ${fmtEur(revenueTvac(event))}`, ...vatBuckets.map((b) => `${b.rate} % sur ${fmtEurShort(b.htva)}`)].join(" · ")}
+        </p>
+      )}
 
       <div id="menu" className="scroll-mt-20">
         <Section
           title="Menu"
-          meta={`${event.recipes.length} ligne${event.recipes.length > 1 ? "s" : ""}`}
+          meta={`${plural(event.recipes.length, "ligne")}${incomplete > 0 ? ` · ${incomplete} à compléter` : ""}`}
           action={
             recipeOptions.length > 0 ? (
               <Button variant="ghost" size="sm" icon={<Plus />} onClick={() => { setAddingRecipe((o) => !o); setTimeout(() => addRef.current?.querySelector("input")?.focus(), 50); }}>
@@ -1023,7 +1139,7 @@ export default function EventDetail() {
               <div>{grouped.map(renderCourseBlock)}</div>
               <div className="mt-2" ref={addRef}>
                 {addingRecipe ? (
-                  <SearchSelect options={recipeOptions} value="" onChange={addRecipe} placeholder="Rechercher une recette…" autoFocus />
+                  <SearchSelect options={recipeOptions} value="" onChange={addRecipe} onCreateNew={(q) => setNewRecipe({ name: q })} placeholder="Rechercher une recette…" autoFocus />
                 ) : (
                   <Button variant="subtle" size="sm" icon={<Plus />} onClick={() => setAddingRecipe(true)} className="-mx-1">
                     Ajouter une recette
@@ -1046,6 +1162,8 @@ export default function EventDetail() {
           <div>{tasks.map(renderTask)}</div>
         )}
       </Section>
+
+      <AttachmentsSection event={event} onChange={setEvent} />
 
       <Section
         title="Coûts supplémentaires"
@@ -1080,18 +1198,62 @@ export default function EventDetail() {
         )}
       </Section>
 
+      <Section
+        title="Service, livraison, autres"
+        meta={revenueLines.length > 0 ? `${fmtEur(linesTotal)} HTVA` : undefined}
+        action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addRevenueLine}>Ajouter</Button>}
+      >
+        {revenueLines.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Aucun supplément. Service, livraison ou autres, facturés en plus du prix food, TVA 21 % par défaut.</p>
+        ) : (
+          <div>
+            <datalist id={REVENUE_LABELS_ID}>
+              {REVENUE_LABELS.map((l) => <option key={l} value={l} />)}
+            </datalist>
+            {revenueLines.map((rl, i) => (
+              <div
+                key={i}
+                ref={(el) => { if (el) revenueRefs.current.set(i, el); else revenueRefs.current.delete(i); }}
+                className={`${ROW} gap-2`}
+              >
+                <span className="min-w-0 flex-1 text-sm touch:text-base">
+                  <InlineLabel value={rl.label} list={REVENUE_LABELS_ID} onSave={(v) => { if (v.trim()) updateRevenueLine(i, { label: v.trim() }); }} />
+                </span>
+                <span className="w-20 text-right text-sm tabular-nums touch:text-base" data-amount>
+                  <EditableInlineNum value={rl.amount} min={0} onSave={(v) => updateRevenueLine(i, { amount: round2(Math.max(0, v)) })} suffix=" €" />
+                </span>
+                <SelectPill
+                  value={String(rl.vatRate)}
+                  options={VAT_OPTIONS}
+                  colour="gray"
+                  align="right"
+                  aria-label="Taux de TVA"
+                  title="Taux de TVA"
+                  onChange={(v) => updateRevenueLine(i, { vatRate: Number(v) as VatRate })}
+                />
+                {isTouch ? (
+                  <ActionMenu title={rl.label} items={[{ label: "Retirer", onClick: () => removeRevenueLine(i), variant: "danger" }]} />
+                ) : (
+                  <IconButton size="sm" aria-label="Retirer cette ligne" onClick={() => removeRevenueLine(i)} icon={<X />} className="reveal" />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
       <div id="facturation" className="scroll-mt-20">
         <Section
           title="Facturation"
-          action={!ledgerNotConfigured && !billingForm ? <div className="hidden items-center gap-1 md:flex">{billingButtons("md")}</div> : undefined}
+          action={invoicing === "app" && !ledgerNotConfigured && !billingForm && !extraForm ? <div className="hidden items-center gap-1 md:flex">{billingButtons("md")}</div> : undefined}
         >
-          {!ledgerNotConfigured && !billingForm && <div className="mb-3 flex flex-col gap-2 md:hidden">{billingButtons("lg")}</div>}
+          {invoicing === "app" && !ledgerNotConfigured && !billingForm && !extraForm && <div className="mb-3 flex flex-col gap-2 md:hidden">{billingButtons("lg")}</div>}
           {ledgerNotConfigured ? (
             <Callout emoji="💶" tone="warning">{NOT_CONFIGURED}</Callout>
           ) : (
             <>
               {linkedEntries.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Aucune écriture liée à cet événement.</p>
+                <p className="text-sm text-muted-foreground">{invoicing === "externe" ? EXTERNE_NOTE : "Aucune écriture liée à cet événement."}</p>
               ) : (
                 <div className="divide-y divide-border">
                   {linkedEntries.map((e) => (
@@ -1133,10 +1295,30 @@ export default function EventDetail() {
                         setBillingForm(null);
                         loadEntries();
                         toast({ title: billingForm === "facture" ? "Facture enregistrée" : "Acompte enregistré" });
+                        if (billingForm === "facture" && prefill.extraEntries.length > 0) setExtraForm({ entries: prefill.extraEntries, index: 0 });
                       }}
                       onCancel={() => setBillingForm(null)}
                     />
                   </div>
+                </div>
+              )}
+              {extraForm && (
+                <div className="mt-6">
+                  <LedgerEntryForm
+                    key={`extra-${extraForm.index}`}
+                    title={`Facture ${extraForm.index + 2} / ${extraForm.entries.length + 1} · service, livraison, autres (${extraForm.entries[extraForm.index].vatRate} %)`}
+                    initial={extraForm.entries[extraForm.index]}
+                    kind="facture"
+                    eventOptions={[{ eventId: event.eventId, label: `${event.name} · ${dayMonthShortLabel(event.date)}` }]}
+                    clientOptions={clients.map((c) => ({ clientId: c.clientId, name: c.name }))}
+                    onSaved={() => {
+                      loadEntries();
+                      toast({ title: "Facture enregistrée" });
+                      const next = extraForm.index + 1;
+                      setExtraForm(next < extraForm.entries.length ? { entries: extraForm.entries, index: next } : null);
+                    }}
+                    onCancel={() => setExtraForm(null)}
+                  />
                 </div>
               )}
             </>
@@ -1263,6 +1445,31 @@ export default function EventDetail() {
           </select>
         </div>
       </Dialog>
+
+      <Dialog
+        open={dialog?.kind === "offer"}
+        onClose={() => setDialog(null)}
+        title="Enregistrer comme offre type"
+        size="sm"
+        footer={<DialogActions onCancel={() => setDialog(null)} onConfirm={saveAsOffer} confirmLabel="Enregistrer" busy={busy || !offerName.trim()} />}
+      >
+        <form id="offer-name-form" onSubmit={(e) => { e.preventDefault(); void saveAsOffer(); }}>
+          <FieldLabel htmlFor="offer-name">Nom de l'offre</FieldLabel>
+          <input id="offer-name" autoFocus value={offerName} onChange={(e) => setOfferName(e.target.value)} className="input-field" />
+          <p className="mt-2 text-caption text-muted-foreground">Les portions sont converties par convive.</p>
+        </form>
+      </Dialog>
+
+      <NewRecipeDialog
+        open={newRecipe !== null}
+        onClose={() => setNewRecipe(null)}
+        initial={{ name: newRecipe?.name ?? "" }}
+        categories={categories}
+        existing={recipes}
+        defaultPortions={Math.max(1, Math.round(event.guestCount))}
+        onCreated={addCreatedRecipe}
+        onUseExisting={addRecipe}
+      />
     </div>
   );
 }
@@ -1332,6 +1539,71 @@ function InlineContact({ value, onSave, placeholder, inputMode }: { value: strin
     >
       {value || placeholder}
     </span>
+  );
+}
+
+// Delivery time: « 11h30 » through fmtTime, a native time input while editing.
+function InlineTime({ value, onSave, placeholder }: { value: string; onSave: (v: string) => void; placeholder: string }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(value);
+  useEffect(() => { if (!editing) setText(value); }, [value, editing]);
+  const commit = () => { setEditing(false); if (text !== value) onSave(text); };
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type="time"
+        aria-label="Heure de livraison"
+        className="-mx-1 h-6 rounded bg-input-bg px-1 text-base shadow-ring outline-none touch:h-11"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } if (e.key === "Escape") { e.preventDefault(); setText(value); setEditing(false); } }}
+      />
+    );
+  }
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={() => setEditing(true)}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
+      className={`prop-value inline-flex min-h-6 min-w-0 items-center text-base tabular-nums touch:min-h-11 ${value ? "" : "no-print text-placeholder"}`}
+    >
+      {value ? fmtTime(value) || value : placeholder}
+    </span>
+  );
+}
+
+// Same as EditableInlineText with a datalist of suggested labels.
+function InlineLabel({ value, list, onSave }: { value: string; list: string; onSave: (v: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(value);
+  useEffect(() => { if (!editing) setText(value); }, [value, editing]);
+  const commit = () => { setEditing(false); if (text !== value) onSave(text); };
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        list={list}
+        className="-mx-1 w-32 rounded border-0 bg-input-bg px-1 font-medium shadow-ring outline-none"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } if (e.key === "Escape") { e.preventDefault(); setText(value); setEditing(false); } }}
+      />
+    );
+  }
+  return (
+    <strong
+      role="button"
+      tabIndex={0}
+      className="prop-value font-medium touch:inline-flex touch:min-h-11 touch:items-center"
+      onClick={() => setEditing(true)}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
+    >
+      {value || <span className="font-normal text-placeholder">Intitulé</span>}
+    </strong>
   );
 }
 

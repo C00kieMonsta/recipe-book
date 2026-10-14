@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Plus, Search, ArrowUpDown, Printer, X } from "lucide-react";
 import type { AppEvent, Client, PrestationTypeSetting } from "@packages/types";
-import { fmtEur } from "@packages/types";
+import { fmtEur, signedRevenue } from "@packages/types";
 import { api } from "@/lib/api";
 import { dayMonthShortLabel } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
@@ -187,7 +187,7 @@ export default function Events() {
               { key: "client", label: "Client", render: (ev) => (ev.clientId ? clientById.get(ev.clientId)?.name : undefined) ?? ev.contactName ?? "" },
               { key: "guests", label: "Conv.", width: "70px", align: "right", render: (ev) => `${ev.guestCount}` },
               { key: "prestation", label: "Prestation", render: (ev) => (ev.prestationType ? <Tag colour="gray">{prestationLabel.get(ev.prestationType) ?? ev.prestationType}</Tag> : "") },
-              { key: "amount", label: "Montant", width: "110px", align: "right", trailing: true, render: (ev) => <span className="text-foreground">{fmtEur(ev.sellingPricePerGuest * ev.guestCount)}</span> },
+              { key: "amount", label: "Montant", width: "110px", align: "right", trailing: true, render: (ev) => <span className="text-foreground">{fmtEur(signedRevenue(ev))}</span> },
               { key: "status", label: "Statut", width: "110px", trailing: true, render: (ev) => <StatusTag status={ev.status} /> },
             ]}
           />

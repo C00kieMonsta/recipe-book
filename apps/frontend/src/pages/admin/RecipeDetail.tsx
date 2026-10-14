@@ -1,18 +1,19 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, type FocusEvent, type KeyboardEvent } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Pencil, Trash2, Save, FileDown, ChefHat, Plus, X, Check, Copy, Users, Scale, Calculator } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Recipe, Ingredient, RecipePricing, RecipeIngredient } from "@packages/types";
-import { UNITS_QTY, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS, DEFAULT_RECIPE_CATEGORIES, VAT_RATES, fmtEur } from "@packages/types";
+import { UNITS_QTY, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS, DEFAULT_COURSES, VAT_RATES, fmtEur, recipeCategoryOf, stripStepMarkup } from "@packages/types";
 import { api, getToken, API_BASE } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { calcRecipeCost, calcIngredientLineCost, fmt, supplierColor } from "@/lib/recipe-helpers";
 import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
+import StepToolbar, { useStepShortcuts } from "@/components/admin/StepToolbar";
+import { StepText } from "@/components/ui/RecipeReader";
 import {
   ActionMenu,
-  NumericInput,
   SearchSelect,
   IngredientFormModal,
   PageHeader,
@@ -38,6 +39,14 @@ const DEFAULT_PRICING: RecipePricing = {
 
 type ReaderSize = "lead" | "xl";
 
+type NewLine = Pick<RecipeIngredient, "ingredientId" | "unit">;
+const EMPTY_LINE: NewLine = { ingredientId: "", unit: "g" };
+
+function parseQty(text: string): number {
+  const n = parseFloat(text.replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
 async function exportPdf(recipe: Recipe, ingredients: Ingredient[]) {
   const doc = new jsPDF();
   const m = 15;
@@ -61,7 +70,7 @@ async function exportPdf(recipe: Recipe, ingredients: Ingredient[]) {
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
-  doc.text(`${recipe.type} | ${recipe.portions} portions | ${recipe.portionWeight}g/pers`, m, y + 4);
+  doc.text(`${recipeCategoryOf(recipe)} | ${recipe.portions} portions | ${recipe.portionWeight}g/pers`, m, y + 4);
   y += 8;
 
   if (recipe.description) {
@@ -104,7 +113,7 @@ async function exportPdf(recipe: Recipe, ingredients: Ingredient[]) {
     doc.setFontSize(11);
     recipe.techniques.forEach((t, i) => {
       if (y > 270) { doc.addPage(); y = m; }
-      const text = `${i + 1}. ${t}`;
+      const text = `${i + 1}. ${stripStepMarkup(t)}`;
       const lines = doc.splitTextToSize(text, 180);
       doc.text(lines, m, y + 4);
       y += lines.length * 5 + 3;
@@ -144,7 +153,7 @@ export default function RecipeDetail() {
   const { toast } = useToast();
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
-  const [categories, setCategories] = useState<string[]>(DEFAULT_RECIPE_CATEGORIES);
+  const [categories, setCategories] = useState<string[]>(DEFAULT_COURSES);
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [editingStep, setEditingStep] = useState<number | null>(null);
@@ -152,13 +161,24 @@ export default function RecipeDetail() {
   const [newStep, setNewStep] = useState("");
   const [addingStep, setAddingStep] = useState(false);
   const [addingIngredient, setAddingIngredient] = useState(false);
-  const [newIng, setNewIng] = useState<RecipeIngredient>({ ingredientId: "", qty: 0, unit: "g", lossPct: 0 });
+  const [newIng, setNewIng] = useState<NewLine>(EMPTY_LINE);
+  const [newQtyText, setNewQtyText] = useState("");
+  const [qtyHint, setQtyHint] = useState(false);
+  const [savingIngredient, setSavingIngredient] = useState(false);
+  const savingRef = useRef(false);
+  // Set while the row closes so the focusout that follows does not save it.
+  const discardRef = useRef(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const qtyRef = useRef<HTMLInputElement>(null);
   const [creatingIngredient, setCreatingIngredient] = useState<string | null>(null);
   const [viewingIngredient, setViewingIngredient] = useState<Ingredient | null>(null);
   const [supplierNames, setSupplierNames] = useState(() => DEFAULT_SUPPLIERS.map((s) => s.name));
   const [portions, setPortions] = useState(0);
   const [readerSize, setReaderSize] = useLocalStorage<ReaderSize>("recipe-book:reader-size", "lead");
   const newStepRef = useRef<HTMLTextAreaElement>(null);
+  const editStepRef = useRef<HTMLTextAreaElement>(null);
+  const onEditStepKey = useStepShortcuts(editStepRef, editStepValue, setEditStepValue);
+  const onNewStepKey = useStepShortcuts(newStepRef, newStep, setNewStep);
 
   useBackLink({ to: "/recipes", label: "Recettes" });
   useTopTitle(recipe?.name ?? "");
@@ -170,7 +190,7 @@ export default function RecipeDetail() {
         setRecipe(r);
         setIngredients(i);
         setPortions(r.portions);
-        if (s?.recipeCategories?.length) setCategories(s.recipeCategories);
+        if (s?.courses?.length) setCategories(s.courses);
         if (s?.suppliers?.length) setSupplierNames(s.suppliers.map((x) => x.name));
       })
       .catch(() => toast({ title: "Recette introuvable", variant: "destructive" }))
@@ -222,19 +242,84 @@ export default function RecipeDetail() {
     await save({ techniques });
   };
 
-  const handleAddIngredient = async () => {
-    if (!recipe || !newIng.ingredientId || newIng.qty <= 0) return;
-    const ingList = [...recipe.ingredients, newIng];
-    await save({ ingredients: ingList });
-    setNewIng({ ingredientId: "", qty: 0, unit: "g", lossPct: 0 });
+  const newQty = parseQty(newQtyText);
+  const rowEmpty = !newIng.ingredientId && !newQtyText.trim();
+
+  const resetRow = () => {
+    setNewIng(EMPTY_LINE);
+    setNewQtyText("");
+    setQtyHint(false);
   };
+  const openAddRow = () => {
+    discardRef.current = false;
+    resetRow();
+    setAddingIngredient(true);
+  };
+  const closeAddRow = () => {
+    discardRef.current = true;
+    setAddingIngredient(false);
+    resetRow();
+  };
+
+  // Saves the row; keepOpen resets it and puts the focus back on the search for the next line.
+  const handleAddIngredient = async (keepOpen: boolean) => {
+    if (!recipe || savingRef.current || !newIng.ingredientId || newQty <= 0) return;
+    savingRef.current = true;
+    setSavingIngredient(true);
+    try {
+      await saveRecipeField({ ingredients: [...recipe.ingredients, { ingredientId: newIng.ingredientId, qty: newQty, unit: newIng.unit, lossPct: 0 }] });
+      resetRow();
+      if (keepOpen) setTimeout(() => searchRef.current?.focus(), 0);
+      else closeAddRow();
+    } catch {
+      // The toast is already shown; the row keeps its values for a retry.
+    } finally {
+      savingRef.current = false;
+      setSavingIngredient(false);
+    }
+  };
+
+  const onQtyKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (newIng.ingredientId && newQty > 0) void handleAddIngredient(true);
+    else if (!newIng.ingredientId) { if (rowEmpty) closeAddRow(); else searchRef.current?.focus(); }
+    else setQtyHint(true);
+  };
+
+  // Enter on an empty row closes it; Escape closes and discards whatever was typed.
+  const onRowKeyDownCapture = (e: KeyboardEvent<HTMLTableRowElement>) => {
+    if (e.key !== "Escape") return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeAddRow();
+  };
+  const onRowKeyDown = (e: KeyboardEvent<HTMLTableRowElement>) => {
+    if (e.key !== "Enter" || e.defaultPrevented || e.target !== searchRef.current || !rowEmpty) return;
+    e.preventDefault();
+    closeAddRow();
+  };
+
+  // Leaving the row saves a complete line; an incomplete one stays open and asks for the quantity.
+  const onRowBlur = (e: FocusEvent<HTMLTableRowElement>) => {
+    const next = e.relatedTarget as HTMLElement | null;
+    if (next && (e.currentTarget.contains(next) || next.closest?.('[role="dialog"], [role="menu"], [role="listbox"]'))) return;
+    if (discardRef.current || savingRef.current || !newIng.ingredientId) return;
+    if (newQty > 0) void handleAddIngredient(false);
+    else setQtyHint(true);
+  };
+
+  // Keeps the focus in the row so a tap on the buttons does not trigger the leave-to-save rule.
+  const keepFocus = (e: { preventDefault: () => void }) => e.preventDefault();
 
   const handleDuplicateRecipe = async () => {
     if (!recipe) return;
     try {
+      const category = recipeCategoryOf(recipe);
       const created = await api.recipes.create({
         name: `${recipe.name} (copie)`,
-        type: recipe.type,
+        category,
+        type: category,
         portions: recipe.portions,
         portionWeight: recipe.portionWeight,
         description: recipe.description || "",
@@ -260,12 +345,9 @@ export default function RecipeDetail() {
     try {
       const created = await api.ingredients.create(data);
       setIngredients((prev) => [...prev, created]);
-      setNewIng((p) => ({
-        ...p,
-        ingredientId: created.ingredientId,
-        unit: PRICE_TO_QTY_UNIT[created.unit] || "g",
-      }));
+      setNewIng({ ingredientId: created.ingredientId, unit: PRICE_TO_QTY_UNIT[created.unit] || "g" });
       setCreatingIngredient(null);
+      setTimeout(() => qtyRef.current?.focus(), 50);
       toast({ title: "Ingrédient créé" });
     } catch {
       toast({ title: "Erreur lors de la création", variant: "destructive" });
@@ -314,9 +396,10 @@ export default function RecipeDetail() {
     { label: "Supprimer", icon: <Trash2 />, onClick: () => setDeleteConfirm(true), variant: "danger" as const },
   ];
 
+  const category = recipeCategoryOf(recipe);
   const properties = (
     <PropertyList>
-      <Property icon="🏷" label="Format" kind="select" value={recipe.type} options={recipe.type && !categories.includes(recipe.type) ? [recipe.type, ...categories] : categories} colour="gray" onSave={(v) => saveRecipeField({ type: v })} />
+      <Property icon="🏷" label="Catégorie" kind="select" value={category} options={categories.includes(category) ? categories : [category, ...categories]} colour="gray" onSave={(v) => saveRecipeField({ category: v })} />
       <Property icon={Users} label="Portions" kind="number" value={recipe.portions} min={1} decimals={0} onSave={(v) => saveRecipeField({ portions: Math.max(1, Math.round(v)) })} />
       <Property icon={Scale} label="Poids/pers" kind="number" value={recipe.portionWeight} min={0} decimals={0} suffix="g" onSave={(v) => saveRecipeField({ portionWeight: Math.max(0, Math.round(v)) })} />
       <Property icon={Calculator} label="Coût" kind="computed" value={`${fmtEur(costPerPortion)} / portion`} sub={`${fmtEur(totalCost)} pour ${recipe.portions}`} />
@@ -331,8 +414,9 @@ export default function RecipeDetail() {
           supplierNames={supplierNames}
           existing={ingredients}
           onUseExisting={(ing) => {
-            setNewIng((p) => ({ ...p, ingredientId: ing.ingredientId, unit: PRICE_TO_QTY_UNIT[ing.unit] || "g" }));
+            setNewIng({ ingredientId: ing.ingredientId, unit: PRICE_TO_QTY_UNIT[ing.unit] || "g" });
             setCreatingIngredient(null);
+            setTimeout(() => qtyRef.current?.focus(), 50);
           }}
           onSave={handleCreateIngredient}
           onCancel={() => setCreatingIngredient(null)}
@@ -462,16 +546,18 @@ export default function RecipeDetail() {
               <li key={i} className="group flex items-start gap-3 text-base">
                 <span className="w-6 shrink-0 text-right leading-6 text-muted-foreground tabular-nums">{i + 1}</span>
                 {editingStep === i ? (
-                  <div className="flex flex-1 flex-col gap-2">
+                  <div className="flex min-w-0 flex-1 flex-col gap-2">
+                    <StepToolbar textareaRef={editStepRef} value={editStepValue} onChange={setEditStepValue} className="touch:order-2" />
                     <textarea
-                      className="input-field resize-y"
+                      ref={editStepRef}
+                      className="input-field resize-y touch:order-1"
                       rows={Math.max(2, editStepValue.split("\n").length)}
                       value={editStepValue}
                       onChange={(e) => setEditStepValue(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveStep(i); } if (e.key === "Escape") setEditingStep(null); }}
+                      onKeyDown={(e) => { if (onEditStepKey(e)) return; if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveStep(i); } if (e.key === "Escape") setEditingStep(null); }}
                       autoFocus
                     />
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 touch:order-3">
                       <Button variant="primary" size="sm" icon={<Check />} onClick={() => handleSaveStep(i)}>OK</Button>
                       <Button variant="subtle" size="sm" onClick={() => setEditingStep(null)}>Annuler</Button>
                     </div>
@@ -484,7 +570,7 @@ export default function RecipeDetail() {
                     onClick={() => { setEditingStep(i); setEditStepValue(t); }}
                     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditingStep(i); setEditStepValue(t); } }}
                   >
-                    {t}
+                    <StepText step={t} ratio={1} />
                   </span>
                 )}
                 {editingStep !== i && (
@@ -500,26 +586,28 @@ export default function RecipeDetail() {
         ) : null}
         {addingStep && (
           <div className="mt-3 flex flex-col gap-2">
+            <StepToolbar textareaRef={newStepRef} value={newStep} onChange={setNewStep} className="touch:order-2" />
             <textarea
               ref={newStepRef}
-              className="input-field resize-y"
+              className="input-field resize-y touch:order-1"
               rows={Math.max(2, newStep.split("\n").length)}
               placeholder="Décrivez l'étape…"
               value={newStep}
               onChange={(e) => setNewStep(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAddStep(); } if (e.key === "Escape") { setAddingStep(false); setNewStep(""); } }}
+              onKeyDown={(e) => { if (onNewStepKey(e)) return; if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAddStep(); } if (e.key === "Escape") { setAddingStep(false); setNewStep(""); } }}
             />
-            <div className="flex gap-2">
+            <div className="flex gap-2 touch:order-3">
               <Button variant="primary" size="sm" icon={<Plus />} onClick={handleAddStep} disabled={!newStep.trim()}>Ajouter</Button>
               <Button variant="subtle" size="sm" onClick={() => { setAddingStep(false); setNewStep(""); }}>Annuler</Button>
             </div>
           </div>
         )}
+        <p className="mt-3 text-caption text-muted-foreground">Sélectionnez un mot puis Gras ou Surligner.</p>
       </Section>
 
       <Section
         title="Ingrédients"
-        action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={() => { setAddingIngredient(true); setNewIng({ ingredientId: "", qty: 0, unit: "g", lossPct: 0 }); }}>Ingrédient</Button>}
+        action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={openAddRow}>Ingrédient</Button>}
       >
         <div className="-mx-2 overflow-x-auto px-2">
           <table className="table min-w-[400px]">
@@ -564,16 +652,17 @@ export default function RecipeDetail() {
                 );
               })}
               {addingIngredient && (
-                <tr className="bg-surface">
+                <tr className="bg-surface" onKeyDownCapture={onRowKeyDownCapture} onKeyDown={onRowKeyDown} onBlur={onRowBlur}>
                   <td>
                     <SearchSelect
                       options={ingredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: `${fmt(ig.price)} ${ig.unit.replace("€/", "/")}` }))}
                       value={newIng.ingredientId}
                       onChange={(v) => {
-                        const ing = ingredients.find((i) => i.ingredientId === v);
-                        const unit = (ing && PRICE_TO_QTY_UNIT[ing.unit]) || "g";
-                        setNewIng((p) => ({ ...p, ingredientId: v, unit }));
+                        const ing = ingredientById.get(v);
+                        setNewIng({ ingredientId: v, unit: (ing && PRICE_TO_QTY_UNIT[ing.unit]) || "g" });
                       }}
+                      onCommit={() => qtyRef.current?.focus()}
+                      inputRef={searchRef}
                       placeholder="Rechercher un ingrédient…"
                       onCreateNew={(name) => setCreatingIngredient(name)}
                       autoFocus
@@ -581,28 +670,35 @@ export default function RecipeDetail() {
                   </td>
                   <td>
                     <div className="flex items-center justify-end gap-1">
-                      <NumericInput
+                      <input
+                        ref={qtyRef}
+                        type="text"
+                        inputMode="decimal"
+                        enterKeyHint="next"
                         className="input-field w-20 text-right"
-                        value={newIng.qty}
-                        onChange={(v) => setNewIng((p) => ({ ...p, qty: v }))}
+                        value={newQtyText}
+                        onChange={(e) => { const v = e.target.value; if (v === "" || /^\d*[.,]?\d*$/.test(v)) { setNewQtyText(v); if (parseQty(v) > 0) setQtyHint(false); } }}
+                        onKeyDown={onQtyKeyDown}
                         placeholder="Qté"
                         aria-label="Quantité"
+                        disabled={savingIngredient}
                       />
                       <SelectPill
                         value={newIng.unit}
                         options={UNITS_QTY.map((u) => ({ value: u, label: u }))}
-                        onChange={(u) => setNewIng((p) => ({ ...p, unit: u as typeof p.unit }))}
+                        onChange={(u) => setNewIng((p) => ({ ...p, unit: u as NewLine["unit"] }))}
                         colour="gray"
                         aria-label="Unité"
                       />
                     </div>
+                    {qtyHint && <p className="mt-1 text-right text-caption text-muted-foreground">Indiquez une quantité</p>}
                   </td>
                   <td className="hidden sm:table-cell" />
                   <td className="hidden sm:table-cell" />
                   <td colSpan={2}>
                     <div className="flex justify-end gap-1">
-                      <IconButton size="sm" variant="primary" aria-label="Ajouter" onClick={handleAddIngredient} disabled={!newIng.ingredientId || newIng.qty <= 0} icon={<Check />} className="text-primary-foreground hover:text-primary-foreground" />
-                      <IconButton size="sm" aria-label="Annuler" onClick={() => setAddingIngredient(false)} icon={<X />} />
+                      <Button variant="default" size="md" className="hidden touch:inline-flex" onClick={() => void handleAddIngredient(true)} onPointerDown={keepFocus} onMouseDown={keepFocus} disabled={savingIngredient || !newIng.ingredientId || newQty <= 0}>Ajouter</Button>
+                      <IconButton size="sm" aria-label="Annuler" onClick={closeAddRow} onPointerDown={keepFocus} onMouseDown={keepFocus} icon={<X />} disabled={savingIngredient} />
                     </div>
                   </td>
                 </tr>

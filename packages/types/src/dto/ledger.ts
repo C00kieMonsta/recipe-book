@@ -103,3 +103,82 @@ export const importLedgerSchema = z.object({ rows: z.array(importLedgerRowSchema
 export type ImportLedgerRequest = z.infer<typeof importLedgerSchema>;
 // Alias kept so both names resolve.
 export const importLedgerRequestSchema = importLedgerSchema;
+
+// What the document model reads from one invoice file; null when a field is unreadable.
+export const extractedInvoiceSchema = z
+  .object({
+    issuerName: z.string().max(120).nullable(),
+    issuerVat: z.string().max(20).nullable(),
+    recipientName: z.string().max(120).nullable(),
+    recipientVat: z.string().max(20).nullable(),
+    number: z.string().max(40).nullable(),
+    // YYYY-MM-DD when the model is sure, else null.
+    date: z.string().nullable(),
+    dueDate: z.string().nullable(),
+    currency: z.string().max(3).nullable(),
+    totalTvac: z.number().nullable(),
+    htva: z.number().nullable(),
+    vatAmount: z.number().nullable(),
+    vatLines: z.array(z.object({ rate: z.number(), base: z.number(), amount: z.number() })),
+    kindGuess: z.enum(["facture", "note_de_credit", "acompte", "autre"]),
+    paid: z.boolean().nullable(),
+    confidence: z.number().min(0).max(1),
+    remarks: z.string().max(300).nullable(),
+  })
+  .strict();
+export type ExtractedInvoice = z.infer<typeof extractedInvoiceSchema>;
+
+export const inboxConfirmSchema = z
+  .object({
+    items: z
+      .array(
+        z
+          .object({
+            inboxId: z.string().min(1),
+            entry: createLedgerEntrySchema,
+            replace: z.boolean().default(false),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(50),
+  })
+  .strict();
+export type InboxConfirmRequest = z.infer<typeof inboxConfirmSchema>;
+
+export interface InboxUpload {
+  inboxId: string;
+  name: string;
+  contentType: string;
+  size: number;
+}
+
+export type InboxFlagCode =
+  | "vat_fixed"
+  | "low_confidence"
+  | "missing_number"
+  | "missing_date"
+  | "missing_amount"
+  | "duplicate"
+  | "locked_month"
+  | "multi_rate"
+  | "unknown_supplier"
+  | "currency";
+
+export interface InboxFlag {
+  code: InboxFlagCode;
+  message: string;
+  // Set on duplicate: the entry « Remplacer » would overwrite.
+  entryId?: string;
+}
+
+export interface InboxProposal {
+  inboxId: string;
+  entry: CreateLedgerEntryRequest | null;
+  flags: InboxFlag[];
+  extracted: ExtractedInvoice;
+}
+
+export type InboxConfirmResult =
+  | { inboxId: string; ok: true; entryId: string }
+  | { inboxId: string; ok: false; error: string };

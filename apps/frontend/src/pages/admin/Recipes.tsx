@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Plus, Upload, Check, Download, AlertTriangle, FileSpreadsheet, Copy, ArrowUpDown, X, LayoutGrid, List } from "lucide-react";
 import type { Recipe, Ingredient } from "@packages/types";
-import { DEFAULT_RECIPE_CATEGORIES, fmtEur } from "@packages/types";
+import { DEFAULT_COURSES, categoryOptions, fmtEur, recipeCategoryOf } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useLocalStorage } from "@/hooks/use-local-storage";
@@ -30,7 +30,7 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 
 const CSV_HEADERS = [
-  "recette", "type", "portions", "poids_portion_g",
+  "recette", "categorie", "portions", "poids_portion_g",
   "coeff_sur_place", "coeff_take_away",
   "tva_sp", "tva_ta",
   "prix_tvac_sp", "prix_tvac_ta",
@@ -53,7 +53,7 @@ function downloadTemplate() {
 
 const COL_ALIASES: Record<string, string> = {
   recette: "recette", nom_recette: "recette", nom: "recette", name: "recette",
-  type: "type", portions: "portions",
+  type: "type", categorie: "categorie", "catégorie": "categorie", category: "categorie", portions: "portions",
   poids_portion_g: "poids_portion", poids_portion: "poids_portion", poids: "poids_portion",
   coeff_sur_place: "coeff_sp", coeffsp: "coeff_sp", coeff_sp: "coeff_sp",
   coeff_take_away: "coeff_ta", coeffta: "coeff_ta", coeff_ta: "coeff_ta",
@@ -71,7 +71,7 @@ function normaliseKey(raw: string): string {
 
 interface PreviewRow {
   name: string;
-  type: string;
+  category: string;
   portions: number;
   portionWeight: number;
   ingredientCount: number;
@@ -80,12 +80,12 @@ interface PreviewRow {
 }
 
 type View = "list" | "gallery";
-type SortKey = "name" | "type" | "portions";
+type SortKey = "name" | "category" | "portions";
 
 export default function Recipes() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
+  const [courses, setCourses] = useState<string[]>(DEFAULT_COURSES);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -99,16 +99,13 @@ export default function Recipes() {
 
   const load = () =>
     Promise.all([api.recipes.list(), api.ingredients.list(), api.settings.get().catch(() => null)])
-      .then(([r, i, s]) => { setRecipes(r.sort((a, b) => a.name.localeCompare(b.name))); setIngredients(i); setCategories(s?.recipeCategories?.length ? s.recipeCategories : DEFAULT_RECIPE_CATEGORIES); })
+      .then(([r, i, s]) => { setRecipes(r.sort((a, b) => a.name.localeCompare(b.name))); setIngredients(i); setCourses(s?.courses?.length ? s.courses : DEFAULT_COURSES); })
       .catch(() => toast({ title: "Erreur de chargement", variant: "destructive" }))
       .finally(() => setLoading(false));
 
   useEffect(() => { load(); }, []);
 
-  const types = useMemo(() => {
-    const fromRecipes = [...new Set(recipes.map((r) => r.type))];
-    return [...new Set([...categories, ...fromRecipes])];
-  }, [recipes, categories]);
+  const categories = useMemo(() => categoryOptions(courses, recipes), [recipes, courses]);
 
   const duplicateNames = useMemo(() => {
     const seen = new Map<string, number>();
@@ -119,9 +116,9 @@ export default function Recipes() {
   const shown = useMemo(() => {
     let arr = recipes;
     if (search) arr = arr.filter((r) => r.name.toLowerCase().includes(search.toLowerCase()));
-    if (filterType !== "all") arr = arr.filter((r) => r.type === filterType);
+    if (filterType !== "all") arr = arr.filter((r) => recipeCategoryOf(r) === filterType);
     return [...arr].sort((a, b) => {
-      if (sortKey === "type") return a.type.localeCompare(b.type, "fr") || a.name.localeCompare(b.name, "fr");
+      if (sortKey === "category") return recipeCategoryOf(a).localeCompare(recipeCategoryOf(b), "fr") || a.name.localeCompare(b.name, "fr");
       if (sortKey === "portions") return b.portions - a.portions;
       return a.name.localeCompare(b.name, "fr");
     });
@@ -134,7 +131,7 @@ export default function Recipes() {
       const cost = calcRecipeCost(r, ingredients);
       return {
         Nom: r.name,
-        Type: r.type,
+        Catégorie: recipeCategoryOf(r),
         Portions: r.portions,
         "Poids (g)": r.portionWeight,
         "Coût total": +cost.toFixed(2),
@@ -151,7 +148,8 @@ export default function Recipes() {
 
   const createRecipe = async () => {
     try {
-      const created = await api.recipes.create({ name: "Nouvelle recette", type: categories[0] || "Buffet", portions: 1, portionWeight: 150, techniques: [], ingredients: [], photos: [] });
+      const category = courses[0] || DEFAULT_COURSES[0];
+      const created = await api.recipes.create({ name: "Nouvelle recette", category, type: category, portions: 1, portionWeight: 150, techniques: [], ingredients: [], photos: [] });
       navigate(`/recipes/${created.recipeId}?mode=edit`);
     } catch { toast({ title: "Erreur lors de la création", variant: "destructive" }); }
   };
@@ -209,10 +207,10 @@ export default function Recipes() {
         left={
           <>
             <ViewTabs
-              items={[{ key: "all", label: "Toutes" }, ...types.map((t) => ({ key: t, label: t }))]}
+              items={[{ key: "all", label: "Toutes" }, ...categories.map((c) => ({ key: c, label: c }))]}
               value={filterType}
               onChange={(k) => { setFilterType(k); setPage(1); }}
-              aria-label="Format"
+              aria-label="Catégorie"
             />
             <span aria-hidden="true" className="hidden px-1 text-icon md:inline">·</span>
             <ViewTabs
@@ -231,7 +229,7 @@ export default function Recipes() {
               <Button variant="subtle" size="sm" icon={<ArrowUpDown />} onClick={sortMenu.toggle} aria-haspopup="menu" aria-expanded={sortMenu.open}>Trier</Button>
               <Menu {...sortMenu.props} align="right" title="Trier">
                 <MenuRadio checked={sortKey === "name"} onSelect={() => setSortKey("name")}>Nom</MenuRadio>
-                <MenuRadio checked={sortKey === "type"} onSelect={() => setSortKey("type")}>Format</MenuRadio>
+                <MenuRadio checked={sortKey === "category"} onSelect={() => setSortKey("category")}>Catégorie</MenuRadio>
                 <MenuRadio checked={sortKey === "portions"} onSelect={() => setSortKey("portions")}>Portions</MenuRadio>
               </Menu>
             </div>
@@ -262,7 +260,7 @@ export default function Recipes() {
               empty={empty}
               columns={[
                 { key: "name", label: "Nom", render: nameCell },
-                { key: "type", label: "Format", render: (r) => r.type },
+                { key: "category", label: "Catégorie", render: (r) => recipeCategoryOf(r) },
                 { key: "portions", label: "Portions", render: (r) => `${r.portions} portions` },
               ]}
             />
@@ -288,7 +286,7 @@ export default function Recipes() {
                         <span className="truncate">{r.name}</span>
                       </div>
                       <div className="mt-1 flex items-center gap-1.5 text-caption text-muted-foreground">
-                        <Tag colour="gray">{r.type}</Tag>
+                        <Tag colour="gray">{recipeCategoryOf(r)}</Tag>
                         <span className="truncate">{r.portions} p · {fmtEur(calcRecipeCost(r, ingredients) / (r.portions || 1))}</span>
                       </div>
                     </div>
@@ -307,7 +305,7 @@ export default function Recipes() {
             empty={empty}
             columns={[
               { key: "name", label: "Nom", render: nameCell },
-              { key: "type", label: "Format", width: "130px", render: (r) => <Tag colour="gray">{r.type}</Tag> },
+              { key: "category", label: "Catégorie", width: "130px", render: (r) => <Tag colour="gray">{recipeCategoryOf(r)}</Tag> },
               { key: "portions", label: "Portions", width: "100px", align: "right", render: (r) => `${r.portions}` },
               { key: "cost", label: "Coût / port.", width: "120px", align: "right", render: (r) => fmtEur(calcRecipeCost(r, ingredients) / (r.portions || 1)) },
               { key: "weight", label: "Poids", width: "90px", align: "right", render: (r) => `${r.portionWeight} g` },
@@ -402,7 +400,8 @@ function RecipeImport({ existingNames, onImport, onCancel }: {
       const name = String(item.name || "").trim();
       if (!name) continue;
       const ingredients = Array.isArray(item.ingredients) ? item.ingredients : [];
-      rows.push({ name, type: String(item.type || "Buffet"), portions: Number(item.portions) || 1, portionWeight: Number(item.portionWeight) || 150, ingredientCount: ingredients.length, isDup: existingSet.has(name.toLowerCase()), raw: item });
+      const category = String(item.category || "") || recipeCategoryOf({ type: String(item.type || "Buffet") });
+      rows.push({ name, category, portions: Number(item.portions) || 1, portionWeight: Number(item.portionWeight) || 150, ingredientCount: ingredients.length, isDup: existingSet.has(name.toLowerCase()), raw: item });
       payload.push(item);
     }
     setPreview(rows); setApiPayload(payload); setUnmapped([]); setStep("preview");
@@ -420,8 +419,10 @@ function RecipeImport({ existingNames, onImport, onCancel }: {
       for (const [k, v] of Object.entries(raw)) norm[normaliseKey(k)] = v;
       const name = (norm.recette || "").trim();
       if (!name) continue;
-      rows.push({ name, type: (norm.type || "Buffet").trim(), portions: Number(norm.portions) || 1, portionWeight: Number(norm.poids_portion) || 150, ingredientCount: 0, isDup: existingSet.has(name.toLowerCase()), raw });
-      payload.push({ recette: name, type: norm.type || "Buffet", portions: norm.portions, poids_portion: norm.poids_portion, coeff_sur_place: norm.coeff_sp, coeff_take_away: norm.coeff_ta, tva_sp: norm.tva_sp, tva_ta: norm.tva_ta, prix_tvac_sp: norm.prix_tvac_sp, prix_tvac_ta: norm.prix_tvac_ta, description: norm.description });
+      const categorie = (norm.categorie || "").trim();
+      const category = categorie || recipeCategoryOf({ type: (norm.type || "Buffet").trim() });
+      rows.push({ name, category, portions: Number(norm.portions) || 1, portionWeight: Number(norm.poids_portion) || 150, ingredientCount: 0, isDup: existingSet.has(name.toLowerCase()), raw });
+      payload.push({ recette: name, type: norm.type || "Buffet", ...(categorie ? { categorie } : {}), portions: norm.portions, poids_portion: norm.poids_portion, coeff_sur_place: norm.coeff_sp, coeff_take_away: norm.coeff_ta, tva_sp: norm.tva_sp, tva_ta: norm.tva_ta, prix_tvac_sp: norm.prix_tvac_sp, prix_tvac_ta: norm.prix_tvac_ta, description: norm.description });
     }
     setPreview(rows); setApiPayload(payload); setStep("preview");
   };
@@ -470,7 +471,7 @@ function RecipeImport({ existingNames, onImport, onCancel }: {
               <thead className="sticky top-0 bg-background">
                 <tr>
                   <th>Recette</th>
-                  <th>Type</th>
+                  <th>Catégorie</th>
                   <th className="text-right">Portions</th>
                   <th className="text-right">Poids</th>
                   {hasIngredients && <th className="text-right">Ing.</th>}
@@ -481,7 +482,7 @@ function RecipeImport({ existingNames, onImport, onCancel }: {
                 {preview.map((r, i) => (
                   <tr key={i} className={r.isDup ? "opacity-50" : ""}>
                     <td className="font-medium">{r.name}</td>
-                    <td className="text-muted-foreground">{r.type}</td>
+                    <td className="text-muted-foreground">{r.category}</td>
                     <td className="text-right">{r.portions}</td>
                     <td className="text-right">{r.portionWeight} g</td>
                     {hasIngredients && <td className="text-right">{r.ingredientCount}</td>}

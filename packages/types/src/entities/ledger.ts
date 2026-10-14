@@ -20,6 +20,17 @@ export interface LedgerShift {
   hours: number;
 }
 
+// The invoice file behind an entry, stored in the private bucket; written by the server only.
+export interface LedgerAttachment {
+  key: string;
+  name: string;
+  contentType: string;
+  size: number;
+  uploadedAt: string;
+}
+
+export type LedgerEntrySource = "saisie" | "import_csv" | "depot";
+
 export interface LedgerEntry {
   entryId: string;
   book: LedgerBook;
@@ -48,6 +59,9 @@ export interface LedgerEntry {
   supplier?: string;
   imported?: boolean;
   locked?: boolean;
+  attachment?: LedgerAttachment;
+  // Absent means a hand entry (saisie).
+  source?: LedgerEntrySource;
   createdAt: string;
   updatedAt: string;
 }

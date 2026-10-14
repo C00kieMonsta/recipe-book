@@ -1,12 +1,14 @@
-import { useState, useEffect, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
-import { Search, Plus, Upload, Check, FileSpreadsheet, Copy, ArrowUpDown, X } from "lucide-react";
+import { Fragment, useState, useEffect, useMemo, useRef } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Search, Plus, Upload, Check, FileSpreadsheet, Copy, ArrowUpDown, X, RefreshCw } from "lucide-react";
 import type { Ingredient, Recipe } from "@packages/types";
-import { DEFAULT_SUPPLIERS } from "@packages/types";
-import { api, ApiError } from "@/lib/api";
+import { DEFAULT_SUPPLIERS, dayMonthLabel, normalizeIngredientName, todayYmd } from "@packages/types";
+import { api, ApiError, type ImportIngredientsResponse } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { fmt } from "@/lib/recipe-helpers";
+import { cn } from "@/lib/utils";
 import { usePagination } from "@/hooks/use-pagination";
+import { isStalePrice, lastPriceUpdate, priceSheetHref, verifiedTitle } from "@/pages/admin/IngredientPrices";
 import {
   PageHeader,
   Tag,
@@ -25,15 +27,47 @@ import {
   EmptyState,
   Dialog,
   Callout,
+  Checkbox,
+  FieldLabel,
   Menu,
   MenuRadio,
   useMenu,
+  type TableColumn,
 } from "@/components/ui";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 
 type SortKey = "name" | "price";
 type View = "all" | "supplier";
+type ImportOptions = { mode: "all" | "prices"; supplier?: string };
+
+const STALE_DISMISS_KEY = "recipe-book:stale-prices-dismissed";
+// api.ts types the import with one argument (withInvalidate overload); the runtime forwards the options.
+const importIngredients = api.ingredients.import as unknown as (rows: unknown[], options?: ImportOptions) => Promise<ImportIngredientsResponse>;
+const NO_SUPPLIER = "Sans fournisseur";
+
+// Same match as the server's IngredientLookup: exact lower-cased name, then normalised name, then aliases.
+function buildLookup(list: Ingredient[]): (name: string) => Ingredient | undefined {
+  const exact = new Map<string, Ingredient>();
+  const live = new Map<string, Ingredient>();
+  const alias = new Map<string, Ingredient>();
+  for (const ing of list) {
+    exact.set(ing.nameLower || ing.name.toLowerCase(), ing);
+    const key = normalizeIngredientName(ing.name);
+    if (key && !live.has(key)) live.set(key, ing);
+    for (const a of ing.aliases ?? []) {
+      const k = normalizeIngredientName(a);
+      if (k && !alias.has(k)) alias.set(k, ing);
+    }
+  }
+  return (name) => {
+    const trimmed = name.trim();
+    const hit = exact.get(trimmed.toLowerCase());
+    if (hit) return hit;
+    const key = normalizeIngredientName(trimmed);
+    return key ? live.get(key) ?? alias.get(key) : undefined;
+  };
+}
 
 export default function Ingredients() {
   const navigate = useNavigate();
@@ -51,8 +85,10 @@ export default function Ingredients() {
   const [editing, setEditing] = useState<Partial<Ingredient> | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [staleDismissed, setStaleDismissed] = useState(() => sessionStorage.getItem(STALE_DISMISS_KEY) === "1");
   const sortMenu = useMenu();
   const { toast } = useToast();
+  const today = todayYmd();
 
   const load = async () => {
     try {
@@ -89,6 +125,22 @@ export default function Ingredients() {
   }, [ingredients, search, sortBy, filterSupplier, noPrice, view]);
 
   const { page, totalPages, paginatedItems, setPage, next, prev, total } = usePagination(sorted, 25);
+
+  const staleCount = useMemo(() => ingredients.filter((i) => isStalePrice(i, today)).length, [ingredients, today]);
+  const firstSupplier = supplierNames[0] ?? "";
+  const dismissStale = () => { sessionStorage.setItem(STALE_DISMISS_KEY, "1"); setStaleDismissed(true); };
+
+  // Supplier view: one block per supplier with its own header (last update, link to the sheet).
+  const supplierGroups = useMemo(() => {
+    if (view !== "supplier") return [];
+    const groups: { supplier: string; rows: Ingredient[] }[] = [];
+    for (const row of paginatedItems) {
+      const last = groups[groups.length - 1];
+      if (last && last.supplier === (row.supplier || "")) last.rows.push(row);
+      else groups.push({ supplier: row.supplier || "", rows: [row] });
+    }
+    return groups;
+  }, [view, paginatedItems]);
 
   const saveIngredient = async (data: Partial<Ingredient>) => {
     try {
@@ -161,11 +213,25 @@ export default function Ingredients() {
       title="Ingrédients"
       items={[
         { label: duplicateCount ? `Doublons (${duplicateCount})` : "Doublons", icon: <Copy />, onClick: () => navigate("/ingredients/doublons") },
-        { label: "Importer CSV", icon: <Upload />, onClick: () => setShowImport(true) },
+        { label: "Mettre à jour les prix…", icon: <RefreshCw />, onClick: () => navigate(priceSheetHref(firstSupplier)) },
+        { label: "Importer une liste de prix (CSV)", icon: <Upload />, onClick: () => setShowImport(true) },
         { label: "Exporter Excel", icon: <FileSpreadsheet />, onClick: exportExcel },
       ]}
     />
   );
+
+  const columns: TableColumn<Ingredient>[] = [
+    { key: "name", label: "Nom", render: (i) => <span className="font-medium">{i.name}</span> },
+    { key: "unit", label: "Unité", width: "90px", render: (i) => i.unit.replace("€/", "") },
+    {
+      key: "price", label: "Prix", width: "100px", align: "right",
+      render: (i) => <span title={verifiedTitle(i)} className={cn(isStalePrice(i, today) && "text-danger")}>{fmt(i.price)}</span>,
+    },
+    { key: "supplier", label: "Fournisseur", width: "180px", render: (i) => <SupplierTag name={i.supplier} /> },
+    { key: "comment", label: "Commentaire", render: (i) => <span className="text-muted-foreground">{i.comment ?? ""}</span> },
+    { key: "recipes", label: "Recettes", width: "90px", align: "right", trailing: true, render: (i) => `${recipeCount.get(i.ingredientId) ?? 0}` },
+  ];
+  const emptyState = <EmptyState message="Aucun ingrédient." action={{ label: "+ Nouvel ingrédient", onClick: newIngredient }} />;
 
   return (
     <div className="mx-auto max-w-wide">
@@ -225,22 +291,53 @@ export default function Ingredients() {
         </div>
       )}
 
+      {staleCount > 0 && !staleDismissed && (
+        <div className="mt-3">
+          <Callout emoji="💶" tone="warning">
+            <div className="flex min-h-7 flex-wrap items-center gap-x-2 touch:min-h-11">
+              <span className="font-medium">{staleCount} prix non vérifié{staleCount > 1 ? "s" : ""} depuis 6 mois.</span>
+              <Button as={Link} to={priceSheetHref(firstSupplier)} variant="link" size="sm" className="-mx-2">Mettre à jour les prix</Button>
+              <IconButton size="sm" aria-label="Masquer" icon={<X />} onClick={dismissStale} className="ml-auto" />
+            </div>
+          </Callout>
+        </div>
+      )}
+
       <div className="mt-2">
-        <Table<Ingredient>
-          rows={paginatedItems}
-          rowKey={(i) => i.ingredientId}
-          onRowClick={(i) => setEditing(i)}
-          groupBy={view === "supplier" ? (i) => i.supplier || "Sans fournisseur" : undefined}
-          empty={<EmptyState message="Aucun ingrédient." action={{ label: "+ Nouvel ingrédient", onClick: newIngredient }} />}
-          columns={[
-            { key: "name", label: "Nom", render: (i) => <span className="font-medium">{i.name}</span> },
-            { key: "unit", label: "Unité", width: "90px", render: (i) => i.unit.replace("€/", "") },
-            { key: "price", label: "Prix", width: "100px", align: "right", render: (i) => fmt(i.price) },
-            { key: "supplier", label: "Fournisseur", width: "180px", render: (i) => <SupplierTag name={i.supplier} /> },
-            { key: "comment", label: "Commentaire", render: (i) => <span className="text-muted-foreground">{i.comment ?? ""}</span> },
-            { key: "recipes", label: "Recettes", width: "90px", align: "right", trailing: true, render: (i) => `${recipeCount.get(i.ingredientId) ?? 0}` },
-          ]}
-        />
+        {view === "supplier" ? (
+          paginatedItems.length === 0 ? emptyState : (
+            <>
+              <Table<Ingredient> rows={[]} rowKey={(i) => i.ingredientId} columns={columns} className="[&_table]:table-fixed" />
+              {supplierGroups.map((g) => {
+                const last = lastPriceUpdate(g.rows);
+                return (
+                  <Fragment key={g.supplier || NO_SUPPLIER}>
+                    <div className="flex flex-wrap items-center gap-x-2 pt-3 text-sm text-muted-foreground">
+                      <span className="font-medium">{g.supplier || NO_SUPPLIER}</span>
+                      <span>· {last ? `dernière mise à jour ${dayMonthLabel(last.slice(0, 10))}` : "jamais vérifié"}</span>
+                      <Button as={Link} to={priceSheetHref(g.supplier)} variant="link" size="sm" className="-mx-2">Mettre à jour</Button>
+                    </div>
+                    <Table<Ingredient>
+                      rows={g.rows}
+                      rowKey={(i) => i.ingredientId}
+                      onRowClick={(i) => setEditing(i)}
+                      columns={columns}
+                      className="[&_table]:table-fixed [&_thead]:collapse"
+                    />
+                  </Fragment>
+                );
+              })}
+            </>
+          )
+        ) : (
+          <Table<Ingredient>
+            rows={paginatedItems}
+            rowKey={(i) => i.ingredientId}
+            onRowClick={(i) => setEditing(i)}
+            empty={emptyState}
+            columns={columns}
+          />
+        )}
       </div>
 
       <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} onPrev={prev} onNext={next} />
@@ -273,9 +370,20 @@ export default function Ingredients() {
         <p className="text-muted-foreground">Cette action est irréversible.</p>
       </Dialog>
 
-      <Dialog open={showImport} onClose={() => setShowImport(false)} title="Importer des ingrédients" size="lg">
-        <CsvImport existingIngredients={ingredients} onImport={async (rows) => {
-          try { const result = await api.ingredients.import(rows); setShowImport(false); load(); toast({ title: `Import terminé · ${result.created} créés, ${result.updated} mis à jour` }); }
+      <Dialog open={showImport} onClose={() => setShowImport(false)} title="Importer une liste de prix" size="lg">
+        <CsvImport existingIngredients={ingredients} suppliers={supplierNames} onImport={async (rows, options) => {
+          try {
+            const result = await importIngredients(rows, options);
+            setShowImport(false);
+            load();
+            if (options.mode === "prices") {
+              const nf = result.notFound;
+              const names = nf.slice(0, 5).join(", ") + (nf.length > 5 ? ", …" : "");
+              toast({ title: `${result.updated} prix mis à jour${nf.length ? ` · ${nf.length} non trouvé${nf.length > 1 ? "s" : ""} : ${names}` : ""}` });
+            } else {
+              toast({ title: `Import terminé · ${result.created} créés, ${result.updated} mis à jour` });
+            }
+          }
           catch (e) { toast({ title: (e as Error).message || "Erreur lors de l'import", variant: "destructive" }); }
         }} onCancel={() => setShowImport(false)} />
       </Dialog>
@@ -283,12 +391,24 @@ export default function Ingredients() {
   );
 }
 
-function CsvImport({ existingIngredients, onImport, onCancel }: { existingIngredients: Ingredient[]; onImport: (rows: unknown[]) => Promise<void>; onCancel: () => void }) {
+type ParsedRow = { nom: string; prix_htva: number; unite: string; fournisseur: string; commentaire: string; _status: "new" | "update" };
+
+function CsvImport({ existingIngredients, suppliers, onImport, onCancel }: {
+  existingIngredients: Ingredient[];
+  suppliers: string[];
+  onImport: (rows: unknown[], options: ImportOptions) => Promise<void>;
+  onCancel: () => void;
+}) {
   const [step, setStep] = useState<"upload" | "preview">("upload");
-  const [parsed, setParsed] = useState<Array<Record<string, unknown>>>([]);
+  const [parsed, setParsed] = useState<ParsedRow[]>([]);
   const [fileName, setFileName] = useState("");
   const [importing, setImporting] = useState(false);
+  const [supplier, setSupplier] = useState("");
+  // Prices-only follows the supplier choice until the box is touched.
+  const [pricesOnlyOverride, setPricesOnlyOverride] = useState<boolean | null>(null);
+  const pricesOnly = pricesOnlyOverride ?? supplier !== "";
   const fileRef = useRef<HTMLInputElement>(null);
+  const lookup = useMemo(() => buildLookup(existingIngredients), [existingIngredients]);
 
   const parseNum = (v: unknown) => { const n = parseFloat(String(v).replace(",", ".")); return isNaN(n) ? 0 : n; };
 
@@ -306,20 +426,29 @@ function CsvImport({ existingIngredients, onImport, onCancel }: { existingIngred
   };
 
   const processResults = (data: Record<string, string>[]) => {
-    const rows = data.map((row) => {
+    const rows = data.map((row): ParsedRow => {
       const name = (row.nom || row.name || row.Nom || "").trim();
       const price = parseNum(row.prix_htva || row.price || row.prix || 0);
       const unit = (row.unite || row.unit || "€/kg").trim();
-      const supplier = (row.fournisseur || row.supplier || "").trim();
+      const rowSupplier = (row.fournisseur || row.supplier || "").trim();
       const comment = (row.commentaire || row.comment || "").trim();
-      const existing = existingIngredients.find((e) => e.name.toLowerCase() === name.toLowerCase());
-      return { nom: name, prix_htva: price, unite: unit, fournisseur: supplier, commentaire: comment, _status: existing ? "update" : "new" };
+      return { nom: name, prix_htva: price, unite: unit, fournisseur: rowSupplier, commentaire: comment, _status: lookup(name) ? "update" : "new" };
     }).filter((r) => r.nom);
     setParsed(rows); setStep("preview");
   };
 
-  const newCount = parsed.filter((r) => r._status === "new").length;
-  const updateCount = parsed.filter((r) => r._status === "update").length;
+  // The chosen supplier fills rows whose column is empty, never a row's own value.
+  const rows = useMemo(() => (supplier ? parsed.map((r) => ({ ...r, fournisseur: r.fournisseur || supplier })) : parsed), [parsed, supplier]);
+  const newCount = rows.filter((r) => r._status === "new").length;
+  const updateCount = rows.filter((r) => r._status === "update").length;
+  const total = pricesOnly ? updateCount : rows.length;
+  const submitLabel = pricesOnly ? `Mettre à jour ${updateCount} prix` : `Importer ${rows.length} ligne${rows.length > 1 ? "s" : ""}`;
+
+  const submit = async () => {
+    setImporting(true);
+    await onImport(rows, { mode: pricesOnly ? "prices" : "all", supplier: supplier || undefined });
+    setImporting(false);
+  };
 
   return (
     <div>
@@ -335,10 +464,27 @@ function CsvImport({ existingIngredients, onImport, onCancel }: { existingIngred
       )}
       {step === "preview" && (
         <>
+          <div className="mb-4 flex flex-wrap items-end gap-x-6 gap-y-3">
+            <div>
+              <FieldLabel htmlFor="import-supplier">Fournisseur</FieldLabel>
+              <select id="import-supplier" className="input-field w-56" value={supplier} onChange={(e) => setSupplier(e.target.value)}>
+                <option value="">Comme dans le fichier</option>
+                {suppliers.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <Checkbox
+              checked={pricesOnly}
+              onChange={setPricesOnlyOverride}
+              label="Mettre à jour les prix seulement (ne crée pas de nouveaux ingrédients)"
+              className="h-auto min-h-8 touch:h-auto touch:min-h-11 [&>span:last-child]:whitespace-normal"
+            />
+          </div>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface px-4 py-2.5">
             <span className="text-sm font-medium">{fileName}</span>
             <div className="flex gap-2">
-              <Tag colour="green">{newCount} nouveaux</Tag>
+              {pricesOnly
+                ? <Tag colour="gray">{newCount} non trouvé{newCount > 1 ? "s" : ""}</Tag>
+                : <Tag colour="green">{newCount} nouveaux</Tag>}
               <Tag colour="blue">{updateCount} mises à jour</Tag>
             </div>
           </div>
@@ -353,12 +499,16 @@ function CsvImport({ existingIngredients, onImport, onCancel }: { existingIngred
                 </tr>
               </thead>
               <tbody>
-                {parsed.slice(0, 50).map((row, i) => (
+                {rows.slice(0, 50).map((row, i) => (
                   <tr key={i}>
-                    <td><Tag colour={row._status === "new" ? "green" : "blue"}>{row._status === "new" ? "Nouveau" : "Maj"}</Tag></td>
-                    <td className="font-medium">{row.nom as string}</td>
-                    <td className="text-right">{fmt(row.prix_htva as number)}</td>
-                    <td>{row.fournisseur as string}</td>
+                    <td>
+                      {row._status === "update"
+                        ? <Tag colour="blue">Maj</Tag>
+                        : pricesOnly ? <Tag colour="gray">Non trouvé</Tag> : <Tag colour="green">Nouveau</Tag>}
+                    </td>
+                    <td className="font-medium">{row.nom}</td>
+                    <td className="text-right">{fmt(row.prix_htva)}</td>
+                    <td>{row.fournisseur}</td>
                   </tr>
                 ))}
               </tbody>
@@ -368,8 +518,8 @@ function CsvImport({ existingIngredients, onImport, onCancel }: { existingIngred
             <Button variant="default" size="md" onClick={() => setStep("upload")}>Changer de fichier</Button>
             <div className="flex gap-2">
               <Button variant="default" size="md" onClick={onCancel} disabled={importing}>Annuler</Button>
-              <Button variant="primary" size="md" icon={<Check />} onClick={async () => { setImporting(true); await onImport(parsed); setImporting(false); }} disabled={importing}>
-                {importing ? "Import en cours…" : `Importer ${parsed.length} ingrédients`}
+              <Button variant="primary" size="md" icon={<Check />} onClick={submit} disabled={importing || total === 0}>
+                {importing ? "Import en cours…" : submitLabel}
               </Button>
             </div>
           </div>

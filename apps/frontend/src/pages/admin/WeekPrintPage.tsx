@@ -156,6 +156,7 @@ export default function WeekPrintPage() {
                   {section.blocks.map((block, b) => (
                     <div key={`${block.heading}-${b}`}>
                       <h3 className={cn("mt-4 text-base font-semibold", block.movedIn && "text-muted-foreground")}>{block.heading}</h3>
+                      {block.delivery && <p className="text-sm text-muted-foreground">{block.delivery}</p>}
                       {block.movedOutNote && <p className="text-sm text-muted-foreground">{block.movedOutNote}</p>}
                       <ul className="mt-1 divide-y divide-border">
                         {block.rows.map((row, r) => <PrintRowItem key={`${row.label}-${r}`} row={row} />)}

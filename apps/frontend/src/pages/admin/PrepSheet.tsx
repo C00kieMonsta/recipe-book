@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Calendar, ChefHat, ChevronDown, ChevronLeft, ChevronRight, Circle, Hash, Pencil, Printer, Scale, SlidersHorizontal, Square, Tag as TagIcon, Type, User } from "lucide-react";
 import type { PrepStatus } from "@packages/types";
-import { addDays, courseBucket, courseOf, dayLabel, filterByPerson, isoWeekOf, prepDateOf, prepLinesForDate, shortDayLabel } from "@packages/types";
+import { addDays, courseBucket, courseOf, dayLabel, filterByPerson, fmtTime, isoWeekOf, prepDateOf, prepLinesForDate, shortDayLabel } from "@packages/types";
 import { api, ApiError } from "@/lib/api";
 import { usePlanningData } from "@/lib/use-planning-data";
 import { useLocalStorage } from "@/hooks/use-local-storage";
@@ -34,6 +34,12 @@ function isTypingTarget(e: KeyboardEvent): boolean {
 // The move list of the fiche: the six days before the event day, then the event day.
 function sevenDaysEndingOn(date: string): string[] {
   return Array.from({ length: 7 }, (_, i) => addDays(date, i - 6));
+}
+
+// « Livraison 11h30 · Rue des Lilas 4 », either part alone when the other is missing.
+function deliveryCaption(event: { deliveryTime?: string; deliveryAddress?: string }): string | undefined {
+  const parts = [fmtTime(event.deliveryTime ?? ""), event.deliveryAddress?.trim() ?? ""].filter(Boolean);
+  return parts.length ? `Livraison ${parts.join(" · ")}` : undefined;
 }
 
 export default function PrepSheet() {
@@ -264,6 +270,7 @@ export default function PrepSheet() {
   const cookUrl = `/recipes/${recipe.recipeId}/cook?portions=${shown}&event=${eventId}&line=${lineId}${personne ? `&personne=${encodeURIComponent(personne)}` : ""}`;
   const cookState = { from: location.pathname + location.search };
   const moved = date !== eventDate;
+  const delivery = deliveryCaption(event);
   const moveDays = sevenDaysEndingOn(eventDate);
   // The current day joins the list when it is outside the seven days; the chosen one carries the event day.
   const dayOptions = moveDayOptions(eventDate, moveDays.includes(date) ? moveDays : [...moveDays, date].sort())
@@ -347,6 +354,7 @@ export default function PrepSheet() {
         iconKey="fiche"
         title={recipe.name}
         className="mt-2"
+        meta={delivery && <span className="text-caption">{delivery}</span>}
         properties={(
           <PropertyList>
             <Property icon={Hash} label="Portions" kind="number" value={shown} min={1} onSave={(v) => savePortions(v)} />

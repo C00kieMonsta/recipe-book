@@ -204,7 +204,7 @@ export default function RecipeCook() {
   const scaledNote = ratio !== 1 && (
     <p className="mb-3 text-caption text-muted-foreground">
       {scaleSteps
-        ? `Quantités adaptées pour ${cookPortions} portions (recette de base : ${recipe.portions})`
+        ? `Quantités adaptées pour ${cookPortions} portions, en bleu (recette de base : ${recipe.portions})`
         : `Quantités de la recette de base (${recipe.portions} portions)`}
     </p>
   );

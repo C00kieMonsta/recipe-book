@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { CalendarDays, ChevronRight, EyeOff, FileText, GripVertical, MoreHorizontal, Pencil, Plus, Printer, Share2, ShoppingCart, Trash2, UserPlus } from "lucide-react";
+import { CalendarDays, ChevronRight, EyeOff, FileText, GripVertical, MoreHorizontal, Pencil, Plus, Printer, Share2, ShoppingCart, Trash2, UserPlus, X } from "lucide-react";
 import type { AppEvent, Client, EventRecipeLine, EventTask, Person, PrepStatus, PrestationTypeSetting, WeekMovedIn } from "@packages/types";
 import {
   addDays,
@@ -10,6 +10,7 @@ import {
   datesOfIsoWeek,
   dayLabel,
   DEFAULT_PRESTATION_TYPES,
+  fmtTime,
   isoWeekOf,
   longDayLabel,
   movedOutLines,
@@ -31,10 +32,12 @@ import { api, ApiError, invalidate, errorReason } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { buildGroceryItems, groceryTitleFor } from "@/lib/grocery";
 import { defaultTaskEventId } from "@/lib/tasks";
+import { readTour, writeTour } from "@/lib/tour-storage";
 import { dayHeaderMeta, NEXT_STATUS, plural, usePlanningData } from "@/lib/use-planning-data";
 import { weekSummary, type ChecklistIntent, type WeekLinkState } from "@/lib/week-summary";
 import { cn } from "@/lib/utils";
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import { useLongPressDrag, type LongPressDrag, type LongPressDragHandlers } from "@/hooks/use-long-press-drag";
 import { useToast } from "@/hooks/use-toast";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
 import { useMediaQuery } from "@/hooks/use-media-query";
@@ -47,6 +50,7 @@ import AssignSheet from "@/components/admin/AssignSheet";
 import PlanningBar from "@/components/admin/PlanningBar";
 import PlanningFrame from "@/components/admin/PlanningFrame";
 import DayHeads from "@/components/admin/DayHeads";
+import DragGhost from "@/components/admin/DragGhost";
 import WeekMeta from "@/components/admin/WeekMeta";
 import FirstRunCallout from "@/components/admin/FirstRunCallout";
 import MoveToDayMenu from "@/components/admin/MoveToDayMenu";
@@ -66,7 +70,12 @@ const LAST_WEEK_KEY = "recipe-book:last-week";
 type WeekView = "lines" | "events";
 
 // A line or a task being dragged or moved; `current` is its prep day today.
-type DragItem = { kind: "recipe" | "task"; eventId: string; id: string; eventDate: string; current: string };
+type DragItem = { kind: "recipe" | "task"; eventId: string; id: string; eventDate: string; current: string; label: string; status: PrepStatus };
+
+// The row whose « Déplacer au… » Sheet opens after a touch release off every day cell.
+type MoveRequest = { kind: DragItem["kind"]; id: string };
+
+const DRAG_HINT = "Maintenez une préparation pour la glisser vers un autre jour. Déplacer au… reste dans le menu ⋯.";
 
 type TaskDialogState = { mode: "create" | "edit"; eventId: string; taskId?: string; initial: TaskDialogValue };
 
@@ -172,6 +181,8 @@ export default function Week() {
   const [composerDay, setComposerDay] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragItem | null>(null);
   const [dropDay, setDropDay] = useState<string | null>(null);
+  const [moveRequest, setMoveRequest] = useState<MoveRequest | null>(null);
+  const [dragHint, setDragHint] = useState(false);
   const touch = useTouchScreen();
   // Under md the full right group wraps and overflows, so narrow pointer windows get the touch group.
   const narrow = useMediaQuery("(max-width: 767px)");
@@ -273,21 +284,6 @@ export default function Week() {
     if (target && target !== dates[0]) scrollToDay(target);
   }, [safeWeek, loading, tourActive]);
 
-  const onTouchStart = (e: React.TouchEvent) => {
-    const t = e.touches[0];
-    touchStart.current = { x: t.clientX, y: t.clientY };
-  };
-  const onTouchEnd = (e: React.TouchEvent) => {
-    const start = touchStart.current;
-    touchStart.current = null;
-    if (!start) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - start.x;
-    const dy = t.clientY - start.y;
-    if (Math.abs(dx) < SWIPE_PX || Math.abs(dy) > Math.abs(dx) / 2) return;
-    navigate(weekUrl(dx < 0 ? nextWeek : prevWeek));
-  };
-
   const fail = (title: string) => toast({ title, variant: "destructive" });
 
   // A 409 means the event changed elsewhere; the list is reloaded and the caller skips its own toast.
@@ -340,6 +336,41 @@ export default function Week() {
     setDrag(null);
     setDropDay(null);
     if (item) void moveItem(item, date);
+  };
+
+  // Touch: a held row lifts and drops on a [data-drop-day] cell; a release elsewhere opens its « Déplacer au… » Sheet.
+  const lift = useLongPressDrag<DragItem>({
+    enabled: touch,
+    onStart: () => {
+      touchStart.current = null;
+      if (!readTour().touchDragHintSeen) setDragHint(true);
+    },
+    onEnd: (date, item) => {
+      if (date === null) setMoveRequest({ kind: item.kind, id: item.id });
+      else if (date !== item.current) void moveItem(item, date);
+    },
+  });
+  const clearMoveRequest = useCallback(() => setMoveRequest(null), []);
+  const dismissDragHint = () => {
+    writeTour({ touchDragHintSeen: true });
+    setDragHint(false);
+  };
+
+  // The week swipe is off while a row is lifted.
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (lift.dragging) { touchStart.current = null; return; }
+    const t = e.touches[0];
+    touchStart.current = { x: t.clientX, y: t.clientY };
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const start = touchStart.current;
+    touchStart.current = null;
+    if (!start || lift.dragging) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) < SWIPE_PX || Math.abs(dy) > Math.abs(dx) / 2) return;
+    navigate(weekUrl(dx < 0 ? nextWeek : prevWeek));
   };
 
   const openTaskCreate = (date: string) => {
@@ -536,6 +567,9 @@ export default function Week() {
     state,
     drag,
     setDrag: (d) => { setDrag(d); if (!d) setDropDay(null); },
+    lift,
+    moveRequest,
+    clearMoveRequest,
     onMove: moveItem,
     cycleLine,
     cycleTask,
@@ -708,6 +742,12 @@ export default function Week() {
   const callouts = !loading ? (
     <>
       <FirstRunCallout hidden={Boolean(selectedPerson)} />
+      {dragHint && (
+        <div className="mb-3 flex items-start gap-2">
+          <p className="min-w-0 flex-1 py-1 text-caption text-muted-foreground">{DRAG_HINT}</p>
+          <IconButton size="sm" aria-label="Fermer" icon={<X />} onClick={dismissDragHint} />
+        </div>
+      )}
       <WeekChecklist
         items={checklist}
         firstRun={firstRun}
@@ -719,6 +759,7 @@ export default function Week() {
         prestationTypes={prestationTypes}
         coveringList={coveringList}
         busy={busy}
+        invoicing={settings?.invoicing}
         onCreateClientWeek={openClientSheet}
         onSetType={setType}
         onAssign={() => setAssignOpen(true)}
@@ -741,6 +782,8 @@ export default function Week() {
       people={people}
       selectedPerson={selectedPerson}
       onPersonFilter={(id) => setParam("personne", selectedPerson === id ? "" : id)}
+      dropDay={lift.target}
+      dragging={lift.dragging}
     />
   );
 
@@ -769,7 +812,8 @@ export default function Week() {
             return (
               <div key={day.date} className={`group min-w-0 ${past ? "opacity-60 hover:opacity-100 focus-within:opacity-100" : ""}`}>
                 <div
-                  className={cn("space-y-2 px-0.5 pb-2", dropHere && "rounded-lg bg-selected")}
+                  data-drop-day={day.date}
+                  className={cn("space-y-2 rounded-lg px-0.5 pb-2", (dropHere || lift.dragging) && "bg-selected", lift.target === day.date && "ring-2 ring-inset ring-primary")}
                   onDragOver={canDrag && drag ? (e) => { e.preventDefault(); setDropDay(day.date); } : undefined}
                   onDrop={canDrag && drag ? (e) => { e.preventDefault(); dropOn(day.date); } : undefined}
                 >
@@ -780,7 +824,8 @@ export default function Week() {
                     const done = doneCount(ev);
                     const movedOut = movedOutLines(ev);
                     const movedTitle = movedOut.length ? `Préparées le ${[...new Set(movedOut.map((l) => prepDateOf(l, ev)))].sort().map(shortDayLabel).join(", ")}` : undefined;
-                    const meta = `${ev.guestCount} conv. · ${plural(total, "ligne")}${view === "events" && total > 0 ? ` · ${plural(done, "faite")}` : ""}`;
+                    const time = fmtTime(ev.deliveryTime ?? "");
+                    const meta = `${ev.guestCount} conv.${time ? ` · ${time}` : ""} · ${plural(total, "ligne")}${view === "events" && total > 0 ? ` · ${plural(done, "faite")}` : ""}`;
                     // The "Assigner" button takes its own row; the column is too narrow for it next to the title.
                     const unassigned = (ev.assignedTo ?? []).length === 0;
                     if (!hasPersonLine(ev, day.date)) {
@@ -868,7 +913,10 @@ export default function Week() {
             const taskEventId = taskEventFor(day.date);
             return (
               <section key={day.date} ref={(el) => { dayRefs.current[day.date] = el; }} className={`scroll-mt-24 md:scroll-mt-0 ${past ? "opacity-60 hover:opacity-100 focus-within:opacity-100" : ""}`}>
-                <div className="sticky top-[96px] z-10 -mx-4 flex min-h-11 items-center gap-1 bg-background px-4 md:static md:mx-0 md:px-0">
+                <div
+                  data-drop-day={day.date}
+                  className={cn("sticky top-[96px] z-10 -mx-4 flex min-h-11 items-center gap-1 bg-background px-4 md:static md:mx-0 md:px-0", lift.dragging && "bg-selected", lift.target === day.date && "ring-2 ring-inset ring-primary")}
+                >
                   <Link to={dayUrl(day.date)} state={state} data-tour={i === 0 ? "week-day" : undefined} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded hover:bg-hover">
                     <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold">
                       {dayName}
@@ -885,11 +933,12 @@ export default function Week() {
                   const client = clientOf(ev);
                   const title = shortEventName(ev, client);
                   const collapsed = !hasPersonLine(ev, day.date);
+                  const time = fmtTime(ev.deliveryTime ?? "");
                   return (
                     <div key={ev.eventId} className="mt-1">
                       <Link to={`/events/${ev.eventId}`} state={state} className={`flex min-h-11 items-center gap-2 rounded-lg bg-background px-3 shadow-card hover:bg-hover ${collapsed ? "text-muted-foreground" : ""}`}>
                         <span className="min-w-0 flex-1 truncate text-sm font-medium touch:text-base">{title}</span>
-                        {!collapsed && <span className="shrink-0 text-sm text-muted-foreground">{ev.guestCount} conv.</span>}
+                        {!collapsed && <span className="shrink-0 text-sm text-muted-foreground">{ev.guestCount} conv.{time ? ` · ${time}` : ""}</span>}
                         <PersonChips personIds={ev.assignedTo ?? []} people={people} size="sm" />
                       </Link>
                       {!collapsed && outsideRows(ev)}
@@ -927,6 +976,8 @@ export default function Week() {
           })}
         </div>
       )}
+
+      {lift.item && <DragGhost point={lift.ghost} status={lift.item.status} label={lift.item.label} target={lift.target} />}
 
       {assignOpen && (
         <AssignSheet
@@ -1022,6 +1073,9 @@ interface RowShared {
   state: { from: string };
   drag: DragItem | null;
   setDrag: (d: DragItem | null) => void;
+  lift: LongPressDrag<DragItem>;
+  moveRequest: MoveRequest | null;
+  clearMoveRequest: () => void;
   onMove: (item: DragItem, date: string) => void;
   cycleLine: (ev: AppEvent, line: EventRecipeLine) => void;
   cycleTask: (ev: AppEvent, task: EventTask) => void;
@@ -1032,13 +1086,24 @@ interface RowShared {
   openSheet: (href: string) => void;
 }
 
+// A hold inside an open Sheet or picker must not lift the row behind it.
+function guardLift(h: LongPressDragHandlers): LongPressDragHandlers {
+  return {
+    ...h,
+    onPointerDown: (e) => {
+      if ((e.target as HTMLElement).closest('[role="dialog"]')) return;
+      h.onPointerDown(e);
+    },
+  };
+}
+
 // One line or task row of the week; `stacked` is the phone and tablet shape.
 function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim: boolean }) {
-  const { stacked, people, canAssign, canDrag, days, align, state, drag } = shared;
+  const { stacked, people, canAssign, canDrag, days, align, state, drag, lift, moveRequest, clearMoveRequest } = shared;
   const rowRef = useRef<HTMLLIElement>(null);
-  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveOpenLocal, setMoveOpenLocal] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
-  const closeMove = useCallback(() => setMoveOpen(false), []);
+  const closeMove = useCallback(() => { setMoveOpenLocal(false); clearMoveRequest(); }, [clearMoveRequest]);
   const closeAssign = useCallback(() => setAssignOpen(false), []);
 
   const ev = item.ev;
@@ -1049,8 +1114,11 @@ function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim:
   const ids = assigneesOf({ assignedTo }, ev);
   const id = item.kind === "recipe" ? item.line.lineId : item.task.taskId;
   const current = item.kind === "recipe" ? prepDateOf(item.line, ev) : item.task.date;
-  const dragItem: DragItem = { kind: item.kind, eventId: ev.eventId, id, eventDate: ev.date, current };
+  const dragItem: DragItem = { kind: item.kind, eventId: ev.eventId, id, eventDate: ev.date, current, label, status };
   const dragging = drag?.kind === item.kind && drag.id === id;
+  const lifted = lift.item?.kind === item.kind && lift.item.id === id;
+  const liftHandlers = guardLift(lift.handlers(dragItem));
+  const moveOpen = moveOpenLocal || (moveRequest?.kind === item.kind && moveRequest.id === id);
   const done = status === "done";
 
   const cycle = () => (item.kind === "recipe" ? shared.cycleLine(ev, item.line) : shared.cycleTask(ev, item.task));
@@ -1059,13 +1127,13 @@ function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim:
 
   const menuItems: ActionMenuItem[] = item.kind === "recipe"
     ? [
-        { label: "Déplacer au…", icon: <CalendarDays />, onClick: () => setMoveOpen(true) },
+        { label: "Déplacer au…", icon: <CalendarDays />, onClick: () => setMoveOpenLocal(true) },
         { label: "Assigner", icon: <UserPlus />, onClick: () => setAssignOpen(true) },
         { label: "Ouvrir la fiche", icon: <FileText />, onClick: () => shared.openSheet(item.href) },
       ]
     : [
         { label: "Modifier…", icon: <Pencil />, onClick: edit },
-        { label: "Déplacer au…", icon: <CalendarDays />, onClick: () => setMoveOpen(true) },
+        { label: "Déplacer au…", icon: <CalendarDays />, onClick: () => setMoveOpenLocal(true) },
         { label: "Assigner", icon: <UserPlus />, onClick: () => setAssignOpen(true) },
         { kind: "separator" },
         { label: "Supprimer", icon: <Trash2 />, variant: "danger", onClick: () => shared.deleteTask(ev, item.task) },
@@ -1081,7 +1149,7 @@ function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim:
       eventDate={ev.date}
       current={current}
       days={days}
-      onPick={(d) => { setMoveOpen(false); shared.onMove(dragItem, d); }}
+      onPick={(d) => { closeMove(); shared.onMove(dragItem, d); }}
     />
   );
   const assignTitle = item.kind === "recipe" ? "Assigner la ligne" : "Assigner la tâche";
@@ -1097,7 +1165,7 @@ function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim:
     );
     const bodyClass = cn("flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded px-1 text-sm hover:bg-hover touch:text-base", done && "text-muted-foreground");
     return (
-      <li ref={rowRef} className={cn("relative flex min-h-11 items-center", dim && "opacity-40")}>
+      <li ref={rowRef} {...liftHandlers} className={cn("relative flex min-h-11 items-center", (dim || lifted) && "opacity-40")}>
         <StatusDot value={status} onCycle={cycle} />
         {item.kind === "recipe" ? (
           <Link to={item.href} state={state} className={bodyClass}>{body}</Link>
@@ -1117,16 +1185,21 @@ function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim:
   const rowClass = item.kind === "recipe"
     ? "group/row relative flex h-7 items-center gap-0.5 rounded text-sm hover:bg-hover"
     : "group/row relative flex h-7 items-center gap-0.5 rounded text-sm hover:bg-hover pointer:group-hover/row:pr-7 pointer:group-focus-within/row:pr-7";
+  // The whole row drags on a laptop; the grip only says so.
   return (
-    <li ref={rowRef} className={cn(rowClass, (dim || dragging) && "opacity-40")}>
+    <li
+      ref={rowRef}
+      {...liftHandlers}
+      draggable={canDrag || undefined}
+      onDragStart={canDrag ? (e) => { e.dataTransfer.setData("text/plain", label); e.dataTransfer.effectAllowed = "move"; shared.setDrag(dragItem); } : undefined}
+      onDragEnd={canDrag ? () => shared.setDrag(null) : undefined}
+      className={cn(rowClass, canDrag && (dragging ? "cursor-grabbing" : "cursor-grab"), (dim || dragging || lifted) && "opacity-40")}
+    >
       {canDrag && (
         <span
-          draggable
-          onDragStart={() => shared.setDrag(dragItem)}
-          onDragEnd={() => shared.setDrag(null)}
           title="Glisser vers un autre jour"
-          aria-label="Glisser vers un autre jour"
-          className={cn("absolute -left-4 top-0 flex h-7 w-4 cursor-grab items-center justify-center text-icon active:cursor-grabbing", ROW_REVEAL)}
+          aria-hidden="true"
+          className={cn("absolute -left-4 top-0 flex h-7 w-4 items-center justify-center text-icon", ROW_REVEAL)}
         >
           <GripVertical className="h-4 w-4" />
         </span>
@@ -1137,7 +1210,7 @@ function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim:
           {label}
         </Link>
       ) : (
-        <button type="button" onClick={edit} title={label} className={cn("min-w-0 flex-1 truncate rounded px-0.5 text-left", done && "text-muted-foreground")}>
+        <button type="button" onClick={edit} title={label} draggable={false} className={cn("min-w-0 flex-1 truncate rounded px-0.5 text-left", done && "text-muted-foreground")}>
           {label}
         </button>
       )}

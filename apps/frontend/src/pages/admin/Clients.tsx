@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Plus, Search, ArrowUpDown, X } from "lucide-react";
 import type { AppEvent, Client } from "@packages/types";
-import { fmtEur } from "@packages/types";
+import { fmtEur, signedRevenue } from "@packages/types";
 import { api, ApiError } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
@@ -50,7 +50,7 @@ function statsFor(events: AppEvent[], today: string): Map<string, ClientStats> {
     const s = out.get(ev.clientId) ?? { signedThisYear: 0, count: 0 };
     s.count += 1;
     if (ev.date >= today && (!s.nextDate || ev.date < s.nextDate)) s.nextDate = ev.date;
-    if (ev.date.startsWith(year)) s.signedThisYear += (ev.sellingPricePerGuest || 0) * (ev.guestCount || 0);
+    if (ev.date.startsWith(year)) s.signedThisYear += signedRevenue(ev);
     out.set(ev.clientId, s);
   }
   return out;

@@ -1,11 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, type KeyboardEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Save, Plus, X, ImagePlus } from "lucide-react";
-import type { Recipe, RecipeIngredient, RecipePricing, RecipePhoto, Ingredient } from "@packages/types";
-import { UNITS_QTY, DEFAULT_RECIPE_CATEGORIES, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS } from "@packages/types";
+import type { RecipeIngredient, RecipePricing, RecipePhoto, Ingredient } from "@packages/types";
+import { UNITS_QTY, DEFAULT_COURSES, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS, recipeCategoryOf } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
+import StepToolbar, { useStepShortcuts } from "@/components/admin/StepToolbar";
 import { NumericInput, SearchSelect, IngredientFormModal, FieldLabel, Section, PageHeader, Button, IconButton } from "@/components/ui";
 import { fmt, fmtUnitPrice } from "@/lib/recipe-helpers";
 
@@ -17,7 +18,7 @@ const DEFAULT_PRICING: RecipePricing = {
 
 interface FormState {
   name: string;
-  type: string;
+  category: string;
   portions: number;
   portionWeight: number;
   description: string;
@@ -40,9 +41,14 @@ export default function RecipeEditor() {
   const [supplierNames, setSupplierNames] = useState(() => DEFAULT_SUPPLIERS.map((s) => s.name));
 
   const [form, setForm] = useState<FormState>({
-    name: "", type: "Buffet", portions: 1, portionWeight: 150, description: "",
+    name: "", category: DEFAULT_COURSES[0], portions: 1, portionWeight: 150, description: "",
     techniques: [""], ingredients: [], photos: [], pricing: DEFAULT_PRICING,
   });
+  const ingredientsBody = useRef<HTMLTableSectionElement>(null);
+  const stepsList = useRef<HTMLDivElement>(null);
+  // Row or step to focus once the list has grown.
+  const focusRow = useRef<number | null>(null);
+  const focusStep = useRef<number | null>(null);
 
   const title = isNew ? "Nouvelle recette" : "Modifier la recette";
   useBackLink({ to: isNew ? "/recipes" : `/recipes/${id}`, label: "Recettes" });
@@ -56,12 +62,15 @@ export default function RecipeEditor() {
           api.settings.get().catch(() => null),
         ]);
         setAllIngredients(ings);
-        setCategories(settings?.recipeCategories?.length ? settings.recipeCategories : DEFAULT_RECIPE_CATEGORIES);
+        const courses = settings?.courses?.length ? settings.courses : DEFAULT_COURSES;
+        setCategories(courses);
         if (settings?.suppliers?.length) setSupplierNames(settings.suppliers.map((x) => x.name));
-        if (!isNew && id) {
+        if (isNew) {
+          setForm((p) => ({ ...p, category: courses[0] }));
+        } else if (id) {
           const recipe = await api.recipes.get(id);
           setForm({
-            name: recipe.name, type: recipe.type, portions: recipe.portions,
+            name: recipe.name, category: recipeCategoryOf(recipe), portions: recipe.portions,
             portionWeight: recipe.portionWeight, description: recipe.description || "",
             techniques: recipe.techniques.length ? recipe.techniques : [""],
             ingredients: recipe.ingredients, photos: recipe.photos || [],
@@ -79,13 +88,42 @@ export default function RecipeEditor() {
 
   const update = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((p) => ({ ...p, [k]: v }));
 
-  const addTechnique = () => update("techniques", [...form.techniques, ""]);
+  const addTechnique = () => {
+    focusStep.current = form.techniques.length;
+    update("techniques", [...form.techniques, ""]);
+  };
   const updateTechnique = (i: number, v: string) => { const t = [...form.techniques]; t[i] = v; update("techniques", t); };
   const removeTechnique = (i: number) => update("techniques", form.techniques.filter((_, idx) => idx !== i));
 
-  const addIngLine = () => update("ingredients", [...form.ingredients, { ingredientId: allIngredients[0]?.ingredientId || "", qty: 0, unit: "g" as const, lossPct: 0 }]);
+  const addIngLine = () => {
+    focusRow.current = form.ingredients.length;
+    update("ingredients", [...form.ingredients, { ingredientId: "", qty: 0, unit: "g" as const, lossPct: 0 }]);
+  };
   const updateIngLine = (i: number, k: keyof RecipeIngredient, v: unknown) => { const a = [...form.ingredients]; a[i] = { ...a[i], [k]: v }; update("ingredients", a); };
   const removeIngLine = (i: number) => update("ingredients", form.ingredients.filter((_, idx) => idx !== i));
+
+  const focusCell = (row: number, cell: "search" | "qty" | "unit" | "loss") => {
+    const tr = ingredientsBody.current?.querySelectorAll("tr")[row];
+    const selector = { search: 'input[role="combobox"]', qty: 'input[aria-label="Quantité"]', unit: 'select[aria-label="Unité"]', loss: 'input[aria-label="Perte"]' }[cell];
+    tr?.querySelector<HTMLElement>(selector)?.focus();
+  };
+  useEffect(() => {
+    if (focusRow.current === null) return;
+    focusCell(focusRow.current, "search");
+    focusRow.current = null;
+  }, [form.ingredients.length]);
+  useEffect(() => {
+    if (focusStep.current === null) return;
+    stepsList.current?.querySelectorAll("textarea")[focusStep.current]?.focus();
+    focusStep.current = null;
+  }, [form.techniques.length]);
+
+  // Enter walks the row: quantity, unit, loss; on the last cell of the last row it adds a row.
+  const onEnterTo = (next: () => void) => (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    next();
+  };
 
   const updatePricing = (path: string, v: number) => {
     setForm((p) => {
@@ -123,10 +161,10 @@ export default function RecipeEditor() {
     setSaving(true);
     try {
       const data = {
-        name: form.name, type: form.type, portions: form.portions,
+        name: form.name, category: form.category, type: form.category, portions: form.portions,
         portionWeight: form.portionWeight, description: form.description,
         techniques: form.techniques.filter(Boolean),
-        ingredients: form.ingredients, photos: form.photos, pricing: form.pricing,
+        ingredients: form.ingredients.filter((ri) => ri.ingredientId), photos: form.photos, pricing: form.pricing,
       };
       if (isNew) {
         const created = await api.recipes.create(data);
@@ -179,9 +217,9 @@ export default function RecipeEditor() {
         <textarea id="recipe-description" className="input-field" value={form.description} onChange={(e) => update("description", e.target.value)} />
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
-            <FieldLabel htmlFor="recipe-type">Format</FieldLabel>
-            <select id="recipe-type" className="input-field" value={form.type} onChange={(e) => update("type", e.target.value)}>
-              {categories.map((t) => <option key={t}>{t}</option>)}
+            <FieldLabel htmlFor="recipe-category">Catégorie</FieldLabel>
+            <select id="recipe-category" className="input-field" value={form.category} onChange={(e) => update("category", e.target.value)}>
+              {(form.category && !categories.includes(form.category) ? [form.category, ...categories] : categories).map((c) => <option key={c}>{c}</option>)}
             </select>
           </div>
           <div>
@@ -221,58 +259,32 @@ export default function RecipeEditor() {
         {form.techniques.length === 0 && (
           <Button variant="subtle" size="sm" icon={<Plus />} onClick={addTechnique} className="-mx-1">Ajouter la première étape</Button>
         )}
-        {form.techniques.map((t, i) => (
-          <div key={i} className="mb-2 flex items-start gap-2">
-            <span className="w-6 shrink-0 pt-1.5 text-right text-sm text-muted-foreground tabular-nums">{i + 1}</span>
-            <textarea
-              className="input-field min-h-[50px] flex-1"
+        <div ref={stepsList}>
+          {form.techniques.map((t, i) => (
+            <EditorStep
+              key={i}
+              index={i}
               value={t}
-              onChange={(e) => updateTechnique(i, e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  if (i === form.techniques.length - 1) addTechnique();
-                  const next = e.currentTarget.closest("section")?.querySelectorAll("textarea")[i + 1];
-                  if (next) (next as HTMLTextAreaElement).focus();
-                }
+              onChange={(v) => updateTechnique(i, v)}
+              onEnter={() => {
+                if (i === form.techniques.length - 1) addTechnique();
+                else stepsList.current?.querySelectorAll("textarea")[i + 1]?.focus();
               }}
+              onRemove={() => removeTechnique(i)}
               placeholder={
                 i === 0 ? "Ex : préchauffer le four à 180 °C…"
                 : i === 1 ? "Ex : mélanger les ingrédients secs…"
                 : "Étape suivante…"
               }
             />
-            <IconButton size="md" aria-label="Supprimer l'étape" onClick={() => removeTechnique(i)} icon={<X />} />
-          </div>
-        ))}
+          ))}
+        </div>
+        <p className="mt-1 text-caption text-muted-foreground">Sélectionnez un mot puis Gras ou Surligner.</p>
       </Section>
 
       <Section
         title="Ingrédients"
-        action={
-          <>
-            <Button
-              variant="subtle"
-              size="sm"
-              title="Ajouter plusieurs lignes vides d'un coup pour saisie au clavier"
-              onClick={() => {
-                const raw = prompt("Nombre de lignes à ajouter (1 à 40) ?", "5");
-                const n = parseInt(raw || "0", 10);
-                if (Number.isNaN(n) || n < 1 || n > 40) return;
-                const blank: RecipeIngredient = {
-                  ingredientId: allIngredients[0]?.ingredientId || "",
-                  qty: 0,
-                  unit: "g",
-                  lossPct: 0,
-                };
-                update("ingredients", [...form.ingredients, ...Array.from({ length: n }, () => ({ ...blank }))]);
-              }}
-            >
-              Plusieurs lignes…
-            </Button>
-            <Button variant="ghost" size="sm" icon={<Plus />} onClick={addIngLine}>Ajouter</Button>
-          </>
-        }
+        action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addIngLine}>Ajouter</Button>}
       >
         <div className="-mx-2 overflow-x-auto px-2">
           <table className="table table-fixed min-w-[560px]">
@@ -290,19 +302,20 @@ export default function RecipeEditor() {
               <th className="text-right">Perte %</th>
               <th />
             </tr></thead>
-            <tbody>
+            <tbody ref={ingredientsBody}>
               {form.ingredients.map((ri, i) => (
                 <tr key={i}>
-                  <td className="!px-1"><SearchSelect options={allIngredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: fmtUnitPrice(ig.price, ig.unit) }))} value={ri.ingredientId} onChange={(v) => { const ing = allIngredients.find((ig) => ig.ingredientId === v); const updates: Partial<RecipeIngredient> = { ingredientId: v }; if (ing) updates.unit = PRICE_TO_QTY_UNIT[ing.unit] || "g"; const a = [...form.ingredients]; a[i] = { ...a[i], ...updates }; update("ingredients", a); }} placeholder="Rechercher…" onCreateNew={(name) => setCreatingIngredient({ name, row: i })} /></td>
-                  <td className="!px-1"><NumericInput className="input-field w-full text-right" value={ri.qty} onChange={(v) => updateIngLine(i, "qty", v)} aria-label="Quantité" /></td>
-                  <td className="!px-1"><select className="input-field w-full" aria-label="Unité" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)}>{UNITS_QTY.map((u) => <option key={u}>{u}</option>)}</select></td>
-                  <td className="!px-1"><NumericInput className="input-field w-full text-right" value={ri.lossPct} onChange={(v) => updateIngLine(i, "lossPct", v)} aria-label="Perte" /></td>
+                  <td className="!px-1"><SearchSelect options={allIngredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: fmtUnitPrice(ig.price, ig.unit) }))} value={ri.ingredientId} onChange={(v) => { const ing = allIngredients.find((ig) => ig.ingredientId === v); const updates: Partial<RecipeIngredient> = { ingredientId: v }; if (ing) updates.unit = PRICE_TO_QTY_UNIT[ing.unit] || "g"; const a = [...form.ingredients]; a[i] = { ...a[i], ...updates }; update("ingredients", a); }} onCommit={() => focusCell(i, "qty")} placeholder="Produit…" onCreateNew={(name) => setCreatingIngredient({ name, row: i })} /></td>
+                  <td className="!px-1" onKeyDown={onEnterTo(() => focusCell(i, "unit"))}><NumericInput className="input-field w-full text-right" value={ri.qty} onChange={(v) => updateIngLine(i, "qty", v)} aria-label="Quantité" /></td>
+                  <td className="!px-1"><select className="input-field w-full" aria-label="Unité" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)} onKeyDown={onEnterTo(() => focusCell(i, "loss"))}>{UNITS_QTY.map((u) => <option key={u}>{u}</option>)}</select></td>
+                  <td className="!px-1" onKeyDown={onEnterTo(() => { if (i === form.ingredients.length - 1) addIngLine(); else focusCell(i + 1, "search"); })}><NumericInput className="input-field w-full text-right" value={ri.lossPct} onChange={(v) => updateIngLine(i, "lossPct", v)} aria-label="Perte" /></td>
                   <td className="!px-0 text-center"><IconButton size="md" aria-label="Retirer la ligne" onClick={() => removeIngLine(i)} icon={<X />} /></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        <p className="mt-2 text-caption text-muted-foreground touch:hidden">Entrée choisit le premier produit et passe à la quantité ; Entrée sur la dernière case ajoute une ligne.</p>
       </Section>
 
       <Section title="Tarification">
@@ -340,6 +353,38 @@ export default function RecipeEditor() {
           onCancel={() => setCreatingIngredient(null)}
         />
       )}
+    </div>
+  );
+}
+
+function EditorStep({ index, value, placeholder, onChange, onEnter, onRemove }: {
+  index: number;
+  value: string;
+  placeholder: string;
+  onChange: (v: string) => void;
+  onEnter: () => void;
+  onRemove: () => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const onShortcut = useStepShortcuts(ref, value, onChange);
+  return (
+    <div className="mb-2 flex items-start gap-2">
+      <span className="w-6 shrink-0 pt-1.5 text-right text-sm text-muted-foreground tabular-nums">{index + 1}</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <StepToolbar textareaRef={ref} value={value} onChange={onChange} className="touch:order-2" />
+        <textarea
+          ref={ref}
+          className="input-field min-h-[50px] touch:order-1"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (onShortcut(e)) return;
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onEnter(); }
+          }}
+          placeholder={placeholder}
+        />
+      </div>
+      <IconButton size="md" aria-label="Supprimer l'étape" onClick={onRemove} icon={<X />} />
     </div>
   );
 }

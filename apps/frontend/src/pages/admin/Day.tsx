@@ -3,22 +3,25 @@ import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } 
 import { CalendarDays, CheckCircle2, EyeOff, MoreHorizontal, Pencil, Plus, Printer, Share2, ShoppingCart, Trash2, UserPlus, X } from "lucide-react";
 import type { AppEvent, DayItem, Ingredient, Person, PrepLine, PrepStatus, PrepTask, PrestationTypeSetting, Recipe, ScaledIngredient } from "@packages/types";
 import {
-  addDays, buildCostSnapshot, calcRecipeCost, courseIndex, datesOfIsoWeek, DEFAULT_PRESTATION_TYPES, filterByPerson, fmtQty, groupByPerson, groupByRecipe, isoWeekOf, longDayLabel,
+  addDays, buildCostSnapshot, calcRecipeCost, courseIndex, datesOfIsoWeek, DEFAULT_PRESTATION_TYPES, filterByPerson, fmtQty, fmtTime, groupByPerson, groupByRecipe, isoWeekOf, longDayLabel,
   parseIsoWeek, parseYmd, personName, prepLinesForDate, prepTasksForDate, scaledIngredients, shortDayLabel, shortEventName, weekPlan,
 } from "@packages/types";
 import { api, ApiError, errorReason } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { buildGroceryItems, groceryTitleFor } from "@/lib/grocery";
 import { defaultTaskEventId } from "@/lib/tasks";
+import { readTour, writeTour } from "@/lib/tour-storage";
 import { NEXT_STATUS, plural, prestationLabel, usePlanningData } from "@/lib/use-planning-data";
 import { weekSummary, type ChecklistIntent } from "@/lib/week-summary";
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import { useLongPressDrag, type LongPressDragHandlers } from "@/hooks/use-long-press-drag";
 import { useToast } from "@/hooks/use-toast";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { clearMiseEnPlace } from "@/hooks/use-mise-en-place";
 import { useBackLink, useFullBleed, useTopTitle } from "@/components/admin/AdminLayout";
 import DayHeads from "@/components/admin/DayHeads";
+import DragGhost from "@/components/admin/DragGhost";
 import FirstRunCallout from "@/components/admin/FirstRunCallout";
 import MoveToDayMenu from "@/components/admin/MoveToDayMenu";
 import PlanningBar from "@/components/admin/PlanningBar";
@@ -50,6 +53,7 @@ const TASKS_KEY = "taches";
 // Row content sits above the full-row link overlay; an open menu lifts its row above the next ones.
 const ABOVE = "relative z-10 hover:z-30 focus-within:z-30";
 const EMPTY_TASK: TaskDialogValue = { label: "", date: "", eventId: "", assignedTo: [], notes: "" };
+const DRAG_HINT = "Maintenez une préparation pour la glisser vers un autre jour. Déplacer au… reste dans le menu ⋯.";
 
 const shortDate = new Intl.DateTimeFormat("fr-BE", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 
@@ -99,6 +103,25 @@ function isTypingTarget(e: KeyboardEvent): boolean {
 
 function isLine(item: DayItem): item is PrepLine {
   return item.kind === "recipe";
+}
+
+function itemKey(item: DayItem): string {
+  return item.kind === "recipe" ? item.lineId : item.taskId;
+}
+
+function itemLabel(item: DayItem): string {
+  return item.kind === "recipe" ? item.recipeName : item.label;
+}
+
+// A hold inside an open Sheet or picker must not lift the row behind it.
+function guardLift(h: LongPressDragHandlers): LongPressDragHandlers {
+  return {
+    ...h,
+    onPointerDown: (e) => {
+      if ((e.target as HTMLElement).closest('[role="dialog"]')) return;
+      h.onPointerDown(e);
+    },
+  };
 }
 
 function doneLast<T extends { prepStatus: PrepStatus }>(items: T[]): T[] {
@@ -171,6 +194,9 @@ export default function Day() {
   const [taskDialog, setTaskDialog] = useState<TaskDialogState | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [confirmTask, setConfirmTask] = useState<PrepTask | null>(null);
+  // Key of the row whose « Déplacer au… » Sheet opens after a touch release off every day cell.
+  const [moveRequest, setMoveRequest] = useState<string | null>(null);
+  const [dragHint, setDragHint] = useState(false);
   // Same key as the week page, so the callouts keep their state between the two views.
   const [checklistOpen, setChecklistOpen] = useLocalStorage<boolean>("recipe-book:checklist-open", true);
   const touch = useTouchScreen();
@@ -259,7 +285,7 @@ export default function Day() {
         const client = ev.clientId ? clientById.get(ev.clientId) : undefined;
         return {
           key: ev.eventId,
-          title: shortEventName(ev, client),
+          title: [shortEventName(ev, client), fmtTime(ev.deliveryTime ?? "")].filter(Boolean).join(" · "),
           subtitle: [plural(ev.guestCount, "convive"), prestationLabel(settings, ev.prestationType)].filter(Boolean).join(" · "),
           count: plural(evItems.length, "préparation"),
           lines: visible(evItems),
@@ -364,21 +390,6 @@ export default function Day() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [navigate, safeDate, dayUrl, weekUrl, location.state]);
 
-  const onTouchStart = (e: React.TouchEvent) => {
-    const t = e.touches[0];
-    touchStart.current = { x: t.clientX, y: t.clientY };
-  };
-  const onTouchEnd = (e: React.TouchEvent) => {
-    const start = touchStart.current;
-    touchStart.current = null;
-    if (!start) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - start.x;
-    const dy = t.clientY - start.y;
-    if (Math.abs(dx) < SWIPE_PX || Math.abs(dy) > Math.abs(dx) / 2) return;
-    navigate(dayUrl(addDays(safeDate, dx < 0 ? 1 : -1)), { state: location.state });
-  };
-
   // A 409 means the event changed elsewhere; the local copy is refetched.
   const refetchOn409 = useCallback((e: unknown, eventId: string) => {
     if (is409(e)) api.events.get(eventId).then(replaceEvent).catch(() => undefined);
@@ -426,6 +437,41 @@ export default function Day() {
     } catch (e) {
       writeError(e, item.eventId, "Erreur lors du déplacement");
     }
+  };
+
+  // Touch: a held row lifts and drops on a strip or heads cell; a release elsewhere opens its « Déplacer au… » Sheet.
+  const lift = useLongPressDrag<DayItem>({
+    enabled: touch,
+    onStart: () => {
+      touchStart.current = null;
+      if (!readTour().touchDragHintSeen) setDragHint(true);
+    },
+    onEnd: (d, item) => {
+      if (d === null) setMoveRequest(itemKey(item));
+      else if (d !== item.date) void moveItem(item, d);
+    },
+  });
+  const clearMoveRequest = useCallback(() => setMoveRequest(null), []);
+  const dismissDragHint = () => {
+    writeTour({ touchDragHintSeen: true });
+    setDragHint(false);
+  };
+
+  // The day swipe is off while a row is lifted.
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (lift.dragging) { touchStart.current = null; return; }
+    const t = e.touches[0];
+    touchStart.current = { x: t.clientX, y: t.clientY };
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const start = touchStart.current;
+    touchStart.current = null;
+    if (!start || lift.dragging) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) < SWIPE_PX || Math.abs(dy) > Math.abs(dx) / 2) return;
+    navigate(dayUrl(addDays(safeDate, dx < 0 ? 1 : -1)), { state: location.state });
   };
 
   const openCreateTask = () => {
@@ -612,10 +658,17 @@ export default function Day() {
 
   const renderItem = (item: DayItem, second: string, assignable: boolean) => {
     const onAssign = assignable && activePeople.length > 0 ? (next: string[]) => assignItem(item, next) : undefined;
+    const key = itemKey(item);
+    const rowLift = {
+      liftHandlers: guardLift(lift.handlers(item)),
+      lifted: lift.item !== null && itemKey(lift.item) === key,
+      moveOpen: moveRequest === key,
+      onMoveClose: clearMoveRequest,
+    };
     if (item.kind === "recipe") {
       return (
         <LineRow
-          key={item.lineId}
+          key={key}
           line={item}
           people={people}
           to={prepUrl(item)}
@@ -626,12 +679,13 @@ export default function Day() {
           onAssign={onAssign}
           days={weekDates}
           onMove={(d) => moveItem(item, d)}
+          {...rowLift}
         />
       );
     }
     return (
       <TaskRow
-        key={item.taskId}
+        key={key}
         task={item}
         people={people}
         second={second}
@@ -642,6 +696,7 @@ export default function Day() {
         onDelete={() => setConfirmTask(item)}
         days={weekDates}
         onMove={(d) => moveItem(item, d)}
+        {...rowLift}
       />
     );
   };
@@ -789,6 +844,12 @@ export default function Day() {
   const callouts = !loading && (
     <>
       <FirstRunCallout hidden={Boolean(personne)} />
+      {dragHint && (
+        <div className="mb-3 flex items-start gap-2">
+          <p className="min-w-0 flex-1 py-1 text-caption text-muted-foreground">{DRAG_HINT}</p>
+          <IconButton size="sm" aria-label="Fermer" icon={<X />} onClick={dismissDragHint} />
+        </div>
+      )}
       <WeekChecklist
         items={summary.checklist}
         firstRun={firstRun}
@@ -800,6 +861,7 @@ export default function Day() {
         prestationTypes={prestationTypes}
         coveringList={summary.coveringList}
         busy={busy}
+        invoicing={settings?.invoicing}
         onSetType={setType}
         onCloseEvent={closeEvent}
         onAssign={() => toWeek({ kind: "assign" })}
@@ -823,6 +885,8 @@ export default function Day() {
       people={people}
       selectedPerson={personne}
       onPersonFilter={(id) => setParam("personne", personne === id ? null : id)}
+      dropDay={lift.target}
+      dragging={lift.dragging}
     />
   );
 
@@ -948,6 +1012,8 @@ export default function Day() {
         )}
       </div>
 
+      {lift.item && <DragGhost point={lift.ghost} status={lift.item.prepStatus} label={itemLabel(lift.item)} target={lift.target} />}
+
       <TaskDialog
         open={taskDialog !== null}
         onClose={() => setTaskDialog(null)}
@@ -1000,29 +1066,42 @@ interface RowMenuProps {
   // Items placed before and after « Déplacer au… ».
   before?: ActionMenuItem[];
   after?: ActionMenuItem[];
+  // Opened from outside, after a touch release off every day cell.
+  moveOpen?: boolean;
+  onMoveClose?: () => void;
 }
 
 // The row ⋯; « Déplacer au… » opens the day list under the same button.
-function RowMenu({ name, eventDate, current, days, onMove, before = [], after = [] }: RowMenuProps) {
+function RowMenu({ name, eventDate, current, days, onMove, before = [], after = [], moveOpen: moveRequested = false, onMoveClose }: RowMenuProps) {
   const ref = useRef<HTMLSpanElement>(null);
-  const [moveOpen, setMoveOpen] = useState(false);
-  const items: ActionMenuItem[] = [...before, { label: "Déplacer au…", icon: <CalendarDays />, onClick: () => setMoveOpen(true) }, ...after];
+  const [moveOpenLocal, setMoveOpenLocal] = useState(false);
+  const moveOpen = moveOpenLocal || moveRequested;
+  const closeMove = () => { setMoveOpenLocal(false); onMoveClose?.(); };
+  const items: ActionMenuItem[] = [...before, { label: "Déplacer au…", icon: <CalendarDays />, onClick: () => setMoveOpenLocal(true) }, ...after];
   return (
     <span ref={ref} className={`no-print relative inline-flex shrink-0 ${moveOpen ? "z-30" : "z-10 hover:z-30 focus-within:z-30"}`}>
       <ActionMenu items={items} className="reveal" aria-label={`Actions · ${name}`} title={name} />
       <MoveToDayMenu
         open={moveOpen}
-        onClose={() => setMoveOpen(false)}
+        onClose={closeMove}
         anchorRef={ref}
         align="right"
         title={`Déplacer « ${name} »`}
         eventDate={eventDate}
         current={current}
         days={days}
-        onPick={(d) => { setMoveOpen(false); onMove(d); }}
+        onPick={(d) => { closeMove(); onMove(d); }}
       />
     </span>
   );
+}
+
+// Touch lift of a row: the pointer handlers, the dimmed state and the fallback Sheet request.
+interface RowLiftProps {
+  liftHandlers: LongPressDragHandlers;
+  lifted: boolean;
+  moveOpen: boolean;
+  onMoveClose: () => void;
 }
 
 interface ItemAssignProps {
@@ -1056,7 +1135,7 @@ function ItemAssign({ item, people, open, onOpen, onClose, onChange, title }: It
   );
 }
 
-interface LineRowProps {
+interface LineRowProps extends RowLiftProps {
   line: PrepLine;
   people: Person[];
   to: string;
@@ -1070,12 +1149,12 @@ interface LineRowProps {
 }
 
 // One prep line: the pill on pointer screens, the dot on touch; the whole row links to the fiche.
-function LineRow({ line, people, to, from, second, onStatus, onCycle, onAssign, days, onMove }: LineRowProps) {
+function LineRow({ line, people, to, from, second, onStatus, onCycle, onAssign, days, onMove, liftHandlers, lifted, moveOpen, onMoveClose }: LineRowProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const isDone = line.prepStatus === "done";
   const assign: ActionMenuItem[] = onAssign ? [{ label: "Assigner", icon: <UserPlus />, onClick: () => setPickerOpen(true) }] : [];
   return (
-    <li className={`group relative flex min-h-9 items-center gap-2 rounded px-2 hover:bg-hover touch:min-h-11 ${isDone ? "text-muted-foreground" : ""}`}>
+    <li {...liftHandlers} className={`group relative flex min-h-9 items-center gap-2 rounded px-2 hover:bg-hover touch:min-h-11 ${isDone ? "text-muted-foreground" : ""} ${lifted ? "opacity-40" : ""}`}>
       <div className={`no-print ${ABOVE} hidden w-[108px] shrink-0 pointer:block`}>
         <StatusControl value={line.prepStatus} onChange={onStatus} />
       </div>
@@ -1093,12 +1172,12 @@ function LineRow({ line, people, to, from, second, onStatus, onCycle, onAssign, 
         <PersonChips personIds={line.assignedTo} people={people} size="sm" inherited={!line.ownAssignment} className={ABOVE} />
       )}
       <span className={`${ABOVE} shrink-0 text-sm tabular-nums`}>{line.portions}</span>
-      <RowMenu name={line.recipeName} eventDate={line.eventDate} current={line.date} days={days} onMove={onMove} after={assign} />
+      <RowMenu name={line.recipeName} eventDate={line.eventDate} current={line.date} days={days} onMove={onMove} after={assign} moveOpen={moveOpen} onMoveClose={onMoveClose} />
     </li>
   );
 }
 
-interface TaskRowProps {
+interface TaskRowProps extends RowLiftProps {
   task: PrepTask;
   people: Person[];
   second: string;
@@ -1112,7 +1191,7 @@ interface TaskRowProps {
 }
 
 // One task: same row as a line without portions; the whole row opens the edit dialog.
-function TaskRow({ task, people, second, onStatus, onCycle, onAssign, onEdit, onDelete, days, onMove }: TaskRowProps) {
+function TaskRow({ task, people, second, onStatus, onCycle, onAssign, onEdit, onDelete, days, onMove, liftHandlers, lifted, moveOpen, onMoveClose }: TaskRowProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const isDone = task.prepStatus === "done";
   const after: ActionMenuItem[] = [
@@ -1121,7 +1200,7 @@ function TaskRow({ task, people, second, onStatus, onCycle, onAssign, onEdit, on
     { label: "Supprimer", icon: <Trash2 />, variant: "danger", onClick: onDelete },
   ];
   return (
-    <li className={`group relative flex min-h-9 items-center gap-2 rounded px-2 hover:bg-hover touch:min-h-11 ${isDone ? "text-muted-foreground" : ""}`}>
+    <li {...liftHandlers} className={`group relative flex min-h-9 items-center gap-2 rounded px-2 hover:bg-hover touch:min-h-11 ${isDone ? "text-muted-foreground" : ""} ${lifted ? "opacity-40" : ""}`}>
       <div className={`no-print ${ABOVE} hidden w-[108px] shrink-0 pointer:block`}>
         <StatusControl value={task.prepStatus} onChange={onStatus} />
       </div>
@@ -1146,6 +1225,8 @@ function TaskRow({ task, people, second, onStatus, onCycle, onAssign, onEdit, on
         onMove={onMove}
         before={[{ label: "Modifier…", icon: <Pencil />, onClick: onEdit }]}
         after={after}
+        moveOpen={moveOpen}
+        onMoveClose={onMoveClose}
       />
     </li>
   );
