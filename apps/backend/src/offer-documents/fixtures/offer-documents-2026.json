@@ -1,0 +1,755 @@
+[
+  {
+    "title": "Offre brunch à emporter",
+    "year": 2025,
+    "season": "toute_annee",
+    "prestationType": "buffet_a_emporter",
+    "prestationLabel": "A emporter",
+    "minGuests": 20,
+    "note": "Devis sur mesure pour les groupes de plus de 30 personnes",
+    "sections": [
+      {
+        "sectionId": "brunch",
+        "title": "BRUNCH",
+        "price": 42,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "brunch-pains", "kind": "plat", "text": "Baguettes, mini viennoiseries, pains" },
+          { "rowId": "brunch-fruits", "kind": "plat", "text": "Salade de fruits frais" },
+          { "rowId": "brunch-yaourt", "kind": "plat", "text": "Yaourt et granola" },
+          { "rowId": "brunch-gaufres", "kind": "plat", "text": "Gaufres au levain" },
+          { "rowId": "brunch-toppings", "kind": "plat", "text": "2 toppings au choix" },
+          { "rowId": "brunch-toppings-ex", "kind": "exemple", "text": "Caramel, tartinade au chocolat et noisettes, chantilly à la vanille, confiture maison, sauce au chocolat" },
+          { "rowId": "brunch-desserts", "kind": "plat", "text": "2 desserts au choix" },
+          { "rowId": "brunch-desserts-ex", "kind": "exemple", "text": "Moelleux au chocolat, carrot cake, cookies, cake au citron, cake marbré, cake aux fruits de saison, cake framboises et son glaçage à la rose" },
+          { "rowId": "brunch-plats", "kind": "plat", "text": "2 plats au choix" },
+          { "rowId": "brunch-plats-ex", "kind": "exemple", "text": "Shakshuka, féta, oeuf; quiches; toast avocat; mijoté de porc effiloché; cocotte de pommes de terre, lardons, comté; oeufs parfaits et condiments" },
+          { "rowId": "brunch-salades", "kind": "plat", "text": "Salades / légumes du moment" },
+          { "rowId": "brunch-salades-ex", "kind": "exemple", "text": "salade de quinoa; taboulé aux herbes; légumes grillés; petit épeautre aux légumes; salade d'épinards, patates douces, féta; salade de pâtes au pesto, tomates cerise, mozzarella, roquette" },
+          { "rowId": "brunch-salades-ex-2", "kind": "exemple", "text": "betteraves confites sur crème de chèvre; aubergines et sauce tahin; etc, liste non exhaustive, pas de choix possible" }
+        ]
+      },
+      {
+        "sectionId": "extras",
+        "title": "Possibilité d'ajouter à votre brunch",
+        "rows": [
+          { "rowId": "extras-cookies", "kind": "plat", "text": "Cookies aux chocolat, noisettes et noix de pécan", "price": 2, "unitLabel": "à la pièce", "unitKind": "piece" },
+          { "rowId": "extras-saumon-marine", "kind": "plat", "text": "Saumon mariné maison", "price": 22, "unitLabel": "par 300 g", "unitKind": "unite" },
+          { "rowId": "extras-saumon-fume", "kind": "plat", "text": "Saumon fumé artisanal", "price": 19, "unitLabel": "par 300 g", "unitKind": "unite" },
+          { "rowId": "extras-focaccia", "kind": "plat", "text": "Focaccia maison et son dip burrata", "price": 30, "unitLabel": "pour env. 12 personnes", "unitKind": "unite" },
+          { "rowId": "extras-fromages", "kind": "plat", "text": "Plateau de fromages et charcuterie", "price": 8, "unitLabel": "par personne", "unitKind": "convive" },
+          { "rowId": "extras-kombucha", "kind": "plat", "text": "Kombucha (Yugen)", "price": 3, "unitLabel": "33 cl", "unitKind": "unite" },
+          { "rowId": "extras-citronnade", "kind": "plat", "text": "Citronnade maison", "price": 8, "unitLabel": "1 litre", "unitKind": "unite" }
+        ]
+      }
+    ],
+    "services": {
+      "shown": true,
+      "title": "SERVICE (FACULTATIF)",
+      "intro": "Service sur place (en fonction du type d'événement et du nombre de convives)",
+      "rows": [
+        { "rowId": "cuisinier", "kind": "plat", "text": "Tarif horaire par cuisinier", "price": 50, "unitLabel": "€/heure (htva)", "unitKind": "unite" },
+        { "rowId": "serveur", "kind": "plat", "text": "Tarif horaire par serveur (4h30 à 5h en moyenne)", "price": 50, "unitLabel": "€/heure (htva)", "unitKind": "unite" },
+        { "rowId": "transport", "kind": "plat", "text": "Transport", "priceNote": "forfait (htva) en fonction de l'adresse" },
+        { "rowId": "location", "kind": "plat", "text": "Location matériel supplémentaire", "priceNote": "à voir ensemble" }
+      ]
+    },
+    "conditions": "Le retrait des commandes et le retour des plats s'effectue à Overijse sauf si une livraison est prévue. Les plats sont présentés dans des jolis plats de service, lesquels doivent être rapportés propres dans les 5 jours après l'événement. Présentation dans des plats jetables également possible sur demande.",
+    "vatLines": [
+      { "label": "Food à emporter", "rate": 6 },
+      { "label": "Food avec service", "rate": 12 },
+      { "label": "Extras", "rate": 21 }
+    ]
+  },
+  {
+    "title": "Offre chef à domicile",
+    "year": 2026,
+    "season": "automne_hiver",
+    "prestationType": "chef_a_domicile",
+    "prestationLabel": "Avec service",
+    "minGuests": 8,
+    "maxGuests": 14,
+    "guestsLabel": "entre 8 et 14 personnes",
+    "note": "Si plus que 14 personnes, location de matériel et personnel en plus.",
+    "sections": [
+      {
+        "sectionId": "food",
+        "title": "FOOD",
+        "price": 65,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "food-aperitif", "kind": "sous_titre", "text": "Apéritif" },
+          { "rowId": "food-plateaux", "kind": "plat", "text": "Plateaux apéritifs (crudités, dip, crackers, noix, fromages, olives)" },
+          { "rowId": "food-bouchees", "kind": "plat", "text": "Bouchées apéritives (3 pièces / personne)" },
+          { "rowId": "food-bouchees-ex", "kind": "exemple", "text": "sablé au comté et mousse de chèvre, bouchée de saumon mariné, tartare de boeuf huile de truffe, brochette de poulet sauce saté, mini kefta et sauce yaourt, gaufre au saumon fumé, bouchée à la reine, toast garni de mousse de truite, liste non exhaustive" },
+          { "rowId": "food-entree", "kind": "sous_titre", "text": "Entrée", "choice": { "count": 1, "scope": "table" } },
+          { "rowId": "food-entree-chevre", "kind": "plat", "text": "Mousse de chèvre, betterave confite, noix, pomme, condiment framboise et poivre timut", "tags": ["froid"] },
+          { "rowId": "food-entree-ceviche", "kind": "plat", "text": "Ceviche de daurade à la mangue, coriandre et grenade", "tags": ["froid"] },
+          { "rowId": "food-entree-saumon", "kind": "plat", "text": "Saumon mi-cuit laqué au soja, crème de sésame et miso", "tags": ["tiède"] },
+          { "rowId": "food-entree-eglefin", "kind": "plat", "text": "Eglefin en croûte de pistaches et pignons de pin, vichyssoise de roquette, petits pois, huile de truffe", "tags": ["chaud"] },
+          { "rowId": "food-entree-saint-jacques", "kind": "plat", "text": "Saint-Jacques snackées, risotto de céléri-rave, poire, noisettes, beurre blanc aux agrumes", "tags": ["chaud"] },
+          { "rowId": "food-entree-aubergine", "kind": "plat", "text": "Aubergine confite à l'asiatique, carpaccio de boeuf maturé", "tags": ["tiède"] },
+          { "rowId": "food-entree-oeuf", "kind": "plat", "text": "Oeuf parfait, bouillon dashi, champignons de bois, canard confit", "tags": ["chaud"] },
+          { "rowId": "food-plat", "kind": "sous_titre", "text": "Plat", "choice": { "count": 1, "scope": "table" } },
+          { "rowId": "food-plat-bar", "kind": "plat", "text": "Filet de bar rôti, mousse panais à la vanille, légumes racines confits, beurre blanc aux agrumes" },
+          { "rowId": "food-plat-cailles", "kind": "plat", "text": "Cailles désossées en ballotines caramélisées au miso, mousse panais à la vanille, salsa de grenade et noix, légumes de saison" },
+          { "rowId": "food-plat-pintade", "kind": "plat", "text": "Ballotine de pintade farcie aux champignons, petits pois à l'estragon, pain perdu à l'ail, mousse de céléri-rave" },
+          { "rowId": "food-plat-canard", "kind": "plat", "text": "Magret de canard basse température, pressé de pommes de terre, mousse de légumes racines, sauce aux mûres et légumes de saison" },
+          { "rowId": "food-plat-agneau", "kind": "plat", "text": "Carré d'agneau en croûte d'herbes, aumonière de lentilles dupuy, pressé de pommes de terre, tomates cerises confites et condiment d'aubergines" },
+          { "rowId": "food-plat-boeuf", "kind": "plat", "text": "Filet pur de boeuf, jus de viande, pressé de pommes de terre, légumes de saison" },
+          { "rowId": "food-dessert", "kind": "sous_titre", "text": "Dessert", "choice": { "count": 1, "scope": "table" } },
+          { "rowId": "food-dessert-cheesecake", "kind": "plat", "text": "Cheesecake au speculoos et coulis de fruits rouges" },
+          { "rowId": "food-dessert-pavlova", "kind": "plat", "text": "Pavlova aux fruits de saison" },
+          { "rowId": "food-dessert-ganache", "kind": "plat", "text": "Ganache intense au chocolat noir, crumble de noix épicées et crème aigre à l'orange" },
+          { "rowId": "food-dessert-pain-perdu", "kind": "plat", "text": "Pain perdu brioché, pomme caramélisée, glace vanille" },
+          { "rowId": "food-dessert-riz", "kind": "plat", "text": "Riz au lait très crémeux, caramel miso, poire, noisettes torréfiées" },
+          { "rowId": "food-mignardises", "kind": "plat", "text": "Assortiment de mignardises" }
+        ]
+      }
+    ],
+    "services": {
+      "shown": true,
+      "title": "SERVICES",
+      "intro": "Service sur place (en fonction du type d'événement et du nombre de convives)",
+      "rows": [
+        { "rowId": "cuisinier", "kind": "plat", "text": "Tarif horaire par cuisinier (4h30 à 5h en moyenne)", "price": 50, "unitLabel": "€/heure (htva)", "unitKind": "unite" },
+        { "rowId": "serveur", "kind": "plat", "text": "Tarif horaire par serveur (4h30 à 5h en moyenne)", "price": 40, "unitLabel": "€/heure (htva)", "unitKind": "unite" },
+        { "rowId": "transport", "kind": "plat", "text": "Transport", "priceNote": "forfait (htva) en fonction de l'adresse" },
+        { "rowId": "location", "kind": "plat", "text": "Location matériel supplémentaire", "priceNote": "à voir ensemble" }
+      ]
+    },
+    "conditions": "Le retrait des commandes et le retour des plats s'effectue à Overijse sauf si une livraison est prévue. Les plats sont présentés dans des jolis plats de service, lesquels doivent être rapportés propres dans les 5 jours après l'événement. Présentation dans des plats jetables également possible sur demande.",
+    "vatLines": [
+      { "label": "Food à emporter", "rate": 6 },
+      { "label": "Food avec service", "rate": 12 },
+      { "label": "Extras", "rate": 21 }
+    ]
+  },
+  {
+    "title": "Offre walking dinner",
+    "year": 2026,
+    "season": "automne_hiver",
+    "prestationType": "walking_cocktail",
+    "prestationLabel": "Avec service",
+    "minGuests": 30,
+    "maxGuests": 150,
+    "sections": [
+      {
+        "sectionId": "walking-dinner",
+        "title": "WALKING DINNER",
+        "price": 59,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "wd-aperitif", "kind": "sous_titre", "text": "Apéritif" },
+          { "rowId": "wd-plateaux", "kind": "plat", "text": "Plateaux apéritifs à poser sur les tables hautes (crudités, dip, crackers, noix, fromages, olives)" },
+          { "rowId": "wd-bouchees", "kind": "plat", "text": "Bouchées apéritives / fingerfood (min 3 pièces / personne)" },
+          { "rowId": "wd-bouchees-ex", "kind": "exemple", "text": "sablé au comté et mousse de chèvre, bouchée à la mousse de truite fumée, tartelette tartare de boeuf, soupe chaude ou froide, brochette de poulet sauce saté, mini kefta et sauce yaourt, gaufre au saumon fumé, naan farcis au cheddar, liste non exhaustive" },
+          { "rowId": "wd-assiettes", "kind": "sous_titre", "text": "Petites assiettes / bols", "choice": { "count": 4, "scope": "table", "label": "sélection de 4 assiettes au choix" } },
+          { "rowId": "wd-froid", "kind": "sous_titre", "text": "Froid" },
+          { "rowId": "wd-froid-saumon-orange", "kind": "plat", "text": "Saumon mariné à l'orange, condiment betterave et framboise" },
+          { "rowId": "wd-froid-saumon-snacke", "kind": "plat", "text": "Saumon juste snacké et condiment crème de sésame, carpaccio de légumes de saison" },
+          { "rowId": "wd-froid-ceviche", "kind": "plat", "text": "Ceviche de daurade et condiment de saison" },
+          { "rowId": "wd-froid-vitello", "kind": "plat", "text": "Vitello tonnato revisité, artichaut grillé, copeaux de parmesan et pignons de pin, condiment de roquette" },
+          { "rowId": "wd-froid-tartare", "kind": "plat", "text": "Tartare de boeuf à l'italienne, crème au parmesan et la truffe, tuile de parmesan" },
+          { "rowId": "wd-froid-poke", "kind": "plat", "text": "Mini poke bowl au poulet, avocat, mangue, sauce cacahuètes" },
+          { "rowId": "wd-froid-burrata", "kind": "plat", "text": "Burrata, courge grillée au zaatar, noisettes torréfiées" },
+          { "rowId": "wd-chaud", "kind": "sous_titre", "text": "Chaud" },
+          { "rowId": "wd-chaud-eglefin", "kind": "plat", "text": "Eglefin en croûte de pignons et pistaches, en vichyssoise de roquette et petits pois" },
+          { "rowId": "wd-chaud-gambas", "kind": "plat", "text": "Gambas à l'ail, riz pilaf, légumes de saison" },
+          { "rowId": "wd-chaud-agneau", "kind": "plat", "text": "Epaule d'agneau confite, couscous perlé et légumes de saison" },
+          { "rowId": "wd-chaud-keftas", "kind": "plat", "text": "Keftas de volaille au thym et citron, sauce yaourt au sumac, légumes de saison" },
+          { "rowId": "wd-chaud-risotto", "kind": "plat", "text": "Risotto aux champignons, canard effiloché, huile de truffe" },
+          { "rowId": "wd-chaud-falafels", "kind": "plat", "text": "Falafels de pois chiches, sauce tahin, taboulé au persil et grenade" },
+          { "rowId": "wd-chaud-orge", "kind": "plat", "text": "Risotto d'orge, crémeux de fromage de chèvre, légumes confits" },
+          { "rowId": "wd-desserts", "kind": "sous_titre", "text": "Desserts" },
+          { "rowId": "wd-verrines", "kind": "plat", "text": "Assortiment de verrines sucrées" },
+          { "rowId": "wd-verrines-ex", "kind": "exemple", "text": "mousse au chocolat, tiramisu, pavlova, citron meringué, crumble aux fruits" },
+          { "rowId": "wd-mignardises", "kind": "plat", "text": "Assortiment de mignardises" },
+          { "rowId": "wd-mignardises-ex", "kind": "exemple", "text": "mini financiers, mini tartelettes citron meringué, mini tartelettes gianduja, mini tartelettes aux fruits, mini moelleux" },
+          { "rowId": "wd-note", "kind": "note", "text": "Le prix comprend la vaisselle / couverts nécessaires pour le walking dinner. Les heures de prestation sont facturées à part (voir ci-dessous)." }
+        ]
+      }
+    ],
+    "services": {
+      "shown": true,
+      "title": "SERVICES",
+      "intro": "Service sur place (en fonction du type d'événement et du nombre de convives)",
+      "rows": [
+        { "rowId": "cuisinier", "kind": "plat", "text": "Tarif horaire par cuisinier", "price": 50, "unitLabel": "€/heure (htva)", "unitKind": "unite" },
+        { "rowId": "serveur", "kind": "plat", "text": "Tarif horaire par serveur (5h en moyenne)", "price": 40, "unitLabel": "€/heure (htva)", "unitKind": "unite" },
+        { "rowId": "transport", "kind": "plat", "text": "Transport", "priceNote": "forfait (htva) en fonction de l'adresse" },
+        { "rowId": "location", "kind": "plat", "text": "Location matériel supplémentaire", "priceNote": "à voir ensemble" }
+      ]
+    },
+    "conditions": "Le retrait des commandes et le retour des plats s'effectue à Overijse sauf si une livraison est prévue. Les plats sont présentés dans des jolis plats de service, lesquels doivent être rapportés propres dans les 5 jours après l'événement. Présentation dans des plats jetables également possible sur demande.",
+    "vatLines": [
+      { "label": "Food à emporter", "rate": 6 },
+      { "label": "Food avec service", "rate": 12 },
+      { "label": "Services", "rate": 21 }
+    ]
+  },
+  {
+    "title": "Offre buffets printemps été",
+    "year": 2026,
+    "season": "printemps_ete",
+    "prestationType": "buffet_avec_service",
+    "prestationLabel": "Avec ou sans service, A emporter ou avec livraison",
+    "minGuests": 20,
+    "note": "Chaque élément (apéro, buffet, dessert, mignardises) peut se choisir séparément.",
+    "sections": [
+      {
+        "sectionId": "aperitif",
+        "title": "APERITIF",
+        "price": 8.5,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "aperitif-plateaux", "kind": "plat", "text": "Plateaux apéritifs (crudités, dip, crackers, noix, fromages, olives)" },
+          { "rowId": "aperitif-bouchees", "kind": "plat", "text": "Bouchées apéritives (3 pièces / personne), à passer sur plateaux" },
+          { "rowId": "aperitif-ex", "kind": "exemple", "text": "sablé au comté et mousse de chèvre, blinis mousse de truite, bouchée de saumon mariné, tartare de boeuf huile de truffe, brochette de poulet sauce saté, mini kefta et sauce yaourt, brochette de pastèque féta menthe, brochette melon jambon, mini salade césar, liste non exhaustive" }
+        ]
+      },
+      {
+        "sectionId": "buffet-1",
+        "title": "BUFFET 1, Fraîcheur conviviale",
+        "price": 24.5,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "b1-legumes", "kind": "plat", "text": "Légumes grillés marinés" },
+          { "rowId": "b1-burrata", "kind": "plat", "text": "Burrata, tomates confites et huile parfumée au basilic" },
+          { "rowId": "b1-orzo", "kind": "plat", "text": "Salade d'orzo aux légumes rôtis et pesto pistaches roquette" },
+          { "rowId": "b1-fenouil", "kind": "plat", "text": "Fenouil rôti aux agrumes" },
+          { "rowId": "b1-focaccia", "kind": "plat", "text": "Focaccia maison et dip de saison" }
+        ]
+      },
+      {
+        "sectionId": "buffet-2",
+        "title": "BUFFET 2, Saveurs du Levant",
+        "price": 33.5,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "b2-hummus", "kind": "plat", "text": "Hummus, Tzatzíki" },
+          { "rowId": "b2-poulet", "kind": "plat", "text": "Poulet chich taouk rôti", "tags": ["chaud / tiède / froid"] },
+          { "rowId": "b2-keftas", "kind": "plat", "text": "Keftas d'agneau et sauce yaourt au zaatar", "tags": ["chaud"] },
+          { "rowId": "b2-aubergines", "kind": "plat", "text": "Aubergines rôties, crème de tahini, herbes, graines de courge" },
+          { "rowId": "b2-taboule", "kind": "plat", "text": "Taboulé aux herbes, grenade, raisins secs" },
+          { "rowId": "b2-salade", "kind": "plat", "text": "Salade de légumes verts aux herbes fraîches" },
+          { "rowId": "b2-manouche", "kind": "plat", "text": "Manouche au zaatar (pains libanais)" }
+        ]
+      },
+      {
+        "sectionId": "buffet-3",
+        "title": "BUFFET 3, Terre Mer",
+        "price": 39.5,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "b3-saumon", "kind": "plat", "text": "Saumon mariné et vinaigrette à l'orange" },
+          { "rowId": "b3-tagliata", "kind": "plat", "text": "Tagliata de boeuf à l'italienne, tomates cerises, parmesan, roquette" },
+          { "rowId": "b3-grenailles", "kind": "plat", "text": "Grenailles rôties au paprika et thym", "tags": ["chaud"] },
+          { "rowId": "b3-asperges", "kind": "plat", "text": "Asperges vertes grillées, burrata, herbes fraîches, pistaches" },
+          { "rowId": "b3-lentilles", "kind": "plat", "text": "Salade de lentilles beluga aux légumes d'été, féta et herbes fraîches" },
+          { "rowId": "b3-focaccia", "kind": "plat", "text": "Focaccia maison et dip de saison" }
+        ]
+      },
+      {
+        "sectionId": "buffet-4",
+        "title": "BUFFET 4, Signature estivale",
+        "price": 46.5,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "b4-gambas", "kind": "plat", "text": "Gambas rôties et mayonnaise à l'ail", "tags": ["chaud / tiède / froid"] },
+          { "rowId": "b4-poisson", "kind": "plat", "text": "Poisson blanc (selon le marché) confit basse température, huile d'olive, tomates cerises, citron", "tags": ["chaud"] },
+          { "rowId": "b4-grenailles", "kind": "plat", "text": "Pommes de terre grenaille écrasées, huile d'olive et citron", "tags": ["tiède / froid"] },
+          { "rowId": "b4-asperges", "kind": "plat", "text": "Asperges vertes rôties, parmesan, pignons de pin", "tags": ["tiède / froid"] },
+          { "rowId": "b4-burrata", "kind": "plat", "text": "Burrata, tomates confites et huile parfumée au basilic" },
+          { "rowId": "b4-salade", "kind": "plat", "text": "Salade de légumes verts aux herbes fraîches" },
+          { "rowId": "b4-note", "kind": "note", "text": "Vous souhaitez interchanger / ajouter des plats d'un buffet à l'autre ? Demandez-moi et j'essaierai de répondre à vos désirs !" }
+        ]
+      },
+      {
+        "sectionId": "desserts",
+        "title": "BUFFET DE DESSERTS",
+        "intro": "nombre de choix à définir en fonction du nombre de convives",
+        "price": 5.25,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "des-moelleux-orange", "kind": "plat", "text": "Moelleux au chocolat à l'orange confite et croûte aux grués de cacao", "tags": ["sans gluten"] },
+          { "rowId": "des-cake-vanille", "kind": "plat", "text": "Cake moelleux vanille, framboises, et rose" },
+          { "rowId": "des-brookies", "kind": "plat", "text": "Brookies" },
+          { "rowId": "des-cheesecake", "kind": "plat", "text": "Cheesecake au speculoos et coulis de fruits rouges" },
+          { "rowId": "des-tiramisu", "kind": "plat", "text": "Tiramisu en verrines" },
+          { "rowId": "des-mousse", "kind": "plat", "text": "Mousse au chocolat en verrines" },
+          { "rowId": "des-pavlova", "kind": "plat", "text": "Pavlova en verrines" }
+        ]
+      },
+      {
+        "sectionId": "mignardises",
+        "title": "MIGNARDISES",
+        "price": 32,
+        "unitLabel": "par boîte de 20 pièces",
+        "unitKind": "unite",
+        "rows": [
+          { "rowId": "mig-assortiment", "kind": "plat", "text": "Assortiment de mignardises" },
+          { "rowId": "mig-ex", "kind": "exemple", "text": "mini tartelettes au citron, framboises, gianduja, mini moelleux, mini madeleines, mini brookies" }
+        ]
+      }
+    ],
+    "services": {
+      "shown": true,
+      "title": "SERVICES",
+      "intro": "Service sur place (en fonction du type d'événement et du nombre de convives)",
+      "rows": [
+        { "rowId": "cuisinier", "kind": "plat", "text": "Tarif horaire par cuisinier", "price": 50, "unitLabel": "€/heure (htva)", "unitKind": "unite" },
+        { "rowId": "serveur", "kind": "plat", "text": "Tarif horaire par serveur (4h30 à 5h en moyenne)", "price": 40, "unitLabel": "€/heure (htva)", "unitKind": "unite" },
+        { "rowId": "transport", "kind": "plat", "text": "Transport", "priceNote": "forfait (htva) en fonction de l'adresse" },
+        { "rowId": "location", "kind": "plat", "text": "Location matériel supplémentaire", "priceNote": "à voir ensemble" }
+      ]
+    },
+    "conditions": "Le retrait des commandes et le retour des plats s'effectue à Overijse sauf si une livraison est prévue. Les plats sont présentés dans des jolis plats de service, lesquels doivent être rapportés propres dans les 5 jours après l'événement. Présentation dans des plats jetables également possible sur demande.",
+    "vatLines": [
+      { "label": "Food", "rate": 12 },
+      { "label": "Services", "rate": 21 }
+    ]
+  },
+  {
+    "title": "Offre buffets automne hiver",
+    "year": 2026,
+    "season": "automne_hiver",
+    "prestationType": "buffet_avec_service",
+    "prestationLabel": "Avec ou sans service, A emporter ou avec livraison",
+    "minGuests": 20,
+    "note": "Chaque élément (apéro, buffet, dessert, mignardises) peut se choisir séparément.",
+    "sections": [
+      {
+        "sectionId": "aperitif",
+        "title": "APERITIF",
+        "price": 8.5,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "aperitif-plateau", "kind": "plat", "text": "Plateau apéro (crudités de saison, dip, crackers, noix, fromage et olives)" },
+          { "rowId": "aperitif-bouchees", "kind": "plat", "text": "Bouchées apéritives (3 pièces / personne), à passer sur plateaux" },
+          { "rowId": "aperitif-ex", "kind": "exemple", "text": "sablé au comté et mousse de chèvre, blinis mousse de truite, bouchée de saumon mariné, tartare de boeuf huile de truffe, brochette de poulet sauce saté, mini kefta et sauce yaourt, brochette de pastèque féta menthe, brochette melon jambon, mini salade césar, liste non exhaustive" }
+        ]
+      },
+      {
+        "sectionId": "plateaux",
+        "title": "PLATEAUX A PARTAGER",
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "minimum": { "qty": 8, "unit": "personnes" },
+        "rows": [
+          { "rowId": "plateaux-apero", "kind": "plat", "text": "Plateau apéro (crudités de saison, dip, crackers, noix, fromage et olives)", "price": 4.2 },
+          { "rowId": "plateaux-antipasti", "kind": "plat", "text": "Plateau antipasti (printemps/été) (légumes grillés, mozzarella, sélection de fromages et charcuteries, noix, olives et focaccia maison)", "price": 9.5 },
+          { "rowId": "plateaux-gourmand", "kind": "plat", "text": "Plateau gourmand (assortiment de fromages et charcuteries, fruits frais et secs et noix, olives, crackers, pains et condiment)", "price": 13.5 },
+          { "rowId": "plateaux-dinatoire", "kind": "plat", "text": "Plateau gourmand version apéro dinatoire (une version plus généreuse du plateau gourmand, pensée pour constituer le repas)", "price": 19.5 }
+        ]
+      },
+      {
+        "sectionId": "buffet-1",
+        "title": "BUFFET 1, Réconfort végétal",
+        "price": 24.5,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "b1-veloute", "kind": "plat", "text": "Velouté de saison" },
+          { "rowId": "b1-crumble", "kind": "plat", "text": "Crumble de légumes d'hiver", "tags": ["chaud"] },
+          { "rowId": "b1-legumes", "kind": "plat", "text": "Légumes rôtis, oignons pickles, féta et herbes" },
+          { "rowId": "b1-butternut", "kind": "plat", "text": "Butternut grillée, burrata, orange sanguine, herbes fraîches, graines de courge" },
+          { "rowId": "b1-lentilles", "kind": "plat", "text": "Salade de lentilles, chou-fleur grillés, noisettes grillées, herbes" },
+          { "rowId": "b1-focaccia", "kind": "plat", "text": "Focaccia maison et dip de saison" }
+        ]
+      },
+      {
+        "sectionId": "buffet-2",
+        "title": "BUFFET 2, La Tavola Italiana",
+        "price": 34.5,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "b2-vitello", "kind": "plat", "text": "Vitello tonnato, artichauts grillés, parmesan, roquette" },
+          { "rowId": "b2-polpettes", "kind": "plat", "text": "Polpettes italiennes, sauce tomate mijotée, parmesan", "tags": ["chaud"] },
+          { "rowId": "b2-lasagnes", "kind": "plat", "text": "Lasagnes blanches aux champignons, épinards, taleggio", "tags": ["chaud"] },
+          { "rowId": "b2-poireaux", "kind": "plat", "text": "Poireaux rôtis, vinaigrette balsamique, noisettes torréfiées, persil" },
+          { "rowId": "b2-courge", "kind": "plat", "text": "Courge rôtie, sauge et pickles d'oignons rouges" },
+          { "rowId": "b2-focaccia", "kind": "plat", "text": "Focaccia maison au romarin" }
+        ]
+      },
+      {
+        "sectionId": "buffet-3",
+        "title": "BUFFET 3, Saveurs du Levant",
+        "price": 35.5,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "b3-hummus", "kind": "plat", "text": "Hummus, Tzatzíki" },
+          { "rowId": "b3-poulet", "kind": "plat", "text": "Poulet chich taouk", "tags": ["chaud"] },
+          { "rowId": "b3-keftas", "kind": "plat", "text": "Keftas d'agneau et sauce yaourt au zaatar", "tags": ["chaud"] },
+          { "rowId": "b3-carottes", "kind": "plat", "text": "Carottes et chou-fleur rôtis, tahini citronné, pickles d'oignons rouges, herbes et graines de courge" },
+          { "rowId": "b3-taboule", "kind": "plat", "text": "Taboulé aux herbes, grenade, raisins secs et amandes grillées" },
+          { "rowId": "b3-manouche", "kind": "plat", "text": "Manouche (pains libanais)" }
+        ]
+      },
+      {
+        "sectionId": "buffet-4",
+        "title": "BUFFET 4, Terre Mer",
+        "price": 38.5,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "b4-saumon", "kind": "plat", "text": "Saumon nacré laqué teriyaki, graines de sésame", "tags": ["chaud / tiède"] },
+          { "rowId": "b4-tagliata", "kind": "plat", "text": "Tagliata de boeuf à l'italienne, parmesan, roquette" },
+          { "rowId": "b4-grenailles", "kind": "plat", "text": "Grenailles rôties au paprika et thym", "tags": ["chaud"] },
+          { "rowId": "b4-butternut", "kind": "plat", "text": "Butternut grillée, burrata, orange sanguine, herbes fraîches, graines de courge" },
+          { "rowId": "b4-lentilles", "kind": "plat", "text": "Salade de lentilles, chou-fleur grillés, noisettes grillées, herbes" },
+          { "rowId": "b4-legumes", "kind": "plat", "text": "Légumes rôtis, oignons pickles, féta et herbes" }
+        ]
+      },
+      {
+        "sectionId": "buffet-5",
+        "title": "BUFFET 5, Signature d'hiver",
+        "price": 44.5,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "b5-gambas", "kind": "plat", "text": "Gambas rôties à l'ail, beurre, citron et herbes", "tags": ["chaud"] },
+          { "rowId": "b5-pintade", "kind": "plat", "text": "Balotines de pintade aux champignons, sauce à la crème", "tags": ["chaud"] },
+          { "rowId": "b5-ravioles", "kind": "plat", "text": "Ravioles ouvertes aux champignons et céléri-rave" },
+          { "rowId": "b5-ecrase", "kind": "plat", "text": "Ecrasé de pommes de terre à l'huile d'olive" },
+          { "rowId": "b5-poireaux", "kind": "plat", "text": "Poireaux fondants rôtis" },
+          { "rowId": "b5-carottes", "kind": "plat", "text": "Carottes confites au thym" },
+          { "rowId": "b5-note", "kind": "note", "text": "Vous souhaitez interchanger / ajouter des plats d'un buffet à l'autre ? Demandez-moi et j'essaierai de répondre à vos désirs !" }
+        ]
+      },
+      {
+        "sectionId": "desserts",
+        "title": "BUFFET DE DESSERTS",
+        "intro": "nombre de choix à définir en fonction du nombre de convives",
+        "price": 5.25,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "des-moelleux-orange", "kind": "plat", "text": "Moelleux au chocolat à l'orange confite et croûte aux grués de cacao", "tags": ["sans gluten"] },
+          { "rowId": "des-cake-vanille", "kind": "plat", "text": "Cake moelleux vanille, framboises, et rose" },
+          { "rowId": "des-cake-citron", "kind": "plat", "text": "Cake moelleux au citron et son glaçage acidulé" },
+          { "rowId": "des-brookies", "kind": "plat", "text": "Brookies" },
+          { "rowId": "des-tarte", "kind": "plat", "text": "Tarte rustique aux fruits de saison" },
+          { "rowId": "des-cheesecake", "kind": "plat", "text": "Cheesecake au speculoos et coulis de fruits rouges" },
+          { "rowId": "des-tiramisu", "kind": "plat", "text": "Tiramisu en verrines" },
+          { "rowId": "des-mousse", "kind": "plat", "text": "Mousse au chocolat en verrines" },
+          { "rowId": "des-pavlova", "kind": "plat", "text": "Pavlova en verrines" }
+        ]
+      },
+      {
+        "sectionId": "mignardises",
+        "title": "MIGNARDISES",
+        "price": 32,
+        "unitLabel": "par boîte de 20 pièces",
+        "unitKind": "unite",
+        "rows": [
+          { "rowId": "mig-assortiment", "kind": "plat", "text": "Assortiment de mignardises" },
+          { "rowId": "mig-ex", "kind": "exemple", "text": "mini tartelettes au citron, framboises, gianduja, mini moelleux, mini madeleines, mini brookies" }
+        ]
+      }
+    ],
+    "services": {
+      "shown": true,
+      "title": "EXTRAS",
+      "intro": "Service sur place (en fonction du type d'événement et du nombre de convives)",
+      "rows": [
+        { "rowId": "cuisinier", "kind": "plat", "text": "Tarif horaire par cuisinier", "price": 50, "unitLabel": "€/heure (htva)", "unitKind": "unite" },
+        { "rowId": "serveur", "kind": "plat", "text": "Tarif horaire par serveur (4h30 à 5h en moyenne)", "price": 50, "unitLabel": "€/heure (htva)", "unitKind": "unite" },
+        { "rowId": "transport", "kind": "plat", "text": "Transport", "priceNote": "forfait (htva) en fonction de l'adresse" },
+        { "rowId": "location", "kind": "plat", "text": "Location matériel supplémentaire", "priceNote": "à voir ensemble" }
+      ]
+    },
+    "conditions": "Le retrait des commandes et le retour des plats s'effectue à Overijse sauf si une livraison est prévue. Les plats sont présentés dans des jolis plats de service, lesquels doivent être rapportés propres dans les 5 jours après l'événement. Présentation dans des plats jetables également possible sur demande.",
+    "vatLines": [
+      { "label": "Food", "rate": 12 },
+      { "label": "Services", "rate": 21 }
+    ]
+  },
+  {
+    "title": "Offre baptême",
+    "year": 2026,
+    "season": "toute_annee",
+    "prestationType": "buffet_a_emporter",
+    "prestationLabel": "à emporter",
+    "guestsLabel": "à partir de 20 personnes",
+    "sections": [
+      {
+        "sectionId": "convivial",
+        "title": "Formule buffet de baptême Convivial",
+        "intro": "Buffets de baptême sucré, salé",
+        "price": 33,
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "conv-boite", "kind": "plat", "text": "Boîte apéritive (crudités, dip, crackers, fromage, olives)" },
+          { "rowId": "conv-bouchees", "kind": "plat", "text": "Sélection de 3 bouchées salées" },
+          { "rowId": "conv-sandwichs", "kind": "plat", "text": "Assortiment de mini sandwichs garnis, fournis dans des boîtes" },
+          { "rowId": "conv-sandwichs-ex", "kind": "exemple", "text": "Saumon fumé ricotta citronnée, club, américain cressonnette pickles, poulet curry, chèvre coppa roquette, fromage blanc radis fines herbes, hummus légumes grillés, tapenade chèvre légumes, vitello tonnato, brie pommes miel roquette" },
+          { "rowId": "conv-quiches", "kind": "plat", "text": "Quiches ou tartes salées" },
+          { "rowId": "conv-salades", "kind": "plat", "text": "Deux salades de saison" },
+          { "rowId": "conv-salades-ex", "kind": "exemple", "text": "Orzo aux légumes grillés et pesto, salade de lentilles, taboulé de quinoa, salade de crudités, liste non exhaustive" },
+          { "rowId": "conv-desserts", "kind": "plat", "text": "Buffet de desserts (3 choix)" },
+          { "rowId": "conv-desserts-ex", "kind": "exemple", "text": "cake citron, cake marbré, cheesecake, moelleux au chocolat, carrot cake, madeleines, cookies" }
+        ]
+      },
+      {
+        "sectionId": "options",
+        "title": "Envie de compléter votre buffet ?",
+        "intro": "Quelques options peuvent être ajoutées sur demande",
+        "rows": [
+          { "rowId": "opt-antipasti", "kind": "plat", "text": "Boîte antipasti à partager (légumes grillés, mozzarella, fromages, charcuteries, olives, focaccia maison)", "price": 58, "unitLabel": "pour 6 personnes", "unitKind": "unite" },
+          { "rowId": "opt-verrines-salees", "kind": "plat", "text": "Verrines salées", "price": 4.5, "fromPrice": true, "unitLabel": "à la pièce", "unitKind": "piece" },
+          { "rowId": "opt-verrines-sucrees", "kind": "plat", "text": "Verrines sucrées", "price": 3.5, "fromPrice": true, "unitLabel": "à la pièce", "unitKind": "piece" },
+          { "rowId": "opt-croute", "kind": "plat", "text": "Croûte aux fraises", "priceNote": "supplément en fonction du nombre de personnes" },
+          { "rowId": "opt-pavlova", "kind": "plat", "text": "Pavlova aux fruits de saison", "priceNote": "supplément en fonction du nombre de personnes" }
+        ]
+      }
+    ],
+    "services": {
+      "shown": false,
+      "title": "SERVICES",
+      "intro": "Service sur place (en fonction du type d'événement et du nombre de convives)",
+      "rows": [
+        { "rowId": "cuisinier", "kind": "plat", "text": "Tarif horaire par cuisinier", "price": 50, "unitLabel": "€/heure (htva)", "unitKind": "unite" },
+        { "rowId": "serveur", "kind": "plat", "text": "Tarif horaire par serveur (4h30 à 5h en moyenne)", "price": 40, "unitLabel": "€/heure (htva)", "unitKind": "unite" },
+        { "rowId": "transport", "kind": "plat", "text": "Transport", "priceNote": "forfait (htva) en fonction de l'adresse" },
+        { "rowId": "location", "kind": "plat", "text": "Location matériel supplémentaire", "priceNote": "à voir ensemble" }
+      ]
+    },
+    "conditions": "Le retrait des commandes et le retour des plats s'effectue à Overijse sauf si une livraison est prévue. Les plats sont présentés dans des jolis plats de service, lesquels doivent être rapportés propres dans les 5 jours après l'événement. Présentation dans des plats jetables également possible sur demande.",
+    "vatLines": [
+      { "label": "Food à emporter", "rate": 6 },
+      { "label": "Food avec service", "rate": 12 },
+      { "label": "Livraison / location matériel", "rate": 21 }
+    ]
+  },
+  {
+    "title": "Carte à emporter",
+    "year": 2026,
+    "season": "toute_annee",
+    "prestationType": "buffet_a_emporter",
+    "prestationLabel": "Sans service, A emporter ou avec livraison",
+    "minGuests": 8,
+    "guestsLabel": "8, sauf certains éléments, voir détails",
+    "note": "Chaque élément peut se choisir séparément.",
+    "sections": [
+      {
+        "sectionId": "plateaux",
+        "title": "PLATEAUX A PARTAGER",
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "minimum": { "qty": 8, "unit": "personnes" },
+        "rows": [
+          { "rowId": "plateaux-apero", "kind": "plat", "text": "Plateau apéro (crudités de saison, dip, crackers, noix, fromage et olives)", "price": 4.2 },
+          { "rowId": "plateaux-antipasti", "kind": "plat", "text": "Plateau antipasti (printemps/été) (légumes grillés, mozzarella, sélection de fromages et charcuteries, noix, olives et focaccia maison)", "price": 9.5 },
+          { "rowId": "plateaux-gourmand", "kind": "plat", "text": "Plateau gourmand (assortiment de fromages et charcuteries, fruits frais et secs et noix, olives, crackers, pains et condiment)", "price": 13.5 },
+          { "rowId": "plateaux-dinatoire", "kind": "plat", "text": "Plateau gourmand version apéro dinatoire (une version plus généreuse du plateau gourmand, pensée pour constituer le repas)", "price": 19.5 }
+        ]
+      },
+      {
+        "sectionId": "finger-froids",
+        "title": "Finger food / zakouskis froids",
+        "unitLabel": "à la pièce",
+        "unitKind": "piece",
+        "minimum": { "qty": 20, "unit": "pieces", "perSort": true },
+        "rows": [
+          { "rowId": "ff-choux", "kind": "plat", "text": "Choux fourrés au saumon fumé et fromage frais", "price": 2.25 },
+          { "rowId": "ff-melon", "kind": "plat", "text": "Brochette melon jambon basilic", "price": 1.5 },
+          { "rowId": "ff-nectarine", "kind": "plat", "text": "Brochette nectarine jambon mozzarella", "price": 1.75 },
+          { "rowId": "ff-tomates", "kind": "plat", "text": "Brochette tomates confites mozzarella basilic", "price": 1.5 },
+          { "rowId": "ff-tartelette-boeuf", "kind": "plat", "text": "Mini tartelette salée au tartare de boeuf à l'italienne", "price": 3 },
+          { "rowId": "ff-tartelette-saumon", "kind": "plat", "text": "Mini tartelette salée, ricotta au citron, saumon fumé, condiment de saison", "price": 2.8 },
+          { "rowId": "ff-sables", "kind": "plat", "text": "Sablés au comté et mousse de chèvre", "price": 0.9 },
+          { "rowId": "ff-saumon-sesame", "kind": "plat", "text": "Saumon cru snacké en croûte de sésame", "price": 2.2 },
+          { "rowId": "ff-saumon-marine", "kind": "plat", "text": "Saumon mariné (sur cuillère ou avec petite pique)", "price": 2.2 },
+          { "rowId": "ff-thon", "kind": "plat", "text": "Thon cru snacké en croûte de sésame", "price": 2.5 },
+          { "rowId": "ff-blinis", "kind": "plat", "text": "Toast ou blinis à la mousse de truite fumée et oeufs de poisson", "price": 1.75 },
+          { "rowId": "ff-truffe", "kind": "plat", "text": "Truffe de fromage de chèvre avec différents condiments", "price": 1.5 }
+        ]
+      },
+      {
+        "sectionId": "finger-chauds",
+        "title": "Finger food / zakouskis chauds",
+        "unitLabel": "à la pièce",
+        "unitKind": "piece",
+        "minimum": { "qty": 20, "unit": "pieces", "perSort": true },
+        "rows": [
+          { "rowId": "fc-bouchees", "kind": "plat", "text": "Bouchées de la reine", "price": 1.1 },
+          { "rowId": "fc-boulettes", "kind": "plat", "text": "Boulettes croustillantes d'agneau, menthe, citron et sauce yaourt", "price": 2.45 },
+          { "rowId": "fc-poulet", "kind": "plat", "text": "Brochettes de poulet sauce satay", "price": 1.6 },
+          { "rowId": "fc-cigares", "kind": "plat", "text": "Cigares au fromage, thym et miel", "price": 2.2 },
+          { "rowId": "fc-croquettes-parmesan", "kind": "plat", "text": "Croquettes au parmesan", "price": 2.2 },
+          { "rowId": "fc-croquettes-crevettes", "kind": "plat", "text": "Croquettes de crevettes", "price": 2.8 },
+          { "rowId": "fc-falafels", "kind": "plat", "text": "Falafels et sauce tahin", "price": 1.75 },
+          { "rowId": "fc-keftas", "kind": "plat", "text": "Keftas de volaille et sauce yaourt", "price": 2.2 },
+          { "rowId": "fc-naans", "kind": "plat", "text": "Mini naans farcis au boeuf et cheddar", "price": 1.95 },
+          { "rowId": "fc-quiche", "kind": "plat", "text": "Mini quiche lorraine", "price": 1.1 },
+          { "rowId": "fc-sausage", "kind": "plat", "text": "Mini sausage rolls", "price": 1.1 },
+          { "rowId": "fc-pruneaux", "kind": "plat", "text": "Pruneaux au lard", "price": 0.8 },
+          { "rowId": "fc-samossas", "kind": "plat", "text": "Samossas au porc et légumes (servi avec sauce yaourt)", "price": 1.8 }
+        ]
+      },
+      {
+        "sectionId": "verrines-salees",
+        "title": "Verrines salées",
+        "intro": "verrines jetables ou en verre avec caution",
+        "unitLabel": "à la pièce",
+        "unitKind": "piece",
+        "minimum": { "qty": 12, "unit": "pieces", "label": "min par 12" },
+        "rows": [
+          { "rowId": "vs-tomates-crevettes", "kind": "plat", "text": "Verrine tomates crevettes grises épluchées main", "price": 6.75, "tags": ["en saison"] },
+          { "rowId": "vs-truite", "kind": "plat", "text": "Verrine de mousse de truite fumée, pomme verte, radis, écrevisse", "price": 4.75 },
+          { "rowId": "vs-saumon-snacke", "kind": "plat", "text": "Verrine de saumon snacké et crème tahin et tamari, carpaccio de légumes", "price": 4.75 },
+          { "rowId": "vs-saumon-marine", "kind": "plat", "text": "Verrine de saumon mariné, lentilles beluga, salade de blé, framboises", "price": 4.75 },
+          { "rowId": "vs-daurade", "kind": "plat", "text": "Verrine de tartare de daurade, mangue, sésame, grenade, coriandre", "price": 5.25 },
+          { "rowId": "vs-boeuf", "kind": "plat", "text": "Verrine de tartare de boeuf à l'italienne aux tomates séchées et parmesan", "price": 5.7 },
+          { "rowId": "vs-vitello", "kind": "plat", "text": "Verrine de vitello tonnato, roquette, parmesan", "price": 5.9 },
+          { "rowId": "vs-aubergines", "kind": "plat", "text": "Verrine d'aubergines crème tahin, grenade, herbes fraîches", "price": 3.75 },
+          { "rowId": "vs-orzo", "kind": "plat", "text": "Verrine d'orzo aux légumes grillés, pesto de pistaches, roquette et burrata", "price": 3.95 },
+          { "rowId": "vs-ricotta", "kind": "plat", "text": "Verrine de ricotta melon jambon tomates cerises basilic", "price": 4.5, "tags": ["en saison"] },
+          { "rowId": "vs-stracciatella", "kind": "plat", "text": "Verrine de stracciatella (coeur de burrata) tomates cerises roquette pignon de pin (butternut en hiver)", "price": 4.5 },
+          { "rowId": "vs-pasteque", "kind": "plat", "text": "Verrine de pastèque, féta, menthe", "price": 3.5, "tags": ["en saison"] },
+          { "rowId": "vs-asperges", "kind": "plat", "text": "Verrine asperges vertes, féta, citron, pistaches, herbes fraîches", "price": 3.75, "tags": ["en saison"] }
+        ]
+      },
+      {
+        "sectionId": "sandwichs",
+        "title": "Mini sandwichs",
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "minimum": { "qty": 10, "unit": "personnes" },
+        "rows": [
+          { "rowId": "ms-assortiment", "kind": "plat", "text": "Assortiment de mini sandwichs / focaccia (5 pièces / personne), fournis dans des boîtes", "price": 16.25 },
+          { "rowId": "ms-ex", "kind": "exemple", "text": "Saumon fumé ricotta citronnée, club, américain cressonnette pickles, poulet curry, chèvre coppa roquette, fromage blanc radis fines herbes, hummus légumes grillés, tapenade chèvre légumes, vitello tonnato, brie pommes miel roquette" }
+        ]
+      },
+      {
+        "sectionId": "entrees",
+        "title": "Proposition d'entrées",
+        "intro": "servies sur assiettes ou dans des grands plats à partager",
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "ent-vitello", "kind": "plat", "text": "Vitello tonnato, parmesan et salade de roquette", "price": 16.5 },
+          { "rowId": "ent-tartare", "kind": "plat", "text": "Tartare de boeuf à l'italienne, tuile au parmesan", "price": 15.5 },
+          { "rowId": "ent-saumon", "kind": "plat", "text": "Saumon mariné à l'orange, lentilles beluga, condiment framboises et radis", "price": 15.5 },
+          { "rowId": "ent-daurade", "kind": "plat", "text": "Tartare de daurade, condiment avocat, coriandre et salicorne", "price": 16.25 },
+          { "rowId": "ent-burrata", "kind": "plat", "text": "Burrata et accompagnement de saison", "price": 14 },
+          { "rowId": "ent-gambas", "kind": "plat", "text": "Gambas rôties à l'ail, mayonnaise aïoli, salade fraîche", "price": 17.35 },
+          { "rowId": "ent-croquettes", "kind": "plat", "text": "Croquettes de crevettes (à cuire à la friteuse) et salade fraîche", "price": 12 }
+        ]
+      },
+      {
+        "sectionId": "plats",
+        "title": "Proposition de plats",
+        "intro": "idéal pour entre 8 et 16 personnes",
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "pl-boeuf", "kind": "plat", "text": "Filet pur de boeuf, jus de viande, purée de pommes de terre au beurre noisette et légèrement truffée, légumes de saison", "price": 21.75 },
+          { "rowId": "pl-agneau-carre", "kind": "plat", "text": "Carré d'agneau, jus au thym, tomates cerises confites, pommes de terre croustifondantes, haricots verts", "price": 27.75 },
+          { "rowId": "pl-agneau-confit", "kind": "plat", "text": "Agneau confit aux épices et légumes de saison, servi avec de la semoule", "price": 21.25 },
+          { "rowId": "pl-coquelet", "kind": "plat", "text": "Coquelet à l'estragon, petits pois et jardinière de légumes, pommes de terre croustillantes", "price": 16.5 },
+          { "rowId": "pl-gambas", "kind": "plat", "text": "Gambas rôties à l'ail, risotto aux légumes de saison", "price": 24.25 },
+          { "rowId": "pl-bar", "kind": "plat", "text": "Filet de bar rôti, purée de panais à la vanille, légumes de saison, beurre blanc au champagne", "price": 21.75 },
+          { "rowId": "pl-pintade", "kind": "plat", "text": "Balotine de pintade aux champignons, sauce à la crème, pommes de terre croustifondantes, légumes de saison", "price": 18.75 }
+        ]
+      },
+      {
+        "sectionId": "all-in-one",
+        "title": "Proposition de plats « all-in-one » / faciles à réchauffer",
+        "intro": "idéal pour plus de 15 personnes (ou moins)",
+        "unitLabel": "par personne",
+        "unitKind": "convive",
+        "rows": [
+          { "rowId": "aio-agneau", "kind": "plat", "text": "Agneau confit aux épices et légumes de saison, servi avec de la semoule", "price": 21.25 },
+          { "rowId": "aio-tajine", "kind": "plat", "text": "Tajine de poulet aux légumes, pruneaux et amandes, servi avec de la semoule", "price": 17.75 },
+          { "rowId": "aio-parmentier", "kind": "plat", "text": "Hachis parmentier de canard effiloché aux patates douces", "price": 17 },
+          { "rowId": "aio-cannellonis", "kind": "plat", "text": "Cannellonis aux légumes et gratin de mozzarella", "price": 13.5 },
+          { "rowId": "aio-dhal", "kind": "plat", "text": "Dhal aux lentilles et légumes, sauce yaourt, naans à l'ail", "price": 14 },
+          { "rowId": "aio-curry", "kind": "plat", "text": "Curry jaune de grosses crevettes et légumes, riz basmati", "price": 16.5 },
+          { "rowId": "aio-lasagne-bolognaise", "kind": "plat", "text": "Lasagne à la bolognaise et sauce béchamel", "price": 12 },
+          { "rowId": "aio-lasagne-champignons", "kind": "plat", "text": "Lasagne au ragu de champignons, crème épaisse et mozzarella de buffle", "price": 13.5 },
+          { "rowId": "aio-blanquette", "kind": "plat", "text": "Blanquette de veau à l'ancienne et pommes de terre grenailles", "price": 20.75 },
+          { "rowId": "aio-carbonnade", "kind": "plat", "text": "Carbonnade à la flamande, carottes, purée de pommes de terre", "price": 19.5 },
+          { "rowId": "aio-boulettes", "kind": "plat", "text": "Boulettes à la liégeoise, légumes de saison et purée de pommes de terre", "price": 15.5 },
+          { "rowId": "aio-cabillaud", "kind": "plat", "text": "Cabillaud et sa julienne de légumes, sauce à la crème et pommes de terre vapeur au persil", "price": 22.5 },
+          { "rowId": "aio-chili", "kind": "plat", "text": "Chili con carne, guacamole, tacos, cheddar, crème épaisse", "price": 15 }
+        ]
+      },
+      {
+        "sectionId": "gateaux",
+        "title": "Gâteaux",
+        "unitLabel": "gâteau 8 parts",
+        "unitKind": "unite",
+        "rows": [
+          { "rowId": "gat-cheesecake", "kind": "plat", "text": "Cheesecake au speculoos et coulis de fruits rouges", "price": 32 },
+          { "rowId": "gat-moelleux", "kind": "plat", "text": "Moelleux au chocolat", "price": 27, "tags": ["sans gluten"] },
+          { "rowId": "gat-moelleux-orange", "kind": "plat", "text": "Moelleux au chocolat à l'orange confite et croûte aux grués de cacao", "price": 30, "tags": ["sans gluten"] },
+          { "rowId": "gat-cake-vanille", "kind": "plat", "text": "Cake moelleux vanille, framboises, et rose", "price": 28 },
+          { "rowId": "gat-brookies", "kind": "plat", "text": "Brookies", "price": 32 },
+          { "rowId": "gat-carrot", "kind": "plat", "text": "Carrot cake", "price": 28 },
+          { "rowId": "gat-cake-citron", "kind": "plat", "text": "Cake moelleux au citron", "price": 20 },
+          { "rowId": "gat-marbre", "kind": "plat", "text": "Cake marbré", "price": 21 },
+          { "rowId": "gat-croute", "kind": "plat", "text": "Croûte bretonne aux fraises", "price": 38, "tags": ["en saison"] },
+          { "rowId": "gat-pavlova", "kind": "plat", "text": "Vase de pavlova aux fruits exotiques", "price": 7.25, "unitLabel": "entre 12 et 20 personnes, prix par personne", "unitKind": "convive" }
+        ]
+      },
+      {
+        "sectionId": "verrines-sucrees",
+        "title": "Verrines sucrées",
+        "intro": "verrines jetables",
+        "unitLabel": "à la pièce",
+        "unitKind": "piece",
+        "minimum": { "qty": 10, "unit": "pieces", "label": "minimum par 10" },
+        "rows": [
+          { "rowId": "vsu-tiramisu", "kind": "plat", "text": "Tiramisu classique", "price": 3.3 },
+          { "rowId": "vsu-mousse", "kind": "plat", "text": "Mousse au chocolat coeur praliné", "price": 3.1 },
+          { "rowId": "vsu-dacquoise", "kind": "plat", "text": "Dacquoise à la framboise, ganache pistaches, crémeux framboises", "price": 4.1 },
+          { "rowId": "vsu-pavlovas", "kind": "plat", "text": "Pavlovas aux fruits rouges ou exotiques (en fonction de la saison)", "price": 4.5 },
+          { "rowId": "vsu-citron", "kind": "plat", "text": "Crémeux citron, crumble et meringue à l'italienne", "price": 3.1 },
+          { "rowId": "vsu-merveilleux", "kind": "plat", "text": "Merveilleux en verrine", "price": 3.1 }
+        ]
+      },
+      {
+        "sectionId": "mignardises",
+        "title": "Mignardises",
+        "price": 32,
+        "unitLabel": "par boîte de 20 pièces",
+        "unitKind": "unite",
+        "rows": [
+          { "rowId": "mig-assortiment", "kind": "plat", "text": "Assortiment de mignardises" },
+          { "rowId": "mig-ex", "kind": "exemple", "text": "mini tartelettes au citron, framboises, gianduja, mini moelleux, mini madeleines, mini brookies" }
+        ]
+      }
+    ],
+    "services": {
+      "shown": false,
+      "title": "SERVICES",
+      "intro": "Service sur place (en fonction du type d'événement et du nombre de convives)",
+      "rows": [
+        { "rowId": "cuisinier", "kind": "plat", "text": "Tarif horaire par cuisinier", "price": 50, "unitLabel": "€/heure (htva)", "unitKind": "unite" },
+        { "rowId": "serveur", "kind": "plat", "text": "Tarif horaire par serveur (4h30 à 5h en moyenne)", "price": 40, "unitLabel": "€/heure (htva)", "unitKind": "unite" },
+        { "rowId": "transport", "kind": "plat", "text": "Transport", "priceNote": "forfait (htva) en fonction de l'adresse" },
+        { "rowId": "location", "kind": "plat", "text": "Location matériel supplémentaire", "priceNote": "à voir ensemble" }
+      ]
+    },
+    "conditions": "Le retrait des commandes et le retour des plats s'effectue à Overijse sauf si une livraison est prévue. Les plats sont présentés dans des jolis plats de service, lesquels doivent être rapportés propres dans les 5 jours après l'événement. Présentation dans des plats jetables également possible sur demande.",
+    "vatLines": [
+      { "label": "Food", "rate": 12 },
+      { "label": "Services", "rate": 21 }
+    ]
+  }
+]

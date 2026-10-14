@@ -9,12 +9,13 @@ import { GroceryListsModule } from "./grocery-lists/grocery-lists.module";
 import { ClientsModule } from "./clients/clients.module";
 import { LedgerModule } from "./ledger/ledger.module";
 import { OffersModule } from "./offers/offers.module";
+import { OfferDocumentsModule } from "./offer-documents/offer-documents.module";
 import { AuthModule } from "./auth/auth.module";
 import { AssistantModule } from "./assistant/assistant.module";
 import { HealthController } from "./health.controller";
 
 @Module({
-  imports: [ConfigModule, SharedModule, IngredientsModule, RecipesModule, SettingsModule, EventsModule, GroceryListsModule, ClientsModule, LedgerModule, OffersModule, AuthModule, AssistantModule],
+  imports: [ConfigModule, SharedModule, IngredientsModule, RecipesModule, SettingsModule, EventsModule, GroceryListsModule, ClientsModule, LedgerModule, OffersModule, OfferDocumentsModule, AuthModule, AssistantModule],
   controllers: [HealthController],
 })
 export class AppModule {}

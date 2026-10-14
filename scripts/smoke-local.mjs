@@ -3,12 +3,14 @@
 // (default http://localhost:3101) started with inline env only (see readme.md, "Local smoke test"),
 // and an admin whose email and password are given by SMOKE_EMAIL and SMOKE_PASSWORD (defaults smoke@example.com / smoke).
 import { execFileSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const API = process.env.API ?? "http://localhost:3101";
 const ENDPOINT = process.env.DDB_ENDPOINT ?? "http://localhost:8000";
-const TABLE_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "dynamodb-local-tables.sh");
+const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
+const TABLE_SCRIPT = join(SCRIPTS_DIR, "dynamodb-local-tables.sh");
 const awsEnv = { ...process.env, AWS_ACCESS_KEY_ID: "fake", AWS_SECRET_ACCESS_KEY: "fake", AWS_REGION: "eu-north-1", AWS_PAGER: "" };
 const aws = (...args) => execFileSync("aws", ["dynamodb", ...args, "--endpoint-url", ENDPOINT], { env: awsEnv, encoding: "utf8" });
 
@@ -345,6 +347,33 @@ await check("g1 grocery list stores eventIds and range", async (req) => {
   if (r.status !== 201) return false;
   const g = await req("GET", `/api/admin/grocery-lists/${r.body.listId}`);
   return eq(g.body.eventIds, [hoonaEventId]) && eq(g.body.range, { from: "2026-10-12", to: "2026-10-18" }) && g.body.items.length === 1;
+});
+
+// h. Offer documents and brand images
+let docList = [];
+await check("h1 import-2026 then list returns 7", async (req) => {
+  const i = await req("POST", "/api/admin/offer-documents/import-2026");
+  if ((i.status !== 200 && i.status !== 201) || i.body.created?.length !== 7) return false;
+  const r = await req("GET", "/api/admin/offer-documents");
+  docList = r.body ?? [];
+  return r.status === 200 && docList.length === 7 && docList.every((d) => typeof d.documentId === "string" && d.sections.length > 0);
+});
+await check("h2 patch with stale updatedAt is 409 DOCUMENT_CHANGED", async (req) => {
+  const d = docList[0];
+  if (!d) return false;
+  const r = await req("PATCH", `/api/admin/offer-documents/${d.documentId}`, { note: "stale", updatedAt: "2000-01-01T00:00:00.000Z" });
+  return r.status === 409 && r.body.code === "DOCUMENT_CHANGED";
+});
+// The tables were wiped above, so the logo is uploaded first. Needs a reachable S3_BUCKET.
+await check("h3 brand logo upload then get is 200 image/png", async () => {
+  const form = new FormData();
+  form.append("file", new Blob([await readFile(join(SCRIPTS_DIR, "fixtures", "brand", "logo.png"))], { type: "image/png" }), "logo.png");
+  const up = await fetch(`${API}/api/admin/settings/brand/logo`, { method: "POST", headers: { authorization: `Bearer ${token}` }, body: form });
+  const upBody = await up.json().catch(() => undefined);
+  if (!up.ok || upBody?.brandLogoKey !== "brand/logo.png") throw new Error(`upload ${up.status} ${JSON.stringify(upBody)}`);
+  const res = await fetch(`${API}/api/admin/settings/brand/logo`, { headers: { authorization: `Bearer ${token}` } });
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  return res.status === 200 && res.headers.get("content-type")?.startsWith("image/png") === true && bytes.length > 0;
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

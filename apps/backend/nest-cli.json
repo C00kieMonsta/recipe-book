@@ -4,6 +4,11 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "builder": "swc",
-    "typeCheck": true
+    "typeCheck": true,
+    "assets": [
+      {
+        "include": "offer-documents/fixtures/*.json"
+      }
+    ]
   }
 }

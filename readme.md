@@ -122,6 +122,7 @@ All routes are under `/api/admin/*` and protected by a JWT `AdminGuard`. The API
 | `LedgerModule` | `/admin/ledger` | `ta-ledger-{stage}` |
 | `SettingsModule` | `/admin/settings` | `ta-settings-{stage}` |
 | `OffersModule` | `/admin/offers` | `ta-settings-{stage}` (item `settingsId = "offers"`) |
+| `OfferDocumentsModule` | `/admin/offer-documents` | `ta-settings-{stage}` (one item per document, `settingsId = "document:<id>"`) |
 | `AuthModule` | `/admin/auth/login` | none (credentials in env) |
 
 **DynamoDB access pattern:** every module uses a shared `DdbService` that wraps the AWS DocumentClient. All tables use a single string partition key (e.g. `ingredientId`, `recipeId`) with no sort key and pay-per-request billing.
@@ -207,6 +208,20 @@ Both steps are one-off and safe to re-run. `$API` is the API base URL (the `API_
 
    To go back: the same call with `{"invoicing":"app"}`, or Paramètres › Société › Factures.
 
+### After the deploy that adds the offer documents
+
+One-off and safe to re-run. The import creates the seven 2026 brochures ([docs/redesign/09-offer-catalogue.md](docs/redesign/09-offer-catalogue.md)) and skips any title and year already present, so Dalia's edits survive a second run.
+
+1. Load the documents. Either Dalia clicks « Importer les offres 2026 » on Offres › Documents, or the developer runs:
+
+   ```bash
+   API=$API SMOKE_EMAIL=<admin email> SMOKE_PASSWORD=<password> node scripts/import-offer-documents.mjs
+   ```
+
+   The script prints one line per document (« Offre buffets automne hiver 2026 · créée » or « · déjà présente »).
+
+2. Dalia uploads her logo and banner in Paramètres › Société (JPEG or PNG, 5 Mo max; the banner prints in 4:1, 1600 × 400 px advised) and fills in the phone, e-mail, website and accent colour there. The images are stored in the S3 bucket under `brand/logo.*` and `brand/banner.*`. Her real brand images are never committed; `scripts/fixtures/brand/` holds placeholders for the local seed only.
+
 ### Assistant
 
 The Assistant (chat sheet, [docs/redesign/08-assistant.md](docs/redesign/08-assistant.md)) needs an OpenAI key. The key never goes in the repo, the deploy template, `.env` on the server or the logs. The API reads it from one SSM SecureString through the instance role, cached and re-read every 15 minutes.
@@ -278,7 +293,8 @@ The backend connects to real AWS DynamoDB by default. To use DynamoDB Local inst
 | `scripts/setup-s3-cloudfront.sh` | Set up frontend S3/CloudFront manually |
 | `scripts/setup-route53.sh` | DNS configuration |
 | `scripts/attach-cert-cloudfront.sh` | Attach ACM certificate to CloudFront |
-| `scripts/seed-local.mjs` | Seed a realistic week (recipes, clients, events, ledger, two offers) into a local stack |
+| `scripts/seed-local.mjs` | Seed a realistic week (recipes, clients, events, ledger, two offers, the seven offer documents, placeholder brand images) into a local stack |
+| `scripts/import-offer-documents.mjs` | Import the seven 2026 offer documents through the API; skips the ones already present |
 | `scripts/merge-categories.mjs` | Persist the merged recipe category and the category list; dry run without `--apply` |
 
 ## Provisioning the clients and ledger tables on an existing deployment
@@ -292,4 +308,4 @@ The script creates `ta-clients-prod` and `ta-ledger-prod` with point-in-time rec
 
 ## Local smoke test
 
-`scripts/smoke-local.mjs` exercises every endpoint against DynamoDB Local (Java 17, jar from AWS). Start DynamoDB Local on port 8000, create the tables with `scripts/dynamodb-local-tables.sh http://localhost:8000 local`, build the backend, then start the API from a directory with no `.env` and every variable inline (`DDB_ENDPOINT=http://localhost:8000`, the seven `*_TABLE` names with the `-local` suffix, fake AWS keys, `S3_BUCKET`, `ADMIN_CREDENTIALS` with a bcrypt hash for the smoke password, `JWT_SECRET`, `PORT=3101`). Then run `node scripts/smoke-local.mjs`. The script prints PASS or FAIL per check and exits 1 on any failure.
+`scripts/smoke-local.mjs` exercises every endpoint against DynamoDB Local (Java 17, jar from AWS). Start DynamoDB Local on port 8000, create the tables with `scripts/dynamodb-local-tables.sh http://localhost:8000 local`, build the backend, then start the API from a directory with no `.env` and every variable inline (`DDB_ENDPOINT=http://localhost:8000`, the seven `*_TABLE` names with the `-local` suffix, fake AWS keys, `S3_BUCKET`, `ADMIN_CREDENTIALS` with a bcrypt hash for the smoke password, `JWT_SECRET`, `PORT=3101`). Then run `node scripts/smoke-local.mjs`. The script prints PASS or FAIL per check and exits 1 on any failure. The last section (offer documents and brand images) uploads `scripts/fixtures/brand/logo.png` through the API, so `S3_BUCKET` must name a bucket the inline AWS credentials can write to; the other checks do not touch S3.

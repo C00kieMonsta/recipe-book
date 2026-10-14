@@ -6,6 +6,7 @@ import type { ClientsService } from "../clients/clients.service";
 import type { ConfigService } from "../config/config.service";
 import type { EventsService } from "../events/events.service";
 import type { IngredientsService } from "../ingredients/ingredients.service";
+import type { OfferDocumentsService } from "../offer-documents/offer-documents.service";
 import type { OffersService } from "../offers/offers.service";
 import type { RecipesService } from "../recipes/recipes.service";
 import type { SettingsService } from "../settings/settings.service";
@@ -179,7 +180,8 @@ function fakeTools(): AssistantTools {
   const clients = { get: async () => null } as unknown as ClientsService;
   const settings = { get: async () => SETTINGS } as unknown as SettingsService;
   const offers = { getAll: async () => [] } as unknown as OffersService;
-  return new AssistantTools(recipes, ingredients, events, clients, settings, offers);
+  const documents = { getAll: async () => [] } as unknown as OfferDocumentsService;
+  return new AssistantTools(recipes, ingredients, events, clients, settings, offers, documents);
 }
 
 const config = (env: Record<string, string | undefined>): ConfigService =>
@@ -366,7 +368,7 @@ describe("AssistantService", () => {
     const events = await collect(service, ask("Lis tout"));
 
     expect(client.calls).toHaveLength(TOOL_ROUNDS_MAX + 1);
-    for (const params of client.calls.slice(0, TOOL_ROUNDS_MAX)) expect(params.tools?.length).toBe(15);
+    for (const params of client.calls.slice(0, TOOL_ROUNDS_MAX)) expect(params.tools?.length).toBe(17);
     const final = client.calls[TOOL_ROUNDS_MAX];
     expect(final.tools).toEqual([]);
     const finalInput = inputOf(final);

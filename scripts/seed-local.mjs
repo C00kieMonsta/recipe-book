@@ -1,7 +1,12 @@
 // Seeds a realistic week for a Belgian caterer into the local stack. Node 20+, fetch only.
+// Section 8 imports the seven 2026 offer documents and uploads placeholder brand images.
 // API base from API (default http://localhost:3101), credentials from SMOKE_EMAIL and SMOKE_PASSWORD
 // (defaults smoke@example.com / smoke). Refuses to run on a database that already has recipes unless FORCE=1.
 // "Today" is Monday 2026-10-12.
+
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 const API = process.env.API ?? "http://localhost:3101";
 const EMAIL = process.env.SMOKE_EMAIL ?? "smoke@example.com";
@@ -33,6 +38,18 @@ async function must(method, path, body) {
   return r.body;
 }
 
+// Multipart upload of one file under the "file" field, as the brand endpoints expect.
+async function upload(path, filePath, contentType) {
+  const form = new FormData();
+  form.append("file", new Blob([await readFile(filePath)], { type: contentType }), filePath.split("/").pop());
+  const res = await fetch(API + path, { method: "POST", headers: { authorization: `Bearer ${token}` }, body: form });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`POST ${path} -> ${res.status}: ${text}`);
+  return JSON.parse(text);
+}
+
+const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
+
 const round2 = (n) => Math.round(n * 100) / 100;
 const vatOf = (htva, rate) => {
   const vatAmount = round2(htva * rate / 100);
@@ -55,6 +72,11 @@ if (Array.isArray(existingRecipes) && existingRecipes.length > 0 && !FORCE) {
 }
 
 // ── 1. Settings ──────────────────────────────────────────────────────────────
+// Company block of her offer sheets (docs/redesign/workings/offers-source-2026.md); the contact fields and the accent are written in section 8.
+const company = {
+  name: "Table d'Amélie SRL", vatNumber: "BE0766.607.232", address: "Drogenberg 55 A, 3090 Overijse", constitutedOn: "2021-04-12",
+  phone: "0032486.54.60.17", email: "tabledamelie@gmail.com", website: "www.tabledamelie.be", accent: "#E8847A",
+};
 await must("PATCH", "/api/admin/settings", {
   courses: ["Apéritif", "Entrée", "Plat", "Dessert", "Autre"],
   recipeCategories: ["Buffet", "Walking dinner", "Lunch", "Menu semaine"],
@@ -71,7 +93,7 @@ await must("PATCH", "/api/admin/settings", {
     { chargeId: "fc-internet", label: "Internet", category: "abonnement", monthlyAmount: 75 },
     { chargeId: "fc-investissement", label: "Remboursement investissement", category: "remboursement", monthlyAmount: 600, inResult: false },
   ],
-  company: { name: "Table d'Amélie SRL", vatNumber: "BE0766.607.232", address: "Drogenberg 55 A, 3090 Overijse", constitutedOn: "2021-04-12" },
+  company: { name: company.name, vatNumber: company.vatNumber, address: company.address, constitutedOn: company.constitutedOn },
   yearActuals: {
     "2025": { monthly: { "01": 9000.73, "02": 12637.41, "03": 15311.1, "04": 22946.12, "05": 21701.5, "06": 28214.78, "09": 19974.94, "12": 10868.3 } },
   },
@@ -499,6 +521,20 @@ const walking2 = await must("POST", "/api/admin/offers", {
 });
 log("offers ok (2)");
 
+// ── 8. Offer documents ───────────────────────────────────────────────────────
+// Same endpoint as scripts/import-offer-documents.mjs: skips a title and year that already exist.
+const imported = await must("POST", "/api/admin/offer-documents/import-2026");
+const documents = await must("GET", "/api/admin/offer-documents");
+for (const d of documents) log(`document ${d.documentId} · ${d.title} ${d.year}`);
+log(`offer documents ok (${imported.created.length} created, ${imported.skipped.length} skipped)`);
+
+// Placeholder brand images drawn for the seed, never her real files.
+await upload("/api/admin/settings/brand/logo", join(FIXTURES, "brand", "logo.png"), "image/png");
+await upload("/api/admin/settings/brand/banner", join(FIXTURES, "brand", "banner.jpg"), "image/jpeg");
+// The Société section saves company whole, so the contact fields go with the rest.
+const branded = await must("PATCH", "/api/admin/settings", { company });
+log(`brand ok (${branded.brandLogoKey}, ${branded.brandBannerKey}, accent ${branded.company?.accent})`);
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 const [events, recipes, ingredients, ledger, offers] = await Promise.all([
   must("GET", "/api/admin/events"),
@@ -518,5 +554,6 @@ console.log(JSON.stringify({
   brunchPirsonEventId: brunch.eventId,
   buffet1OfferId: buffet1.offerId,
   walkingDinner2OfferId: walking2.offerId,
-  counts: { events: events.length, recipes: recipes.length, ingredients: ingredients.length, entries: ledger.length, offers: offers.length },
+  offerDocumentIds: documents.map((d) => d.documentId),
+  counts: { events: events.length, recipes: recipes.length, ingredients: ingredients.length, entries: ledger.length, offers: offers.length, documents: documents.length },
 }, null, 2));

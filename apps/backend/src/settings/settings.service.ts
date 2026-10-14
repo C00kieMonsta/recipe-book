@@ -1,11 +1,14 @@
 import { ConflictException, Injectable } from "@nestjs/common";
-import type { AppSettings } from "@packages/types";
+import type { AppSettings, BrandKind } from "@packages/types";
 import { DEFAULT_PRESTATION_TYPES, DEFAULT_SUPPLIERS, upgradeCourses } from "@packages/types";
 import { DdbService, UpdateOptions } from "../shared/ddb.service";
 
 const GLOBAL_ID = "global";
 
 export type SettingsUpdate = Partial<Omit<AppSettings, "settingsId" | "updatedAt">> & { updatedAt?: string };
+
+export const brandKeyField = (kind: BrandKind): "brandLogoKey" | "brandBannerKey" =>
+  kind === "logo" ? "brandLogoKey" : "brandBannerKey";
 
 const isConditionFailure = (err: unknown) => (err as { name?: string }).name === "ConditionalCheckFailedException";
 
@@ -78,6 +81,15 @@ export class SettingsService {
       if (isConditionFailure(err)) throw new ConflictException({ code: "SETTINGS_CHANGED" });
       throw err;
     }
+    return this.get();
+  }
+
+  // Removes the attribute outright; the brand endpoints own these keys and never go through a PATCH body.
+  async removeBrandKey(kind: BrandKind): Promise<AppSettings> {
+    const key = { settingsId: GLOBAL_ID };
+    const current = await this.ddb.get(this.table, key);
+    if (!current) return this.get();
+    await this.ddb.update(this.table, key, { [brandKeyField(kind)]: null, updatedAt: new Date().toISOString() });
     return this.get();
   }
 }

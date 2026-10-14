@@ -3,6 +3,7 @@ import { AuthModule } from "../auth/auth.module";
 import { ClientsModule } from "../clients/clients.module";
 import { EventsModule } from "../events/events.module";
 import { IngredientsModule } from "../ingredients/ingredients.module";
+import { OfferDocumentsModule } from "../offer-documents/offer-documents.module";
 import { OffersModule } from "../offers/offers.module";
 import { RecipesModule } from "../recipes/recipes.module";
 import { SettingsModule } from "../settings/settings.module";
@@ -11,7 +12,7 @@ import { AssistantService } from "./assistant.service";
 import { AssistantTools } from "./assistant.tools";
 
 @Module({
-  imports: [AuthModule, RecipesModule, IngredientsModule, EventsModule, ClientsModule, SettingsModule, OffersModule],
+  imports: [AuthModule, RecipesModule, IngredientsModule, EventsModule, ClientsModule, SettingsModule, OffersModule, OfferDocumentsModule],
   controllers: [AssistantController],
   providers: [AssistantService, AssistantTools],
 })

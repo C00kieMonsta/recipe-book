@@ -1,4 +1,4 @@
-import { ConflictException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import {
   DEFAULT_COURSES,
   DEFAULT_PRESTATION_TYPES,
@@ -9,6 +9,8 @@ import {
 import type { AppSettings } from "@packages/types";
 import type { Tables } from "../config/config.service";
 import type { DdbService, UpdateOptions } from "../shared/ddb.service";
+import type { S3Service } from "../shared/s3.service";
+import { SettingsController, brandFileFilter } from "./settings.controller";
 import { SettingsService } from "./settings.service";
 
 type Item = Record<string, unknown>;
@@ -118,13 +120,47 @@ class FakeDdb {
   }
 }
 
+type StoredObject = { body: Buffer; contentType: string };
+
+class FakeS3 {
+  objects = new Map<string, StoredObject>();
+  deleted: string[] = [];
+
+  async upload(key: string, body: Buffer, contentType: string) {
+    this.objects.set(key, { body, contentType });
+  }
+
+  async get(key: string) {
+    const object = this.objects.get(key);
+    if (!object) throw Object.assign(new Error("The specified key does not exist."), { name: "NoSuchKey" });
+    return { ...object };
+  }
+
+  async delete(key: string) {
+    this.deleted.push(key);
+    this.objects.delete(key);
+  }
+}
+
+// The two express calls the brand GET makes.
+class FakeResponse {
+  headers: Record<string, string> = {};
+  sent?: Buffer;
+  set(name: string, value: string) { this.headers[name] = value; }
+  send(body: Buffer) { this.sent = body; }
+}
+
 const GLOBAL_KEY = { settingsId: "global" };
 
 function build() {
   const ddb = new FakeDdb();
+  const s3 = new FakeS3();
   const service = new SettingsService(ddb as unknown as DdbService);
-  return { ddb, service };
+  const controller = new SettingsController(service, s3 as unknown as S3Service);
+  return { ddb, s3, service, controller };
 }
+
+const image = (mimetype: string, size = 16) => ({ mimetype, buffer: Buffer.alloc(size, 1) });
 
 describe("SettingsService.get", () => {
   it("returns every default when no item exists yet", async () => {
@@ -409,5 +445,123 @@ describe("SettingsService.update with the loaded updatedAt", () => {
     ddb.failNextUpdateWith = new Error("throttled");
 
     await expect(service.update({ courses: ["Entrée"], updatedAt: "2026-01-01T00:00:00.000Z" })).rejects.toThrow("throttled");
+  });
+});
+
+describe("SettingsController brand assets", () => {
+  it("refuses a HEIC through the filter and answers 400 when no file reached the handler", async () => {
+    const { controller, s3 } = build();
+    const accepted: boolean[] = [];
+    brandFileFilter(undefined, { mimetype: "image/heic" }, (_err, accept) => accepted.push(accept));
+    brandFileFilter(undefined, { mimetype: "image/png" }, (_err, accept) => accepted.push(accept));
+    expect(accepted).toEqual([false, true]);
+
+    const call = controller.uploadBrand("logo", undefined);
+
+    await expect(call).rejects.toBeInstanceOf(BadRequestException);
+    await call.catch((err: BadRequestException) => {
+      expect(err.message).toBe("Image manquante ou format non pris en charge (JPEG ou PNG)");
+    });
+    await expect(controller.uploadBrand("logo", image("image/heic"))).rejects.toBeInstanceOf(BadRequestException);
+    expect(s3.objects.size).toBe(0);
+  });
+
+  it("refuses an unknown kind", async () => {
+    const { controller } = build();
+
+    await expect(controller.uploadBrand("favicon", image("image/png"))).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.removeBrand("favicon")).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.getBrand("favicon", new FakeResponse() as never)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("writes brand/logo.png and the key, with the extension taken from the mimetype", async () => {
+    const { controller, ddb, s3, service } = build();
+
+    const result = await controller.uploadBrand("logo", image("image/png", 200));
+
+    expect(result.brandLogoKey).toBe("brand/logo.png");
+    expect(result).not.toHaveProperty("brandBannerKey");
+    expect(s3.objects.get("brand/logo.png")).toEqual({ body: Buffer.alloc(200, 1), contentType: "image/png" });
+    expect(s3.deleted).toEqual([]);
+    expect(ddb.raw("settings", GLOBAL_KEY)?.brandLogoKey).toBe("brand/logo.png");
+    expect((await service.get()).brandLogoKey).toBe("brand/logo.png");
+  });
+
+  it("a second upload as JPEG deletes brand/logo.png and writes brand/logo.jpg", async () => {
+    const { controller, s3 } = build();
+    await controller.uploadBrand("logo", image("image/png"));
+
+    const result = await controller.uploadBrand("logo", image("image/jpeg"));
+
+    expect(result.brandLogoKey).toBe("brand/logo.jpg");
+    expect(s3.deleted).toEqual(["brand/logo.png"]);
+    expect([...s3.objects.keys()]).toEqual(["brand/logo.jpg"]);
+    expect(s3.objects.get("brand/logo.jpg")?.contentType).toBe("image/jpeg");
+  });
+
+  it("keeps the object when the same key is uploaded again", async () => {
+    const { controller, s3 } = build();
+    await controller.uploadBrand("banner", image("image/jpeg", 10));
+
+    await controller.uploadBrand("banner", image("image/jpeg", 20));
+
+    expect(s3.deleted).toEqual([]);
+    expect(s3.objects.get("brand/banner.jpg")?.body.length).toBe(20);
+  });
+
+  it("delete removes the object and the attribute", async () => {
+    const { controller, ddb, s3 } = build();
+    await controller.uploadBrand("logo", image("image/png"));
+    await controller.uploadBrand("banner", image("image/jpeg"));
+
+    const result = await controller.removeBrand("logo");
+
+    expect(result).not.toHaveProperty("brandLogoKey");
+    expect(result.brandBannerKey).toBe("brand/banner.jpg");
+    expect(s3.deleted).toEqual(["brand/logo.png"]);
+    expect(s3.objects.has("brand/logo.png")).toBe(false);
+    expect(ddb.raw("settings", GLOBAL_KEY)).not.toHaveProperty("brandLogoKey");
+    expect(ddb.updates.at(-1)?.fields).toEqual({ brandLogoKey: null, updatedAt: result.updatedAt });
+  });
+
+  it("delete without a key touches nothing and still returns the settings", async () => {
+    const { controller, ddb, s3 } = build();
+
+    const result = await controller.removeBrand("banner");
+
+    expect(result.settingsId).toBe("global");
+    expect(s3.deleted).toEqual([]);
+    expect(ddb.updates).toHaveLength(0);
+  });
+
+  it("get is 404 without a key and streams the object with a private cache header otherwise", async () => {
+    const { controller, s3 } = build();
+
+    await expect(controller.getBrand("logo", new FakeResponse() as never)).rejects.toBeInstanceOf(NotFoundException);
+
+    await controller.uploadBrand("logo", image("image/png", 8));
+    const res = new FakeResponse();
+    await controller.getBrand("logo", res as never);
+
+    expect(res.headers).toEqual({ "Content-Type": "image/png", "Cache-Control": "private, max-age=86400" });
+    expect(res.sent).toEqual(Buffer.alloc(8, 1));
+
+    s3.objects.clear();
+    await expect(controller.getBrand("logo", new FakeResponse() as never)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("company.accent round-trips and brandLogoKey in a PATCH body is dropped", async () => {
+    const { controller, ddb } = build();
+    await controller.uploadBrand("logo", image("image/png"));
+    const company = { name: "Table d'Amélie", vatNumber: "BE0123", address: "Rue X", phone: "0470 00 00 00", accent: "#e8847a" };
+
+    const result = await controller.update({ company, brandLogoKey: "x", brandBannerKey: "y" });
+
+    expect(result.company).toEqual(company);
+    expect(result.brandLogoKey).toBe("brand/logo.png");
+    expect(result).not.toHaveProperty("brandBannerKey");
+    expect(ddb.raw("settings", GLOBAL_KEY)?.brandLogoKey).toBe("brand/logo.png");
+    expect((await controller.get()).company?.accent).toBe("#e8847a");
+    await expect(controller.update({ company: { ...company, accent: "red" } })).rejects.toBeInstanceOf(BadRequestException);
   });
 });

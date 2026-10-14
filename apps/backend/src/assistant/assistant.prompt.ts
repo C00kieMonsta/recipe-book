@@ -19,6 +19,21 @@ export interface CatalogueOffer {
   lines: CatalogueOfferLine[];
 }
 
+// Titles and formula prices only, so the prompt stays small.
+export interface CatalogueDocumentSection {
+  title: string;
+  price?: number;
+  unitLabel?: string;
+}
+
+export interface CatalogueDocument {
+  documentId: string;
+  title: string;
+  year: number;
+  season?: string;
+  sections: CatalogueDocumentSection[];
+}
+
 export interface CatalogueSummary {
   today: string;
   isoWeek: string;
@@ -27,6 +42,7 @@ export interface CatalogueSummary {
   people: { personId: string; name: string }[];
   suppliers: string[];
   offers: CatalogueOffer[];
+  documents: CatalogueDocument[];
   vatRates: number[];
   defaultFoodVatRate: number;
   defaultExtrasVatRate: number;
@@ -47,7 +63,7 @@ export const NO_CONTEXT = "Aucun enregistrement n'est affiché.";
 const WHO = `Vous êtes l'assistant de l'application d'administration de La Table d'Amélie, le service traiteur de Dalia, en Belgique. Vous parlez à Dalia et vous la vouvoyez.`;
 
 const WHAT = `## Ce que vous faites
-1. Lire les recettes, les ingrédients, les événements, les clients et les offres avec les outils de lecture (search_recipes, get_recipe, search_ingredients, list_events, get_event, get_catalogue_summary).
+1. Lire les recettes, les ingrédients, les événements, les clients, les offres et les documents d'offre avec les outils de lecture (search_recipes, get_recipe, search_ingredients, list_events, get_event, get_catalogue_summary, get_offer_document, search_offer_rows).
 2. Proposer des modifications avec les outils propose_* : une nouvelle recette, un nouvel ingrédient, un nouvel événement, une modification d'événement, une ligne ajoutée, modifiée ou retirée, une tâche.
 3. Estimer un prix avec quote_price.`;
 
@@ -67,6 +83,9 @@ const RULES = `## Règles
 const QUOTE_SHAPE = `## Présentation d'une estimation
 Une ligne par groupe « 50 convives · Menu XYZ · 55,00 € HTVA par convive · 2 750,00 € », puis les extras, puis « Total HTVA … · TVA … · Total TVAC … · Coût matières … · Marge … % », puis vos hypothèses (prix suggéré, recette inconnue, correspondance de nom utilisée). Une estimation ne crée aucune proposition.`;
 
+export const DOCUMENTS_NOTE =
+  "Les documents d'offre sont les brochures publiques ; leurs prix sont HTVA et ne se modifient que par l'utilisateur.";
+
 export function buildInstructions(input: InstructionsInput): string {
   return [
     WHO,
@@ -74,7 +93,7 @@ export function buildInstructions(input: InstructionsInput): string {
     WHAT,
     RULES,
     QUOTE_SHAPE,
-    `## Catalogue\n${input.catalogue}`,
+    `## Catalogue\n${input.catalogue}\n${DOCUMENTS_NOTE}`,
     `## Contexte\n${input.context ?? NO_CONTEXT}`,
   ].join("\n\n");
 }
@@ -88,6 +107,19 @@ function offerLine(offer: CatalogueOffer): string {
   return `- ${offer.name} (offerId ${offer.offerId}, ${price}) : ${lines || "aucune ligne"}`;
 }
 
+const SEASON_LABELS: Record<string, string> = { printemps_ete: "printemps-été", automne_hiver: "automne-hiver", toute_annee: "toute l'année" };
+
+function documentSection(section: CatalogueDocumentSection): string {
+  if (section.price === undefined) return section.title;
+  return `${section.title} ${fmtEur(section.price)} ${section.unitLabel ?? "par personne"}`;
+}
+
+function documentLine(doc: CatalogueDocument): string {
+  const season = doc.season ? `, ${SEASON_LABELS[doc.season] ?? doc.season}` : "";
+  const sections = doc.sections.map(documentSection).join(" ; ");
+  return `- ${doc.title} ${doc.year} (documentId ${doc.documentId}${season}) : ${sections || "aucune section"}`;
+}
+
 export function formatCatalogue(summary: CatalogueSummary): string {
   const prestations = summary.prestationTypes.map((t) => `${t.label} (clé ${t.key}, TVA ${t.vatRate} %)`).join(", ");
   const people = summary.people.map((p) => `${p.name} (personId ${p.personId})`).join(", ");
@@ -98,6 +130,7 @@ export function formatCatalogue(summary: CatalogueSummary): string {
     `Fournisseurs : ${summary.suppliers.join(", ") || "aucun"}.`,
     `Taux de TVA possibles : ${summary.vatRates.join(", ")} %. Nourriture par défaut ${summary.defaultFoodVatRate} %, livraison et service ${summary.defaultExtrasVatRate} %.`,
     `Offres :\n${summary.offers.map(offerLine).join("\n") || "- aucune"}`,
+    `Documents d'offre :\n${summary.documents.map(documentLine).join("\n") || "- aucun"}`,
   ].join("\n");
 }
 
