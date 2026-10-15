@@ -1,5 +1,5 @@
 import type { AppEvent, GroceryListItem, Ingredient, Recipe } from "@packages/types";
-import { datesOfIsoWeek, isoWeekOf, longDayLabel, rangeLabel } from "@packages/types";
+import { addDays, datesOfIsoWeek, isoWeekOf, longDayLabel, rangeLabel } from "@packages/types";
 
 export type GroceryRange = { from: string; to: string };
 export type GroceryDraftItem = Omit<GroceryListItem, "checked">;
@@ -18,6 +18,28 @@ function inRange(date: string, opts?: BuildGroceryOptions): boolean {
 
 export function selectEventsInRange(events: AppEvent[], opts?: BuildGroceryOptions): AppEvent[] {
   return events.filter((ev) => inRange(ev.date, opts));
+}
+
+export const UPCOMING_DAYS = 120;
+
+// The window of the « À venir » preset: today to today + 120 days.
+export function upcomingRange(today: string): GroceryRange {
+  return { from: today, to: addDays(today, UPCOMING_DAYS) };
+}
+
+export function sortEventsByDateThenName(events: AppEvent[]): AppEvent[] {
+  return [...events].sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name, "fr"));
+}
+
+export function foldAccents(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+// True when the query, accents folded, appears in the event name or the client name.
+export function eventMatchesSearch(ev: AppEvent, clientName: string | undefined, query: string): boolean {
+  const q = foldAccents(query);
+  if (!q) return true;
+  return foldAccents(ev.name).includes(q) || (clientName !== undefined && foldAccents(clientName).includes(q));
 }
 
 // Aggregates scaled recipe quantities per ingredient and unit, sorted by supplier then name.

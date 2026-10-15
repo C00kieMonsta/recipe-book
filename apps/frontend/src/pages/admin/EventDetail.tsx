@@ -107,6 +107,7 @@ import TaskDialog, { type TaskDialogValue } from "@/components/admin/TaskDialog"
 import MoveToDayMenu from "@/components/admin/MoveToDayMenu";
 import AttachmentsSection from "@/components/admin/AttachmentsSection";
 import NewRecipeDialog from "@/components/admin/NewRecipeDialog";
+import GroceryFromEventsDialog from "@/components/admin/GroceryFromEventsDialog";
 import { useAssistantEnabled, useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
 import { PaidPopover } from "@/pages/admin/comptes/Journal";
 import { jsPDF } from "jspdf";
@@ -201,6 +202,7 @@ export default function EventDetail() {
   const [offerName, setOfferName] = useState("");
   const [newClient, setNewClient] = useState<{ name: string } | null>(null);
   const [taskDialog, setTaskDialog] = useState<TaskDialogState | null>(null);
+  const [groceryOpen, setGroceryOpen] = useState(false);
   const [pickerTaskId, setPickerTaskId] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
   const moveAnchorRef = useRef<HTMLSpanElement>(null);
@@ -786,6 +788,7 @@ export default function EventDetail() {
       : []),
     ...(event.clientId && event.templateId ? [{ label: "Mettre à jour le modèle", onClick: updateTemplate }] : []),
     { label: "Enregistrer comme offre type", onClick: () => { setOfferName(event.name); setDialog({ kind: "offer" }); } },
+    { label: "Liste de courses pour cet événement…", onClick: () => setGroceryOpen(true) },
     { label: "Proposition de menu (PDF)", onClick: exportMenu },
     { label: "Exporter les recettes (PDF)", onClick: exportRecipesPdf },
     ...(assistant ? [{ label: "Demander à l'assistant", onClick: () => { openAssistant(); composeInAssistant(`À propos de ${event.name} : `); } }] : []),
@@ -1395,6 +1398,13 @@ export default function EventDetail() {
       >
         <p className="text-muted-foreground">Cette action est irréversible.</p>
       </Dialog>
+
+      <GroceryFromEventsDialog
+        open={groceryOpen}
+        onClose={() => setGroceryOpen(false)}
+        initialEventIds={[event.eventId]}
+        onCreated={(listId) => { setGroceryOpen(false); navigate(`/grocery-list?id=${listId}`); }}
+      />
 
       <TaskDialog
         open={taskDialog !== null}

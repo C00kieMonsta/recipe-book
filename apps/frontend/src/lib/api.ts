@@ -71,6 +71,12 @@ export function setToken(token: string | null, persist = false) {
   (persist ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
 }
 
+export function isTokenPersisted(): boolean {
+  return localStorage.getItem(TOKEN_KEY) !== null;
+}
+
+export interface AuthTokenResponse { ok: boolean; token: string; expiresAt: string }
+
 // Sends the browser to the login page and keeps the current page so it reopens after signing in.
 function handleUnauthorized() {
   setToken(null);
@@ -219,6 +225,10 @@ function importQuery(options?: Partial<ImportIngredientsOptions>): string {
 export const api = {
   health: {
     get: async (): Promise<HealthResponse> => parseResponse<HealthResponse>(await fetch(HEALTH_URL)),
+  },
+  auth: {
+    // The bearer token in the header is the whole request; a 401 here goes to the login page like any other call.
+    refresh: () => request<AuthTokenResponse>("/admin/auth/refresh", { method: "POST" }),
   },
   ingredients: {
     list: cached("ingredients", () => request<Ingredient[]>("/admin/ingredients")),

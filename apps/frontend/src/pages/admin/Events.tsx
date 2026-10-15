@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { Link } from "react-router-dom";
-import { Plus, Search, ArrowUpDown, Printer, X } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Plus, Search, ArrowUpDown, Printer, X, ShoppingCart } from "lucide-react";
 import type { AppEvent, Client, PrestationTypeSetting } from "@packages/types";
 import { fmtEur, signedRevenue } from "@packages/types";
 import { api } from "@/lib/api";
@@ -8,6 +8,7 @@ import { dayMonthShortLabel } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
 import { useAssistantApplied } from "@/hooks/use-assistant-applied";
 import { usePagination } from "@/hooks/use-pagination";
+import GroceryFromEventsDialog from "@/components/admin/GroceryFromEventsDialog";
 import {
   PageHeader,
   StatusTag,
@@ -48,8 +49,10 @@ export default function Events() {
   const [clientFilter, setClientFilter] = useState("");
   const [prestationFilter, setPrestationFilter] = useState("");
   const [sortDir, setSortDir] = useState<SortDir | null>(null);
+  const [groceryOpen, setGroceryOpen] = useState(false);
   const sortMenu = useMenu();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   useEffect(() => {
     api.events.list()
@@ -144,10 +147,22 @@ export default function Events() {
         title="Événements"
         meta={`${events.length} événement${events.length > 1 ? "s" : ""}`}
         actions={
-          <Button as={Link} to="/events/new" variant="primary" size="lg" icon={<Plus />}>
-            <span className="hidden sm:inline">Nouvel événement</span><span className="sm:hidden">Nouveau</span>
-          </Button>
+          <>
+            <Button variant="default" size="lg" icon={<ShoppingCart />} aria-label="Liste de courses" onClick={() => setGroceryOpen(true)}>
+              <span className="hidden sm:inline">Liste de courses</span>
+            </Button>
+            <Button as={Link} to="/events/new" variant="primary" size="lg" icon={<Plus />}>
+              <span className="hidden sm:inline">Nouvel événement</span><span className="sm:hidden">Nouveau</span>
+            </Button>
+          </>
         }
+      />
+
+      <GroceryFromEventsDialog
+        open={groceryOpen}
+        onClose={() => setGroceryOpen(false)}
+        initialPreset="avenir"
+        onCreated={(listId) => { setGroceryOpen(false); navigate(`/grocery-list?id=${listId}`); }}
       />
 
       <div data-tour="events-list">
