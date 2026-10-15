@@ -101,9 +101,9 @@ function shiftYm(ym: string, delta: number): string {
 }
 
 // Where the line came from; hand entries show nothing. Older CSV imports carry only `imported`.
-function SourceTag({ entry }: { entry: LedgerEntry }) {
+function SourceTag({ entry, className = "ml-2" }: { entry: LedgerEntry; className?: string }) {
   const label = entry.source === "depot" ? "dépôt" : entry.source === "import_csv" || entry.imported ? "import" : null;
-  return label ? <Tag colour="gray" className="ml-2">{label}</Tag> : null;
+  return label ? <Tag colour="gray" className={className}>{label}</Tag> : null;
 }
 
 // Paperclip of a line with an attached invoice; stops the row click.
@@ -549,12 +549,12 @@ export default function Journal() {
           <div key={e.entryId} className="flex items-center gap-1">
             <ListRow
               className="min-w-0 flex-1"
-              title={<>{e.label}<SourceTag entry={e} /></>}
+              title={e.label}
               subtitle={[e.number ? `N° ${e.number}` : "", fmtDateFr(e.date), book === "ventes" ? typeOf(e) : kindLabel(e)].filter(Boolean).join(" · ")}
-              trailing={<><span className="text-foreground">{fmtEur(e.totalTvac)}</span><PaidTag paid={e.paid} /></>}
+              trailing={<span className="flex flex-col items-end gap-0.5"><span className="text-foreground">{fmtEur(e.totalTvac)}</span><span className="flex gap-1"><SourceTag entry={e} className="" /><PaidTag paid={e.paid} /></span></span>}
               onClick={() => setForm({ entry: e })}
             />
-            <PieceButton entry={e} />
+            <span className="flex w-7 shrink-0 justify-center touch:w-11"><PieceButton entry={e} /></span>
           </div>
         ))}
       </div>

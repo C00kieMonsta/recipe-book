@@ -309,7 +309,7 @@ export function editInboxItem(id: string, field: InboxField, value: InboxFieldVa
     const cleared = new Set<InboxFlagCode>([...CLEARS[field], "low_confidence"]);
     const flags = item.flags.filter((f) => !cleared.has(f.code));
     const replace = field === "number" || field === "book" ? false : item.replace;
-    return { ...item, entry, flags, replace, state: deriveState({ entry, flags, replace }) };
+    return { ...item, entry, flags, replace, error: undefined, state: deriveState({ entry, flags, replace }) };
   });
 }
 
@@ -344,7 +344,8 @@ export async function confirmInboxItems(ids: string[]): Promise<InboxConfirmSumm
   } catch (e) {
     if (isAssistantDisabled(e)) emit({ ...state, disabled: true });
     const message = inboxErrorMessage(e);
-    emit({ ...state, items: state.items.map((i) => (pickedIds.has(i.id) ? { ...i, busy: false, state: "error", error: message } : i)) });
+    // A transport failure keeps the edited rows resendable; only the message changes.
+    emit({ ...state, items: state.items.map((i) => (pickedIds.has(i.id) ? { ...i, busy: false, error: message, state: deriveState(i) } : i)) });
     summary.errors = picked.length;
     return summary;
   }

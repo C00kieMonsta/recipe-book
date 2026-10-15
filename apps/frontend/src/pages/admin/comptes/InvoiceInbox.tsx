@@ -169,6 +169,7 @@ function InlineFields({ item, suppliers }: { item: InboxItem; suppliers: string[
           <MoneyInput label="TVAC" value={entry.totalTvac} onCommit={(n) => edit("totalTvac", n)} />
         </label>
         <span className="text-sm text-muted-foreground">{entry.vatRate} %</span>
+        {entry.book === "ventes" && entry.kind === "note_de_credit" && <span className="text-sm text-muted-foreground">Montants saisis en positif, enregistrés en négatif.</span>}
         {entry.book === "ventes" && <Checkbox checked={entry.paid} onChange={(v) => edit("paid", v)} label="Payé" className="-mx-1" />}
         {entry.book === "achats" && (
           <label className={cn(FIELD, "min-w-[10rem]")}>
@@ -192,7 +193,7 @@ function RowNotes({ item }: { item: InboxItem }) {
       {sentence && <p className="text-sm text-muted-foreground">{sentence}</p>}
       {item.entry && gap >= 0.011 && item.state !== "added" && <p className="text-sm text-danger">HTVA + TVA diffère de TVAC de {fmtEur(gap)}.</p>}
       {problem && gap < 0.011 && item.state === "review" && <p className="text-sm text-danger">{problem}</p>}
-      {item.state === "error" && item.error && <p className="text-sm text-danger">{item.error}</p>}
+      {item.error && <p className="text-sm text-danger">{item.error}</p>}
     </>
   );
 }
@@ -205,12 +206,14 @@ interface Actions {
 
 function RowActions({ item, actions, size = "sm" }: { item: InboxItem; actions: Actions; size?: "sm" | "md" }) {
   const problem = item.entry ? entryProblem(item.entry) : "Lecture en cours";
-  const canAdd = (item.state === "ready" || item.state === "review") && !problem && !item.busy;
+  // Zeros drafted for unread amounts pass entryProblem; the flag keeps the row out of the Journal until an amount is typed.
+  const blocked = problem ?? (item.flags.some((f) => f.code === "missing_amount") ? "Montants illisibles, complétez-les." : null);
+  const canAdd = (item.state === "ready" || item.state === "review") && !blocked && !item.busy;
   if (item.state === "added") {
     return (
       <div className="flex flex-wrap items-center justify-end gap-1">
         <Button as={Link} to={journalLink(item)} variant="link" size={size}>Voir</Button>
-        <IconButton size={size} aria-label="Ouvrir" title="Ouvrir" icon={<ExternalLink />} onClick={() => actions.onOpen(item)} />
+        <Button variant="link" size={size} icon={<ExternalLink />} onClick={() => actions.onOpen(item)}>Ouvrir</Button>
       </div>
     );
   }
@@ -223,9 +226,9 @@ function RowActions({ item, actions, size = "sm" }: { item: InboxItem; actions: 
         <Button variant="link" size={size} onClick={() => setInboxReplace(item.id, true)}>Remplacer</Button>
       )}
       {(item.state === "ready" || item.state === "review") && (
-        <Button variant="default" size={size} disabled={!canAdd} title={problem ?? undefined} onClick={() => actions.onAdd(item)}>{item.busy ? "Ajout…" : "Ajouter"}</Button>
+        <Button variant="default" size={size} disabled={!canAdd} title={blocked ?? undefined} onClick={() => actions.onAdd(item)}>{item.busy ? "Ajout…" : "Ajouter"}</Button>
       )}
-      <IconButton size={size} aria-label="Ouvrir" title="Ouvrir" icon={<ExternalLink />} onClick={() => actions.onOpen(item)} />
+      <Button variant="link" size={size} icon={<ExternalLink />} onClick={() => actions.onOpen(item)}>Ouvrir</Button>
       <IconButton size={size} aria-label="Ignorer" title="Ignorer" icon={<X />} disabled={item.busy} onClick={() => actions.onIgnore(item)} />
     </div>
   );
@@ -267,6 +270,9 @@ function ItemSheet({ item, suppliers, actions, onClose }: { item: InboxItem; sup
               <Property kind="text" label="Fournisseur" value={entry.supplier ?? ""} placeholder="Aucun" sub={suppliers.length ? `Paramètres : ${suppliers.join(", ")}` : undefined} onSave={edit("supplier")} />
             )}
           </PropertyList>
+        )}
+        {entry && entry.book === "ventes" && entry.kind === "note_de_credit" && (
+          <p className="mt-1 text-sm text-muted-foreground">Montants saisis en positif, enregistrés en négatif.</p>
         )}
       </div>
       <div className="mt-3 flex shrink-0 flex-wrap justify-end gap-2 px-4 pt-3">
@@ -426,14 +432,18 @@ export default function InvoiceInbox() {
         const entry = item.entry;
         const summary: ReactNode[] = [fmtSize(item.size)];
         if (entry) summary.push(entry.book === "ventes" ? "Ventes" : "Achats", fmtDateFr(entry.date), fmtEur(entry.totalTvac));
-        if (item.state === "error" && item.error) summary.push(item.error);
         return (
           <ListRow
             key={item.id}
             icon={<KindIcon contentType={item.contentType} />}
             title={item.name}
             subtitle={summary.filter(Boolean).join(" · ")}
-            trailing={<StateTag state={item.state} />}
+            trailing={(
+              <span className="flex items-center gap-1">
+                {item.error && <Tag colour="red" title={item.error}>Échec</Tag>}
+                <StateTag state={item.state} />
+              </span>
+            )}
             onClick={() => setSheetId(item.id)}
           />
         );
