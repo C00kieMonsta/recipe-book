@@ -5,7 +5,8 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Recipe, Ingredient, RecipePricing, RecipeIngredient } from "@packages/types";
 import { UNITS_QTY, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS, DEFAULT_COURSES, VAT_RATES, fmtEur, recipeCategoryOf, stripStepMarkup } from "@packages/types";
-import { api, getToken, API_BASE } from "@/lib/api";
+import { api, API_BASE } from "@/lib/api";
+import { loadImageForPdf } from "@/lib/pdf-images";
 import { publishAssistantSelection } from "@/lib/assistant-context";
 import { useToast } from "@/hooks/use-toast";
 import { useAssistantApplied } from "@/hooks/use-assistant-applied";
@@ -56,11 +57,11 @@ async function exportPdf(recipe: Recipe, ingredients: Ingredient[]) {
 
   if (recipe.photos?.length > 0 && recipe.photos[0].key) {
     try {
-      const { dataUrl, width, height } = await loadPhotoForPdf(recipe.photos[0].key);
+      const { dataUrl, format, width, height } = await loadImageForPdf(`${API_BASE}/admin/recipes/photo?key=${encodeURIComponent(recipe.photos[0].key)}`);
       const maxW = 180;
       const maxH = 60;
       const ratio = Math.min(maxW / width, maxH / height);
-      doc.addImage(dataUrl, "JPEG", m, y, width * ratio, height * ratio);
+      doc.addImage(dataUrl, format, m, y, width * ratio, height * ratio);
       y += height * ratio + 6;
     } catch { /* skip photo on error */ }
   }
@@ -123,28 +124,6 @@ async function exportPdf(recipe: Recipe, ingredients: Ingredient[]) {
   }
 
   doc.save(`${recipe.name.replace(/[^a-zA-Z0-9àâéèêëïîôùûüç\s-]/g, "")}.pdf`);
-}
-
-async function loadPhotoForPdf(key: string): Promise<{ dataUrl: string; width: number; height: number }> {
-  const token = getToken();
-  const res = await fetch(`${API_BASE}/admin/recipes/photo?key=${encodeURIComponent(key)}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) throw new Error("Failed to load photo");
-  const blob = await res.blob();
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-  const { width, height } = await new Promise<{ width: number; height: number }>((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve({ width: img.width, height: img.height });
-    img.onerror = reject;
-    img.src = dataUrl;
-  });
-  return { dataUrl, width, height };
 }
 
 export default function RecipeDetail() {

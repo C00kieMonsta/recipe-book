@@ -434,6 +434,12 @@ describe("documentBlocks", () => {
     expect(sections[1]).toMatchObject({ title: "PLATEAUX A PARTAGER", unit: "par personne", minimum: "minimum 8 personnes" });
     expect((sections[1] as { price?: string }).price).toBeUndefined();
   });
+  it("leaves the band unit empty on a price list without unitLabel and prints every row unit", () => {
+    const section: DocSection = { ...carteSection(), unitLabel: undefined, unitKind: undefined, rows: [plat("tarte", "Tarte", { price: 12, unitLabel: "gâteau 8 parts", unitKind: "unite" })] };
+    const out = documentBlocks(document({ sections: [section] }), company);
+    expect(out.find((b) => b.kind === "section")).not.toHaveProperty("unit");
+    expect(out.find((b) => b.kind === "row")).toMatchObject({ unit: "gâteau 8 parts" });
+  });
   it("prints exemple rows indented with the prefix and no price", () => {
     const ex = blocks.find((b) => b.kind === "row" && b.style === "exemple");
     expect(ex).toEqual({ kind: "row", style: "exemple", text: "ex : sablé au comté et mousse de chèvre, blinis mousse de truite", indent: 1 });

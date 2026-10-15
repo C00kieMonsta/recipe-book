@@ -9,6 +9,7 @@ import type {
   ExtraCostKind,
   Ingredient,
   Offer,
+  OfferDocument,
   OfferLine,
   Recipe,
   UpdateOfferRequest,
@@ -19,6 +20,7 @@ import {
   DEFAULT_PRESTATION_TYPES,
   VAT_RATES,
   calcRecipeCost,
+  documentSectionFor,
   fmtEur,
   mergeOfferLines,
   offerFromEvent,
@@ -103,6 +105,7 @@ export default function OfferDetail() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [documents, setDocuments] = useState<OfferDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
@@ -173,12 +176,13 @@ export default function OfferDetail() {
     let cancelled = false;
     setLoading(true);
     setLoadError(false);
-    Promise.all([api.offers.list(), api.recipes.list(), api.ingredients.list(), api.settings.get()])
-      .then(([ofs, recs, ings, se]) => {
+    // The document list only feeds the « Formule de » line, so its failure does not block the page.
+    Promise.all([api.offers.list(), api.recipes.list(), api.ingredients.list(), api.settings.get(), api.offerDocuments.list().catch(() => [] as OfferDocument[])])
+      .then(([ofs, recs, ings, se, docs]) => {
         if (cancelled) return;
         setOffers(ofs);
         commitOffer(ofs.find((o) => o.offerId === id) ?? null);
-        setRecipes(recs); setIngredients(ings); setSettings(se);
+        setRecipes(recs); setIngredients(ings); setSettings(se); setDocuments(docs);
       })
       .catch(() => { if (!cancelled) { setLoadError(true); toast({ title: "Erreur de chargement", variant: "destructive" }); } })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -216,6 +220,7 @@ export default function OfferDetail() {
   const totalMode = offer.pricingMode === "total";
   const perGuest = pricePerGuestOf({ guestCount: offer.guestCountRef, pricingMode: offer.pricingMode, sellingPricePerGuest: offer.sellingPricePerGuest, sellingTotal: offer.sellingTotal });
   const devisHref = `/devis?offre=${offer.offerId}`;
+  const origin = documentSectionFor(documents, offer.offerId);
 
   // ── Properties ────────────────────────────────────────────────────────────
   const changePrestation = (v: string) => {
@@ -312,6 +317,11 @@ export default function OfferDetail() {
           </span>
         ) : offer.name}
         onTitleChange={offer.archived ? undefined : (v) => edit({ name: v })}
+        meta={origin && (
+          <span className="text-sm">
+            Formule de « <Link to={`/offres/documents/${origin.document.documentId}`} className="underline decoration-border underline-offset-2 hover:text-foreground">{origin.document.title} {origin.document.year}</Link> » › {origin.section.title}
+          </span>
+        )}
         actions={
           <>
             <Button as={Link} to={devisHref} variant="primary" size="lg" className="hidden md:inline-flex">Faire un devis</Button>

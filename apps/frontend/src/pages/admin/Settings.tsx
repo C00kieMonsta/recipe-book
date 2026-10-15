@@ -16,6 +16,7 @@ import type {
   YearObjective,
 } from "@packages/types";
 import {
+  DEFAULT_BRAND_ACCENT,
   DEFAULT_COURSES,
   DEFAULT_PRESTATION_TYPES,
   DEFAULT_SUPPLIERS,
@@ -54,6 +55,7 @@ import {
   type ActionMenuItem,
 } from "@/components/ui";
 import { PersonChip } from "@/components/admin/PersonChips";
+import BrandAssetProperty from "@/components/admin/BrandAssetProperty";
 
 // ── Local types and constants ────────────────────────────────────────────────
 
@@ -71,6 +73,9 @@ interface Draft {
   invoicing: InvoicingMode;
   ledgerStartYm?: string;
   ignoredDuplicateGroups: string[];
+  // Written by the brand endpoints only; kept here for the thumbnails.
+  brandLogoKey?: string;
+  brandBannerKey?: string;
   // Sent back on save so the backend can refuse a stale draft.
   updatedAt?: string;
 }
@@ -148,8 +153,19 @@ function fromSettings(s: AppSettings): Draft {
     invoicing: s.invoicing ?? "app",
     ledgerStartYm: s.ledgerStartYm,
     ignoredDuplicateGroups: s.ignoredDuplicateGroups ?? [],
+    brandLogoKey: s.brandLogoKey,
+    brandBannerKey: s.brandBannerKey,
     updatedAt: s.updatedAt,
   };
+}
+
+const HEX_COLOUR = /^#[0-9A-F]{6}$/;
+
+// « e8847a », « #E8847A » and « #e8a » all become « #E8847A »; undefined when it is not a colour.
+function normaliseHex(text: string): string | undefined {
+  let hex = text.trim().replace(/^#/, "").toUpperCase();
+  if (/^[0-9A-F]{3}$/.test(hex)) hex = hex.split("").map((c) => c + c).join("");
+  return HEX_COLOUR.test(`#${hex}`) ? `#${hex}` : undefined;
 }
 
 function cleanRecord(rec: Record<string, number | undefined> | undefined): Record<string, number> | undefined {
@@ -497,6 +513,10 @@ export default function Settings() {
       vatNumber: draft.company.vatNumber.trim(),
       address: draft.company.address.trim(),
       constitutedOn: draft.company.constitutedOn || undefined,
+      phone: draft.company.phone?.trim() || undefined,
+      email: draft.company.email?.trim() || undefined,
+      website: draft.company.website?.trim() || undefined,
+      accent: draft.company.accent || undefined,
     };
 
     setSaving(true);
@@ -1255,15 +1275,52 @@ export default function Settings() {
     </>
   );
 
+  const accent = draft.company.accent ?? DEFAULT_BRAND_ACCENT;
+  const setAccent = (text: string) => {
+    const hex = normaliseHex(text);
+    if (text.trim() === "") return patch((d) => ({ ...d, company: { ...d.company, accent: undefined } }));
+    if (!hex) return toast({ title: "Couleur hex attendue (ex. #E8847A)", variant: "destructive" });
+    if (hex === accent) return;
+    patch((d) => ({ ...d, company: { ...d.company, accent: hex } }));
+  };
+  // Brand uploads save on their own, so only the keys and the stamp move; the dirty draft stays as typed.
+  const applyBrand = (s: AppSettings) => {
+    setDraft((d) => (d ? { ...d, brandLogoKey: s.brandLogoKey, brandBannerKey: s.brandBannerKey, updatedAt: s.updatedAt } : d));
+  };
+
   const societe = (
     <>
       <Section title="Société">
-        <p className="text-sm text-muted-foreground">Repris dans l'en-tête des exports comptables.</p>
+        <p className="text-sm text-muted-foreground">Repris dans l'en-tête des exports comptables et des documents d'offre.</p>
         <PropertyList>
           <Property label="Nom" kind="text" value={draft.company.name} onSave={(v) => patch((d) => ({ ...d, company: { ...d.company, name: v } }))} />
           <Property label="Numéro de TVA" kind="text" value={draft.company.vatNumber} placeholder="BE 0123.456.789" onSave={(v) => patch((d) => ({ ...d, company: { ...d.company, vatNumber: v } }))} />
           <Property label="Adresse" kind="text" value={draft.company.address} onSave={(v) => patch((d) => ({ ...d, company: { ...d.company, address: v } }))} />
+          <Property label="Téléphone" kind="text" value={draft.company.phone ?? ""} onSave={(v) => patch((d) => ({ ...d, company: { ...d.company, phone: v || undefined } }))} />
+          <Property label="E-mail" kind="text" value={draft.company.email ?? ""} onSave={(v) => patch((d) => ({ ...d, company: { ...d.company, email: v || undefined } }))} />
+          <Property label="Site web" kind="text" value={draft.company.website ?? ""} onSave={(v) => patch((d) => ({ ...d, company: { ...d.company, website: v || undefined } }))} />
           <Property label="Date de constitution" kind="date" value={draft.company.constitutedOn ?? ""} onSave={(v) => patch((d) => ({ ...d, company: { ...d.company, constitutedOn: v || undefined } }))} />
+          <Property label="Couleur d'accent" kind="custom" sub="Les bandes de titre des documents d'offre.">
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                aria-label="Couleur d'accent"
+                value={accent}
+                className="h-7 w-7 cursor-pointer rounded border border-divider bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded [&::-webkit-color-swatch]:border-0 touch:h-11 touch:w-11"
+                onChange={(e) => setAccent(e.target.value)}
+              />
+              <EditableInlineText value={accent} placeholder={DEFAULT_BRAND_ACCENT} onSave={setAccent} />
+            </div>
+          </Property>
+          <BrandAssetProperty kind="logo" label="Logo" value={draft.brandLogoKey} version={draft.updatedAt ?? ""} onChange={applyBrand} />
+          <BrandAssetProperty
+            kind="banner"
+            label="Bannière"
+            value={draft.brandBannerKey}
+            version={draft.updatedAt ?? ""}
+            onChange={applyBrand}
+            sub="Imprimés en tête des documents d'offre. JPEG ou PNG, 5 Mo max. La bannière est recadrée en 4:1 (1600 × 400 px conseillé)."
+          />
           <Property label="Début du journal" kind="custom" sub="Les mois avant cette date lisent les Années précédentes.">
             <MonthValue value={draft.ledgerStartYm} ariaLabel="Début du journal" onChange={(v) => patch((d) => ({ ...d, ledgerStartYm: v }))} />
           </Property>

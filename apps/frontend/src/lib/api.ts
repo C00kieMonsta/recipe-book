@@ -36,6 +36,11 @@ import type {
   ImportIngredientsOptions,
   ProposedAction,
   ApplyResponse,
+  OfferDocument,
+  CreateOfferDocumentRequest,
+  UpdateOfferDocumentRequest,
+  DuplicateOfferDocumentRequest,
+  BrandKind,
 } from "@packages/types";
 
 export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
@@ -239,6 +244,12 @@ export const api = {
   settings: {
     get: cached("settings", () => request<AppSettings>("/admin/settings"), SETTINGS_TTL),
     update: withInvalidate(["settings"], (data: Partial<AppSettings>) => request<AppSettings>("/admin/settings", json("PATCH", data))),
+    // The logo and the banner printed on the offer documents; the version query busts the browser cache after a replace.
+    brand: {
+      upload: withInvalidate(["settings"], (kind: BrandKind, file: File) => uploadRequest<AppSettings>(`/admin/settings/brand/${kind}`, file)),
+      remove: withInvalidate(["settings"], (kind: BrandKind) => request<AppSettings>(`/admin/settings/brand/${kind}`, { method: "DELETE" })),
+      url: (kind: BrandKind, version: string) => `${API_BASE}/admin/settings/brand/${kind}?v=${encodeURIComponent(version)}`,
+    },
   },
   events: {
     list: cached("events", () => request<AppEvent[]>("/admin/events")),
@@ -269,6 +280,18 @@ export const api = {
     create: withInvalidate(["offers"], (data: CreateOfferRequest) => request<Offer>("/admin/offers", json("POST", data))),
     update: withInvalidate(["offers"], (id: string, data: UpdateOfferRequest) => request<Offer>(`/admin/offers/${id}`, json("PATCH", data))),
     delete: withInvalidate(["offers"], (id: string) => request<{ ok: boolean }>(`/admin/offers/${id}`, { method: "DELETE" })),
+  },
+  offerDocuments: {
+    list: cached("offerDocuments", () => request<OfferDocument[]>("/admin/offer-documents")),
+    get: (id: string) => request<OfferDocument>(`/admin/offer-documents/${id}`),
+    create: withInvalidate(["offerDocuments"], (data: CreateOfferDocumentRequest) => request<OfferDocument>("/admin/offer-documents", json("POST", data))),
+    // data.updatedAt is the stamp the editor loaded; the server answers 409 DOCUMENT_CHANGED when it moved.
+    update: withInvalidate(["offerDocuments"], (id: string, data: UpdateOfferDocumentRequest) => request<OfferDocument>(`/admin/offer-documents/${id}`, json("PATCH", data))),
+    delete: withInvalidate(["offerDocuments"], (id: string) => request<{ ok: boolean }>(`/admin/offer-documents/${id}`, { method: "DELETE" })),
+    duplicate: withInvalidate(["offerDocuments"], (id: string, data: DuplicateOfferDocumentRequest) => request<OfferDocument>(`/admin/offer-documents/${id}/duplicate`, json("POST", data))),
+    costSection: withInvalidate(["offerDocuments", "offers"], (id: string, sectionId: string) =>
+      request<{ document: OfferDocument; offer: Offer }>(`/admin/offer-documents/${id}/sections/${sectionId}/offer`, { method: "POST" })),
+    import2026: withInvalidate(["offerDocuments"], () => request<{ created: string[]; skipped: string[] }>("/admin/offer-documents/import-2026", { method: "POST" })),
   },
   groceryLists: {
     list: () => request<GroceryList[]>("/admin/grocery-lists"),

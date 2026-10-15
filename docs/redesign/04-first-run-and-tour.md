@@ -13,7 +13,7 @@ A first-time user (Dalia on Sunday, Kristoff on his phone, a new caterer on an e
 Rules:
 
 - The tour works on any workspace, including a fresh install with no data. A step whose anchor is missing shows a centred card with a static explanation. Never a crash, never a blank step.
-- Route-driven: a step navigates with `react-router` before it spotlights. Only routes that exist on every workspace: `/semaine`, `/jour/aujourdhui`, `/events`, `/offres`, `/comptes/journal`, `/settings`. The fiche step resolves its route from data and falls back to a centred card.
+- Route-driven: a step navigates with `react-router` before it spotlights. Only routes that exist on every workspace: `/semaine`, `/jour/aujourdhui`, `/events`, `/offres/documents`, `/comptes/journal`, `/settings`. The fiche step resolves its route from data and falls back to a centred card.
 - Notion feel: one small white card (hairline, `shadow-dialog`), 14px text, a dim overlay with a rectangular cut-out so the page stays visible. Nothing animated beyond `animate-pop`, `animate-fade-in` and `animate-sheet`.
 - Vouvoiement everywhere. Body copy at most 290 characters, titles at most 40.
 
@@ -47,13 +47,15 @@ Ten steps. Routes are the seed-independent forms. `/semaine` redirects to the la
 | 5 | resolved: `/events/:eventId/lines/:lineId` of the nearest upcoming event with a menu line, else none (centred card, stays on `/jour/…`) | `fiche-ingredients` | `components/ui/RecipeReader.tsx`, the first `<section>` (heading "Ingrédients pour N" and the list) | La fiche de préparation | Les quantités sont déjà calculées pour les convives de l'événement : rien à recalculer. Cochez les ingrédients pendant la mise en place. Cuisiner montre la recette étape par étape ; Terminer marque la ligne faite. | Same anchor. The list is scrolled so the heading and three rows sit above the bottom card. Fallback body when no line exists: Chaque recette au menu d'un événement a sa fiche : quantités déjà calculées pour les convives, ingrédients à cocher, et Cuisiner pour suivre la recette étape par étape. Créez un événement avec une recette pour la voir. |
 | 6 | `/semaine` | `assign` | `pages/admin/Week.tsx`, the `<div className="pr-1 pt-0.5">` wrapping `<AssignChips>` on the first event card of the xl grid (first day with an event, first event). Only that one card carries the attribute. | Attribuer le travail | Les initiales sur une carte sont les personnes de Paramètres › Équipe. Cliquez-les pour attribuer l'événement ou une seule ligne. « Choisir qui fait quoi » dans la case Ce qui manque traite toute la semaine. | Anchor `planning-tabs` (`components/admin/PlanningBar.tsx`, a `<div data-tour="planning-tabs">` around `<ViewTabs>`). Body: Pour attribuer, utilisez « Choisir qui fait quoi » dans la case Ce qui manque. Pour voir ce que chacun doit faire, ouvrez un jour puis l'onglet Par personne. Fallback body (no card, laptop): Les personnes de Paramètres › Équipe reçoivent le travail, par événement ou par ligne, depuis la carte de l'événement ou « Choisir qui fait quoi » dans la case Ce qui manque. L'onglet Par personne d'un jour montre la liste de chacun. |
 | 7 | `/events` | `events-list` | `pages/admin/Events.tsx`, a new `<div data-tour="events-list">` around the `<Toolbar>` and the `<div className="mt-2">` holding the `<Table>` | Événements | Tous vos événements, à venir et terminés. Pour refaire une semaine Hoona : ouvrez un événement Hoona, puis ⋯ › Dupliquer. Créer un événement pour un client remplit son menu depuis sa semaine type. | Same anchor; the cut-out is clipped to the viewport height minus the card. |
-| 8 | `/offres` | `offers-list` | `pages/admin/Offers.tsx`, the `<div data-tour="offers-list">` around the Offers table or the empty state | Offres et devis | Une offre est un menu type avec son prix par convive : Buffet 1, Walking dinner 2. Depuis une offre, Faire un devis adapte le menu et le nombre de convives pour un client, montre le coût et la marge, puis crée l'événement. Fallback body: the same text. | Same anchor, same copy. |
+| 8 | `/offres/documents` | `documents-list` | `pages/admin/OfferDocuments.tsx`, the `data-tour="documents-list"` wrapper around the documents table or the empty state (09, section 6.2) | Offres et devis | Documents : vos offres en PDF, à votre image (buffets, chef à domicile, carte à emporter). Formules : un menu type avec son prix par convive, costé par recette. Depuis une formule, Faire un devis prépare un prix pour un client et crée l'événement. Fallback body: the same text. | Same anchor, same copy. |
 | 9 | `/comptes/journal` | `comptes-tabs` | `pages/admin/comptes/ComptesLayout.tsx`, a `<div data-tour="comptes-tabs" className="flex min-w-0">` around `<ViewTabs>` in the `Toolbar` left slot | Comptabilité | Journal : une ligne par facture, acompte, CA du mois ou achat. À facturer, ou À terminer quand les factures se font dans un autre outil : les événements passés à clôturer. Aperçu et Compte de résultats : l'année. Prévisionnel : objectif et charges. Au réel : signé face à l'objectif. | Same anchor. The tabs scroll horizontally on the phone; the resolver calls `scrollIntoView({ inline: "start" })` on the anchor's first child before measuring. |
 | 10 | `/settings` | `settings-tabs` | `pages/admin/Settings.tsx`, a `<div data-tour="settings-tabs" className="flex min-w-0">` around `<ViewTabs>` in the `Toolbar` left slot. The "Visite guidée" section sits right under it. | Paramètres | Équipe : les personnes à qui vous attribuez le travail. Catalogue : catégories, types de prestation et fournisseurs. Société : vos coordonnées et où se font les factures. Finances : charges fixes et objectif. Pour revoir cette visite : Général › Visite guidée, juste en dessous. | Same anchor and copy. Last step: the primary button reads "Terminer". |
 
-Step 1 on an empty workspace spotlights "Signé 0 € · 0 conv. · Mois 0 € · Définir l'objectif ›", which still matches the copy. Step 2 spotlights the one-row checklist "Aucun événement cette semaine · + Ajouter". Step 3 spotlights "Lun 12 / aucun". Step 5 and step 6 (laptop) show the centred card with their fallback body. Step 8 on an empty workspace spotlights the « Aucune offre type » empty state. Steps 7, 8, 9, 10 anchor toolbars, tables or empty states that render with or without data.
+Step 1 on an empty workspace spotlights "Signé 0 € · 0 conv. · Mois 0 € · Définir l'objectif ›", which still matches the copy. Step 2 spotlights the one-row checklist "Aucun événement cette semaine · + Ajouter". Step 3 spotlights "Lun 12 / aucun". Step 5 and step 6 (laptop) show the centred card with their fallback body. Step 8 on an empty workspace spotlights the « Aucun document. … » empty state of `/offres/documents` (with « + Nouveau document » and « Importer les offres 2026 »). Steps 7, 8, 9, 10 anchor toolbars, tables or empty states that render with or without data.
 
 Character counts (checked): every body is 118 to 283 characters (step 9, Comptabilité, is the longest), every title at most 29 (step 2, "Ce qui manque pour la semaine").
+
+Step 8 changed with `09-offer-catalogue.md`: it used to land on `/offres` with the anchor `offers-list` around the Offres table. The documents list is now the entry of the Offres area, so the step lands on `/offres/documents` with the anchor `documents-list`; the body (247 characters) names the two tabs, Documents and Formules, and the devis. `Offers.tsx` no longer carries a `data-tour` attribute.
 
 ---
 
@@ -91,10 +93,14 @@ export interface TourStep {
   body: string;
   // Shown on the centred card when the anchor is missing or the route resolved to null.
   fallbackBody?: string;
+  // Replaces body while the workspace has no event.
+  firstRunBody?: string;
   // Overrides on phones (see 4.5 for the phone test). Resolution order on a phone: phone.anchor, then anchor, then centred.
   phone?: { anchor?: string; title?: string; body?: string };
   // Fired after navigation and before the anchor wait, for pages that must open something (the checklist).
   before?: () => void;
+  // data-tour value that shows once the page has loaded; the wait gives up early when it is visible without the anchor.
+  loadedMark?: string;
 }
 
 export interface TourContext {
@@ -239,7 +245,7 @@ Z-order: click catcher `z-50` (same layer as `Sheet` and `Dialog` overlays, whic
 | `back` | `components/admin/AdminSidebar.tsx` | the phone top bar `<Link to={backTo.to}>` |
 | `fiche-ingredients` | `components/ui/RecipeReader.tsx` | the first `<section>` (ingredients) |
 | `events-list` | `pages/admin/Events.tsx` | new `<div data-tour="events-list">` around `Toolbar` + table wrapper |
-| `offers-list` | `pages/admin/Offers.tsx` | `<div data-tour="offers-list">` around the Offers table or the empty state |
+| `documents-list` | `pages/admin/OfferDocuments.tsx` | the wrapper around the documents table, and the empty state (one of the two renders at a time) |
 | `comptes-tabs` | `pages/admin/comptes/ComptesLayout.tsx` | new `<div data-tour="comptes-tabs" className="flex min-w-0">` around `<ViewTabs>` |
 | `settings-tabs` | `pages/admin/Settings.tsx` | new `<div data-tour="settings-tabs" className="flex min-w-0">` around `<ViewTabs>` |
 
@@ -362,7 +368,7 @@ Desktop, 1366:
 - [ ] `tour-5-1366.png` (lands on `/events/548b873d-…/lines/819f1739-…` or the Monday line): cut-out around "Ingrédients pour 30" and its rows; card to the right or below, never over the list. Chrome hidden, overlay still full screen.
 - [ ] `tour-6-1366.png` (`/semaine/…`): cut-out around the "AM" chip of the first card (Hoona, Monday), card below.
 - [ ] `tour-7-1366.png` (`/events`): cut-out around the toolbar and the table, card at the right of the table or centred when the table is taller than the viewport.
-- [ ] `tour-8-1366.png` (`/offres`): cut-out around the Offres table (Buffet 1, Walking dinner 2), card below or at the right, title "Offres et devis".
+- [ ] `tour-8-1366.png` (`/offres/documents`): cut-out around the tabs, the toolbar and the documents table (the seven seeded documents), card below or at the right, title "Offres et devis", body starts with « Documents : vos offres en PDF ».
 - [ ] `tour-9-1366.png` (`/comptes/journal`): cut-out around the six tabs, card below, counter "9 sur 10".
 - [ ] `tour-10-1366.png` (`/settings`): cut-out around "Général | Catalogue | Équipe | Finances | Société", the "Visite guidée" section visible under it, button reads "Terminer".
 - [ ] `tour-done-1366.png`: after Terminer, no overlay, `/settings` shows "Visite guidée · Vue le 12 octobre 2026".
@@ -377,7 +383,7 @@ Phone, 375 (touch emulation):
 - [ ] `tour-4-375.png`: cut-out around "‹ Semaine" in the top bar, body mentions the tap on the dot.
 - [ ] `tour-5-375.png`: "Ingrédients pour 30" heading and at least three rows visible above the card.
 - [ ] `tour-6-375.png`: cut-out around the "Semaine | Jour | Par personne" tabs.
-- [ ] `tour-8-375.png`: cut-out around the Offres list, card pinned to the bottom.
+- [ ] `tour-8-375.png`: cut-out around the documents list, card pinned to the bottom.
 - [ ] `tour-9-375.png`: the Comptabilité tabs scrolled so "Journal" is at the left edge; cut-out clipped to the viewport width.
 - [ ] No horizontal scroll on any phone capture; every button in the card measures 44px.
 
@@ -389,7 +395,7 @@ Empty workspace (`APP=http://localhost:5174`):
 - [ ] `empty-tour-5-1366.png`: step 5 is a centred card, body starts with "Chaque recette au menu", route still `/jour/2026-10-12`.
 - [ ] `empty-tour-6-1366.png`: step 6 centred, body starts with "Les personnes de Paramètres".
 - [ ] `empty-tour-6-375.png`: step 6 anchored on "Semaine | Jour" (no Par personne tab), phone body.
-- [ ] Steps 1, 2, 3, 7, 8, 9, 10 are anchored on the empty workspace (no centred card); step 8 spotlights the « Aucune offre type » empty state.
+- [ ] Steps 1, 2, 3, 7, 8, 9, 10 are anchored on the empty workspace (no centred card); step 8 spotlights the « Aucun document. … » empty state of `/offres/documents`.
 
 Global:
 

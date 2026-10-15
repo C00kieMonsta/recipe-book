@@ -34,6 +34,10 @@ import Settings from "@/pages/admin/Settings";
 
 const AFacturer = lazy(() => import("@/pages/admin/comptes/AFacturer"));
 const InvoiceInbox = lazy(() => import("@/pages/admin/comptes/InvoiceInbox"));
+const OfferDocuments = lazy(() => import("@/pages/admin/OfferDocuments"));
+const OfferDocumentDetail = lazy(() => import("@/pages/admin/OfferDocumentDetail"));
+
+const lazyFallback = <p className="text-base text-muted-foreground">Chargement…</p>;
 
 const LAST_WEEK_KEY = "recipe-book:last-week";
 
@@ -114,6 +118,8 @@ export default function App() {
         <Route path="/clients/new" element={<ClientDetail />} />
         <Route path="/clients/:id" element={<ClientDetail />} />
         <Route path="/offres" element={<Offers />} />
+        <Route path="/offres/documents" element={<Suspense fallback={lazyFallback}><OfferDocuments /></Suspense>} />
+        <Route path="/offres/documents/:id" element={<Suspense fallback={lazyFallback}><OfferDocumentDetail /></Suspense>} />
         <Route path="/offres/:id" element={<OfferDetail />} />
         <Route path="/devis" element={<Devis />} />
         <Route path="/comptes" element={<Navigate to="/comptes/journal" replace />} />

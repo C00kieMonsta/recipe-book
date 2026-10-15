@@ -155,8 +155,10 @@ export function documentBlocks(d: OfferDocument, company: CompanySettings | unde
   blocks.push({ kind: "company", lines: companyLines(company), facts });
 
   for (const s of d.sections) {
-    const unit = sectionUnitLabel(s);
-    const section: DocPrintBlock = { kind: "section", title: s.title, unit };
+    // A price list with no unit of its own prints none on the band: every row carries its unit.
+    const unit = s.price === undefined && !text(s.unitLabel) ? undefined : sectionUnitLabel(s);
+    const section: DocPrintBlock = { kind: "section", title: s.title };
+    if (unit) section.unit = unit;
     const intro = text(s.intro);
     if (intro) section.intro = intro;
     if (s.price !== undefined) section.price = fmtEur(s.price);

@@ -1,6 +1,6 @@
 # 09. Offer documents: the brochures Dalia sends, in one place
 
-Status: ready to build, after the 07 frontend (Phase 6 pages) and the 08 assistant frontend have landed. Builds on `07-offers-pricing-attachments.md` (the `Offer` entity, the offers endpoint, the Offres, Offre and Devis pages, the Société section) and `08-assistant.md` (read tools). Where this file and 07 disagree, this file wins; the disagreements are listed in section 9.
+Status: phases 1 to 5 of the build plan (section 9) are built on main; phase 6 (docs and acceptance) is in progress. Phases 1 to 3 landed in commits 350e7c5 and b0b40bd. Builds on `07-offers-pricing-attachments.md` (the `Offer` entity, the offers endpoint, the Offres, Offre and Devis pages, the Société section) and `08-assistant.md` (read tools). Where this file and 07 disagree, this file wins; the disagreements are listed in section 9.
 
 Inputs: Dalia's request (« we need one place where I can find all those offers like the ones attached, do you think you can help me centralize those types of offers that I can generate »), her seven sheets transcribed in `docs/redesign/workings/offers-source-2026.md`, two designs (document-first, catalogue-first) and this synthesis. The skeleton is the document-first design: the sheet is the object, its sections and rows are stored as she writes them, and the costed 07 offer is an optional twin of a formula section. Grafted from the catalogue-first design: `fromPrice` and `priceNote` on rows, the server-side import with a confirmation dialog, « Utiliser dans un événement… » with an existing-event option, « — » on an uncosted formula, a cross-document search for the assistant, « + Section depuis une formule… », and the questions about the rates that differ between sheets.
 
@@ -427,7 +427,7 @@ export function priceLabelOf(row: Pick<DocRow, "price" | "fromPrice" | "priceNot
 export function documentFileName(d: Pick<OfferDocument, "title" | "year">): string;
 // The prestation's default rate, else 12.
 export function foodVatRateOf(d: Pick<OfferDocument, "prestationType">, prestationTypes: PrestationTypeSetting[]): VatRate;
-// The layout model, section 8. Money through fmtEur; tags appended « (chaud) »; examples prefixed « ex : »; a row unit printed only when it differs from the section unit; a choice appended to its sous_titre « Entrée (un choix pour la table) »; indent 1 for exemple rows and for rows under a sous_titre.
+// The layout model, section 8. Money through fmtEur; tags appended « (chaud) »; examples prefixed « ex : »; a row unit printed only when it differs from the section unit (a price list without unitLabel has no band unit, so every row prints its own); a choice appended to its sous_titre « Entrée (un choix pour la table) »; indent 1 for exemple rows and for rows under a sous_titre.
 export function documentBlocks(d: OfferDocument, company: CompanySettings | undefined): DocPrintBlock[];
 // Rows with a recipe, portionsPerGuest 1, or round2(choice.count / n) inside a choice group. course from the nearest sous_titre when it matches a category, else absent.
 export function sectionRecipeLines(s: DocSection, categories?: string[]): OfferLine[];
@@ -559,7 +559,7 @@ settings: {
 
 **`apps/frontend/src/App.tsx`**: routes `/offres/documents` (`OfferDocuments`) and `/offres/documents/:id` (`OfferDocumentDetail`), declared before `/offres/:id`; React Router ranks the static segment above the param in any case.
 
-**`apps/frontend/src/components/admin/tour-steps.ts`**: step `offers` route becomes `/offres/documents`, anchor `documents-list` (the documents table or empty state carries `data-tour="documents-list"`), title « Offres et devis », body « Documents : vos offres en PDF, à votre image (buffets, chef à domicile, carte à emporter). Formules : un menu type avec son prix par convive, costé par recette. Depuis une formule, Faire un devis prépare un prix pour un client et crée l'événement. » (211 characters), `fallbackBody` the same; phone same anchor.
+**`apps/frontend/src/components/admin/tour-steps.ts`**: step `offers` route becomes `/offres/documents`, anchor `documents-list` (the documents table or empty state carries `data-tour="documents-list"`), title « Offres et devis », body « Documents : vos offres en PDF, à votre image (buffets, chef à domicile, carte à emporter). Formules : un menu type avec son prix par convive, costé par recette. Depuis une formule, Faire un devis prépare un prix pour un client et crée l'événement. » (247 characters), `fallbackBody` the same; phone same anchor. `04-first-run-and-tour.md` carries the same row (step 8) and anchor table.
 
 ### 6.2 Documents list (`/offres/documents`, `apps/frontend/src/pages/admin/OfferDocuments.tsx`, `max-w-wide`)
 
@@ -810,7 +810,7 @@ Choice of autotable over hand-placed text: wrapping of long dish names and examp
 
 - Footer on every page: 8 pt muted, centred at y = 290: `input.footer` (« La Table d'Amélie · 0032486.54.60.17 · tabledamelie@gmail.com · www.tabledamelie.be », built by the page from `company`, parts missing are skipped), and « page n / {total} » right-aligned at x = 195, resolved with `doc.putTotalPages("{total}")` after the last table.
 - Page breaks, in one list: never inside a row (`rowPageBreak: "avoid"`); a section band keeps at least two rows after it (the 32 mm pre-check); services, conditions and the VAT table move together when fewer than 40 mm remain; the column heads repeat on every page.
-- Expected lengths: brunch 1 page, chef à domicile 2, walking dinner 2, buffets printemps-été 2, buffets automne-hiver 3, baptême 1, carte à emporter 4 at most.
+- Measured lengths with the logo and the banner (the page 1 header takes about 100 mm): brunch 2 pages, chef à domicile 2, walking dinner 2, buffets printemps-été 3, buffets automne-hiver 3, baptême 2 (1 without brand images), carte à emporter 4. Accepted as the targets; tighter metrics (a smaller banner or less row padding) would be a design change.
 - File name: `documentFileName(d)`, « Offre buffets automne hiver 2026.pdf », « Carte à emporter 2026.pdf ». `doc.save(name)` on the page, the row ⋯ and the Devis footer; `doc.output("bloburl")` for the preview.
 - Assets: `brandImage("logo", settings.updatedAt)` and `brandImage("banner", settings.updatedAt, { cropRatio: 4 })`, cached per session so « Aperçu » then « Télécharger » fetch once.
 
@@ -824,30 +824,30 @@ Runs AFTER `07-offers-pricing-attachments.md` Phase 6 (the pages `Offers.tsx`, `
 
 07 files edited by this spec: `packages/types/src/entities/settings.ts`, `packages/types/src/dto/settings.ts`, `packages/types/src/dto/dto.test.ts`, `apps/backend/src/settings/settings.controller.ts`, `apps/backend/src/settings/settings.service.ts`, `apps/backend/src/settings/settings.service.spec.ts`, `apps/frontend/src/lib/api.ts`, `apps/frontend/src/lib/page-icons.ts`, `apps/frontend/src/pages/admin/Offers.tsx`, `apps/frontend/src/pages/admin/OfferDetail.tsx`, `apps/frontend/src/pages/admin/Devis.tsx`, `apps/frontend/src/pages/admin/Settings.tsx`, `apps/frontend/src/pages/admin/RecipeDetail.tsx`, `apps/frontend/src/components/admin/AdminSidebar.tsx`, `apps/frontend/src/components/admin/tour-steps.ts`, `apps/frontend/src/App.tsx`, `scripts/seed-local.mjs`, `scripts/smoke-local.mjs`, `readme.md`. 08 files edited: `apps/backend/src/assistant/assistant.tools.ts`, `assistant.prompt.ts`, `assistant.tools.spec.ts`, `assistant.module.ts`.
 
-### Phase 1. Types and DTOs
+### Phase 1. Types and DTOs (done)
 
 - Group A: `packages/types/src/entities/offer-document.ts`, `packages/types/src/entities/settings.ts`, `packages/types/src/entities/index.ts`. Tasks: 3.1, 3.2.
 - Group B: `packages/types/src/dto/offer-documents.ts`, `packages/types/src/dto/settings.ts`, `packages/types/src/dto/index.ts`, `packages/types/src/dto/dto.test.ts`. Tasks: 3.4 (imports the names fixed in 3.1; the two groups agree on them before starting).
 
-### Phase 2. Lib
+### Phase 2. Lib (done)
 
 - Group A: `packages/types/src/lib/offer-document.ts`, `packages/types/src/lib/offer-document.test.ts`, `packages/types/src/lib/index.ts`. Tasks: 4.1.
 
-### Phase 3. Backend
+### Phase 3. Backend (done, commits 350e7c5 and b0b40bd)
 
 - Group A: `apps/backend/src/offer-documents/offer-documents.module.ts`, `offer-documents.controller.ts`, `offer-documents.service.ts`, `offer-documents.service.spec.ts`, `fixtures/offer-documents-2026.json`, `offer-documents-2026.spec.ts`, `apps/backend/src/app.module.ts`, `apps/backend/src/assistant/assistant.module.ts` (imports the new module), `apps/backend/nest-cli.json`. Tasks: 5.1, 7.1, 7.2, 7.3.
 - Group B: `apps/backend/src/settings/settings.controller.ts`, `settings.service.ts`, `settings.service.spec.ts`. Tasks: 5.2.
 - Group C: `apps/backend/src/assistant/assistant.tools.ts`, `assistant.prompt.ts`, `assistant.tools.spec.ts`. Tasks: 5.3 (injects `OfferDocumentsService.getAll()` from group A; the name and signature are fixed in 5.1).
 - Group D: `scripts/import-offer-documents.mjs`, `scripts/seed-local.mjs`, `scripts/smoke-local.mjs`, `scripts/fixtures/brand/logo.png`, `scripts/fixtures/brand/banner.jpg`, `readme.md`. Tasks: 5.4. Re-seed the local stack after this phase.
 
-### Phase 4. Frontend shared pieces
+### Phase 4. Frontend shared pieces (done)
 
 - Group A: `apps/frontend/src/lib/api.ts`, `apps/frontend/src/lib/page-icons.ts`, `apps/frontend/src/lib/pdf-images.ts`, `apps/frontend/src/lib/offer-document-pdf.ts`. Tasks: 6.1 (api, images, renderer), 8.
 - Group B: `apps/frontend/src/components/admin/OffersTabs.tsx`, `DocSectionBlock.tsx`, `DocRow.tsx`, `DocumentPreviewDialog.tsx`. Tasks: 6.1, 6.3 (blocks).
 - Group C: `apps/frontend/src/components/admin/AddFromDocumentDialog.tsx`, `UseInEventDialog.tsx`, `BrandAssetProperty.tsx`. Tasks: 6.5, 6.6 (dialogs).
 - Group D: `apps/frontend/src/App.tsx`, `apps/frontend/src/components/admin/AdminSidebar.tsx`, `apps/frontend/src/components/admin/tour-steps.ts`, stubs `apps/frontend/src/pages/admin/OfferDocuments.tsx` and `OfferDocumentDetail.tsx` (« Bientôt » until Phase 5). Tasks: 6.1 (routes, sidebar, tour).
 
-### Phase 5. Pages
+### Phase 5. Pages (done)
 
 - Group A: `apps/frontend/src/pages/admin/OfferDocuments.tsx`, `OfferDocumentDetail.tsx`. Tasks: 6.2, 6.3.
 - Group B: `apps/frontend/src/pages/admin/Offers.tsx`, `OfferDetail.tsx`. Tasks: 6.4.
@@ -855,9 +855,9 @@ Runs AFTER `07-offers-pricing-attachments.md` Phase 6 (the pages `Offers.tsx`, `
 - Group D: `apps/frontend/src/pages/admin/Settings.tsx`. Tasks: 6.5.
 - Group E: `apps/frontend/src/pages/admin/RecipeDetail.tsx`. Tasks: 6.1 (switch to `loadImageForPdf`).
 
-### Phase 6. Docs and acceptance
+### Phase 6. Docs and acceptance (in progress)
 
-- Group A: `docs/redesign/README.md` (a row for this file), `docs/redesign/04-first-run-and-tour.md` (step 8 route, anchor and copy), `docs/redesign/08-assistant.md` (two rows in the 4.3 tool table). Tasks: 6.1 (tour), 5.3.
+- Group A: `docs/redesign/README.md` (a row for this file), `docs/redesign/04-first-run-and-tour.md` (step 8 route, anchor and copy), `docs/redesign/08-assistant.md` (two rows in the 4.3 tool table). Tasks: 6.1 (tour), 5.3. Done: the README row and the two 08 rows landed in commit d02bc82; the 04 step 8 row, anchor table and acceptance lines, and the status notes in this file, are updated.
 - Group B: one builder runs section 10 against the seeded stack and fixes what fails; files: whatever the checks point at.
 
 ---
@@ -865,6 +865,10 @@ Runs AFTER `07-offers-pricing-attachments.md` Phase 6 (the pages `Offers.tsx`, `
 ## 10. Acceptance checklist
 
 Driver: `mkdir -p /tmp/shots/09 && cd /tmp/pw && OUT=/tmp/shots/09 node shot.mjs /tmp/shots/09/routes.json` against the seeded stack (`http://localhost:5173`, API `:3101`, re-seeded after Phase 3; ids from `GET /api/admin/offer-documents`, `/api/admin/offers`, `/api/admin/events`). Widths 375 (touch) and 1366 unless stated. PDFs are captured through Playwright's `download` event into `/tmp/shots/09/` and checked with `pdfinfo` (page count) and `pdftotext -layout` (text order), then opened and compared by eye against the descriptions in `docs/redesign/workings/offers-source-2026.md`.
+
+Local limit: the local stacks have no S3 bucket. `POST /api/admin/settings/brand/:kind` answers 500 and `GET /api/admin/settings/brand/:kind` answers 404 on both stacks, so brand images cannot be uploaded locally; `seed-local.mjs` and `smoke-local.mjs` tolerate the missing bucket. On the local stacks the editor always shows the missing-assets callout and the PDF prints the company name in the band and skips the banner. The checks that need a logo or a banner (`settings-societe-brand-1366.png`, the thumbnails, the logo and the 180 × 45 banner on page 1 of the PDFs, the brand API behaviour line) run with Playwright `page.route` mocks (any small PNG for the logo, a 1600 × 400 JPEG for the banner, as `/tmp/pw/p5d-settings.mjs` does) or against a stack with a bucket. Port 5174 may be served by another project's vite; when it is, serve the empty stack with `cd apps/frontend && VITE_API_URL=http://localhost:3102/api npx vite --port 5177 --strictPort`.
+
+Settled deviations: the page counts of 8.6 are the measured ones (baptême 2 pages, brunch 2, buffets printemps-été 3; the renderer constants sit at the top of `apps/frontend/src/lib/offer-document-pdf.ts`). The seeded stack holds two formulas (Buffet 1, Walking dinner 2) and no costed section, so « 4 formules » and `offre-from-document-1366.png` need BUFFET 2 costed first (`POST /admin/offer-documents/:id/sections/buffet-2/offer` on `:3101`). A price-list section without `unitLabel` (baptême « Envie de compléter votre buffet ? », brunch « Possibilité d'ajouter à votre brunch ») now prints no unit on its band and every row prints its own (`documentBlocks`). Still open: « + Depuis un document… » renders on its own line under the search row of `OfferMenu` (no slot next to « + Depuis une autre offre… »).
 
 Tests:
 
@@ -890,7 +894,7 @@ PDF:
 - [ ] `Offre buffets automne hiver 2026.pdf` (downloaded from the page): 3 pages at most; page 1 has the seeded logo top-left, the banner 180 × 45, the salmon band « OFFRE BUFFETS AUTOMNE HIVER 2026 », the company block left (name, address, TVA, phone, e-mail, website) and the facts right (« Type de prestation : Avec ou sans service, A emporter ou avec livraison », « Nombre minimum de personnes : 20 », « Note : … »), the column heads; sections in the source order with their prices right-aligned; PLATEAUX A PARTAGER rows priced per row; examples italic and muted; « (chaud) » after the polpettes; no band as the last line of a page; EXTRAS, conditions and the VAT table « Food 12 % · Services 21 % » at the end; « page n / 3 » on every page. Text order checked with `pdftotext -layout`.
 - [ ] `Carte à emporter 2026.pdf`: 4 pages at most; eleven sections; « minimum 20 pièces par sorte » on the two finger food bands; « à la pièce » under the column for those sections and « 2,25 € » on the choux row; « gâteau 8 parts » on the cakes; the pavlova vase with « entre 12 et 20 personnes, prix par personne » under its price; no services block; the VAT table last.
 - [ ] `Offre chef à domicile 2026.pdf`: 2 pages; one band « FOOD · 65,00 € par personne »; sub-headers « Apéritif », « Entrée (un choix pour la table) », « Plat (un choix pour la table) », « Dessert (un choix pour la table) » on the pale fill; « (froid) », « (tiède) », « (chaud) » after the dishes; « SERVICES » with cuisinier 50 and serveur 40.
-- [ ] `Offre baptême 2026.pdf`: 1 page; « Nombre de personnes : à partir de 20 personnes »; « àpd 4,50 € » and « àpd 3,50 € » on the verrines; « supplément en fonction du nombre de personnes » in the price column of the croûte and the pavlova; no services block; VAT « Livraison / location matériel 21 % ».
+- [ ] `Offre baptême 2026.pdf`: 2 pages at most; « Nombre de personnes : à partir de 20 personnes »; « àpd 4,50 € » and « àpd 3,50 € » on the verrines; « supplément en fonction du nombre de personnes » in the price column of the croûte and the pavlova; no services block; VAT « Livraison / location matériel 21 % ».
 - [ ] Behaviour (empty stack, no brand images): the editor shows the warning callout; the PDF prints the company name in the band position, no banner, and the layout holds.
 
 Paramètres, Devis, events:

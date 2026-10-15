@@ -104,12 +104,12 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     key: "offers",
-    route: "/offres",
-    anchor: "offers-list",
+    route: "/offres/documents",
+    anchor: "documents-list",
     title: "Offres et devis",
-    body: "Une offre est un menu type avec son prix par convive : Buffet 1, Walking dinner 2. Depuis une offre, Faire un devis adapte le menu et le nombre de convives pour un client, montre le coût et la marge, puis crée l'événement.",
-    fallbackBody: "Une offre est un menu type avec son prix par convive : Buffet 1, Walking dinner 2. Depuis une offre, Faire un devis adapte le menu et le nombre de convives pour un client, montre le coût et la marge, puis crée l'événement.",
-    phone: { anchor: "offers-list" },
+    body: "Documents : vos offres en PDF, à votre image (buffets, chef à domicile, carte à emporter). Formules : un menu type avec son prix par convive, costé par recette. Depuis une formule, Faire un devis prépare un prix pour un client et crée l'événement.",
+    fallbackBody: "Documents : vos offres en PDF, à votre image (buffets, chef à domicile, carte à emporter). Formules : un menu type avec son prix par convive, costé par recette. Depuis une formule, Faire un devis prépare un prix pour un client et crée l'événement.",
+    phone: { anchor: "documents-list" },
   },
   {
     key: "comptes-tabs",

@@ -5,23 +5,30 @@ import type {
   AppSettings,
   Client,
   CreateOfferRequest,
+  DocRow,
+  DocSection,
   EventExtraCost,
   EventRevenueLine,
   ExtraCostKind,
   Ingredient,
   Offer,
+  OfferDocument,
   OfferLine,
   PricingMode,
   Recipe,
   VatRate,
 } from "@packages/types";
 import {
+  DEFAULT_BRAND_ACCENT,
   DEFAULT_COURSES,
   DEFAULT_PRESTATION_TYPES,
   VAT_RATES,
   calcRecipeCost,
+  documentBlocks,
+  documentFileName,
   eventFromOffer,
   fmtEur,
+  foodVatRateOf,
   groupByCourse,
   linesForGuests,
   mergeOfferLines,
@@ -29,6 +36,7 @@ import {
   quoteTotals,
   recipeCategoryOf,
   round2,
+  sectionRecipeLines,
   suggestedPricePerGuest,
   sumExtraCosts,
 } from "@packages/types";
@@ -38,8 +46,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useTouchScreen } from "@/hooks/use-touch-screen";
 import { longDayLabel, todayIso } from "@/lib/dates";
 import { exportMenuPdf, pricingLines } from "@/lib/menu-pdf";
+import { exportOfferDocumentPdf } from "@/lib/offer-document-pdf";
+import { brandImage } from "@/lib/pdf-images";
 import { plural } from "@/lib/use-planning-data";
 import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
+import AddFromDocumentDialog, { type AddFromDocumentResult } from "@/components/admin/AddFromDocumentDialog";
 import AddFromOfferDialog from "@/components/admin/AddFromOfferDialog";
 import NewClientDialog from "@/components/admin/NewClientDialog";
 import NewRecipeDialog from "@/components/admin/NewRecipeDialog";
@@ -56,6 +67,7 @@ import {
   PageHeader,
   Property,
   PropertyList,
+  SearchSelect,
   Section,
   SelectPill,
 } from "@/components/ui";
@@ -64,10 +76,20 @@ const DRAFT_KEY = "devis:draft";
 const SEARCH_ID = "devis-recipe-search";
 const LABELS_LIST_ID = "devis-revenue-labels";
 const DEFAULT_GUESTS = 20;
+// Label prefix of the revenue lines made from document rows (revenueLinesFromRows).
+const CARTE_PREFIX = "Carte · ";
+
+// The document section the devis started from; title « Offre buffets automne hiver 2026 › Buffet 2 ».
+interface DevisDocumentRef {
+  documentId: string;
+  sectionId?: string;
+  title: string;
+}
 
 interface DevisDraft {
   // The offer the devis started from, kept for offerId and the event note.
   loadedFrom: string | null;
+  loadedFromDocument: DevisDocumentRef | null;
   clientId: string;
   guests: number;
   // True once Convives was typed, so a client default no longer overrides it.
@@ -85,6 +107,7 @@ interface DevisDraft {
 
 const EMPTY_DRAFT: DevisDraft = {
   loadedFrom: null,
+  loadedFromDocument: null,
   clientId: "",
   guests: DEFAULT_GUESTS,
   guestsTouched: false,
@@ -143,6 +166,31 @@ function slashDate(iso: string): string {
   return `${d}/${m}/${y}`;
 }
 
+function isCarteLine(line: EventRevenueLine): boolean {
+  return line.label.startsWith(CARTE_PREFIX);
+}
+
+function fold(text: string): string {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+}
+
+// Category of a recipe created for a row: the nearest sous_titre above it when it matches a course, else « Plat ».
+function rowCategory(section: DocSection, rowId: string, courses: string[]): string {
+  const index = section.rows.findIndex((r) => r.rowId === rowId);
+  for (let i = index - 1; i >= 0; i--) {
+    const row = section.rows[i];
+    if (row.kind !== "sous_titre") continue;
+    return courses.find((c) => fold(c) === fold(row.text)) ?? "Plat";
+  }
+  return "Plat";
+}
+
+// The offer line a single row adds to the menu, with the choice share of its group.
+function lineForRow(section: DocSection, rowId: string, recipeId: string, courses: string[]): OfferLine | undefined {
+  const rows = section.rows.map((r) => (r.rowId === rowId ? { ...r, recipeId } : r.kind === "plat" ? { ...r, recipeId: undefined } : r));
+  return sectionRecipeLines({ ...section, rows }, courses)[0];
+}
+
 const PRICING_OPTIONS = [
   { value: "par_convive", label: "par convive" },
   { value: "total", label: "total food" },
@@ -181,6 +229,7 @@ export default function Devis() {
 
   const [draft, setDraft] = useState<DevisDraft>(readDraft);
   const [offers, setOffers] = useState<Offer[]>([]);
+  const [documents, setDocuments] = useState<OfferDocument[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -195,8 +244,11 @@ export default function Devis() {
   const [eventName, setEventName] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [newClient, setNewClient] = useState<{ name: string } | null>(null);
-  const [newRecipe, setNewRecipe] = useState<{ name: string; category?: string } | null>(null);
+  // rowId set: the created recipe links that document row instead of joining the menu directly.
+  const [newRecipe, setNewRecipe] = useState<{ name: string; category?: string; rowId?: string } | null>(null);
   const [addFromOffer, setAddFromOffer] = useState(false);
+  const [addFromDocument, setAddFromDocument] = useState<{ documentId?: string; sectionId?: string } | null>(null);
+  const [linkingRowId, setLinkingRowId] = useState<string | null>(null);
   // Remounts the « Offre de départ » row when a replace is cancelled, so its optimistic value reverts.
   const [offerRowKey, setOfferRowKey] = useState(0);
   const revenueRefs = useRef(new Map<number, HTMLDivElement>());
@@ -213,10 +265,11 @@ export default function Devis() {
         if (e instanceof ApiError && e.status === 503) { setClientsConfigured(false); return [] as Client[]; }
         throw e;
       }),
+      api.offerDocuments.list().catch(() => [] as OfferDocument[]),
     ])
-      .then(([of, re, ing, se, cl]) => {
+      .then(([of, re, ing, se, cl, docs]) => {
         if (cancelled) return;
-        setOffers(of); setRecipes(re); setIngredients(ing); setSettings(se); setClients(cl);
+        setOffers(of); setRecipes(re); setIngredients(ing); setSettings(se); setClients(cl); setDocuments(docs);
       })
       .catch(() => { if (!cancelled) { setLoadError(true); toast({ title: "Erreur de chargement", variant: "destructive" }); } })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -235,11 +288,19 @@ export default function Devis() {
   const recipePortionsById = useMemo(() => new Map(recipes.map((r) => [r.recipeId, r.portions || 1])), [recipes]);
   const clientById = useMemo(() => new Map(clients.map((c) => [c.clientId, c])), [clients]);
   const offerById = useMemo(() => new Map(offers.map((o) => [o.offerId, o])), [offers]);
+  const documentById = useMemo(() => new Map(documents.map((d) => [d.documentId, d])), [documents]);
   const courses = useMemo(() => (settings?.courses?.length ? settings.courses : DEFAULT_COURSES), [settings]);
-  const prestationTypes = settings?.prestationTypes?.length ? settings.prestationTypes : DEFAULT_PRESTATION_TYPES;
+  const prestationTypes = useMemo(() => (settings?.prestationTypes?.length ? settings.prestationTypes : DEFAULT_PRESTATION_TYPES), [settings]);
   const activeOffers = useMemo(() => offers.filter((o) => !o.archived), [offers]);
 
   const startOffer = draft.loadedFrom ? offerById.get(draft.loadedFrom) : undefined;
+  const documentRef = draft.loadedFromDocument;
+  const sourceDocument = documentRef ? documentById.get(documentRef.documentId) : undefined;
+  const sourceSection = documentRef?.sectionId ? sourceDocument?.sections.find((s) => s.sectionId === documentRef.sectionId) : undefined;
+  // Plat rows of the source section with no recipe: listed under the menu, written into the event notes.
+  const unlinkedRows = useMemo<DocRow[]>(() => sourceSection?.rows.filter((r) => r.kind === "plat" && !r.recipeId) ?? [], [sourceSection]);
+  const carteLines = draft.revenueLines.filter(isCarteLine);
+  const carteHtva = round2(carteLines.reduce((sum, l) => sum + l.amount, 0));
   const client = draft.clientId ? clientById.get(draft.clientId) : undefined;
   const prestationLabel = draft.prestationType ? prestationTypes.find((t) => t.key === draft.prestationType)?.label ?? draft.prestationType : undefined;
 
@@ -272,13 +333,30 @@ export default function Devis() {
   // ── Draft edits ───────────────────────────────────────────────────────────
   const patch = useCallback((change: Partial<DevisDraft>) => setDraft((d) => ({ ...d, ...change })), []);
 
-  const loadOffer = useCallback((offerId: string) => {
+  const loadOffer = useCallback((offerId: string, fromDocument: DevisDocumentRef | null = null) => {
     setDraft((d) => {
       const offer = offerById.get(offerId);
       if (!offer) return { ...EMPTY_DRAFT, clientId: d.clientId, date: d.date };
-      return draftFromOffer(offer, d);
+      return { ...draftFromOffer(offer, d), loadedFromDocument: fromDocument };
     });
   }, [offerById]);
+
+  // A formula section: its costed offer when it has one, else prestation, TVA, guests, price and the recipe-linked rows.
+  const loadSection = useCallback((document: OfferDocument, section: DocSection) => {
+    const ref: DevisDocumentRef = { documentId: document.documentId, sectionId: section.sectionId, title: `${document.title} ${document.year} › ${section.title}` };
+    if (section.offerId && offerById.has(section.offerId)) { loadOffer(section.offerId, ref); return; }
+    setDraft((d) => ({
+      ...EMPTY_DRAFT,
+      clientId: d.clientId,
+      date: d.date,
+      loadedFromDocument: ref,
+      prestationType: document.prestationType ?? "",
+      vatRate: foodVatRateOf(document, prestationTypes),
+      guests: document.minGuests ?? DEFAULT_GUESTS,
+      sellingPricePerGuest: section.price ?? 0,
+      lines: sectionRecipeLines(section, courses),
+    }));
+  }, [offerById, loadOffer, prestationTypes, courses]);
 
   const pickOffer = (offerId: string) => {
     if (offerId === (draft.loadedFrom ?? "")) return;
@@ -346,23 +424,68 @@ export default function Devis() {
     paramsApplied.current = true;
     const offre = searchParams.get("offre");
     const clientParam = searchParams.get("client");
-    if (!offre && !clientParam) return;
+    const documentParam = searchParams.get("document");
+    if (!offre && !clientParam && !documentParam) return;
     if (offre && offerById.has(offre)) loadOffer(offre);
+    const document = documentParam ? documentById.get(documentParam) : undefined;
+    if (document) {
+      const section = document.sections.find((s) => s.sectionId === searchParams.get("section"));
+      // A price list has no section price: its rows are picked one by one in the dialog.
+      if (section && section.price !== undefined) loadSection(document, section);
+      else setAddFromDocument({ documentId: document.documentId, sectionId: section?.sectionId });
+    }
     if (clientParam && clientById.has(clientParam)) pickClient(clientParam);
     const next = new URLSearchParams(searchParams);
-    next.delete("offre"); next.delete("client");
+    next.delete("offre"); next.delete("client"); next.delete("document"); next.delete("section");
     setSearchParams(next, { replace: true });
-  }, [loading, searchParams, setSearchParams, offerById, clientById, loadOffer, pickClient]);
+  }, [loading, searchParams, setSearchParams, offerById, documentById, clientById, loadOffer, loadSection, pickClient]);
 
   // ── Menu ──────────────────────────────────────────────────────────────────
   const appendRecipe = (recipe: Recipe) => {
     setDraft((d) => ({ ...d, lines: [...d.lines, { recipeId: recipe.recipeId, portionsPerGuest: 1, course: recipeCategoryOf(recipe) }] }));
   };
 
+  // Links a document row to a recipe: patches the document, then moves the row into the menu.
+  const linkRow = async (rowId: string, recipeId: string) => {
+    setLinkingRowId(null);
+    if (!sourceDocument || !sourceSection) return;
+    const section: DocSection = { ...sourceSection, rows: sourceSection.rows.map((r) => (r.rowId === rowId ? { ...r, recipeId } : r)) };
+    const sections = sourceDocument.sections.map((s) => (s.sectionId === section.sectionId ? section : s));
+    try {
+      const saved = await api.offerDocuments.update(sourceDocument.documentId, { sections, updatedAt: sourceDocument.updatedAt });
+      setDocuments((prev) => prev.map((d) => (d.documentId === saved.documentId ? saved : d)));
+      const line = lineForRow(section, rowId, recipeId, courses);
+      if (line) setDraft((d) => ({ ...d, lines: mergeOfferLines(d.lines, [line]) }));
+    } catch (e) {
+      toast({ title: "Erreur lors de la liaison", description: errorReason(e) || undefined, variant: "destructive" });
+      api.offerDocuments.get(sourceDocument.documentId).then((fresh) => setDocuments((prev) => prev.map((d) => (d.documentId === fresh.documentId ? fresh : d)))).catch(() => undefined);
+    }
+  };
+
   const onRecipeCreated = (recipe: Recipe) => {
     setRecipes((prev) => [...prev, recipe]);
+    if (newRecipe?.rowId) {
+      linkRow(newRecipe.rowId, recipe.recipeId);
+      toast({ title: "Recette créée et liée" });
+      return;
+    }
     appendRecipe(recipe);
     toast({ title: "Recette créée et ajoutée" });
+  };
+
+  const onUseExistingRecipe = (recipeId: string) => {
+    if (newRecipe?.rowId) { linkRow(newRecipe.rowId, recipeId); return; }
+    const r = recipeById.get(recipeId);
+    if (r) appendRecipe(r);
+  };
+
+  const addFromDocumentResult = (result: AddFromDocumentResult) => {
+    setDraft((d) => ({
+      ...d,
+      lines: mergeOfferLines(d.lines, result.lines),
+      revenueLines: [...d.revenueLines, ...result.revenueLines],
+      loadedFromDocument: d.loadedFromDocument ?? { documentId: result.document.documentId, title: `${result.document.title} ${result.document.year}` },
+    }));
   };
 
   const focusSearch = () => document.getElementById(SEARCH_ID)?.focus();
@@ -425,7 +548,7 @@ export default function Devis() {
   };
 
   const openCreate = () => {
-    setEventName([startOffer?.name, client?.name].filter(Boolean).join(" · ") || "Nouvel événement");
+    setEventName([startOffer?.name ?? sourceSection?.title, client?.name].filter(Boolean).join(" · ") || "Nouvel événement");
     setEventDate(draft.date);
     setDialog({ kind: "create" });
   };
@@ -449,12 +572,17 @@ export default function Devis() {
     if (draft.pricingMode === "total") offerLike.sellingTotal = draft.sellingTotal ?? 0;
     if (draft.prestationType) offerLike.prestationType = draft.prestationType;
     if (draft.vatRate !== null) offerLike.vatRate = draft.vatRate;
+    const origin = startOffer?.name ?? documentRef?.title;
+    const notes = [
+      origin ? `Devis du ${slashDate(todayIso())} depuis ${origin}` : undefined,
+      sourceSection && unlinkedRows.length ? `${sourceSection.title} : ${unlinkedRows.map((r) => r.text).join(" · ")}` : undefined,
+    ].filter(Boolean).join("\n");
     const body = eventFromOffer(offerLike, {
       name,
       date: eventDate,
       guests: Math.max(1, draft.guests),
       clientId: draft.clientId || undefined,
-      notes: startOffer ? `Devis du ${slashDate(todayIso())} depuis ${startOffer.name}` : undefined,
+      notes: notes || undefined,
     });
     const input: EventInput = {
       ...body,
@@ -500,6 +628,28 @@ export default function Devis() {
     });
   };
 
+  // The source document's own PDF; a brand image that cannot load is left out.
+  const exportDocumentPdf = async () => {
+    if (!sourceDocument) return;
+    const company = settings?.company;
+    const version = settings?.updatedAt ?? "";
+    const [logo, banner] = await Promise.all([
+      settings?.brandLogoKey ? brandImage("logo", version).catch(() => null) : null,
+      settings?.brandBannerKey ? brandImage("banner", version, { cropRatio: 4 }).catch(() => null) : null,
+    ]);
+    const fileName = documentFileName(sourceDocument);
+    const doc = exportOfferDocumentPdf({
+      blocks: documentBlocks(sourceDocument, company),
+      accent: company?.accent ?? DEFAULT_BRAND_ACCENT,
+      logo: logo ?? undefined,
+      banner: banner ?? undefined,
+      footer: [company?.name, company?.phone, company?.email, company?.website].filter(Boolean).join(" · "),
+      fileName,
+    });
+    doc.save(fileName);
+    toast({ title: "PDF téléchargé" });
+  };
+
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
   if (loadError) return <div className="p-8 text-muted-foreground">Erreur de chargement</div>;
 
@@ -527,8 +677,14 @@ export default function Devis() {
     <Button variant="primary" size={size} className={className} onClick={openCreate}>Créer l'événement</Button>
   );
 
-  const costSub: ReactNode =
-    quote.incompleteRecipes > 0 ? <span className="text-danger">{plural(quote.incompleteRecipes, "recette sans ingrédients", "recettes sans ingrédients")}</span> : undefined;
+  const costProblems = [
+    quote.incompleteRecipes > 0 ? plural(quote.incompleteRecipes, "recette sans ingrédients", "recettes sans ingrédients") : null,
+    unlinkedRows.length > 0 ? plural(unlinkedRows.length, "plat sans recette", "plats sans recette") : null,
+  ].filter((p): p is string => p !== null);
+  const costSub: ReactNode = costProblems.length > 0 ? <span className="text-danger">{costProblems.join(" · ")}</span> : undefined;
+  const recipeOptions = linkingRowId
+    ? [...recipes].sort((a, b) => a.name.localeCompare(b.name, "fr")).map((r) => ({ value: r.recipeId, label: r.name, detail: r.category }))
+    : [];
 
   return (
     <div className="mx-auto max-w-doc pb-20 md:pb-0">
@@ -556,6 +712,7 @@ export default function Devis() {
               allowEmpty
               placeholder="Sans offre"
               onSave={pickOffer}
+              sub={documentRef ? <Link to={`/offres/documents/${documentRef.documentId}`} className="text-primary hover:underline">Depuis {documentRef.title}</Link> : undefined}
             />
             {clientsConfigured ? (
               <Property
@@ -631,11 +788,45 @@ export default function Devis() {
           empty={<p className="mb-3 text-sm text-muted-foreground touch:text-base">Aucune recette. Partez d'une offre ou ajoutez des recettes.</p>}
           searchId={SEARCH_ID}
         />
+        <div className="mt-2">
+          <Button variant="subtle" size="sm" icon={<Plus />} onClick={() => setAddFromDocument({})}>Depuis un document…</Button>
+        </div>
+        {sourceSection && unlinkedRows.length > 0 && (
+          <div className="mt-3 rounded-lg bg-surface px-3 py-2 text-sm text-muted-foreground touch:text-base">
+            <p>Plats de « {sourceSection.title} » sans recette · {unlinkedRows.length}</p>
+            <ul className="mt-1">
+              {unlinkedRows.map((row) => (
+                <li key={row.rowId} className="flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1 touch:min-h-11">
+                  <span className="italic">{row.text}</span>
+                  {linkingRowId === row.rowId ? (
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      <SearchSelect
+                        options={recipeOptions}
+                        value=""
+                        placeholder="Lier à une recette…"
+                        autoFocus
+                        className="max-w-xs flex-1"
+                        onChange={(recipeId) => linkRow(row.rowId, recipeId)}
+                        onCreateNew={(name) => { setLinkingRowId(null); setNewRecipe({ name, category: rowCategory(sourceSection, row.rowId, courses), rowId: row.rowId }); }}
+                      />
+                      <Button variant="ghost" size="sm" onClick={() => setLinkingRowId(null)}>Annuler</Button>
+                    </span>
+                  ) : (
+                    <button type="button" onClick={() => setLinkingRowId(row.rowId)} className="rounded px-1 text-primary hover:underline touch:min-h-11">
+                      Lier
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-caption">Non comptés dans le coût matières.</p>
+          </div>
+        )}
       </Section>
 
       <Section
         title="Service, livraison, autres"
-        meta={draft.revenueLines.length > 0 ? fmtEur(quote.linesHtva) : undefined}
+        meta={draft.revenueLines.length > 0 ? (carteHtva > 0 ? `${fmtEur(quote.linesHtva)} dont ${fmtEur(carteHtva)} carte` : fmtEur(quote.linesHtva)) : undefined}
         action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addRevenueLine}>Ajouter</Button>}
       >
         {draft.revenueLines.length === 0 ? (
@@ -734,6 +925,11 @@ export default function Devis() {
             }
           />
         </div>
+        {carteLines.length > 0 && (
+          <p className="mt-1 text-caption text-muted-foreground">
+            {plural(carteLines.length, "article de la carte sans recette", "articles de la carte sans recette")} : revenu compté, coût non compté.
+          </p>
+        )}
 
         <PropertyList>
           <Property icon={Euro} label="Prix proposé" kind="custom" sub={isTotal ? `soit ${fmtEur(quote.pricePerGuest)} / convive` : undefined}>
@@ -773,6 +969,7 @@ export default function Devis() {
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="default" size="md" onClick={openSaveOffer}>Enregistrer comme offre</Button>
           <Button variant="ghost" size="md" onClick={exportPdf}>Proposition de menu (PDF)</Button>
+          {sourceDocument && <Button variant="ghost" size="md" onClick={exportDocumentPdf}>Document (PDF)</Button>}
         </div>
         {createButton("hidden md:inline-flex", "md")}
       </div>
@@ -789,6 +986,16 @@ export default function Devis() {
         onAdd={(added) => setDraft((d) => ({ ...d, lines: mergeOfferLines(d.lines, added) }))}
       />
 
+      <AddFromDocumentDialog
+        open={addFromDocument !== null}
+        onClose={() => setAddFromDocument(null)}
+        documents={documents}
+        prestationTypes={prestationTypes}
+        guests={draft.guests}
+        initial={addFromDocument?.documentId ? { documentId: addFromDocument.documentId, sectionId: addFromDocument.sectionId } : undefined}
+        onAdd={addFromDocumentResult}
+      />
+
       <NewRecipeDialog
         open={newRecipe !== null}
         onClose={() => setNewRecipe(null)}
@@ -797,7 +1004,7 @@ export default function Devis() {
         existing={recipes}
         defaultPortions={Math.max(1, draft.guests)}
         onCreated={onRecipeCreated}
-        onUseExisting={(rid) => { const r = recipeById.get(rid); if (r) appendRecipe(r); }}
+        onUseExisting={onUseExistingRecipe}
       />
 
       {clientsConfigured && (

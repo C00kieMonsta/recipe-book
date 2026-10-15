@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type MouseEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowUpDown, Plus, Search, X } from "lucide-react";
 import type { AppEvent, AppSettings, CreateOfferRequest, Ingredient, Offer, Recipe } from "@packages/types";
 import { DEFAULT_PRESTATION_TYPES, calcRecipeCost, fmtEur, offerFromEvent, offerSummary } from "@packages/types";
@@ -9,6 +9,7 @@ import { plural } from "@/lib/use-planning-data";
 import { useToast } from "@/hooks/use-toast";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useTopTitle } from "@/components/admin/AdminLayout";
+import OffersTabs from "@/components/admin/OffersTabs";
 import {
   ActionMenu,
   Button,
@@ -23,19 +24,14 @@ import {
   Table,
   Tag,
   Toolbar,
-  ViewTabs,
   useMenu,
 } from "@/components/ui";
 
 type Tab = "active" | "archived";
 type Sort = "name" | "price" | "margin";
 
-const TABS: { key: Tab; label: string }[] = [
-  { key: "active", label: "Actives" },
-  { key: "archived", label: "Archivées" },
-];
-
-const EMPTY_SENTENCE = "Aucune offre type. Une offre est un menu avec son prix par convive, à partir duquel vous faites un devis.";
+const EMPTY_SENTENCE = "Aucune formule. Une formule est un menu avec son prix par convive, à partir duquel vous faites un devis. Vos documents d'offre sont dans l'onglet Documents.";
+const NO_RECIPE_TITLE = "Aucun plat lié à une recette";
 
 // « 69,0 % »
 export function fmtPct(n: number): string {
@@ -226,7 +222,9 @@ export default function Offers() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
-  const [tab, setTab] = useState<Tab>("active");
+  // The « Archivées » tab is a link (OffersTabs), so the view lives in the URL.
+  const [params] = useSearchParams();
+  const tab: Tab = params.get("vue") === "archivees" ? "archived" : "active";
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [sort, setSort] = useState<Sort>("name");
@@ -355,15 +353,18 @@ export default function Offers() {
   const tableEmpty = search.trim()
     ? "Aucun résultat"
     : tab === "archived"
-      ? "Aucune offre archivée."
-      : "Aucune offre active.";
+      ? "Aucune formule archivée."
+      : "Aucune formule active.";
+  const archivedCount = offers.filter((o) => o.archived).length;
+  const meta = tab === "archived" ? plural(archivedCount, "formule archivée") : plural(offers.length - archivedCount, "formule");
+  const dash = <span title={NO_RECIPE_TITLE}>—</span>;
 
   return (
     <div className="mx-auto max-w-wide">
       <PageHeader
         iconKey="offres"
         title="Offres"
-        meta={plural(offers.length, "offre")}
+        meta={meta}
         actions={
           <>
             <Button as={Link} to="/devis" variant="default" size="md" className="hidden md:inline-flex">Devis</Button>
@@ -375,24 +376,24 @@ export default function Offers() {
               ]}
             />
             <Button variant="primary" size="lg" icon={<Plus />} onClick={createNew} disabled={busy}>
-              <span className="hidden sm:inline">Nouvelle offre</span><span className="sm:hidden">Nouvelle</span>
+              <span className="hidden sm:inline">Nouvelle formule</span><span className="sm:hidden">Nouvelle</span>
             </Button>
           </>
         }
       />
 
       {offers.length === 0 ? (
-        <div data-tour="offers-list" className="flex flex-col items-center gap-2 py-10 text-center">
+        <div className="flex flex-col items-center gap-2 py-10 text-center">
           <p className="max-w-md text-sm text-muted-foreground touch:text-base">{EMPTY_SENTENCE}</p>
           <div className="flex flex-wrap items-center justify-center gap-1">
-            <Button variant="link" size="sm" onClick={createNew} disabled={busy}>+ Nouvelle offre</Button>
+            <Button variant="link" size="sm" onClick={createNew} disabled={busy}>+ Nouvelle formule</Button>
             <Button variant="link" size="sm" onClick={() => setFromEvent(true)}>Depuis un événement…</Button>
           </div>
         </div>
       ) : (
-        <div data-tour="offers-list">
+        <div>
           <Toolbar
-            left={<ViewTabs items={TABS} value={tab} onChange={(k) => setTab(k as Tab)} aria-label="Offres" />}
+            left={<OffersTabs current={tab === "archived" ? "archivees" : "formules"} base="/offres" />}
             right={
               <>
                 {searchOpen ? searchField : <IconButton size="sm" aria-label="Rechercher" icon={<Search />} onClick={() => setSearchOpen(true)} />}
@@ -447,13 +448,13 @@ export default function Offers() {
                     </span>
                   ),
                 },
-                { key: "cost", label: "Coût / conv.", width: "120px", align: "right", render: (r) => fmtEur(r.summary.costPerGuest) },
+                { key: "cost", label: "Coût / conv.", width: "120px", align: "right", render: (r) => (r.offer.lines.length === 0 ? dash : fmtEur(r.summary.costPerGuest)) },
                 {
                   key: "margin",
                   label: "Marge %",
                   width: "100px",
                   align: "right",
-                  render: (r) => (
+                  render: (r) => r.offer.lines.length === 0 ? dash : (
                     <>
                       <span className={r.summary.marginPct < 0 ? "text-danger" : undefined}>{fmtPct(r.summary.marginPct)}</span>
                       {r.summary.incompleteRecipes > 0 && (

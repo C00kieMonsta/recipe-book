@@ -28,7 +28,7 @@ const menuItems: MenuItem[] = [
   { path: "/ingredients", icon: PAGE_ICONS.ingredients, label: "Ingrédients", isActive: startsWith("/ingredients") },
   { path: "/grocery-list", icon: PAGE_ICONS.courses, label: "Courses", isActive: startsWith("/grocery-list") },
   { path: "/clients", icon: PAGE_ICONS.clients, label: "Clients", isActive: startsWith("/clients") },
-  { path: "/offres", icon: PAGE_ICONS.offres, label: "Offres", isActive: startsWith("/offres", "/devis") },
+  { path: "/offres/documents", icon: PAGE_ICONS.offres, label: "Offres", isActive: startsWith("/offres", "/devis") },
   { path: "/comptes/journal", icon: PAGE_ICONS.comptabilite, label: "Comptabilité", isActive: startsWith("/comptes") },
   { path: "/settings", icon: PAGE_ICONS.parametres, label: "Paramètres", isActive: startsWith("/settings") },
 ];
