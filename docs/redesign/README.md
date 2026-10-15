@@ -22,6 +22,7 @@ Plan for the rethink of the app after the caterer's feedback (planning view, rea
 | `08-assistant.md` | The Assistant: a chat sheet on every page that proposes recipes, event changes and price estimates, applied only on click. Key in SSM, Responses API with tools, no new table. |
 | `09-offer-catalogue.md` | The offer catalogue: Dalia's brochures as editable block documents, costed formulas linked to the offers, branded PDFs, her seven 2026 sheets as the starting content. |
 | `10-invoice-inbox.md` | Dépôt de factures: drop PDFs or photos, the document model reads them, a review table proposes the Journal entries, one click adds them with the file attached. |
+| `11-team-margin-reminders.md` | Dalia's fourth feedback (nine points): rates and payment mode per person, « En cuisine » and « Sur place » teams with hours and km per person and a Comptabilité › Équipe table, revenue line kinds, the margin on food only, Zakouskis and Mignardises merged into Apéritif and Dessert (read-time alias plus a dry-run script), the tablet drag (sticky drop targets, columns in landscape), and reminders that work without people, without the ledger table and in Odoo mode (`invoicedAt`). |
 | `workings/offers-source-2026.md` | Dalia's seven offer sheets (2025 to 2026) transcribed as the source for the offer catalogue. |
 | `workings/implementation-review.md` | Review of the first implementation against the plan. |
 | `workings/qa-review-2026-10-14.md` | Full code review and QA (seven reviewers, two QA runs, adversarial verification): what was confirmed, fixed and deferred. |
