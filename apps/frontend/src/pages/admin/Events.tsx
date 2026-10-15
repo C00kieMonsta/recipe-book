@@ -131,7 +131,15 @@ export default function Events() {
     </div>
   );
 
-  const more = <ActionMenu title="Événements" items={[{ label: "Imprimer la liste", icon: <Printer />, onClick: () => window.print() }]} />;
+  const more = (
+    <ActionMenu
+      title="Événements"
+      items={[
+        { label: "Liste de courses…", icon: <ShoppingCart />, onClick: () => setGroceryOpen(true) },
+        { label: "Imprimer la liste", icon: <Printer />, onClick: () => window.print() },
+      ]}
+    />
+  );
 
   const chips = filterCount > 0 ? (
     <>
@@ -148,8 +156,8 @@ export default function Events() {
         meta={`${events.length} événement${events.length > 1 ? "s" : ""}`}
         actions={
           <>
-            <Button variant="default" size="lg" icon={<ShoppingCart />} aria-label="Liste de courses" onClick={() => setGroceryOpen(true)}>
-              <span className="hidden sm:inline">Liste de courses</span>
+            <Button variant="default" size="lg" icon={<ShoppingCart />} aria-label="Liste de courses" className="hidden sm:inline-flex" onClick={() => setGroceryOpen(true)}>
+              Liste de courses
             </Button>
             <Button as={Link} to="/events/new" variant="primary" size="lg" icon={<Plus />}>
               <span className="hidden sm:inline">Nouvel événement</span><span className="sm:hidden">Nouveau</span>

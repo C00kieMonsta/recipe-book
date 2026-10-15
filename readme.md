@@ -86,7 +86,7 @@ The SPA is a pure client-side app. It authenticates with a JWT from `POST /api/a
 | `/recipes/:id` | Recipe detail: editable inline, cost breakdown |
 | `/recipes/:id/cook` | Step-by-step cook mode (mobile-friendly) |
 | `/ingredients` | Ingredient catalogue |
-| `/events` | Event list: multi-select + grocery list generation |
+| `/events` | Event list with filters, sort and search; « Liste de courses » opens the events picker that builds one grocery list from the ticked events |
 | `/events/:id` | Event detail: cost/margin, PDF recipe export |
 | `/grocery-list` | Grocery list: check items, track stock, save to DB |
 | `/settings` | App settings |

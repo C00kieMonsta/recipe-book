@@ -50,8 +50,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (inflight.current) return inflight.current;
     const run = (async () => {
       const persisted = isTokenPersisted();
+      const current = getToken();
       const data = await api.auth.refresh();
-      if (!data.token || data.token === getToken()) return;
+      // A logout or another tab's login during the request wins.
+      if (getToken() !== current) return;
+      if (!data.token || data.token === current) return;
       storeToken(data.token, persisted);
       setToken(data.token);
     })();

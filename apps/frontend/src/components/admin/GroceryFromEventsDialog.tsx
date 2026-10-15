@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AppEvent } from "@packages/types";
-import { addDays, datesOfIsoWeek, dayMonthLabel, isoWeekOf, rangeLabel, todayYmd } from "@packages/types";
+import { addDays, datesOfIsoWeek, dayMonthLabel, isoWeekOf, longDayLabel, rangeLabel, todayYmd } from "@packages/types";
 import { api } from "@/lib/api";
 import {
   buildGroceryItems,
   eventMatchesSearch,
+  foldAccents,
   groceryTitleFor,
   selectEventsInRange,
   sortEventsByDateThenName,
@@ -169,7 +170,7 @@ export default function GroceryFromEventsDialog({ open, onClose, onCreated, init
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <SelectPill colour="gray" value={preset} onChange={(v) => choosePreset(v as Preset)} options={PRESET_OPTIONS} aria-label="Période" />
-        {preset !== "libre" && <span className="text-sm text-muted-foreground">{rangeLabel(from, to)}</span>}
+        {preset !== "libre" && <span className="text-sm text-muted-foreground">{from === to ? longDayLabel(from) : rangeLabel(from, to)}</span>}
       </div>
       {preset === "libre" && (
         <div className="mt-3 grid grid-cols-2 gap-3">
@@ -207,6 +208,7 @@ export default function GroceryFromEventsDialog({ open, onClose, onCreated, init
             {visible.map((ev) => {
               const lines = ev.recipes.length;
               const client = clientNameOf(ev);
+              const showClient = client !== undefined && foldAccents(client) !== foldAccents(ev.name);
               return (
                 <li key={ev.eventId} className="flex items-center gap-2">
                   <Checkbox
@@ -217,7 +219,7 @@ export default function GroceryFromEventsDialog({ open, onClose, onCreated, init
                       <span className="flex min-w-0 flex-col">
                         <span className="truncate">
                           {ev.name}
-                          {client && <span className="text-muted-foreground"> · {client}</span>}
+                          {showClient && <span className="text-muted-foreground"> · {client}</span>}
                         </span>
                         <span className="truncate text-muted-foreground">
                           {dayMonthLabel(ev.date)} · {plural(ev.guestCount, "convive")} · {lines === 0 ? "sans menu" : plural(lines, "recette")}
