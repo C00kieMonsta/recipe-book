@@ -65,8 +65,18 @@ const health = await call("GET", "/health");
 report("health reports clients and ledger tables", health.body?.tables?.clients === true && health.body?.tables?.ledger === true, health);
 
 const login = await call("POST", "/api/admin/auth/login", { email: process.env.SMOKE_EMAIL ?? "smoke@example.com", password: process.env.SMOKE_PASSWORD ?? "smoke" });
-report("login", login.status === 201 && typeof login.body?.token === "string", login);
+report("login", login.status === 201 && typeof login.body?.token === "string" && typeof login.body?.expiresAt === "string", login);
 token = login.body?.token ?? "";
+
+// The refreshed token replaces the login one for every call that follows.
+// HS256 is deterministic, so wait for the next second or the refreshed token equals the login one.
+await check("a0b refresh", async (req) => {
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  const r = await req("POST", "/api/admin/auth/refresh");
+  const ok = r.status === 201 && r.body?.ok === true && typeof r.body?.token === "string" && r.body.token !== token && typeof r.body?.expiresAt === "string";
+  if (ok) token = r.body.token;
+  return ok;
+});
 
 // a. Settings
 await check("a1 settings defaults", async (req) => {

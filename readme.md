@@ -75,7 +75,7 @@ recipe-book/
 | Icons | Lucide React |
 | Validation | Zod (via shared types) |
 
-The SPA is a pure client-side app. It authenticates with a JWT (stored in `sessionStorage`) and talks to the backend via a thin `api.ts` client that includes a TTL cache for read-heavy endpoints (ingredients, recipes, settings).
+The SPA is a pure client-side app. It authenticates with a JWT from `POST /api/admin/auth/login`, valid 24 hours, or 30 days when « Rester connecté sur cet appareil » is ticked (`remember: true`). The token is kept in `sessionStorage`, or in `localStorage` with « Rester connecté ». While the app is open, and again when the tab regains focus, the frontend calls `POST /api/admin/auth/refresh` in the background and swaps in the new token, so an active session never expires; a closed session lives until the token's `expiresAt`. The SPA talks to the backend via a thin `api.ts` client that includes a TTL cache for read-heavy endpoints (ingredients, recipes, settings).
 
 **Key pages:**
 
@@ -110,6 +110,8 @@ The SPA is a pure client-side app. It authenticates with a JWT (stored in `sessi
 
 All routes are under `/api/admin/*` and protected by a JWT `AdminGuard`. The API is stateless; secrets are injected via environment variables at boot.
 
+**Auth:** `POST /admin/auth/login` takes `{ email, password, remember? }` and answers `{ ok: true, token, expiresAt }`. The token (HS256, payload `{ email, remember, iat, exp }`) lives 24 hours, or 30 days when `remember` is true (`TOKEN_TTL_S` and `TOKEN_TTL_REMEMBER_S` in `auth.controller.ts`). `POST /admin/auth/refresh`, behind `AdminGuard`, takes the current token in the `Authorization` header and answers the same shape with a fresh token of the same class (same email, same `remember`, new `iat` and `exp`). An expired or forged token is a 401 from the guard; there is no refresh token and no revocation list, so a stolen token stays valid until its `exp`.
+
 **Modules:**
 
 | Module | Routes | DynamoDB table |
@@ -123,7 +125,7 @@ All routes are under `/api/admin/*` and protected by a JWT `AdminGuard`. The API
 | `SettingsModule` | `/admin/settings` | `ta-settings-{stage}` |
 | `OffersModule` | `/admin/offers` | `ta-settings-{stage}` (item `settingsId = "offers"`) |
 | `OfferDocumentsModule` | `/admin/offer-documents` | `ta-settings-{stage}` (one item per document, `settingsId = "document:<id>"`) |
-| `AuthModule` | `/admin/auth/login` | none (credentials in env) |
+| `AuthModule` | `/admin/auth/login`, `/admin/auth/refresh` | none (credentials in env) |
 
 **DynamoDB access pattern:** every module uses a shared `DdbService` that wraps the AWS DocumentClient. All tables use a single string partition key (e.g. `ingredientId`, `recipeId`) with no sort key and pay-per-request billing.
 
@@ -182,7 +184,7 @@ Stored in AWS SSM Parameter Store under `/la-table-amelie/production/*` and writ
 | `LEDGER_TABLE` | DynamoDB table name. Optional: the API boots without it and the Comptabilité feature returns 503 until it is set |
 | `S3_BUCKET` | S3 bucket for recipe photos |
 | `ADMIN_CREDENTIALS` | JSON array of `{email, hash}` (bcrypt) |
-| `JWT_SECRET` | HS256 signing secret (32+ chars) |
+| `JWT_SECRET` | HS256 signing secret (32+ chars). Signs the login and refresh tokens; rotating it logs every admin out |
 | `OPENAI_API_KEY_PARAMETER` | Name of the SSM SecureString holding the OpenAI key. The deploy sets it when the parameter exists; with `NODE_ENV=production` the API defaults to `/la-table-amelie/production/OPENAI_API_KEY` anyway. See « Assistant » |
 | `OPENAI_MODEL` | Optional Responses-API model id (default `gpt-5.6-terra`). Read from SSM by the deploy, empty means the default |
 | `OPENAI_API_KEY` | Local only. Never set it in SSM or in `.env` on the server; see « Assistant » |
