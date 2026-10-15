@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, Search, ArrowUpDown, Printer, X, ShoppingCart } from "lucide-react";
-import type { AppEvent, Client, PrestationTypeSetting } from "@packages/types";
-import { fmtEur, signedRevenue } from "@packages/types";
-import { api } from "@/lib/api";
+import type { AppEvent, Client, InvoicingMode, LedgerEntry, PrestationTypeSetting } from "@packages/types";
+import { fmtEur, invoicedEventIds, signedRevenue } from "@packages/types";
+import { api, fetchHealth } from "@/lib/api";
 import { dayMonthShortLabel } from "@/lib/dates";
 import { useToast } from "@/hooks/use-toast";
 import { useAssistantApplied } from "@/hooks/use-assistant-applied";
@@ -29,14 +29,18 @@ import {
   useMenu,
 } from "@/components/ui";
 
-type Filter = "upcoming" | "completed" | "all";
+type Filter = "upcoming" | "completed" | "a_facturer" | "all";
 type SortDir = "asc" | "desc";
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "upcoming", label: "À venir" },
   { key: "completed", label: "Terminés" },
+  { key: "a_facturer", label: "À facturer" },
   { key: "all", label: "Tous" },
 ];
+
+// ?filtre=a-facturer selects the « À facturer » tab (the week box links there).
+const A_FACTURER_PARAM = "a-facturer";
 
 export default function Events() {
   const [events, setEvents] = useState<AppEvent[]>([]);
@@ -45,7 +49,11 @@ export default function Events() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [filter, setFilter] = useState<Filter>("upcoming");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [filter, setFilterState] = useState<Filter>(() => (searchParams.get("filtre") === A_FACTURER_PARAM ? "a_facturer" : "upcoming"));
+  const [invoicing, setInvoicing] = useState<InvoicingMode | undefined>(undefined);
+  const [ledgerTable, setLedgerTable] = useState<boolean | undefined>(undefined);
+  const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [clientFilter, setClientFilter] = useState("");
   const [prestationFilter, setPrestationFilter] = useState("");
   const [sortDir, setSortDir] = useState<SortDir | null>(null);
@@ -60,8 +68,32 @@ export default function Events() {
       .catch(() => toast({ title: "Erreur de chargement", variant: "destructive" }))
       .finally(() => setLoading(false));
     api.clients.list().then(setClients).catch(() => setClients([]));
-    api.settings.get().then((s) => setPrestationTypes(s.prestationTypes ?? [])).catch(() => setPrestationTypes([]));
+    api.settings.get()
+      .then((s) => { setPrestationTypes(s.prestationTypes ?? []); setInvoicing(s.invoicing ?? "app"); })
+      .catch(() => setPrestationTypes([]));
+    fetchHealth().then((h) => setLedgerTable(h.tables.ledger)).catch(() => undefined);
   }, []);
+
+  // A ledger invoice counts as invoiced too, so the tab agrees with the week box and Comptes › À terminer.
+  useEffect(() => {
+    if (ledgerTable) api.ledger.list().then(setEntries).catch(() => setEntries([]));
+  }, [ledgerTable]);
+  const invoiced = useMemo(() => invoicedEventIds(entries, events), [entries, events]);
+
+  // Events are marked invoiced by hand when the invoices live in Odoo or the ledger table is absent.
+  const markMode = invoicing === "externe" || ledgerTable === false;
+  const filterItems = useMemo(() => FILTERS.filter((f) => f.key !== "a_facturer" || markMode), [markMode]);
+
+  const setFilter = (next: Filter) => {
+    setFilterState(next);
+    const params = new URLSearchParams(searchParams);
+    if (next === "a_facturer") params.set("filtre", A_FACTURER_PARAM); else params.delete("filtre");
+    setSearchParams(params, { replace: true });
+  };
+  // The tab is hidden in app mode with the ledger, so a stale link falls back to « À venir ».
+  useEffect(() => {
+    if (filter === "a_facturer" && invoicing !== undefined && ledgerTable !== undefined && !markMode) setFilter("upcoming");
+  }, [filter, invoicing, ledgerTable, markMode]);
   useAssistantApplied(() => { api.events.list().then(setEvents).catch(() => undefined); });
 
   const clientById = useMemo(() => new Map(clients.map((c) => [c.clientId, c])), [clients]);
@@ -70,13 +102,14 @@ export default function Events() {
   const filtered = useMemo(() => {
     let arr = [...events];
     if (search) arr = arr.filter((e) => e.name.toLowerCase().includes(search.toLowerCase()));
-    if (filter !== "all") arr = arr.filter((e) => e.status === filter);
+    if (filter === "a_facturer") arr = arr.filter((e) => e.status === "completed" && !invoiced.has(e.eventId));
+    else if (filter !== "all") arr = arr.filter((e) => e.status === filter);
     if (clientFilter) arr = arr.filter((e) => e.clientId === clientFilter);
     if (prestationFilter) arr = arr.filter((e) => e.prestationType === prestationFilter);
     const dir = sortDir ? (sortDir === "asc" ? 1 : -1) : filter === "upcoming" ? 1 : -1;
     arr.sort((a, b) => dir * a.date.localeCompare(b.date));
     return arr;
-  }, [events, search, filter, clientFilter, prestationFilter, sortDir]);
+  }, [events, search, filter, clientFilter, prestationFilter, sortDir, invoiced]);
 
   const { page, totalPages, paginatedItems, setPage, next, prev, total } = usePagination(filtered, 20);
 
@@ -175,7 +208,7 @@ export default function Events() {
 
       <div data-tour="events-list">
         <Toolbar
-          left={<ViewTabs items={FILTERS} value={filter} onChange={(k) => { setFilter(k as Filter); setPage(1); }} aria-label="Statut" />}
+          left={<ViewTabs items={filterItems} value={filter} onChange={(k) => { setFilter(k as Filter); setPage(1); }} aria-label="Statut" />}
           right={
             <>
               {searchOpen ? searchField : <IconButton size="sm" aria-label="Rechercher" icon={<Search />} onClick={() => setSearchOpen(true)} />}
@@ -213,7 +246,18 @@ export default function Events() {
               { key: "guests", label: "Conv.", width: "70px", align: "right", render: (ev) => `${ev.guestCount}` },
               { key: "prestation", label: "Prestation", render: (ev) => (ev.prestationType ? <Tag colour="gray">{prestationLabel.get(ev.prestationType) ?? ev.prestationType}</Tag> : "") },
               { key: "amount", label: "Montant", width: "110px", align: "right", trailing: true, render: (ev) => <span className="text-foreground">{fmtEur(signedRevenue(ev))}</span> },
-              { key: "status", label: "Statut", width: "110px", trailing: true, render: (ev) => <StatusTag status={ev.status} /> },
+              {
+                key: "status",
+                label: "Statut",
+                width: markMode ? "190px" : "110px",
+                trailing: true,
+                render: (ev) => (
+                  <span className="inline-flex flex-col items-end gap-1 md:flex-row md:items-center">
+                    <StatusTag status={ev.status} />
+                    {markMode && ev.status === "completed" && (invoiced.has(ev.eventId) ? <StatusTag status="invoiced" /> : <Tag colour="gray">à facturer</Tag>)}
+                  </span>
+                ),
+              },
             ]}
           />
         </div>

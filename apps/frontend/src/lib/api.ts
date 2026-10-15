@@ -178,7 +178,7 @@ export type MergeResponse =
   | { ok: false; recipesUpdated: number; listsUpdated: number; failures: unknown[]; preexisting?: number };
 
 // Text fields the server clears when the update sends null or "".
-type ClearableEventField = "contactName" | "contactPhone" | "contactEmail" | "deliveryAddress" | "deliveryTime" | "billingDetails";
+type ClearableEventField = "contactName" | "contactPhone" | "contactEmail" | "deliveryAddress" | "deliveryTime" | "billingDetails" | "invoicedAt" | "invoiceRef";
 
 // Lines and tasks sent on create or update may omit their id; the server fills it. Attachments only change through their own routes.
 export type EventInput = Omit<Partial<AppEvent>, "recipes" | "tasks" | "costSnapshot" | "attachments" | ClearableEventField | "sellingTotal"> & {

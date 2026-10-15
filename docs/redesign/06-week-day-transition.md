@@ -98,6 +98,8 @@ Laptop (`xl`, 1366, sidebar collapsed), both views, top to bottom. Same DOM orde
 
 ### 4.1 Week columns (xl)
 
+> Superseded by `11-team-margin-reminders.md` (6.11): the column layout is gated on the `cols` screen (`COLS_QUERY` in `apps/frontend/src/lib/screens.ts`: 1280 px and up, or 1024 px landscape), not on `xl`. Every `xl:` below reads `cols:`, and the `window.innerWidth >= 1280` test reads `useMediaQuery(COLS_QUERY)`.
+
 The seven column heads leave the columns and become the shared `DayHeads` row above (section 6). The grid keeps the column bodies only: `hidden grid-cols-[repeat(7,minmax(0,1fr))] gap-2 xl:grid print:hidden`, no `mt-4` (the heads row has `pb-1`). Each column root keeps `group min-w-0` and `opacity-60` for past days; the body `div.space-y-2.px-0.5.pb-2` keeps the drop-target classes and handlers from 05.
 
 Column content in 05 section 6.2 order, unchanged: event cards, own-day lines, task rows, caption rows « 1 préparation le jeu. 8 », moved-in groups « pour sam. 17 · Mariage Dupont », then the foot « + Nouvel événement » and « + Tâche » (`TaskComposer` on pointer). The `assign` tour anchor on the first card is untouched.

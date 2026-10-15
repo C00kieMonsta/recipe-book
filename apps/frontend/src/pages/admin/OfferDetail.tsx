@@ -27,6 +27,7 @@ import {
   pricePerGuestOf,
   quoteTotals,
   recipeCategoryOf,
+  revenueByKindLabel,
   round2,
 } from "@packages/types";
 import { api, ApiError, errorReason, invalidate } from "@/lib/api";
@@ -36,6 +37,7 @@ import { useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
 import AddFromOfferDialog from "@/components/admin/AddFromOfferDialog";
 import NewRecipeDialog from "@/components/admin/NewRecipeDialog";
 import OfferMenu from "@/components/admin/OfferMenu";
+import RevenueLines from "@/components/admin/RevenueLines";
 import {
   ActionMenu,
   Button,
@@ -57,7 +59,6 @@ import { DeleteOfferDialog, FromEventDialog, duplicateOfferPayload, fmtPct } fro
 const NONE = "__none__";
 const SAVE_DELAY = 300;
 const SEARCH_ID = "offer-menu-search";
-const REVENUE_LABELS_ID = "offer-revenue-labels";
 
 const EXTRA_KINDS: { value: ExtraCostKind; label: string }[] = [
   { value: "matiere", label: "Matière" },
@@ -115,7 +116,6 @@ export default function OfferDetail() {
   const [replaceWith, setReplaceWith] = useState<AppEvent | null>(null);
   const [deleting, setDeleting] = useState<Offer | null>(null);
   const [busy, setBusy] = useState(false);
-  const revenueRef = useRef<HTMLDivElement>(null);
 
   // The latest offer, readable from handlers that fire before the next render.
   const offerRef = useRef<Offer | null>(null);
@@ -254,15 +254,9 @@ export default function OfferDetail() {
 
   // ── Service, livraison, autres ────────────────────────────────────────────
   const setRevenueLines = (revenueLines: EventRevenueLine[]) => edit({ revenueLines });
-  const updateRevenueLine = (i: number, patch: Partial<EventRevenueLine>) => setRevenueLines(offer.revenueLines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
-  const addRevenueLine = () => {
-    setRevenueLines([...offer.revenueLines, { label: "Service", amount: 0, vatRate: 21 }]);
-    setTimeout(() => {
-      const cells = revenueRef.current?.querySelectorAll<HTMLElement>("[data-amount] [role=button]");
-      cells?.[cells.length - 1]?.click();
-    }, 50);
-  };
-  const removeRevenueLine = (i: number) => setRevenueLines(offer.revenueLines.filter((_, j) => j !== i));
+  const revenueMeta = offer.revenueLines.length
+    ? [`${fmtEur(totals.linesHtva)} HTVA`, revenueByKindLabel(offer)].filter(Boolean).join(" · ")
+    : undefined;
 
   // ── Coûts supplémentaires ─────────────────────────────────────────────────
   const setExtraCosts = (extraCosts: EventExtraCost[]) => edit({ extraCosts });
@@ -355,9 +349,10 @@ export default function OfferDetail() {
       <div className="flex overflow-x-auto rounded-lg bg-surface md:grid md:grid-cols-4 md:divide-x md:divide-border">
         <MoneyTile flat label="Coût matières / conv." value={fmtEur(totals.costPerGuest)} sub={incompleteSub} className="min-w-[10rem] shrink-0 md:min-w-0" />
         <MoneyTile flat label="Prix / conv." value={fmtEur(totals.pricePerGuest)} className="min-w-[10rem] shrink-0 md:min-w-0" />
-        <MoneyTile flat label="Marge / conv." value={fmtEur(totals.marginPerGuest)} className="min-w-[10rem] shrink-0 md:min-w-0" />
-        <MoneyTile flat label="Marge %" value={<span className={totals.marginPct < 0 ? "text-danger" : undefined}>{fmtPct(totals.marginPct)}</span>} className="min-w-[10rem] shrink-0 md:min-w-0" />
+        <MoneyTile flat label="Marge food / conv." value={fmtEur(totals.marginPerGuest)} className="min-w-[10rem] shrink-0 md:min-w-0" />
+        <MoneyTile flat label="Marge food %" value={<span className={totals.marginPct < 0 ? "text-danger" : undefined}>{fmtPct(totals.marginPct)}</span>} className="min-w-[10rem] shrink-0 md:min-w-0" />
       </div>
+      <p className="text-sm text-muted-foreground">Marge sur le food uniquement, hors service, livraison et autres.</p>
 
       <Section
         title="Menu"
@@ -378,43 +373,7 @@ export default function OfferDetail() {
         />
       </Section>
 
-      <Section
-        title="Service, livraison, autres"
-        meta={`${fmtEur(totals.linesHtva)} HTVA`}
-        action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addRevenueLine}>Ajouter</Button>}
-      >
-        {offer.revenueLines.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Aucun supplément. Service, livraison ou autres, facturés en plus du prix food, TVA 21 % par défaut.</p>
-        ) : (
-          <div ref={revenueRef}>
-            <datalist id={REVENUE_LABELS_ID}>
-              <option value="Service" />
-              <option value="Livraison" />
-              <option value="Autres" />
-            </datalist>
-            {offer.revenueLines.map((line, i) => (
-              <div key={i} className={ROW}>
-                <span className="min-w-0 flex-1 text-sm touch:text-base">
-                  <InlineLabel value={line.label} list={REVENUE_LABELS_ID} onSave={(v) => { if (v.trim()) updateRevenueLine(i, { label: v.trim() }); }} />
-                </span>
-                <span className="w-24 text-right text-sm tabular-nums touch:text-base" data-amount>
-                  <EditableInlineNum value={line.amount} min={0} onSave={(v) => updateRevenueLine(i, { amount: round2(Math.max(0, v)) })} suffix=" €" />
-                </span>
-                <SelectPill
-                  value={String(line.vatRate)}
-                  options={VAT_OPTIONS}
-                  colour="gray"
-                  align="right"
-                  aria-label="TVA"
-                  title="TVA"
-                  onChange={(v) => { const rate = parseVat(v); if (rate !== undefined) updateRevenueLine(i, { vatRate: rate }); }}
-                />
-                <IconButton size="sm" aria-label="Retirer" onClick={() => removeRevenueLine(i)} icon={<X />} className="reveal" />
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
+      <RevenueLines lines={offer.revenueLines} onChange={setRevenueLines} meta={revenueMeta} />
 
       <Section
         title="Coûts supplémentaires"
@@ -497,40 +456,5 @@ export default function OfferDetail() {
 
       <DeleteOfferDialog offer={deleting} onClose={() => setDeleting(null)} onDeleted={() => navigate("/offres")} />
     </div>
-  );
-}
-
-// EditableInlineText with a datalist of the usual labels.
-function InlineLabel({ value, onSave, list }: { value: string; onSave: (v: string) => void; list: string }) {
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(value);
-  useEffect(() => { if (!editing) setText(value); }, [value, editing]);
-  const commit = () => { setEditing(false); if (text !== value) onSave(text); };
-  if (editing) {
-    return (
-      <input
-        className="-mx-1 w-32 rounded border-0 bg-input-bg px-1 font-medium shadow-ring outline-none"
-        list={list}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") { e.preventDefault(); commit(); }
-          if (e.key === "Escape") { e.preventDefault(); setText(value); setEditing(false); }
-        }}
-        autoFocus
-      />
-    );
-  }
-  return (
-    <strong
-      role="button"
-      tabIndex={0}
-      className="prop-value font-medium touch:inline-flex touch:min-h-11 touch:items-center"
-      onClick={() => setEditing(true)}
-      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
-    >
-      {value}
-    </strong>
   );
 }

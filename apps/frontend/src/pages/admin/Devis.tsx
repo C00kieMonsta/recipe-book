@@ -35,6 +35,7 @@ import {
   pricePerGuestOf,
   quoteTotals,
   recipeCategoryOf,
+  revenueByKindLabel,
   round2,
   sectionRecipeLines,
   suggestedPricePerGuest,
@@ -55,6 +56,7 @@ import AddFromOfferDialog from "@/components/admin/AddFromOfferDialog";
 import NewClientDialog from "@/components/admin/NewClientDialog";
 import NewRecipeDialog from "@/components/admin/NewRecipeDialog";
 import OfferMenu from "@/components/admin/OfferMenu";
+import RevenueLines from "@/components/admin/RevenueLines";
 import {
   ActionMenu,
   Button,
@@ -74,7 +76,6 @@ import {
 
 const DRAFT_KEY = "devis:draft";
 const SEARCH_ID = "devis-recipe-search";
-const LABELS_LIST_ID = "devis-revenue-labels";
 const DEFAULT_GUESTS = 20;
 // Label prefix of the revenue lines made from document rows (revenueLinesFromRows).
 const CARTE_PREFIX = "Carte · ";
@@ -206,8 +207,6 @@ const EXTRA_KINDS: { value: ExtraCostKind; label: string }[] = [
   { value: "autre", label: "Autre" },
 ];
 
-const REVENUE_LABELS = ["Service", "Livraison", "Autres"];
-
 const ROW = "group flex min-h-9 items-center gap-2 rounded px-1 hover:bg-hover touch:min-h-11";
 
 type DevisDialog =
@@ -251,7 +250,6 @@ export default function Devis() {
   const [linkingRowId, setLinkingRowId] = useState<string | null>(null);
   // Remounts the « Offre de départ » row when a replace is cancelled, so its optimistic value reverts.
   const [offerRowKey, setOfferRowKey] = useState(0);
-  const revenueRefs = useRef(new Map<number, HTMLDivElement>());
   const paramsApplied = useRef(false);
 
   useEffect(() => {
@@ -300,7 +298,6 @@ export default function Devis() {
   // Plat rows of the source section with no recipe: listed under the menu, written into the event notes.
   const unlinkedRows = useMemo<DocRow[]>(() => sourceSection?.rows.filter((r) => r.kind === "plat" && !r.recipeId) ?? [], [sourceSection]);
   const carteLines = draft.revenueLines.filter(isCarteLine);
-  const carteHtva = round2(carteLines.reduce((sum, l) => sum + l.amount, 0));
   const client = draft.clientId ? clientById.get(draft.clientId) : undefined;
   const prestationLabel = draft.prestationType ? prestationTypes.find((t) => t.key === draft.prestationType)?.label ?? draft.prestationType : undefined;
 
@@ -491,15 +488,7 @@ export default function Devis() {
   const focusSearch = () => document.getElementById(SEARCH_ID)?.focus();
 
   // ── Service, livraison, autres ────────────────────────────────────────────
-  const patchRevenue = (idx: number, change: Partial<EventRevenueLine>) => {
-    setDraft((d) => ({ ...d, revenueLines: d.revenueLines.map((l, i) => (i === idx ? { ...l, ...change } : l)) }));
-  };
-  const addRevenueLine = () => {
-    const idx = draft.revenueLines.length;
-    setDraft((d) => ({ ...d, revenueLines: [...d.revenueLines, { label: "Service", amount: 0, vatRate: 21 }] }));
-    setTimeout(() => revenueRefs.current.get(idx)?.querySelector<HTMLElement>("[data-amount] [role=button]")?.click(), 50);
-  };
-  const removeRevenueLine = (idx: number) => setDraft((d) => ({ ...d, revenueLines: d.revenueLines.filter((_, i) => i !== idx) }));
+  const setRevenueLines = (revenueLines: EventRevenueLine[]) => setDraft((d) => ({ ...d, revenueLines }));
 
   // ── Coûts supplémentaires ─────────────────────────────────────────────────
   const patchExtraCost = (idx: number, change: Partial<EventExtraCost>) => {
@@ -664,6 +653,9 @@ export default function Devis() {
   const isTotal = draft.pricingMode === "total";
   const price = isTotal ? draft.sellingTotal ?? 0 : draft.sellingPricePerGuest;
   const marginPctText = `${quote.marginPct.toFixed(1).replace(".", ",")} %`;
+  const revenueMeta = draft.revenueLines.length > 0
+    ? [`${fmtEur(quote.linesHtva)} HTVA`, revenueByKindLabel(draft)].filter(Boolean).join(" · ")
+    : undefined;
 
   const menuItems = [
     { label: "Enregistrer comme offre", onClick: openSaveOffer },
@@ -824,49 +816,7 @@ export default function Devis() {
         )}
       </Section>
 
-      <Section
-        title="Service, livraison, autres"
-        meta={draft.revenueLines.length > 0 ? (carteHtva > 0 ? `${fmtEur(quote.linesHtva)} dont ${fmtEur(carteHtva)} carte` : fmtEur(quote.linesHtva)) : undefined}
-        action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addRevenueLine}>Ajouter</Button>}
-      >
-        {draft.revenueLines.length === 0 ? (
-          <p className="text-sm text-muted-foreground touch:text-base">Aucun supplément. Service, livraison ou autres, facturés en plus du prix food, TVA 21 % par défaut.</p>
-        ) : (
-          <div>
-            <datalist id={LABELS_LIST_ID}>
-              {REVENUE_LABELS.map((l) => <option key={l} value={l} />)}
-            </datalist>
-            {draft.revenueLines.map((line, i) => (
-              <div
-                key={i}
-                ref={(el) => { if (el) revenueRefs.current.set(i, el); else revenueRefs.current.delete(i); }}
-                className={ROW}
-              >
-                <span className="min-w-0 flex-1 text-sm touch:text-base">
-                  <RevenueLabel value={line.label} onSave={(v) => { if (v.trim()) patchRevenue(i, { label: v.trim() }); }} />
-                </span>
-                <span data-amount className="w-24 text-right text-sm tabular-nums touch:text-base">
-                  <EditableInlineNum value={line.amount} min={0} suffix=" €" onSave={(v) => patchRevenue(i, { amount: round2(Math.max(0, v)) })} />
-                </span>
-                <SelectPill
-                  value={String(line.vatRate)}
-                  options={VAT_OPTIONS}
-                  colour="gray"
-                  align="right"
-                  aria-label="Taux de TVA"
-                  title="Taux de TVA"
-                  onChange={(v) => patchRevenue(i, { vatRate: Number(v) as VatRate })}
-                />
-                {isTouch ? (
-                  <ActionMenu items={[{ label: "Retirer", variant: "danger", onClick: () => removeRevenueLine(i) }]} title={line.label} />
-                ) : (
-                  <IconButton size="sm" aria-label="Retirer cette ligne" onClick={() => removeRevenueLine(i)} icon={<X />} className="reveal" />
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
+      <RevenueLines lines={draft.revenueLines} onChange={setRevenueLines} meta={revenueMeta} />
 
       <Section
         title="Coûts supplémentaires"
@@ -958,11 +908,12 @@ export default function Devis() {
         </div>
 
         <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-lg bg-surface md:grid-cols-4 md:divide-x md:divide-border">
-          <MoneyTile flat label="Marge / conv." value={fmtEur(quote.marginPerGuest)} />
-          <MoneyTile flat label="Marge %" value={<span className={quote.marginPct < 0 ? "text-danger" : undefined}>{marginPctText}</span>} />
+          <MoneyTile flat label="Marge food / conv." value={fmtEur(quote.marginPerGuest)} />
+          <MoneyTile flat label="Marge food %" value={<span className={quote.marginPct < 0 ? "text-danger" : undefined}>{marginPctText}</span>} />
           <MoneyTile flat label="Total HTVA" value={fmtEur(quote.totalHtva)} />
           <MoneyTile flat label="Total TVAC" value={fmtEur(quote.totalTvac)} />
         </div>
+        <p className="mt-2 text-sm text-muted-foreground">Marge sur le food uniquement, hors service, livraison et autres.</p>
       </Section>
 
       <div className="mt-block flex flex-wrap items-center justify-between gap-2">
@@ -1077,44 +1028,6 @@ export default function Devis() {
         </form>
       </Dialog>
     </div>
-  );
-}
-
-const INLINE_INPUT = "-mx-1 w-32 rounded border-0 bg-input-bg px-1 font-medium shadow-ring outline-none";
-
-// EditableInlineText with the « Service », « Livraison », « Autres » suggestions.
-function RevenueLabel({ value, onSave }: { value: string; onSave: (v: string) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(value);
-  useEffect(() => { if (!editing) setText(value); }, [value, editing]);
-  const commit = () => { setEditing(false); if (text !== value) onSave(text); };
-  if (editing) {
-    return (
-      <input
-        className={INLINE_INPUT}
-        list={LABELS_LIST_ID}
-        value={text}
-        aria-label="Intitulé"
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") { e.preventDefault(); commit(); }
-          if (e.key === "Escape") { e.preventDefault(); setText(value); setEditing(false); }
-        }}
-        autoFocus
-      />
-    );
-  }
-  return (
-    <strong
-      role="button"
-      tabIndex={0}
-      className="prop-value font-medium touch:inline-flex touch:min-h-11 touch:items-center"
-      onClick={() => setEditing(true)}
-      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
-    >
-      {value || <span className="font-normal text-placeholder">Intitulé</span>}
-    </strong>
   );
 }
 

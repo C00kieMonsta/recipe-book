@@ -141,25 +141,33 @@ export function EditableInlineText({ value, onSave, placeholder }: {
 
 const fmtNum = (n: number) => new Intl.NumberFormat("fr-BE", { maximumFractionDigits: 2 }).format(n);
 
-export function EditableInlineNum({ value, onSave, suffix, min }: {
-  value: number;
+export function EditableInlineNum({ value, onSave, suffix, min, step, placeholder }: {
+  // Undefined shows the placeholder; callers that pass a number are unchanged.
+  value: number | undefined;
   onSave: (v: number) => void;
   suffix?: string;
   min?: number;
+  // The typed number is rounded to the nearest multiple on commit.
+  step?: number;
+  placeholder?: string;
 }) {
   const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(String(value));
+  const [text, setText] = useState(value === undefined ? "" : String(value));
   const money = suffix?.trim() === "€";
 
-  useEffect(() => { if (!editing) setText(String(value)); }, [value, editing]);
+  useEffect(() => { if (!editing) setText(value === undefined ? "" : String(value)); }, [value, editing]);
 
   const commit = () => {
     setEditing(false);
     const cleaned = text.replace(",", ".");
     const parsed = parseFloat(cleaned);
-    const final = isNaN(parsed) ? 0 : (min !== undefined ? Math.max(min, parsed) : parsed);
+    // An empty field on an unset value stays unset.
+    if (isNaN(parsed) && value === undefined) return;
+    const clamped = isNaN(parsed) ? 0 : (min !== undefined ? Math.max(min, parsed) : parsed);
+    const final = step ? Math.round(clamped / step) * step : clamped;
     if (final !== value) onSave(final);
   };
+  const revert = () => { setText(value === undefined ? "" : String(value)); setEditing(false); };
 
   if (editing) {
     return (
@@ -168,13 +176,14 @@ export function EditableInlineNum({ value, onSave, suffix, min }: {
           className={cn(INLINE_INPUT, "w-16 text-right tabular-nums")}
           type="text"
           inputMode="decimal"
+          step={step}
           value={text}
           onChange={(e) => { if (e.target.value === "" || /^-?\d*[.,]?\d*$/.test(e.target.value)) setText(e.target.value); }}
           onFocus={(e) => e.target.select()}
           onBlur={commit}
           onKeyDown={(e) => {
             if (e.key === "Enter") { e.preventDefault(); commit(); }
-            if (e.key === "Escape") { e.preventDefault(); setText(String(value)); setEditing(false); }
+            if (e.key === "Escape") { e.preventDefault(); revert(); }
           }}
           autoFocus
         />
@@ -191,7 +200,9 @@ export function EditableInlineNum({ value, onSave, suffix, min }: {
       onClick={() => setEditing(true)}
       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
     >
-      {money ? fmtEur(value) : `${fmtNum(value)}${suffix || ""}`}
+      {value === undefined
+        ? <span className="font-normal text-placeholder">{placeholder ?? "Vide"}</span>
+        : money ? fmtEur(value) : `${fmtNum(value)}${suffix || ""}`}
     </strong>
   );
 }

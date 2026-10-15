@@ -63,7 +63,7 @@ export default function AuReel() {
   }, [settings]);
 
   const eventName = useMemo(() => new Map(events.map((e) => [e.eventId, e.name])), [events]);
-  const invoiced = useMemo(() => invoicedEventIds(entries), [entries]);
+  const invoiced = useMemo(() => invoicedEventIds(entries, events), [entries, events]);
 
   const month = useMemo(() => (inputs ? auReel(ym, inputs) : null), [inputs, ym]);
   const yearSummary = useMemo(() => (inputs ? auReelYear(year, inputs) : null), [inputs, year]);

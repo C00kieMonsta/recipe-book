@@ -20,12 +20,16 @@ import {
   DEFAULT_COURSES,
   DEFAULT_PRESTATION_TYPES,
   VAT_RATES,
+  aliasCategory,
   billingFromClient,
+  foodCostOf,
+  foodMargin,
   foodRevenue,
   groupByCourse,
   isIncompleteRecipe,
   pricePerGuestOf,
   recipeCategoryOf,
+  revenueByKindLabel,
   revenueLinesTotal,
   round2,
   signedRevenue,
@@ -41,6 +45,7 @@ import { FieldLabel, NumericInput, PageHeader, Section, Tag, TAG_BASE, TAG_COLOU
 import { PersonChip } from "@/components/admin/PersonChips";
 import NewClientDialog from "@/components/admin/NewClientDialog";
 import NewRecipeDialog, { type NewRecipeInitial } from "@/components/admin/NewRecipeDialog";
+import RevenueLines from "@/components/admin/RevenueLines";
 
 // Lines of a not-yet-created event have no lineId; the server fills it on POST.
 type LocalLine = Omit<EventRecipeLine, "lineId"> & { lineId?: string };
@@ -52,9 +57,6 @@ const EXTRA_KINDS: { value: ExtraCostKind; label: string }[] = [
   { value: "transport", label: "Transport" },
   { value: "autre", label: "Autre" },
 ];
-
-const REVENUE_LABELS = ["Service", "Livraison", "Autres"];
-const MAX_REVENUE_LINES = 10;
 
 const NEW_CLIENT = "__new__";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -101,6 +103,7 @@ export default function EventEditor() {
   const [prestationType, setPrestationType] = useState("");
   const [vatRate, setVatRate] = useState<VatRate | undefined>(undefined);
   const [assignedTo, setAssignedTo] = useState<string[]>([]);
+  const [serviceTeam, setServiceTeam] = useState<string[]>([]);
   const retour = safeReturn(searchParams.get("retour"));
 
   const [newClientOpen, setNewClientOpen] = useState(false);
@@ -199,6 +202,7 @@ export default function EventEditor() {
           setPrestationType(ev.prestationType || "");
           setVatRate(ev.vatRate);
           setAssignedTo(ev.assignedTo ?? []);
+          setServiceTeam(ev.serviceTeam ?? []);
           setSavedOnce(true);
         } else {
           const dateParam = searchParams.get("date");
@@ -239,14 +243,15 @@ export default function EventEditor() {
       sellingPricePerGuest: pricingMode === "total" ? perGuest : sellingPricePerGuest,
       ...(pricingMode === "total" && { sellingTotal }),
       extraCosts: extraCosts.filter((c) => c.label.trim()),
-      revenueLines: revenueLines.filter((l) => l.label.trim()).map((l) => ({ label: l.label.trim(), amount: l.amount, vatRate: l.vatRate })),
+      revenueLines: revenueLines.filter((l) => l.label.trim()).map((l) => ({ label: l.label.trim(), amount: l.amount, vatRate: l.vatRate, ...(l.kind ? { kind: l.kind } : {}) })),
       notes: notes || undefined, actualCost, templateId: templateId || undefined,
       contactName: clearable(contactName.trim()), contactPhone: clearable(contactPhone.trim()), contactEmail: clearable(contactEmail.trim()),
       deliveryAddress: clearable(deliveryAddress.trim()), deliveryTime: clearable(deliveryTime), billingDetails: clearable(billingDetails.trim()),
       clientId: clientId || undefined, prestationType: prestationType || undefined, vatRate,
       assignedTo,
+      serviceTeam,
     };
-  }, [name, date, guestCount, pricingMode, perGuest, sellingPricePerGuest, sellingTotal, extraCosts, revenueLines, notes, actualCost, templateId, contactName, contactPhone, contactEmail, deliveryAddress, deliveryTime, billingDetails, clientId, prestationType, vatRate, assignedTo, currentId]);
+  }, [name, date, guestCount, pricingMode, perGuest, sellingPricePerGuest, sellingTotal, extraCosts, revenueLines, notes, actualCost, templateId, contactName, contactPhone, contactEmail, deliveryAddress, deliveryTime, billingDetails, clientId, prestationType, vatRate, assignedTo, serviceTeam, currentId]);
 
   // Recipes travel in the payload only until the event exists; after that the line endpoints own them.
   const buildPayload = useCallback((): EventInput => {
@@ -297,7 +302,7 @@ export default function EventEditor() {
     clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(() => { autoSaveRef.current(); }, 800);
     return () => clearTimeout(autoSaveTimer.current);
-  }, [name, date, guestCount, extraCosts, revenueLines, pricingMode, sellingPricePerGuest, sellingTotal, notes, actualCost, templateId, contactName, contactPhone, contactEmail, deliveryAddress, deliveryTime, billingDetails, clientId, prestationType, vatRate, assignedTo, localLineVersion]);
+  }, [name, date, guestCount, extraCosts, revenueLines, pricingMode, sellingPricePerGuest, sellingTotal, notes, actualCost, templateId, contactName, contactPhone, contactEmail, deliveryAddress, deliveryTime, billingDetails, clientId, prestationType, vatRate, assignedTo, serviceTeam, localLineVersion]);
 
   const recipeCostMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -326,8 +331,9 @@ export default function EventEditor() {
   const totalExtraCosts = Object.values(breakdown.extras).reduce((s, v) => s + v, 0);
   const totalCost = breakdown.total;
   const totalRevenue = signedRevenue(priced);
-  const margin = totalRevenue - totalCost;
-  const marginPct = totalRevenue > 0 ? (margin / totalRevenue) * 100 : 0;
+  const food = foodMargin(foodHtva, foodCostOf(breakdown));
+  const margin = food.margin;
+  const marginPct = food.marginPct;
 
   const recipeOptions = useMemo(
     () => [...allRecipes].sort((a, b) => a.name.localeCompare(b.name, "fr")).map((r) => ({ value: r.recipeId, label: r.name, detail: recipeCategoryOf(r) })),
@@ -419,13 +425,8 @@ export default function EventEditor() {
   };
   const removeExtraCost = (i: number) => setExtraCosts(extraCosts.filter((_, idx) => idx !== i));
 
-  const addRevenueLine = () => setRevenueLines([...revenueLines, { label: "Service", amount: 0, vatRate: 21 }]);
-  const updateRevenueLine = (i: number, patch: Partial<EventRevenueLine>) => {
-    const next = [...revenueLines];
-    next[i] = { ...next[i], ...patch };
-    setRevenueLines(next);
-  };
-  const removeRevenueLine = (i: number) => setRevenueLines(revenueLines.filter((_, idx) => idx !== i));
+  const byKind = revenueByKindLabel(priced);
+  const revenueMeta = revenueLines.length > 0 ? `${fmt(linesHtva)} HTVA${byKind ? ` · ${byKind}` : ""}` : undefined;
 
   // Switching to total prefills price × guests; switching back divides.
   const switchPricingMode = (mode: PricingMode) => {
@@ -494,6 +495,23 @@ export default function EventEditor() {
     </>
   );
 
+  // One toggle per person, shared by the two team blocks.
+  const personToggle = (p: Person, selected: string[], setSelected: (next: string[]) => void) => {
+    const on = selected.includes(p.personId);
+    return (
+      <button
+        key={p.personId}
+        type="button"
+        aria-pressed={on}
+        onClick={() => setSelected(on ? selected.filter((id) => id !== p.personId) : [...selected, p.personId])}
+        className={`${PERSON_TOGGLE} ${on ? PERSON_ON : ""}`}
+      >
+        <PersonChip personId={p.personId} people={people} size="sm" />
+        {p.name}
+      </button>
+    );
+  };
+
   const modeTag = (mode: PricingMode, label: string) => {
     const on = pricingMode === mode;
     return (
@@ -537,29 +555,25 @@ export default function EventEditor() {
             <p className="mt-1 text-sm text-muted-foreground">Choisir un client remplit le menu, les convives, le prix et l'équipe depuis sa semaine type.</p>
           </div>
           <div className="sm:col-span-2">
-            <FieldLabel>Équipe</FieldLabel>
+            <FieldLabel>En cuisine</FieldLabel>
             {people.length === 0 ? (
               <p className="text-sm text-muted-foreground">Aucune personne · <Link to="/settings#equipe" className="text-primary hover:underline">Ajouter dans Paramètres › Équipe</Link></p>
             ) : (
-              <div className="flex flex-wrap gap-2">
-                {people.map((p) => {
-                  const on = assignedTo.includes(p.personId);
-                  return (
-                    <button
-                      key={p.personId}
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() => setAssignedTo(on ? assignedTo.filter((id) => id !== p.personId) : [...assignedTo, p.personId])}
-                      className={`${PERSON_TOGGLE} ${on ? PERSON_ON : ""}`}
-                    >
-                      <PersonChip personId={p.personId} people={people} size="sm" />
-                      {p.name}
-                    </button>
-                  );
-                })}
+              <div role="group" aria-label="En cuisine" className="flex flex-wrap gap-2">
+                {people.map((p) => personToggle(p, assignedTo, setAssignedTo))}
               </div>
             )}
+            <p className="mt-1 text-sm text-muted-foreground">Par défaut pour chaque recette et tâche ; chaque ligne peut avoir sa personne.</p>
           </div>
+          {people.length > 0 && (
+            <div className="sm:col-span-2">
+              <FieldLabel>Sur place</FieldLabel>
+              <div role="group" aria-label="Sur place" className="flex flex-wrap gap-2">
+                {people.map((p) => personToggle(p, serviceTeam, setServiceTeam))}
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">Les personnes qui servent le jour même ; les heures se notent sur la page de l'événement.</p>
+            </div>
+          )}
           <div>
             <FieldLabel htmlFor="ev-prestation">
               <span className="inline-flex items-center gap-2">
@@ -657,7 +671,7 @@ export default function EventEditor() {
                     const rec = recipeById.get(rl.recipeId);
                     const costPerPortion = (recipeCostMap.get(rl.recipeId) || 0) / (recipePortionMap.get(rl.recipeId) || 1);
                     const lineCost = costPerPortion * rl.portions;
-                    const courseValue = rl.course ?? recipeCourse(rl.recipeId) ?? "";
+                    const courseValue = rl.course ? aliasCategory(rl.course) : recipeCourse(rl.recipeId) ?? "";
                     const focusSelect = !courseValue && justAdded.current && rl.lineId === lastLineId;
                     return (
                       <li key={rl.lineId} className="py-3">
@@ -746,32 +760,7 @@ export default function EventEditor() {
         )}
       </Section>
 
-      <Section
-        title="Service, livraison, autres"
-        action={<Button variant="subtle" size="sm" icon={<Plus />} onClick={addRevenueLine} disabled={revenueLines.length >= MAX_REVENUE_LINES}>Ajouter</Button>}
-      >
-        <p className="mb-2 text-caption text-muted-foreground">Facturés en plus du prix food, TVA 21 % par défaut.</p>
-        {revenueLines.length === 0 && <p className="text-sm text-muted-foreground">Aucun supplément.</p>}
-        <datalist id="ev-revenue-labels">
-          {REVENUE_LABELS.map((l) => <option key={l} value={l} />)}
-        </datalist>
-        {revenueLines.map((rl, i) => (
-          <div key={i} className="mb-2 flex flex-wrap items-center gap-2">
-            <input className="input-field min-w-[10rem] flex-1" list="ev-revenue-labels" placeholder="Intitulé" aria-label="Intitulé" maxLength={60} value={rl.label} onChange={(e) => updateRevenueLine(i, { label: e.target.value })} />
-            <NumericInput className="input-field w-28 text-right" aria-label="Montant HTVA" value={rl.amount} onChange={(v) => updateRevenueLine(i, { amount: v })} min={0} />
-            <select className="input-field w-24" aria-label="TVA" value={String(rl.vatRate)} onChange={(e) => updateRevenueLine(i, { vatRate: Number(e.target.value) as VatRate })}>
-              {VAT_RATES.map((r) => <option key={r} value={String(r)}>{r} %</option>)}
-            </select>
-            <IconButton size="md" aria-label="Retirer le supplément" onClick={() => removeRevenueLine(i)} icon={<X />} />
-          </div>
-        ))}
-        {revenueLines.length > 0 && (
-          <div className="flex justify-between border-t border-divider py-3 text-sm font-semibold">
-            <span>Sous-total</span>
-            <span className="tabular-nums">{fmt(linesHtva)}</span>
-          </div>
-        )}
-      </Section>
+      <RevenueLines lines={revenueLines} onChange={setRevenueLines} mode="draft" meta={revenueMeta} />
 
       <Section title="Résumé financier">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -797,17 +786,18 @@ export default function EventEditor() {
           <p className="mt-2 text-sm text-muted-foreground">Le coût réel remplace le coût calculé dans les calculs de marge.</p>
         )}
         <div className="mt-4 grid grid-cols-2 overflow-hidden rounded-lg bg-surface md:grid-cols-4 md:divide-x md:divide-border">
-          <MoneyTile flat label="Coût total HTVA" value={fmt(totalCost)} />
+          <MoneyTile flat label="Coût matières HTVA" value={fmt(food.foodCost)} />
           <MoneyTile flat label="Revenu food HTVA" value={fmt(foodHtva)} />
           <MoneyTile flat label="Service, livraison, autres" value={fmt(linesHtva)} />
           <MoneyTile flat label="Revenu total HTVA" value={fmt(totalRevenue)} />
         </div>
         <div className="mt-2 grid grid-cols-2 overflow-hidden rounded-lg bg-surface md:grid-cols-4 md:divide-x md:divide-border">
-          <MoneyTile flat label="Marge HTVA" value={<span className={margin >= 0 ? "text-success" : "text-danger"}>{fmt(margin)}</span>} />
-          <MoneyTile flat label="Marge %" value={<span className={marginPct >= 0 ? "text-success" : "text-danger"}>{marginPct.toFixed(1).replace(".", ",")} %</span>} />
+          <MoneyTile flat label="Marge food HTVA" value={<span className={margin >= 0 ? "text-success" : "text-danger"}>{fmt(margin)}</span>} />
+          <MoneyTile flat label="Marge food %" value={<span className={marginPct >= 0 ? "text-success" : "text-danger"}>{marginPct.toFixed(1).replace(".", ",")} %</span>} />
           <MoneyTile flat label="Coût/convive HTVA" value={fmt(guestCount > 0 ? totalCost / guestCount : 0)} />
-          <MoneyTile flat label="Marge/convive HTVA" value={<span className={margin >= 0 ? "text-success" : "text-danger"}>{fmt(guestCount > 0 ? margin / guestCount : 0)}</span>} />
+          <MoneyTile flat label="Marge food/convive" value={<span className={margin >= 0 ? "text-success" : "text-danger"}>{fmt(guestCount > 0 ? margin / guestCount : 0)}</span>} />
         </div>
+        <p className="mt-2 text-caption text-muted-foreground">Marge sur le food uniquement, hors service, livraison, équipe et autres coûts.</p>
       </Section>
 
       <div className="mt-block flex justify-end gap-2 border-t border-border pt-4">{footer}</div>

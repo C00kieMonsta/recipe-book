@@ -33,6 +33,7 @@ import AuReel from "@/pages/admin/comptes/AuReel";
 import Settings from "@/pages/admin/Settings";
 
 const AFacturer = lazy(() => import("@/pages/admin/comptes/AFacturer"));
+const Equipe = lazy(() => import("@/pages/admin/comptes/Equipe"));
 const InvoiceInbox = lazy(() => import("@/pages/admin/comptes/InvoiceInbox"));
 const OfferDocuments = lazy(() => import("@/pages/admin/OfferDocuments"));
 const OfferDocumentDetail = lazy(() => import("@/pages/admin/OfferDocumentDetail"));
@@ -145,6 +146,14 @@ export default function App() {
           <Route path="resultats" element={<Resultats />} />
           <Route path="previsionnel" element={<Previsionnel />} />
           <Route path="au-reel" element={<AuReel />} />
+          <Route
+            path="equipe"
+            element={
+              <Suspense fallback={<p className="text-base text-muted-foreground">Chargement…</p>}>
+                <Equipe />
+              </Suspense>
+            }
+          />
         </Route>
         <Route path="/settings" element={<Settings />} />
       </Route>

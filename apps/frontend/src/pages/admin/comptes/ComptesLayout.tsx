@@ -14,6 +14,7 @@ const TABS = [
   { key: "resultats", to: "/comptes/resultats", label: "Compte de résultats" },
   { key: "previsionnel", to: "/comptes/previsionnel", label: "Prévisionnel" },
   { key: "au-reel", to: "/comptes/au-reel", label: "Au réel" },
+  { key: "equipe", to: "/comptes/equipe", label: "Équipe" },
 ];
 
 const INTRO: Record<string, string> = {
@@ -21,12 +22,13 @@ const INTRO: Record<string, string> = {
   depot: "Déposez vos factures, l'application les lit et les ajoute au journal après votre accord.",
   "a-facturer": "Ce qu'il reste à faire : terminer les événements passés, créer les factures, encaisser les impayées.",
   apercu: "L'année en un coup d'œil : chiffre d'affaires par mois, face à l'objectif et à l'année précédente.",
+  equipe: "Ce que vous devez à chacun d'après les heures et kilomètres notés sur les événements, par mode de paiement.",
 };
 
 // Invoices issued in another tool (Odoo): the same route lists what is left to close.
 const INTRO_EXTERNE: Record<string, string> = {
   journal: "Une ligne par vente, CA mensuel, facture importée ou achat, classée par mois. Les autres onglets se calculent à partir du journal.",
-  "a-facturer": "Terminer les événements passés pour figer leur coût. Les factures se font dans un autre outil.",
+  "a-facturer": "Terminer les événements passés pour figer leur coût, puis marquer facturés ceux dont la facture est faite dans votre autre outil.",
 };
 
 const DEPOT = "/comptes/depot";

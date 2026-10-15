@@ -3,7 +3,7 @@ import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } 
 import { CalendarDays, CheckCircle2, EyeOff, MoreHorizontal, Pencil, Plus, Printer, Share2, ShoppingCart, Trash2, UserPlus, X } from "lucide-react";
 import type { AppEvent, DayItem, Ingredient, Person, PrepLine, PrepStatus, PrepTask, PrestationTypeSetting, Recipe, ScaledIngredient } from "@packages/types";
 import {
-  addDays, buildCostSnapshot, calcRecipeCost, courseIndex, datesOfIsoWeek, DEFAULT_PRESTATION_TYPES, filterByPerson, fmtQty, fmtTime, groupByPerson, groupByRecipe, isoWeekOf, longDayLabel,
+  addDays, calcRecipeCost, checklistCount, completionFields, courseIndex, datesOfIsoWeek, DEFAULT_PRESTATION_TYPES, filterByPerson, fmtQty, fmtTime, groupByPerson, groupByRecipe, isoWeekOf, longDayLabel,
   parseIsoWeek, parseYmd, personName, prepLinesForDate, prepTasksForDate, scaledIngredients, shortDayLabel, shortEventName, weekPlan,
 } from "@packages/types";
 import { api, ApiError, errorReason } from "@/lib/api";
@@ -54,7 +54,10 @@ const TASKS_KEY = "taches";
 // Row content sits above the full-row link overlay; an open menu lifts its row above the next ones.
 const ABOVE = "relative z-10 hover:z-30 focus-within:z-30";
 const EMPTY_TASK: TaskDialogValue = { label: "", date: "", eventId: "", assignedTo: [], notes: "" };
-const DRAG_HINT = "Maintenez une préparation pour la glisser vers un autre jour. Déplacer au… reste dans le menu ⋯.";
+const DRAG_HINT = "Pour déplacer une préparation, maintenez-la un instant puis glissez-la sur un jour de la bande en haut. « Déplacer au… » reste dans le menu ⋯.";
+const POINTS_RING_MS = 1200;
+// Narrower laptops cannot hold the Grouper pill next to the points pill; grouping then sits in the ⋯ menu.
+const GROUP_PILL_QUERY = "(min-width: 1400px)";
 
 const shortDate = new Intl.DateTimeFormat("fr-BE", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 
@@ -209,15 +212,18 @@ export default function Day() {
   const [confirmTask, setConfirmTask] = useState<PrepTask | null>(null);
   // Key of the row whose « Déplacer au… » Sheet opens after a touch release off every day cell.
   const [moveRequest, setMoveRequest] = useState<string | null>(null);
-  const [dragHint, setDragHint] = useState(false);
   // Same key as the week page, so the callouts keep their state between the two views.
   const [checklistOpen, setChecklistOpen] = useLocalStorage<boolean>("recipe-book:checklist-open", true);
   const touch = useTouchScreen();
+  // The hint shows before the first lift on a touch screen; the × or the first lift writes the flag.
+  const [dragHint, setDragHint] = useState(() => touch && !readTour().touchDragHintSeen);
   // Under md the full right group wraps and overflows, so narrow pointer windows get the touch group.
   const narrow = useMediaQuery("(max-width: 767px)");
   const compact = touch || narrow;
+  const groupInBar = useMediaQuery(GROUP_PILL_QUERY);
   const menu = useMenu();
   const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const checklistRef = useRef<HTMLDivElement>(null);
 
   // The query every link out of the day keeps.
   const query = useMemo(() => {
@@ -452,9 +458,10 @@ export default function Day() {
     }
   };
 
-  // Touch: a held row lifts and drops on a strip or heads cell; a release elsewhere opens its « Déplacer au… » Sheet.
+  // A held row lifts and drops on a strip or heads cell; a release elsewhere opens its « Déplacer au… » Sheet.
+  // Enabled everywhere: the hook lifts touch and pen pointers only, so a mouse never lifts.
   const lift = useLongPressDrag<DayItem>({
-    enabled: touch,
+    enabled: true,
     onStart: () => {
       touchStart.current = null;
       if (!readTour().touchDragHintSeen) setDragHint(true);
@@ -590,8 +597,7 @@ export default function Day() {
     let n = 0;
     try {
       for (const ev of upcoming) {
-        const costSnapshot = buildCostSnapshot(ev, recipeCostById, recipePortionsById);
-        await patchEvent(ev.eventId, { status: "completed", costSnapshot });
+        await patchEvent(ev.eventId, completionFields(ev, people, recipeCostById, recipePortionsById));
         n++;
       }
       toast({ title: plural(n, "événement terminé", "événements terminés") });
@@ -619,14 +625,39 @@ export default function Day() {
     const ev = events.find((e) => e.eventId === eventId);
     if (!ev) return;
     try {
-      const costSnapshot = buildCostSnapshot(ev, recipeCostById, recipePortionsById);
-      await patchEvent(eventId, { status: "completed", costSnapshot });
+      await patchEvent(eventId, completionFields(ev, people, recipeCostById, recipePortionsById));
       toast({ title: "Événement terminé" });
       reload();
     } catch (e) {
       const why = errorReason(e);
       toast({ title: "Erreur lors de la clôture", description: why || undefined, variant: "destructive" });
     }
+  };
+
+  // One PATCH per event; the row's « Marquer facturé » and « Marquer le mois facturé » land here.
+  const markInvoiced = async (eventIds: string[]) => {
+    const stamp = todayIso();
+    try {
+      for (const id of eventIds) await api.events.update(id, { invoicedAt: stamp });
+      toast({ title: "Marqué comme facturé" });
+      reload();
+    } catch (e) {
+      const why = errorReason(e);
+      toast({ title: "Erreur lors du marquage", description: why || undefined, variant: "destructive" });
+    }
+  };
+
+  // The « 📋 n » pill: back to the top, the box open, its title focused and ringed for a moment.
+  const openChecklist = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setChecklistOpen(true);
+    window.requestAnimationFrame(() => {
+      const button = checklistRef.current?.querySelector<HTMLButtonElement>("button[aria-expanded]");
+      if (!button) return;
+      button.focus({ preventScroll: true });
+      button.classList.add("ring-2", "ring-primary");
+      window.setTimeout(() => button.classList.remove("ring-2", "ring-primary"), POINTS_RING_MS);
+    });
   };
 
   // Checklist actions that need a sheet or a creation flow run on the week page.
@@ -744,16 +775,18 @@ export default function Day() {
     </>
   );
 
+  const groupItems = !personne && mode !== "personne" && (
+    <MenuSection label="Grouper">
+      {GROUP_OPTIONS.map((o) => (
+        <MenuRadio key={o.value} checked={mode === o.value} onSelect={() => setParam("mode", o.value === "evenement" ? null : o.value)}>{o.label}</MenuRadio>
+      ))}
+    </MenuSection>
+  );
+
   // Compact (touch or under md): the ⋯ menu also carries the grouping and the filters.
   const touchFilterItems = (
     <>
-      {!personne && mode !== "personne" && (
-        <MenuSection label="Grouper">
-          {GROUP_OPTIONS.map((o) => (
-            <MenuRadio key={o.value} checked={mode === o.value} onSelect={() => setParam("mode", o.value === "evenement" ? null : o.value)}>{o.label}</MenuRadio>
-          ))}
-        </MenuSection>
-      )}
+      {groupItems}
       {personOptions.length > 0 && (
         <MenuSection label="Personne">
           <MenuRadio checked={!personne} onSelect={() => setParam("personne", null)}>Toutes les personnes</MenuRadio>
@@ -771,15 +804,16 @@ export default function Day() {
     <div ref={menu.ref} className="relative inline-flex">
       <IconButton size="sm" aria-label="Plus d'actions" aria-haspopup="menu" aria-expanded={menu.open} onClick={menu.toggle} icon={<MoreHorizontal />} />
       <Menu {...menu.props} align="right" title={longDayLabel(safeDate)} aria-label="Plus d'actions">
-        {compact && touchFilterItems}
+        {compact ? touchFilterItems : !groupInBar && groupItems && <>{groupItems}<MenuSeparator /></>}
         {actionItems}
       </Menu>
     </div>
   );
 
-  const groupPill = !personne && mode !== "personne" && (
+  // The caption needs the widest laptops once the points pill sits in the bar; the pill's title says « Grouper par ».
+  const groupPill = groupInBar && !personne && mode !== "personne" && (
     <span className="inline-flex items-center gap-1 text-sm text-muted-foreground touch:hidden">
-      <span>Grouper :</span>
+      <span className="hidden whitespace-nowrap 2xl:inline">Grouper :</span>
       <SelectPill
         value={mode}
         options={GROUP_OPTIONS}
@@ -814,6 +848,7 @@ export default function Day() {
       pickValue={safeDate}
       isToday={safeDate === today}
       onToday={() => navigate(dayUrl(today), { state: location.state })}
+      points={firstRun ? undefined : { count: checklistCount(summary.checklist), onOpen: openChecklist }}
       right={compact ? (
         <span className="flex items-center gap-0.5 touch:-mr-1">{moreMenu}<IconButton variant="primary" size="sm" as={Link} to={newEventUrl} aria-label="Nouvel événement" title="Nouvel événement" icon={<Plus />} /></span>
       ) : (
@@ -857,9 +892,9 @@ export default function Day() {
 
   // The same callouts as the week; three actions need its sheets and run there.
   const callouts = !loading && (
-    <>
+    <div ref={checklistRef}>
       <FirstRunCallout hidden={Boolean(personne)} />
-      {dragHint && (
+      {dragHint && items.length > 0 && (
         <div className="mb-3 flex items-start gap-2">
           <p className="min-w-0 flex-1 py-1 text-caption text-muted-foreground">{DRAG_HINT}</p>
           <IconButton size="sm" aria-label="Fermer" icon={<X />} onClick={dismissDragHint} />
@@ -882,8 +917,9 @@ export default function Day() {
         onAssign={() => toWeek({ kind: "assign" })}
         onCreateClientWeek={(clientId, guestCount) => toWeek({ kind: "client_week", clientId, guestCount })}
         onCreateGroceries={(eventIds) => toWeek({ kind: "groceries", eventIds })}
+        onMarkInvoiced={markInvoiced}
       />
-    </>
+    </div>
   );
 
   const heads = (
@@ -919,7 +955,7 @@ export default function Day() {
       onTouchEnd={onTouchEnd}
     >
       {/* A short day keeps the week scroll offset, so the heads row stays put on the way back. */}
-      <div className="mt-3 max-w-doc xl:min-h-screen">
+      <div className="mt-3 max-w-doc cols:min-h-screen">
         <h2 className="text-h3 print:text-h1">{title}</h2>
         <p className="mt-1 text-sm text-muted-foreground tabular-nums">{meta}</p>
         {loading && <p className="mt-6 text-sm text-muted-foreground">Chargement…</p>}
@@ -973,7 +1009,7 @@ export default function Day() {
         ) : (
           shownGroups.map((group, i) => (
             <section key={group.key} className={i > 0 ? "mt-6 print-break" : "mt-6"}>
-              <header className="sticky top-[96px] z-[15] bg-background py-2 md:top-0">
+              <header className="sticky top-[96px] z-[15] bg-background py-2 md:top-[52px] cols:top-0">
                 <div className="flex min-h-7 items-center gap-3">
                   <h3 className={`flex min-w-0 items-center gap-2 text-h3 ${group.tag ? "flex-wrap" : ""}`}>
                     {mode === "personne" && group.personId && <PersonChip personId={group.personId} people={people} size="md" />}
@@ -1169,7 +1205,7 @@ function LineRow({ line, people, to, from, second, onStatus, onCycle, onAssign, 
   const isDone = line.prepStatus === "done";
   const assign: ActionMenuItem[] = onAssign ? [{ label: "Assigner", icon: <UserPlus />, onClick: () => setPickerOpen(true) }] : [];
   return (
-    <li {...liftHandlers} className={`group relative flex min-h-9 items-center gap-2 rounded px-2 hover:bg-hover touch:min-h-11 ${isDone ? "text-muted-foreground" : ""} ${lifted ? "opacity-40" : ""}`}>
+    <li {...liftHandlers} className={`group relative flex min-h-9 touch-pan-y items-center gap-2 rounded px-2 hover:bg-hover touch:min-h-11 ${isDone ? "text-muted-foreground" : ""} ${lifted ? "opacity-40" : ""}`}>
       <div className={`no-print ${ABOVE} hidden w-[108px] shrink-0 pointer:block`}>
         <StatusControl value={line.prepStatus} onChange={onStatus} />
       </div>
@@ -1215,7 +1251,7 @@ function TaskRow({ task, people, second, onStatus, onCycle, onAssign, onEdit, on
     { label: "Supprimer", icon: <Trash2 />, variant: "danger", onClick: onDelete },
   ];
   return (
-    <li {...liftHandlers} className={`group relative flex min-h-9 items-center gap-2 rounded px-2 hover:bg-hover touch:min-h-11 ${isDone ? "text-muted-foreground" : ""} ${lifted ? "opacity-40" : ""}`}>
+    <li {...liftHandlers} className={`group relative flex min-h-9 touch-pan-y items-center gap-2 rounded px-2 hover:bg-hover touch:min-h-11 ${isDone ? "text-muted-foreground" : ""} ${lifted ? "opacity-40" : ""}`}>
       <div className={`no-print ${ABOVE} hidden w-[108px] shrink-0 pointer:block`}>
         <StatusControl value={task.prepStatus} onChange={onStatus} />
       </div>

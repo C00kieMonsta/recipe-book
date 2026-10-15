@@ -356,6 +356,8 @@ export function shortEventName(ev: Pick<AppEvent, "name" | "templateId">, client
 
 ### 4.3 Settings › Équipe
 
+> Superseded by `11-team-margin-reminders.md` (3.1, 6.1): a person also carries `hourlyRate`, `kmRate` and `paymentMode`, edited on the same row. « Three fields per person » no longer holds.
+
 `Settings.tsx`, new `Section title="Équipe"` after Fournisseurs. Rows of 44px: name (`EditableInlineText`), initials (2 to 3 characters, red border when duplicated among active people), `Actif` checkbox, a `Lien du jour` button that copies `${location.origin}/jour/aujourdhui?personne=<personId>` with the toast "Lien copié, à mettre sur l'écran d'accueil du téléphone", ▲▼ to reorder, `Désactiver` instead of delete. `+ Ajouter une personne` creates `{ personId: slugifyPersonId(name, ids), name, active: true }`. Saves through the existing settings draft and `PATCH /admin/settings { people }`. Three fields per person, nothing else: no hours, no rates, no logins. Extra service people paid through the journal (`personnel` entries with `personName`) stay separate.
 
 `Section title="Objectifs par année"` gets `id="objectifs"`; `À propos` gets `id="apropos"` (section 8).
@@ -369,6 +371,7 @@ export function shortEventName(ev: Pick<AppEvent, "name" | "templateId">, client
 Where it appears:
 
 - **Event page**: a row `Équipe` under the status tags with toggle chips (44px each, `aria-pressed`) for every active person, writing `event.assignedTo` through `api.events.update`. Each menu line shows `PersonChips` between the portions and the status dot; tap → `PersonPicker` for the line (`api.events.lines.patch`). Below `md` the line's category select and the chips move into the line's `⋯` (`Catégorie ›`, `Assigner ›`) so a row stays name, portions, dot, `⋯`.
+  Superseded by `11-team-margin-reminders.md` (3.2, 6.3): the row is split into « En cuisine » (`assignedTo`, unchanged meaning) and « Sur place » (`serviceTeam`); hours and km per person live in `staff[]` under « Heures et frais ».
 - **Day view**: fourth mode `Par personne` (5.2); in every mode the row's `PersonChips` opens the picker.
 - **Week**: card chips open the event picker, line chips open the line picker, both on pointer only (2.3).
 - **Prep sheet**: read-only chips on the summary line; tap opens the line picker.

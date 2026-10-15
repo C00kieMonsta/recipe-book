@@ -60,7 +60,8 @@ export function weekSummary(input: WeekSummaryInput): WeekSummary {
   const monthSigned = monthSignedRevenue(events, ym);
   const objective = objectifMensuel(settings?.objectives?.[year], ym);
   const checklist = weekChecklist({ weekDates: dates, today, events, clients, clientsConfigured, groceryLists, entries, ledgerConfigured, people, invoicing: settings?.invoicing });
-  const coveringList = weekGroceryList(weekEvents.map((e) => e.eventId), groceryLists);
+  // The event objects, so a legacy list with a range and no eventIds counts as covering.
+  const coveringList = weekGroceryList(weekEvents, groceryLists);
   const monthLink = objective !== undefined
     ? { to: `/comptes/apercu?year=${year}`, text: `Objectif du mois ${fmtEur0(monthSigned)} / ${fmtEur0(objective)}`, short: `Objectif ${num0.format(monthSigned)} / ${fmtEur0(objective)}` }
     : { to: `/comptes/previsionnel?year=${year}`, text: "Définir l'objectif du mois", short: "Définir l'objectif du mois" };

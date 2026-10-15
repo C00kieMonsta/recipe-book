@@ -35,7 +35,7 @@ export default function PlanningFrame({ weekNo, titleSuffix, meta, bar, error, c
       {bar}
       {error && <p className="no-print mt-3 text-sm text-danger">{error}</p>}
       {callouts && <div className="no-print mt-3" data-tour="week-checklist">{callouts}</div>}
-      {heads && <div className={cn("no-print mt-4 hidden xl:block", stickyHeads && "xl:sticky xl:top-0 xl:z-20 bg-background")}>{heads}</div>}
+      {heads && <div className={cn("no-print mt-4 hidden cols:block", stickyHeads && "cols:sticky cols:top-0 cols:z-20 bg-background")}>{heads}</div>}
       {children}
     </div>
   );

@@ -8,6 +8,7 @@ import type {
   FixedCharge,
   FixedChargeCategory,
   InvoicingMode,
+  PaymentMode,
   Person,
   PrestationTypeSetting,
   SettingsSupplier,
@@ -20,8 +21,12 @@ import {
   DEFAULT_COURSES,
   DEFAULT_PRESTATION_TYPES,
   DEFAULT_SUPPLIERS,
+  PAYMENT_MODES,
+  PAYMENT_MODE_LABELS,
   VAT_RATES,
+  aliasCategory,
   fmtEur,
+  isLegacyCategory,
   personInitials,
   round2,
   slugifyPersonId,
@@ -116,6 +121,11 @@ function tabFromHash(hash: string): Tab {
 }
 
 const VAT_OPTIONS = VAT_RATES.map((r) => ({ value: String(r), label: `${r} %` }));
+// The « Aucun » entry is offered only once a mode is set, so an unset pill shows its placeholder.
+const PAYMENT_OPTIONS: { value: "" | PaymentMode; label: string }[] = [
+  { value: "", label: "Aucun" },
+  ...PAYMENT_MODES.map((m) => ({ value: m, label: PAYMENT_MODE_LABELS[m] })),
+];
 const INVOICING_OPTIONS: { value: InvoicingMode; label: string }[] = [
   { value: "app", label: "Dans l'application" },
   { value: "externe", label: "Dans un autre outil (Odoo)" },
@@ -472,6 +482,8 @@ export default function Settings() {
     if (!draft) return;
     const courses = draft.courses.map((c) => c.trim()).filter(Boolean);
     if (courses.length === 0) return toast({ title: "Au moins une catégorie est requise", variant: "destructive" });
+    const legacyCourse = courses.find((c) => isLegacyCategory(c));
+    if (legacyCourse) return toast({ title: `${legacyCourse} est regroupé dans ${aliasCategory(legacyCourse)}`, variant: "destructive" });
     const prestationTypes = draft.prestationTypes
       .filter((t) => t.key.trim() && t.label.trim())
       .map((t) => ({ key: t.key.trim(), label: t.label.trim(), defaultVatRate: t.defaultVatRate }));
@@ -483,7 +495,15 @@ export default function Settings() {
       .map((s) => ({ name: s.name.trim(), address: s.address?.trim() || undefined, phone: s.phone?.trim() || undefined }));
     const people = draft.people
       .filter((p) => p.name.trim())
-      .map((p) => ({ personId: p.personId, name: p.name.trim(), initials: p.initials?.trim() || undefined, active: p.active }));
+      .map((p) => ({
+        personId: p.personId,
+        name: p.name.trim(),
+        initials: p.initials?.trim() || undefined,
+        active: p.active,
+        hourlyRate: p.hourlyRate !== undefined ? round2(p.hourlyRate) : undefined,
+        kmRate: p.kmRate,
+        paymentMode: p.paymentMode || undefined,
+      }));
     const activeInitials = people.filter((p) => p.active).map((p) => personInitials(p).toUpperCase());
     if (new Set(activeInitials).size !== activeInitials.length) {
       return toast({ title: "Deux personnes actives ont les mêmes initiales", variant: "destructive" });
@@ -767,6 +787,7 @@ export default function Settings() {
             />
           ))}
         </div>
+        <p className="mt-2 px-2 text-sm text-muted-foreground">Zakouskis et Mignardises sont regroupés dans Apéritif et Dessert.</p>
       </Section>
 
       <Section
@@ -890,12 +911,14 @@ export default function Settings() {
 
   const equipe = (
     <Section title="Équipe" action={addAction("Ajouter une personne", () => setNewPersonName((v) => (v === null ? "" : v)))}>
-      <p className="mb-2 text-sm text-muted-foreground">Les personnes de votre équipe. Pour leur envoyer leur liste, ouvrez un jour, puis Par personne, puis Partager.</p>
+      <p className="mb-2 text-sm text-muted-foreground">
+        Les personnes de votre équipe, leur tarif et leur mode de paiement. Le tarif sert au coût équipe des événements et à Comptabilité › Équipe ; il n'est jamais facturé au client. Pour leur envoyer leur liste, ouvrez un jour, puis Par personne, puis Partager.
+      </p>
       <div>
         {draft.people.map((p, i) => {
           const duplicate = p.active && (activeInitialCounts.get(personInitials(p).toUpperCase()) ?? 0) > 1;
           return (
-            <div key={p.personId} className={`${ROW} ${p.active ? "" : "text-muted-foreground"}`}>
+            <div key={p.personId} className={`${ROW} flex-wrap md:flex-nowrap ${p.active ? "" : "text-muted-foreground"}`}>
               <PersonChip personId={p.personId} people={draft.people} size="sm" />
               <span className={ROW_TEXT}>
                 <EditableInlineText value={p.name} placeholder="Nom" onSave={(v) => { if (v.trim()) setPerson(i, { name: v.trim() }); }} />
@@ -908,18 +931,32 @@ export default function Settings() {
                 />
                 {duplicate && <Tag colour="red">doublon</Tag>}
               </span>
-              <Checkbox checked={p.active} onChange={(on) => setPerson(i, { active: on })} label="Actif" aria-label={`${p.name} actif`} />
-              <ActionMenu
-                className="reveal"
-                aria-label={`Actions de ${p.name}`}
-                items={[
-                  { label: "Copier le lien de sa liste du jour", icon: <Link2 />, onClick: () => void copyDayLink(p) },
-                  { label: "Monter", icon: <ArrowUp />, disabled: i === 0, onClick: () => patch((d) => ({ ...d, people: moveItem(d.people, i, i - 1) })) },
-                  { label: "Descendre", icon: <ArrowDown />, disabled: i >= draft.people.length - 1, onClick: () => patch((d) => ({ ...d, people: moveItem(d.people, i, i + 1) })) },
-                  { kind: "separator" },
-                  { label: p.active ? "Désactiver" : "Réactiver", onClick: () => setPerson(i, { active: !p.active }), variant: p.active ? "danger" : "default" },
-                ]}
-              />
+              {/* Below md the rates, the pill and the actions wrap on one line under the name. */}
+              <span className="flex basis-full items-center gap-2 pb-1 md:contents">
+                <OptNumValue value={p.hourlyRate} min={0} step={0.5} suffix="€/h" placeholder="€/h" ariaLabel="Tarif horaire" className="md:w-24 md:text-right" onChange={(v) => setPerson(i, { hourlyRate: v })} />
+                <OptNumValue value={p.kmRate} min={0} step={0.01} suffix="€/km" placeholder="€/km" ariaLabel="Tarif km" className="md:w-24 md:text-right" onChange={(v) => setPerson(i, { kmRate: v })} />
+                <SelectPill
+                  value={p.paymentMode ?? ""}
+                  placeholder="Paiement"
+                  colour="gray"
+                  aria-label="Mode de paiement"
+                  title="Mode de paiement"
+                  options={PAYMENT_OPTIONS.filter((o) => o.value !== "" || p.paymentMode)}
+                  onChange={(v) => setPerson(i, { paymentMode: (v || undefined) as PaymentMode | undefined })}
+                />
+                <Checkbox checked={p.active} onChange={(on) => setPerson(i, { active: on })} label="Actif" aria-label={`${p.name} actif`} />
+                <ActionMenu
+                  className="reveal"
+                  aria-label={`Actions de ${p.name}`}
+                  items={[
+                    { label: "Copier le lien de sa liste du jour", icon: <Link2 />, onClick: () => void copyDayLink(p) },
+                    { label: "Monter", icon: <ArrowUp />, disabled: i === 0, onClick: () => patch((d) => ({ ...d, people: moveItem(d.people, i, i - 1) })) },
+                    { label: "Descendre", icon: <ArrowDown />, disabled: i >= draft.people.length - 1, onClick: () => patch((d) => ({ ...d, people: moveItem(d.people, i, i + 1) })) },
+                    { kind: "separator" },
+                    { label: p.active ? "Désactiver" : "Réactiver", onClick: () => setPerson(i, { active: !p.active }), variant: p.active ? "danger" : "default" },
+                  ]}
+                />
+              </span>
             </div>
           );
         })}

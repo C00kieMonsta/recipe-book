@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import type { AppEvent, EventCostSnapshot } from "@packages/types";
-import { aFacturer, buildCostSnapshot, fmtEur, shortEventName, signedRevenue } from "@packages/types";
+import type { AppEvent } from "@packages/types";
+import { aFacturer, completionFields, fmtEur, shortEventName, signedRevenue } from "@packages/types";
 import { api } from "@/lib/api";
 import { dayMonthShortLabel, monthLabel, todayIso } from "@/lib/dates";
 import { useReportInputs } from "@/lib/use-report-inputs";
@@ -38,10 +38,12 @@ export default function AFacturer() {
   const year = today.slice(0, 4);
   const { toast } = useToast();
   const touch = useTouchScreen();
-  const { inputs, events, entries, clients, invoicing, loading, notConfigured, error, reload } = useReportInputs(year);
+  const { inputs, events, entries, clients, settings, invoicing, loading, notConfigured, error, reload } = useReportInputs(year);
   const [busy, setBusy] = useState<string | null>(null);
-  // Invoices issued elsewhere: only the events to close are listed.
+  // Invoices issued elsewhere: the ledger sections give way to the invoiced marker.
   const externe = invoicing === "externe";
+  // Without the ledger (externe mode or table absent) the rows stamp invoicedAt instead of opening the Journal.
+  const markMode = externe || notConfigured;
 
   const report = useMemo(() => aFacturer({ events, entries, clients }, today), [events, entries, clients, today]);
   const clientById = useMemo(() => new Map(clients.map((c) => [c.clientId, c])), [clients]);
@@ -50,9 +52,21 @@ export default function AFacturer() {
     if (!inputs) return;
     setBusy(ev.eventId);
     try {
-      const costSnapshot = buildCostSnapshot(ev, inputs.recipeCostById, inputs.recipePortionsById) as EventCostSnapshot;
-      await api.events.update(ev.eventId, { status: "completed", costSnapshot });
+      await api.events.update(ev.eventId, completionFields(ev, settings?.people ?? [], inputs.recipeCostById, inputs.recipePortionsById));
       toast({ title: "Événement terminé" });
+      reload();
+    } catch (e) {
+      toast({ title: e instanceof Error ? e.message : "Erreur", variant: "destructive" });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const markInvoiced = async (eventIds: string[]) => {
+    setBusy(eventIds[0] ?? null);
+    try {
+      for (const id of eventIds) await api.events.update(id, { invoicedAt: today });
+      toast({ title: "Marqué comme facturé" });
       reload();
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : "Erreur", variant: "destructive" });
@@ -71,18 +85,18 @@ export default function AFacturer() {
   if (loading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
 
   return (
-    <div className={externe ? "max-w-doc" : "max-w-doc pb-28 md:pb-0"}>
+    <div className={markMode ? "max-w-doc" : "max-w-doc pb-28 md:pb-0"}>
       {error && <div className="mb-4"><Callout tone="danger">{error}</Callout></div>}
       {notConfigured && <div className="mb-4"><Callout emoji="💶">{NOT_CONFIGURED}</Callout></div>}
 
-      {!notConfigured && !externe && (
+      {!markMode && (
         <div className="hidden grid-cols-2 divide-x divide-border rounded-lg bg-surface md:grid">
           <MoneyTile flat label={`À facturer · ${toInvoiceCount}`} value={fmtEur(report.totals.toInvoiceHtva)} sub="HTVA" to="#a-facturer" />
           <MoneyTile flat label={`Impayées · ${report.unpaid.length}`} value={fmtEur(report.totals.unpaidTvac)} sub="TVAC" to="#impayes" />
         </div>
       )}
 
-      {nothing && !notConfigured && !externe && <p className="mt-4 text-sm text-muted-foreground">Rien à facturer, rien d'impayé.</p>}
+      {nothing && !markMode && <p className="mt-4 text-sm text-muted-foreground">Rien à facturer, rien d'impayé.</p>}
 
       <Section title="Événements passés à terminer" meta={report.toClose.length > 0 ? <Tag colour="gray">{report.toClose.length}</Tag> : undefined}>
         {report.toClose.length === 0 ? (
@@ -106,13 +120,58 @@ export default function AFacturer() {
         )}
       </Section>
 
-      {!notConfigured && !externe && (
+      {markMode && (
+        <div id="a-facturer" className="scroll-mt-20">
+          <Section
+            title="Événements terminés à facturer"
+            meta={toInvoiceCount > 0 ? <><Tag colour="gray">{toInvoiceCount}</Tag><span className="hidden md:inline"> · {fmtEur(report.totals.toInvoiceHtva)} HTVA</span></> : undefined}
+          >
+            {toInvoiceCount > 0 && <p className="mb-2 text-sm text-muted-foreground md:hidden">{fmtEur(report.totals.toInvoiceHtva)} HTVA</p>}
+            {toInvoiceCount === 0 ? (
+              <p className="text-sm text-muted-foreground">Rien à facturer.</p>
+            ) : (
+              <div className="divide-y divide-border">
+                {report.toInvoiceMonthly.map((m) => (
+                  <Row
+                    key={`${m.clientId}-${m.ym}`}
+                    action={
+                      <Button variant="link" size="sm" disabled={busy !== null} onClick={() => void markInvoiced(m.eventIds)}>
+                        Marquer le mois facturé
+                      </Button>
+                    }
+                  >
+                    <span className="font-medium">{m.clientName}</span>
+                    <span className="text-muted-foreground">{` · ${monthLabel(m.ym)} · ${plural(m.eventIds.length, "événement")} · ${fmtEur(m.htva)} HTVA · `}</span>
+                    <Tag colour="blue">mensuelle</Tag>
+                  </Row>
+                ))}
+                {report.toInvoice.map((e) => (
+                  <Row
+                    key={e.eventId}
+                    action={
+                      <Button variant="link" size="sm" disabled={busy !== null} onClick={() => void markInvoiced([e.eventId])}>
+                        Marquer facturé
+                      </Button>
+                    }
+                  >
+                    <Link to={`/events/${e.eventId}`} className={LINK}>{e.label}</Link>
+                    <span className="text-muted-foreground">{` · ${dayMonthShortLabel(e.date).toLowerCase()} · ${fmtEur(e.htva)} HTVA`}</span>
+                  </Row>
+                ))}
+              </div>
+            )}
+          </Section>
+        </div>
+      )}
+
+      {!markMode && (
         <>
           <div id="a-facturer" className="scroll-mt-20">
             <Section
               title="À facturer"
-              meta={toInvoiceCount > 0 ? <><Tag colour="gray">{toInvoiceCount}</Tag> · {fmtEur(report.totals.toInvoiceHtva)} HTVA</> : undefined}
+              meta={toInvoiceCount > 0 ? <><Tag colour="gray">{toInvoiceCount}</Tag><span className="hidden md:inline"> · {fmtEur(report.totals.toInvoiceHtva)} HTVA</span></> : undefined}
             >
+              {toInvoiceCount > 0 && <p className="mb-2 text-sm text-muted-foreground md:hidden">{fmtEur(report.totals.toInvoiceHtva)} HTVA</p>}
               {toInvoiceCount === 0 ? (
                 <p className="text-sm text-muted-foreground">Rien à facturer.</p>
               ) : (

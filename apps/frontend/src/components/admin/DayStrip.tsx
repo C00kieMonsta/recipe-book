@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { parseYmd } from "@packages/types";
+import { parseYmd, shortDayLabel } from "@packages/types";
 import { cn } from "@/lib/utils";
 
 export interface DayStripProps {
@@ -55,7 +55,11 @@ export default function DayStrip({ dates, counts, today, selected, href, state, 
         );
       })}
       {/* Floats under the strip so the rows do not shift under the finger. */}
-      {dragging && <p className="absolute inset-x-0 top-full z-10 bg-background text-center text-caption leading-none text-muted-foreground">Déposez sur un jour</p>}
+      {dragging && (
+        <p className={cn("absolute inset-x-0 top-full z-10 bg-background text-center text-caption leading-none", dropDay ? "font-medium text-primary" : "text-muted-foreground")}>
+          {dropDay ? `Déposer sur ${shortDayLabel(dropDay)}` : "Déposez sur un jour"}
+        </p>
+      )}
     </div>
   );
 }

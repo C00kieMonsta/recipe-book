@@ -493,8 +493,8 @@ Loads through `useReportInputs(year)` (verified: a 503 on the ledger or the clie
 
 ### 6.9 Événements (`pages/admin/Events.tsx`)
 
-- `FILTERS` gains `{ key: "a_facturer", label: "À facturer" }` after « Terminés », shown only when `settings.invoicing === "externe"` or `health.tables.ledger` is false (`fetchHealth` exists in `lib/api.ts`). Filter: `status === "completed" && !invoicedAt`. `?filtre=a-facturer` in the URL selects it (the checklist many-row links there).
-- Status column: `StatusTag completed` as today; for completed events in those modes a gray `Tag` « à facturer » after it, or `StatusTag invoiced` « Facturé » when marked.
+- `FILTERS` gains `{ key: "a_facturer", label: "À facturer" }` after « Terminés », shown only when `settings.invoicing === "externe"` or `health.tables.ledger` is false (`fetchHealth` exists in `lib/api.ts`). Filter: `status === "completed"` and not in `invoicedEventIds(health.tables.ledger ? entries : [], events)` (the page loads `api.ledger.list()` when the table exists, so the tab agrees with the week box and Comptes › À terminer). `?filtre=a-facturer` in the URL selects it (the checklist many-row links there).
+- Status column: `StatusTag completed` as today; for completed events in those modes a gray `Tag` « à facturer » after it, or `StatusTag invoiced` « Facturé » when in that set.
 
 ### 6.10 Recettes
 

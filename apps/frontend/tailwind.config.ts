@@ -23,6 +23,11 @@ export default {
         "cook-lg": ["36px", "1.35"],
       },
       maxWidth: { doc: "44rem", wide: "76rem" },
+      // Seven columns on laptops and on a landscape iPad; the rail is the iPad band where the sidebar becomes a menu button.
+      screens: {
+        cols: { raw: "(min-width: 1280px), ((min-width: 1024px) and (orientation: landscape))" },
+        rail: { raw: "(min-width: 1024px) and (max-width: 1279.98px) and (orientation: landscape)" },
+      },
       spacing: { block: "2rem", sidebar: "240px", topbar: "44px" },
       colors: {
         background: "var(--background)",
@@ -90,6 +95,8 @@ export default {
     plugin(({ addVariant }) => {
       addVariant("touch", "@media (hover: none)");
       addVariant("pointer", "@media (hover: hover)");
+      // The raw screens above switch off Tailwind's max-* variants; the one in use is declared here.
+      addVariant("max-md", "@media (max-width: 767.98px)");
     }),
   ],
 } satisfies Config;

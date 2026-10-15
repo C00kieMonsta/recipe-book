@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Plus } from "lucide-react";
 import type { Person, WeekPlan } from "@packages/types";
-import { dayLabel, longDayLabel, personName } from "@packages/types";
+import { dayLabel, longDayLabel, personName, shortDayLabel } from "@packages/types";
 import { dayHeaderMeta, dayHeaderTitle } from "@/lib/use-planning-data";
 import { cn } from "@/lib/utils";
 import { PersonChip } from "@/components/admin/PersonChips";
@@ -31,7 +31,7 @@ export interface DayHeadsProps {
   dragging?: boolean;
 }
 
-// The seven column heads of the week, one row shared by the week and the day page at xl.
+// The seven column heads of the week, one row shared by the week and the day page on cols.
 export default function DayHeads({ dates, plan, started, today, selected, href, closeHref, state, newEventHref, people, selectedPerson, onPersonFilter, dropDay, dragging = false }: DayHeadsProps) {
   return (
     <div
@@ -72,7 +72,11 @@ export default function DayHeads({ dates, plan, started, today, selected, href, 
                   <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${isToday ? "bg-danger-solid text-white" : ""}`}>{dayNum}</span>
                 </div>
                 {/* A non-breaking space keeps the caption line while the plan loads. */}
-                <div className="truncate text-caption text-muted-foreground">{day ? dayHeaderMeta(day, started) : " "}</div>
+                {dropDay === date ? (
+                  <div className="truncate text-caption font-medium text-primary">Déposer ici</div>
+                ) : (
+                  <div className="truncate text-caption text-muted-foreground">{day ? dayHeaderMeta(day, started) : " "}</div>
+                )}
               </Link>
               <IconButton size="sm" as={Link} to={newEventHref(date)} aria-label={`Nouvel événement le ${longDayLabel(date)}`} className="reveal mt-1" icon={<Plus />} />
             </div>
@@ -99,7 +103,11 @@ export default function DayHeads({ dates, plan, started, today, selected, href, 
         );
       })}
       {/* Takes the pb-1 gap instead of floating over the first card. */}
-      {dragging && <p className="col-span-7 -mb-1 h-3 text-caption leading-none text-muted-foreground">Déposez sur un jour</p>}
+      {dragging && (
+        <p className={cn("col-span-7 -mb-1 h-3 text-caption leading-none", dropDay ? "font-medium text-primary" : "text-muted-foreground")}>
+          {dropDay ? `Déposer sur ${shortDayLabel(dropDay)}` : "Déposez sur un jour"}
+        </p>
+      )}
     </div>
   );
 }

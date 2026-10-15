@@ -3,7 +3,9 @@ import { Navigate, Outlet, useLocation, useOutletContext } from "react-router-do
 import { ChevronsRight } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { api, type HealthResponse } from "@/lib/api";
+import { RAIL_QUERY } from "@/lib/screens";
 import { IconButton } from "@/components/ui/Button";
 import AssistantSheet from "@/components/assistant/AssistantSheet";
 import AdminSidebar from "./AdminSidebar";
@@ -112,6 +114,8 @@ export default function AdminLayout() {
   const [collapsedPref, setCollapsedPref] = useLocalStorage<boolean | null>(SIDEBAR_KEY, null);
   const collapsed = collapsedPref === true;
   const assistant = useAssistantEnabled();
+  // Landscape iPad on the planning pages: the sidebar leaves the flow so the seven columns fit.
+  const rail = useMediaQuery(RAIL_QUERY) && /^\/(semaine|jour)\b/.test(location.pathname);
   const setFullBleed = useCallback((on: boolean) => setFullBleedState(on), []);
   const setHideChrome = useCallback((on: boolean) => setHideChromeState(on), []);
   const setBackTo = useCallback((next: BackTo | null) => setBackToState(next), []);
@@ -122,15 +126,16 @@ export default function AdminLayout() {
     return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   }
 
-  const padding = fullBleed ? "px-4 pb-8 md:px-6 md:pt-6" : "px-4 pb-8 md:px-12 md:pt-10 xl:px-24";
+  // On the rail the fixed « Menu » button sits where the title starts, so the top padding clears it.
+  const padding = fullBleed ? `px-4 pb-8 md:px-6 ${rail ? "md:pt-14" : "md:pt-6"}` : "px-4 pb-8 md:px-12 md:pt-10 xl:px-24";
   const phoneTop = hideChrome ? "pt-0" : "pt-[56px]";
 
   return (
     <ChromeContext.Provider value={{ hideChrome, fullBleed, backTo, topTitle }}>
       <TourProvider>
         <div className="flex min-h-screen">
-          <AdminSidebar hidden={hideChrome} collapsed={collapsed} onCollapse={() => setCollapsedPref(true)} assistant={assistant} />
-          {!hideChrome && collapsed && (
+          <AdminSidebar hidden={hideChrome} collapsed={collapsed} onCollapse={() => setCollapsedPref(true)} assistant={assistant} rail={rail} />
+          {!hideChrome && collapsed && !rail && (
             <IconButton
               size="sm"
               aria-label="Afficher le menu"

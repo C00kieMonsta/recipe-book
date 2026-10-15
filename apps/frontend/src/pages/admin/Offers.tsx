@@ -202,7 +202,7 @@ function SortMenu({ value, onChange }: { value: Sort; onChange: (s: Sort) => voi
       <Menu {...menu.props} align="right" title="Trier">
         <MenuRadio checked={value === "name"} onSelect={() => onChange("name")}>Nom</MenuRadio>
         <MenuRadio checked={value === "price"} onSelect={() => onChange("price")}>Prix</MenuRadio>
-        <MenuRadio checked={value === "margin"} onSelect={() => onChange("margin")}>Marge %</MenuRadio>
+        <MenuRadio checked={value === "margin"} onSelect={() => onChange("margin")}>Marge food %</MenuRadio>
       </Menu>
     </div>
   );
@@ -451,7 +451,7 @@ export default function Offers() {
                 { key: "cost", label: "Coût / conv.", width: "120px", align: "right", render: (r) => (r.offer.lines.length === 0 ? dash : fmtEur(r.summary.costPerGuest)) },
                 {
                   key: "margin",
-                  label: "Marge %",
+                  label: "Marge food %",
                   width: "100px",
                   align: "right",
                   render: (r) => r.offer.lines.length === 0 ? dash : (

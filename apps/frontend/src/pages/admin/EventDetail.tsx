@@ -6,10 +6,8 @@ import type {
   AppSettings,
   Client,
   ClientTemplateRequest,
-  EventCostSnapshot,
   EventExtraCost,
   EventRecipeLine,
-  EventRevenueLine,
   EventTask,
   ExtraCostKind,
   Ingredient,
@@ -21,16 +19,16 @@ import type {
   PricingMode,
   Recipe,
   SalesEntryPrefill,
-  VatRate,
+  StaffCostRow,
 } from "@packages/types";
 import {
   DEFAULT_COURSES,
   DEFAULT_PRESTATION_TYPES,
-  VAT_RATES,
   calcRecipeCost,
   calcEventCost,
   sumExtraCosts,
   signedRevenue,
+  foodRevenue,
   revenueLinesTotal,
   revenueTvac,
   vatBreakdown,
@@ -61,6 +59,16 @@ import {
   isMoved,
   prepDateOf,
   shiftPrepDates,
+  foodCostOf,
+  foodMargin,
+  eventResult,
+  staffCostOf,
+  staffEntryOf,
+  upsertStaffEntry,
+  removeStaffEntry,
+  freezeStaffRates,
+  completionFields,
+  revenueByKindLabel,
 } from "@packages/types";
 import { api, ApiError, type EventInput } from "@/lib/api";
 import { composeInAssistant, openAssistant } from "@/lib/assistant-compose";
@@ -108,6 +116,7 @@ import MoveToDayMenu from "@/components/admin/MoveToDayMenu";
 import AttachmentsSection from "@/components/admin/AttachmentsSection";
 import NewRecipeDialog from "@/components/admin/NewRecipeDialog";
 import GroceryFromEventsDialog from "@/components/admin/GroceryFromEventsDialog";
+import RevenueLines from "@/components/admin/RevenueLines";
 import { useAssistantEnabled, useBackLink, useTopTitle } from "@/components/admin/AdminLayout";
 import { PaidPopover } from "@/pages/admin/comptes/Journal";
 import { jsPDF } from "jspdf";
@@ -130,10 +139,13 @@ const PRICING_MODES: { value: PricingMode; label: string }[] = [
   { value: "total", label: "total food" },
 ];
 const PRICING_TOOLTIP = "En total food, le prix ne change pas quand les convives changent.";
-const VAT_OPTIONS = VAT_RATES.map((r) => ({ value: String(r), label: `${r} %` }));
-const REVENUE_LABELS = ["Service", "Livraison", "Autres"];
-const REVENUE_LABELS_ID = "revenue-line-labels";
 const EXTERNE_NOTE = "Les factures se font dans un autre outil (Odoo).";
+const KITCHEN_SUB = "Par défaut pour chaque recette et tâche ; chaque ligne peut avoir sa personne.";
+const MY_HOURS_TITLE = "Vos propres heures sur l'événement ; les heures de l'équipe se notent dans Heures et frais.";
+const STAFF_EMPTY = "Personne dans l'équipe de cet événement. Choisissez qui est en cuisine et sur place dans les propriétés ci-dessus, puis notez ici les heures et les kilomètres de chacun.";
+const FROZEN_TITLE = "Tarif figé à la clôture";
+
+// The event marker can be set to null, which the shared EventInput does not type yet.
 
 const ENTRY_KIND_LABEL: Record<string, string> = {
   facture: "Facture",
@@ -155,6 +167,13 @@ function safeFileName(name: string): string {
 // « 3 300 € » for a whole amount, « 32,50 € » otherwise.
 function fmtEurShort(n: number): string {
   return Number.isInteger(n) ? fmtEur(n).replace(",00", "") : fmtEur(n);
+}
+
+const numFmt = new Intl.NumberFormat("fr-BE", { maximumFractionDigits: 2 });
+
+// « 14 h », « 6,5 h ».
+function fmtHours(n: number): string {
+  return `${numFmt.format(n)} h`;
 }
 
 // "jeudi 15 octobre", for use after "le".
@@ -220,11 +239,14 @@ export default function EventDetail() {
   const [extraForm, setExtraForm] = useState<{ entries: SalesEntryPrefill[]; index: number } | null>(null);
   const [pickerLineId, setPickerLineId] = useState<string | null>(null);
   const [teamOpen, setTeamOpen] = useState(false);
+  const [serviceOpen, setServiceOpen] = useState(false);
+  const [staffPickerOpen, setStaffPickerOpen] = useState(false);
+  // People added through « + Personne » with no number typed yet; nothing is stored until a figure lands.
+  const [pendingStaff, setPendingStaff] = useState<string[]>([]);
   const teamRef = useRef<HTMLDivElement>(null);
   const priceRef = useRef<HTMLDivElement>(null);
   const addRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef(new Map<string, HTMLDivElement>());
-  const revenueRefs = useRef(new Map<number, HTMLDivElement>());
 
   useEffect(() => {
     if (!id) return;
@@ -372,28 +394,78 @@ export default function EventDetail() {
   const weekUrl = `/semaine/${isoWeekOf(event.date)}`;
   const weekNumber = Number(isoWeekOf(event.date).slice(-2));
   const cost = calcEventCost(event, recipeCostById, recipePortionsById);
-  const matieres = cost.rawMaterial + cost.extras.matiere;
+  const foodCost = foodCostOf(cost);
+  const foodHtva = foodRevenue(event);
   const revenue = signedRevenue(event);
   const linesTotal = revenueLinesTotal(event);
   const revenueLines = event.revenueLines ?? [];
-  const margin = revenue - cost.total;
-  const marginPct = revenue > 0 ? (margin / revenue) * 100 : 0;
+  const food = foodMargin(foodHtva, foodCost);
+  // Pending people get an empty entry so the section lists them; staffCostOf gives them amount 0.
+  const staffEvent = pendingStaff.length > 0
+    ? { ...event, staff: [...(event.staff ?? []), ...pendingStaff.filter((pid) => !staffEntryOf(event, pid)).map((personId) => ({ personId }))] }
+    : event;
+  const staff = staffCostOf(staffEvent, people);
+  // Personnel, location, transport and autre: every cost outside the food margin.
+  const otherCosts = round2(cost.total - foodCost);
+  const reste = eventResult(revenue, cost.total, staff.amount);
   const incomplete = incompleteCount(event.recipes, recipeById);
   const costState = event.actualCost != null ? "réel" : event.costSnapshot ? `figé le ${dayMonthLabel(event.costSnapshot.takenAt)}` : "estimé";
   const costSub = incomplete > 0 ? `${costState} · ${plural(incomplete, "recette sans coût", "recettes sans coût")}` : costState;
   const vatBuckets = event.vatRate !== undefined || revenueLines.length > 0 ? vatBreakdown(event) : [];
   const isTotalMode = event.pricingMode === "total";
   const isPast = event.date < todayIso();
+  const resteParts = linesTotal > 0 || staff.amount > 0 || otherCosts > 0
+    ? [
+      `Reste ${fmtEurShort(reste)}`,
+      `signé ${fmtEurShort(revenue)} HTVA`,
+      linesTotal > 0 ? `service, livraison, autres ${fmtEurShort(linesTotal)}` : "",
+      staff.amount > 0 ? `équipe ${fmtEurShort(staff.amount)}` : "",
+      otherCosts > 0 ? `autres coûts ${fmtEurShort(otherCosts)}` : "",
+    ].filter(Boolean)
+    : [];
 
   const linkedEntries = entriesForEvent(event.eventId, entries);
-  const billing = eventBillingStatus(event.eventId, entries);
+  // The ledger alone decides the ledger tags; the union hides « Marquer comme facturé » when either source says invoiced.
+  const ledgerBilling = eventBillingStatus(event.eventId, entries);
+  const billing = eventBillingStatus(event.eventId, entries, event);
+  const invoicedByLedger = ledgerBilling === "facture" || ledgerBilling === "paye";
+  const marked = Boolean(event.invoicedAt);
+  const invoiced = billing === "facture" || billing === "paye";
+  const markable = invoicing === "externe" || ledgerNotConfigured;
   const invoiceNumber = linkedEntries.find((e) => isInvoiceEntry(e) && e.number)?.number;
   const lastPaidAt = linkedEntries.map((e) => e.paidAt).filter((d): d is string => !!d).sort().pop();
 
-  const snapshot = () => buildCostSnapshot(event, recipeCostById, recipePortionsById) as EventCostSnapshot;
-  const complete = () => saveField({ status: "completed", costSnapshot: snapshot() }, "Événement terminé").catch(() => undefined);
+  const snapshot = () => buildCostSnapshot(event, recipeCostById, recipePortionsById);
+  const complete = () => saveField(completionFields(event, people, recipeCostById, recipePortionsById), "Événement terminé").catch(() => undefined);
   const reopen = () => saveField({ status: "upcoming" }, "Événement rouvert").catch(() => undefined);
-  const retakeCost = () => saveField({ costSnapshot: snapshot() }, "Coût repris").catch(() => undefined);
+  const retakeCost = () =>
+    saveField({ costSnapshot: snapshot(), ...(event.staff?.length ? { staff: freezeStaffRates(event.staff, people) } : {}) }, "Coût repris").catch(() => undefined);
+  const markInvoiced = () => saveField({ invoicedAt: todayIso() }, "Marqué comme facturé").catch(() => undefined);
+  const unmarkInvoiced = () => saveField({ invoicedAt: null, invoiceRef: null }, "Marquage retiré").catch(() => undefined);
+
+  // ── Heures et frais ───────────────────────────────────────────────────────
+  const staffMeta = staff.hours === 0 && staff.km === 0
+    ? undefined
+    : staff.missingRate.length > 0
+      ? `${fmtHours(staff.hours)} · tarif à préciser`
+      : staff.amount > 0
+        ? `${fmtHours(staff.hours)} · ${fmtEurShort(staff.amount)}`
+        : fmtHours(staff.hours);
+  const patchStaff = (personId: string, patch: { hours?: number; km?: number }) => {
+    setPendingStaff((prev) => prev.filter((pid) => pid !== personId));
+    save({ staff: upsertStaffEntry(event.staff, personId, patch) });
+  };
+  const removeStaff = (personId: string) => {
+    setPendingStaff((prev) => prev.filter((pid) => pid !== personId));
+    if (staffEntryOf(event, personId)) save({ staff: removeStaffEntry(event.staff, personId) });
+  };
+  // Checking a person lists them; unchecking only drops a pending one, stored hours go through « Retirer les heures ».
+  const pickStaff = (next: string[]) => {
+    const current = staff.rows.map((r) => r.personId);
+    const added = next.filter((pid) => !current.includes(pid));
+    const removed = current.filter((pid) => !next.includes(pid) && pendingStaff.includes(pid));
+    setPendingStaff((prev) => [...prev.filter((pid) => !removed.includes(pid)), ...added]);
+  };
 
   // ── Menu lines ────────────────────────────────────────────────────────────
   const orderedPut = (groups: { course: string; lines: EventRecipeLine[] }[], changed?: { lineId: string; course: string }) =>
@@ -513,14 +585,8 @@ export default function EventDetail() {
   const removeExtraCost = (idx: number) => save({ extraCosts: event.extraCosts.filter((_, i) => i !== idx) });
 
   // ── Service, livraison, autres ────────────────────────────────────────────
-  const updateRevenueLine = (idx: number, patch: Partial<EventRevenueLine>) =>
-    save({ revenueLines: revenueLines.map((l, i) => (i === idx ? { ...l, ...patch } : l)) });
-  const addRevenueLine = async () => {
-    const idx = revenueLines.length;
-    await saveField({ revenueLines: [...revenueLines, { label: "Service", amount: 0, vatRate: 21 }] }).catch(() => undefined);
-    setTimeout(() => revenueRefs.current.get(idx)?.querySelector<HTMLElement>("[data-amount] [role=button]")?.click(), 50);
-  };
-  const removeRevenueLine = (idx: number) => save({ revenueLines: revenueLines.filter((_, i) => i !== idx) });
+  const byKind = revenueByKindLabel(event);
+  const revenueMeta = revenueLines.length > 0 ? `${fmtEur(linesTotal)} HTVA${byKind ? ` · ${byKind}` : ""}` : undefined;
 
   // ── Price ─────────────────────────────────────────────────────────────────
   const changePricingMode = (mode: string) => {
@@ -781,6 +847,11 @@ export default function EventDetail() {
     ...(isTouch ? [{ label: terminerLabel, onClick: terminer }, { kind: "separator" as const }] : []),
     { label: "Modifier", onClick: () => navigate(`/events/${id}/edit`) },
     { label: "Reprendre le coût", onClick: retakeCost },
+    ...(marked
+      ? [{ label: "Annuler le marquage facturé", onClick: unmarkInvoiced }]
+      : !invoiced
+        ? [{ label: invoicing === "app" && !ledgerNotConfigured ? "Marquer facturé sans écriture" : "Marquer comme facturé", onClick: markInvoiced }]
+        : []),
     { label: "Ajuster les portions aux convives", onClick: () => { setAdjustGuests(String(event.guestCount)); setDialog({ kind: "adjust" }); } },
     { label: "Dupliquer", onClick: () => { setDuplicateDate(addDays(event.date, 7)); setDialog({ kind: "duplicate" }); } },
     ...(event.clientId
@@ -984,6 +1055,46 @@ export default function EventDetail() {
     );
   };
 
+  // One person of the event: role tags, hours, km, then the amount or « tarif à préciser ». The numbers wrap under the name below md.
+  const renderStaffRow = (row: StaffCostRow) => {
+    const entry = staffEntryOf(event, row.personId);
+    const name = personName(people, row.personId);
+    const removable = Boolean(entry) || pendingStaff.includes(row.personId);
+    const hasWork = row.hours > 0 || row.km > 0;
+    return (
+      <div key={row.personId} className={`${ROW} flex-wrap gap-2 md:flex-nowrap`}>
+        <span className="flex min-w-[9rem] flex-1 items-center gap-2">
+          <PersonChip personId={row.personId} people={people} size="sm" />
+          <span className="min-w-0 truncate text-sm touch:text-base">{name}</span>
+          {row.cuisine && <Tag colour="gray">cuisine</Tag>}
+          {row.service && <Tag colour="gray">sur place</Tag>}
+        </span>
+        <span className="ml-auto flex shrink-0 items-center gap-2">
+          <span className="w-16 text-right text-sm tabular-nums touch:text-base">
+            <EditableInlineNum value={entry?.hours} placeholder="h" suffix=" h" min={0} step={0.5} onSave={(v) => patchStaff(row.personId, { hours: round2(Math.max(0, v)) })} />
+          </span>
+          <span className="w-16 text-right text-sm tabular-nums touch:text-base">
+            <EditableInlineNum value={entry?.km} placeholder="km" suffix=" km" min={0} onSave={(v) => patchStaff(row.personId, { km: round2(Math.max(0, v)) })} />
+          </span>
+          <span className="w-24 text-right text-sm tabular-nums touch:text-base">
+            {row.rate.missing ? (
+              <Link to="/settings#equipe" state={{ from: location.pathname }} title="Ajouter un tarif dans Paramètres › Équipe" className="inline-flex items-center touch:min-h-11">
+                <Tag colour="gray">tarif à préciser</Tag>
+              </Link>
+            ) : hasWork ? (
+              <span className="text-muted-foreground" title={row.rate.frozen ? FROZEN_TITLE : undefined}>{fmtEur(row.amount)}</span>
+            ) : null}
+          </span>
+          {isTouch ? (
+            <ActionMenu title={name} items={[{ label: "Retirer les heures", onClick: () => removeStaff(row.personId), variant: "danger", disabled: !removable }]} />
+          ) : (
+            <IconButton size="sm" aria-label="Retirer les heures" onClick={() => removeStaff(row.personId)} icon={<X />} className="reveal" disabled={!removable} />
+          )}
+        </span>
+      </div>
+    );
+  };
+
   const renderCourseBlock = (group: { course: string; lines: EventRecipeLine[] }) => {
     const isDropHere = dropTarget?.course === group.course && dropTarget.lineId === null;
     return (
@@ -1105,12 +1216,17 @@ export default function EventDetail() {
             />
             <Property icon={Circle} label="Statut" kind="custom">
               <EditableStatus value={event.status} onSave={(v) => { if (v === "completed") complete(); else reopen(); }} />
-              {billing === "facture" && <StatusTag status="invoiced" label={invoiceNumber ? `Facturé n° ${invoiceNumber}` : "Facturé"} />}
-              {billing === "acompte_recu" && <StatusTag status="deposit" />}
-              {billing === "paye" && <StatusTag status="paid" label={lastPaidAt ? `Payé le ${dayMonthLabel(lastPaidAt)}` : "Payé"} />}
+              {ledgerBilling === "facture" && <StatusTag status="invoiced" label={invoiceNumber ? `Facturé n° ${invoiceNumber}` : "Facturé"} />}
+              {ledgerBilling === "acompte_recu" && <StatusTag status="deposit" />}
+              {ledgerBilling === "paye" && <StatusTag status="paid" label={lastPaidAt ? `Payé le ${dayMonthLabel(lastPaidAt)}` : "Payé"} />}
+              {event.invoicedAt && !invoicedByLedger && (
+                <span className="inline-flex" title={event.invoiceRef ? `N° ${event.invoiceRef}` : undefined}>
+                  <StatusTag status="invoiced" label={`Facturé le ${dayMonthLabel(event.invoicedAt)}`} />
+                </span>
+              )}
               {!event.prestationType && <Tag colour="red">Type de prestation manquant</Tag>}
             </Property>
-            <Property icon="👩‍🍳" label="Équipe" kind="custom">
+            <Property icon="👩‍🍳" label="En cuisine" kind="custom" sub={isTouch ? undefined : KITCHEN_SUB}>
               <div ref={teamRef} className="relative flex flex-wrap items-center gap-1">
                 {(event.assignedTo ?? []).map((pid) => (
                   <button key={pid} type="button" onClick={() => setTeamOpen((o) => !o)} className="inline-flex h-7 items-center gap-1.5 rounded pl-0.5 pr-1.5 text-base hover:bg-hover touch:h-11">
@@ -1120,11 +1236,25 @@ export default function EventDetail() {
                 ))}
                 <IconButton size="sm" aria-label="Modifier l'équipe" icon={<Plus />} onClick={() => setTeamOpen((o) => !o)} />
                 {teamOpen && (
-                  <PersonPicker value={event.assignedTo ?? []} options={people} onChange={(ids) => save({ assignedTo: ids })} onClose={() => setTeamOpen(false)} title="Équipe" />
+                  <PersonPicker value={event.assignedTo ?? []} options={people} onChange={(ids) => save({ assignedTo: ids })} onClose={() => setTeamOpen(false)} title="En cuisine" />
                 )}
               </div>
             </Property>
-            <Property icon={Clock} label="Heures passées" kind="number" value={event.hoursSpent ?? 0} min={0} suffix="h" onSave={(v) => saveField({ hoursSpent: round2(Math.max(0, v)) })} />
+            <Property icon="🛎" label="Sur place" kind="custom">
+              <div className="relative flex flex-wrap items-center gap-1">
+                {(event.serviceTeam ?? []).map((pid) => (
+                  <button key={pid} type="button" onClick={() => setServiceOpen((o) => !o)} className="inline-flex h-7 items-center gap-1.5 rounded pl-0.5 pr-1.5 text-base hover:bg-hover touch:h-11">
+                    <PersonChip personId={pid} people={people} size="sm" />
+                    {personName(people, pid)}
+                  </button>
+                ))}
+                <IconButton size="sm" aria-label="Modifier l'équipe sur place" icon={<Plus />} onClick={() => setServiceOpen((o) => !o)} />
+                {serviceOpen && (
+                  <PersonPicker value={event.serviceTeam ?? []} options={people} onChange={(ids) => save({ serviceTeam: ids })} onClose={() => setServiceOpen(false)} title="Sur place" />
+                )}
+              </div>
+            </Property>
+            <Property icon={Clock} label={<span title={MY_HOURS_TITLE}>Mes heures</span>} kind="number" value={event.hoursSpent ?? 0} min={0} suffix="h" onSave={(v) => saveField({ hoursSpent: round2(Math.max(0, v)) })} />
           </PropertyList>
         }
       />
@@ -1132,11 +1262,14 @@ export default function EventDetail() {
       {terminerButton("mb-4 w-full md:hidden", "lg")}
 
       <div className="grid grid-cols-2 overflow-hidden rounded-lg bg-surface md:grid-cols-4 md:divide-x md:divide-border">
-        <MoneyTile flat label="Coût matières" value={fmtEur(matieres)} sub={costSub} />
-        <MoneyTile flat label="Revenu HTVA" value={fmtEur(revenue)} sub={linesTotal > 0 ? `dont ${fmtEurShort(linesTotal)} service, livraison, autres` : undefined} />
-        <MoneyTile flat label="Marge" value={fmtEur(margin)} sub={margin < 0 ? "négative" : undefined} />
-        <MoneyTile flat label="Marge %" value={`${marginPct.toFixed(1).replace(".", ",")} %`} />
+        <MoneyTile flat label="Coût matières" value={fmtEur(foodCost)} sub={costSub} />
+        <MoneyTile flat label="Revenu food HTVA" value={fmtEur(foodHtva)} sub={linesTotal > 0 ? `+ ${fmtEurShort(linesTotal)} service, livraison, autres` : undefined} />
+        <MoneyTile flat label="Marge food" value={fmtEur(food.margin)} sub={food.margin < 0 ? "négative" : "hors service et équipe"} />
+        <MoneyTile flat label="Marge food %" value={`${food.marginPct.toFixed(1).replace(".", ",")} %`} />
       </div>
+      {resteParts.length > 0 && (
+        <p className="mt-1 px-3 text-caption text-muted-foreground">{resteParts.join(" · ")}</p>
+      )}
       {vatBuckets.length > 0 && (
         <p className="mt-1 px-3 text-caption text-muted-foreground">
           {[`TVAC ${fmtEur(revenueTvac(event))}`, ...vatBuckets.map((b) => `${b.rate} % sur ${fmtEurShort(b.htva)}`)].join(" · ")}
@@ -1187,13 +1320,46 @@ export default function EventDetail() {
         )}
       </Section>
 
+      <Section
+        title="Heures et frais"
+        meta={staffMeta ? <span className="hidden md:inline">{staffMeta}</span> : undefined}
+        action={
+          <span className="relative inline-flex">
+            <Button variant="ghost" size="sm" icon={<Plus />} onClick={() => setStaffPickerOpen((o) => !o)}>Personne</Button>
+            {staffPickerOpen && (
+              <PersonPicker
+                value={staff.rows.map((r) => r.personId)}
+                options={people}
+                onChange={pickStaff}
+                onClose={() => setStaffPickerOpen(false)}
+                align="right"
+                title="Ajouter une personne"
+              />
+            )}
+          </span>
+        }
+      >
+        {staffMeta && <p className="mb-2 text-sm text-muted-foreground md:hidden">{staffMeta}</p>}
+        {staff.rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground touch:text-base">{STAFF_EMPTY}</p>
+        ) : (
+          <div>{staff.rows.map(renderStaffRow)}</div>
+        )}
+        {cost.extras.personnel > 0 && (
+          <p className="mt-2 text-caption text-muted-foreground">
+            + {fmtEurShort(cost.extras.personnel)} de personnel en coûts supplémentaires (forfaits, agence) ; les heures de l'équipe se notent ci-dessus.
+          </p>
+        )}
+      </Section>
+
       <AttachmentsSection event={event} onChange={setEvent} />
 
       <Section
         title="Coûts supplémentaires"
-        meta={event.extraCosts.length > 0 ? fmtEur(sumExtraCosts(event.extraCosts)) : undefined}
+        meta={event.extraCosts.length > 0 ? <span className="hidden md:inline">{fmtEur(sumExtraCosts(event.extraCosts))}</span> : undefined}
         action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addExtraCost}>Ajouter</Button>}
       >
+        {event.extraCosts.length > 0 && <p className="mb-2 text-sm text-muted-foreground md:hidden">{fmtEur(sumExtraCosts(event.extraCosts))}</p>}
         {event.extraCosts.length === 0 ? (
           <p className="text-sm text-muted-foreground">Aucun coût supplémentaire.</p>
         ) : (
@@ -1222,49 +1388,7 @@ export default function EventDetail() {
         )}
       </Section>
 
-      <Section
-        title="Service, livraison, autres"
-        meta={revenueLines.length > 0 ? `${fmtEur(linesTotal)} HTVA` : undefined}
-        action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addRevenueLine}>Ajouter</Button>}
-      >
-        {revenueLines.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Aucun supplément. Service, livraison ou autres, facturés en plus du prix food, TVA 21 % par défaut.</p>
-        ) : (
-          <div>
-            <datalist id={REVENUE_LABELS_ID}>
-              {REVENUE_LABELS.map((l) => <option key={l} value={l} />)}
-            </datalist>
-            {revenueLines.map((rl, i) => (
-              <div
-                key={i}
-                ref={(el) => { if (el) revenueRefs.current.set(i, el); else revenueRefs.current.delete(i); }}
-                className={`${ROW} gap-2`}
-              >
-                <span className="min-w-0 flex-1 text-sm touch:text-base">
-                  <InlineLabel value={rl.label} list={REVENUE_LABELS_ID} onSave={(v) => { if (v.trim()) updateRevenueLine(i, { label: v.trim() }); }} />
-                </span>
-                <span className="w-20 text-right text-sm tabular-nums touch:text-base" data-amount>
-                  <EditableInlineNum value={rl.amount} min={0} onSave={(v) => updateRevenueLine(i, { amount: round2(Math.max(0, v)) })} suffix=" €" />
-                </span>
-                <SelectPill
-                  value={String(rl.vatRate)}
-                  options={VAT_OPTIONS}
-                  colour="gray"
-                  align="right"
-                  aria-label="Taux de TVA"
-                  title="Taux de TVA"
-                  onChange={(v) => updateRevenueLine(i, { vatRate: Number(v) as VatRate })}
-                />
-                {isTouch ? (
-                  <ActionMenu title={rl.label} items={[{ label: "Retirer", onClick: () => removeRevenueLine(i), variant: "danger" }]} />
-                ) : (
-                  <IconButton size="sm" aria-label="Retirer cette ligne" onClick={() => removeRevenueLine(i)} icon={<X />} className="reveal" />
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
+      <RevenueLines lines={revenueLines} onChange={(next) => save({ revenueLines: next })} meta={revenueMeta} />
 
       <div id="facturation" className="scroll-mt-20">
         <Section
@@ -1346,6 +1470,22 @@ export default function EventDetail() {
                 </div>
               )}
             </>
+          )}
+          {markable && marked && (
+            <div className="mt-3 divide-y divide-border">
+              <ListRow
+                title={`Facturé le ${dayMonthLabel(event.invoicedAt as string)}`}
+                trailing={
+                  <>
+                    <EditableInlineText value={event.invoiceRef ?? ""} placeholder="N° Odoo" onSave={(v) => save({ invoiceRef: v.trim() || null })} />
+                    <Button variant="link" size="sm" onClick={unmarkInvoiced}>Annuler</Button>
+                  </>
+                }
+              />
+            </div>
+          )}
+          {markable && !marked && !invoicedByLedger && (
+            <Button variant="default" size="md" className="mt-3 w-full md:w-auto" onClick={markInvoiced}>Marquer comme facturé</Button>
           )}
         </Section>
       </div>
@@ -1603,38 +1743,6 @@ function InlineTime({ value, onSave, placeholder }: { value: string; onSave: (v:
     >
       {value ? fmtTime(value) || value : placeholder}
     </span>
-  );
-}
-
-// Same as EditableInlineText with a datalist of suggested labels.
-function InlineLabel({ value, list, onSave }: { value: string; list: string; onSave: (v: string) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(value);
-  useEffect(() => { if (!editing) setText(value); }, [value, editing]);
-  const commit = () => { setEditing(false); if (text !== value) onSave(text); };
-  if (editing) {
-    return (
-      <input
-        autoFocus
-        list={list}
-        className="-mx-1 w-32 rounded border-0 bg-input-bg px-1 font-medium shadow-ring outline-none"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } if (e.key === "Escape") { e.preventDefault(); setText(value); setEditing(false); } }}
-      />
-    );
-  }
-  return (
-    <strong
-      role="button"
-      tabIndex={0}
-      className="prop-value font-medium touch:inline-flex touch:min-h-11 touch:items-center"
-      onClick={() => setEditing(true)}
-      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(true); } }}
-    >
-      {value || <span className="font-normal text-placeholder">Intitulé</span>}
-    </strong>
   );
 }
 

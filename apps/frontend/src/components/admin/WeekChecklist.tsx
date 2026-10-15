@@ -22,16 +22,18 @@ export interface WeekChecklistProps {
   // Newest list covering the week, shown as a muted row when nothing is uncovered.
   coveringList?: Pick<GroceryList, "listId" | "range">;
   busy: boolean;
-  // Absent reads as "app"; "externe" drops the invoicing half of the to_close sentence.
+  // Kept for the callers; the rows read the action carried by each item.
   invoicing?: InvoicingMode;
   onCreateClientWeek: (clientId: string, guestCount: number) => void;
   onSetType: (eventId: string, type: PrestationTypeSetting) => Promise<void>;
   onAssign: () => void;
   onCreateGroceries: (eventIds: string[]) => void;
   onCloseEvent: (eventId: string) => Promise<void>;
+  // Stamps invoicedAt on each event (one PATCH per id); the mark buttons are hidden when absent.
+  onMarkInvoiced?: (eventIds: string[]) => Promise<void>;
 }
 
-// Below md the link drops under the sentence, right-aligned, when both do not fit on one line; the tag only shows from md.
+// Below md the link drops under the sentence, right-aligned, when both do not fit on one line.
 const ROW = "flex min-h-7 flex-wrap items-center justify-end gap-2 text-sm md:flex-nowrap touch:min-h-11";
 const TEXT = "min-w-0 flex-1";
 // Guide rows wrap on phones: bullet and link follow the first line of text.
@@ -137,7 +139,7 @@ export default function WeekChecklist(props: WeekChecklistProps) {
         title={(
           <span className="inline-flex max-w-full items-center gap-2">
             <span className="truncate">Ce qui manque pour la semaine {weekNo}</span>
-            <Tag colour="gray" className="hidden shrink-0 md:inline-flex">{count} {count === 1 ? "point" : "points"}</Tag>
+            <Tag colour="gray" className="shrink-0">{count} {count === 1 ? "point" : "points"}</Tag>
           </span>
         )}
         collapsible
@@ -165,8 +167,14 @@ export default function WeekChecklist(props: WeekChecklistProps) {
 
 type RowProps = WeekChecklistProps & { item: ChecklistItem; state: { from: string }; retour: string };
 
-function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, invoicing = "app", onCreateClientWeek, onSetType, onAssign, onCreateGroceries, onCloseEvent }: RowProps) {
+function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, onCreateClientWeek, onSetType, onAssign, onCreateGroceries, onCloseEvent, onMarkInvoiced }: RowProps) {
   const [closing, setClosing] = useState<string | null>(null);
+  const [marking, setMarking] = useState(false);
+  const mark = (eventIds: string[]) => {
+    if (!onMarkInvoiced) return;
+    setMarking(true);
+    onMarkInvoiced(eventIds).finally(() => setMarking(false));
+  };
 
   switch (item.kind) {
     case "client_week":
@@ -209,6 +217,16 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, invo
           />
         </li>
       );
+    case "no_people":
+      return (
+        <li className={ROW}>
+          <RowText>Aucune personne dans l'équipe : {unassignedLabel(item.lineCount, item.taskCount)} à répartir cette semaine</RowText>
+          <ActionLink to="/settings#equipe" state={state}>
+            <span className="md:hidden">Équipe</span>
+            <span className="hidden md:inline">Paramètres › Équipe</span>
+          </ActionLink>
+        </li>
+      );
     case "unassigned":
       return (
         <li className={ROW}>
@@ -239,7 +257,7 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, invo
               {item.events.length === 1
                 ? "1 événement passé est à terminer"
                 : `${item.events.length} événements passés sont à terminer`}
-              {invoicing === "externe" ? "" : ", puis à facturer"}
+              , puis à facturer
             </RowText>
           </div>
           <ul className="pl-6">
@@ -265,21 +283,38 @@ function ChecklistRow({ item, state, retour, monday, prestationTypes, busy, invo
       return (
         <li className={ROW}>
           <RowText>{item.name} est terminé · {fmtEur0(item.htva)} à facturer</RowText>
-          <ActionLink to={`/events/${item.eventId}?facturer=1#facturation`} state={state}>Créer la facture</ActionLink>
+          {item.action === "mark" ? (
+            <span className="flex shrink-0 items-center gap-1">
+              {onMarkInvoiced && (
+                <Button variant="link" size="sm" disabled={busy || marking} onClick={() => mark([item.eventId])}>Marquer facturé</Button>
+              )}
+              <ActionLink to={`/events/${item.eventId}#facturation`} state={state}>Ouvrir</ActionLink>
+            </span>
+          ) : (
+            <ActionLink to={`/events/${item.eventId}?facturer=1#facturation`} state={state}>Créer la facture</ActionLink>
+          )}
         </li>
       );
     case "to_invoice_many":
       return (
         <li className={ROW}>
           <RowText>{item.count} événements terminés à facturer · {fmtEur0(item.htva)}</RowText>
-          <ActionLink to="/comptes/a-facturer" state={state}>Voir à facturer</ActionLink>
+          {item.action === "mark"
+            ? <ActionLink to="/events?filtre=a-facturer" state={state}>Voir</ActionLink>
+            : <ActionLink to="/comptes/a-facturer" state={state}>Voir à facturer</ActionLink>}
         </li>
       );
     case "to_invoice_month":
       return (
         <li className={ROW}>
           <RowText>{item.clientName} : {ymLabel(item.ym)} à facturer · {plural(item.eventIds.length, "événement")} · {fmtEur0(item.htva)}</RowText>
-          <ActionLink to={`/comptes/journal?client=${item.clientId}&prefill=month&ym=${item.ym}`} state={state}>Facturer le mois</ActionLink>
+          {item.action === "mark" ? (
+            onMarkInvoiced && (
+              <Button variant="link" size="sm" disabled={busy || marking} onClick={() => mark(item.eventIds)}>Marquer le mois facturé</Button>
+            )
+          ) : (
+            <ActionLink to={`/comptes/journal?client=${item.clientId}&prefill=month&ym=${item.ym}`} state={state}>Facturer le mois</ActionLink>
+          )}
         </li>
       );
     case "unpaid": {

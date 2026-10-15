@@ -88,7 +88,7 @@ interface Gesture<T> {
 
 // Hold a row 450 ms, it lifts and follows the finger; release on a [data-drop-day] cell.
 export function useLongPressDrag<T>(options: LongPressDragOptions<T>): LongPressDrag<T> {
-  const { delay = 450, slop = 8, enabled = true } = options;
+  const { delay = 450, slop = 12, enabled = true } = options;
   const opts = useRef(options);
   opts.current = options;
 

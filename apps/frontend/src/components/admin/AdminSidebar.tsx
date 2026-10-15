@@ -42,9 +42,11 @@ export interface AdminSidebarProps {
   onCollapse?: () => void;
   // False hides the « Assistant » cell (health.assistant false).
   assistant?: boolean;
+  // Landscape iPad on the planning pages: only a fixed « Menu » button and the drawer.
+  rail?: boolean;
 }
 
-export default function AdminSidebar({ hidden = false, collapsed = false, onCollapse, assistant = true }: AdminSidebarProps) {
+export default function AdminSidebar({ hidden = false, collapsed = false, onCollapse, assistant = true, rail = false }: AdminSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuth();
@@ -106,7 +108,7 @@ export default function AdminSidebar({ hidden = false, collapsed = false, onColl
   return (
     <>
       {/* Desktop sidebar */}
-      {!collapsed && (
+      {!collapsed && !rail && (
         <aside className="sticky top-0 hidden h-screen w-sidebar shrink-0 flex-col bg-sidebar md:flex">
           <div className="group mx-1 mt-1 flex h-9 items-center gap-2 rounded px-2 hover:bg-sidebar-hover">
             {brand}
@@ -116,7 +118,11 @@ export default function AdminSidebar({ hidden = false, collapsed = false, onColl
         </aside>
       )}
 
+      {/* Rail: the menu button alone, over the page */}
+      {rail && <IconButton size="sm" aria-label="Menu" className="fixed left-2 top-2 z-30 print:hidden" onClick={() => setMobileOpen(true)} icon={<Menu />} />}
+
       {/* Phone top bar */}
+      {!rail && (
       <div className="fixed inset-x-0 top-0 z-40 flex h-topbar items-center gap-1 border-b border-border bg-background px-2 md:hidden">
         {backTo ? (
           <Link to={backTo.to} data-tour="back" className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded pl-1 pr-2 text-sm font-medium hover:bg-hover touch:h-11 touch:text-base">
@@ -130,6 +136,7 @@ export default function AdminSidebar({ hidden = false, collapsed = false, onColl
         {/* The menu stays reachable on every phone page, back link or not. */}
         {backTo ? menuButton : <span className="w-11 shrink-0" aria-hidden="true" />}
       </div>
+      )}
 
       {/* Phone drawer */}
       <Sheet

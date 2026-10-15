@@ -16,8 +16,8 @@ export interface DragGhostProps {
 const MAX_LABEL = 24;
 const OFFSET_X = 24;
 const OFFSET_Y = 56;
-// Under the finger when there is no room above, so a sticky strip or heads row stays visible.
-const BELOW_Y = 24;
+// Under the finger when there is no room above; the same distance as above so the caption under a strip cell stays readable.
+const BELOW_Y = 56;
 const EDGE = 8;
 
 export function ghostLabel(label: string): string {
@@ -48,9 +48,9 @@ export default function DragGhost({ point, status, label, target }: DragGhostPro
       <Dot status={status} />
       <span className="min-w-0 truncate">{ghostLabel(label)}</span>
       {target ? (
-        <span className="shrink-0 whitespace-nowrap font-medium">→ {shortDayLabel(target)}</span>
+        <span className="shrink-0 whitespace-nowrap font-medium text-primary">Déposer sur {shortDayLabel(target)}</span>
       ) : (
-        <span className="shrink-0 whitespace-nowrap text-muted-foreground">Déposez sur un jour</span>
+        <span className="shrink-0 whitespace-nowrap text-muted-foreground">Glissez vers un jour</span>
       )}
     </div>,
     document.body,

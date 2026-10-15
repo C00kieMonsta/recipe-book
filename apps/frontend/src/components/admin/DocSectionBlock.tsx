@@ -178,7 +178,7 @@ export default function DocSectionBlock({
       />
       {offerState === "linked" && section.offerId && (
         <p className="mt-1 pl-3 text-caption text-muted-foreground">
-          {costing && <>Coût moyen {fmtEur(costing.costPerGuest)} / conv. · marge {Math.round(costing.marginPct)} % · </>}
+          {costing && <>Coût moyen {fmtEur(costing.costPerGuest)} / conv. · marge food {Math.round(costing.marginPct)} % · </>}
           {unlinkedRows > 0 && <>{plural(unlinkedRows, "plat sans recette", "plats sans recette")} · </>}
           <Link to={`/offres/${section.offerId}`} className="text-primary hover:underline">Ouvrir la formule</Link>
         </p>

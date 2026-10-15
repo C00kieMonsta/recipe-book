@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import DayStrip from "@/components/admin/DayStrip";
-import { DateNav, Toolbar, ViewTabs } from "@/components/ui";
+import { Button, DateNav, Toolbar, ViewTabs } from "@/components/ui";
 
 export type PlanningView = "week" | "day" | "personne";
 
@@ -21,6 +21,8 @@ export interface PlanningBarProps {
   // Right group on pointer screens; `rightTouch` replaces it on touch screens.
   right?: ReactNode;
   rightTouch?: ReactNode;
+  // The week box count: a « 📋 n » pill before the right group, at every width; hidden at 0.
+  points?: { count: number; onOpen: () => void };
   filters?: ReactNode;
   // The seven-day strip.
   dates: string[];
@@ -38,7 +40,7 @@ export interface PlanningBarProps {
 
 // One toolbar row shared by the week and the day page, then the seven-day strip.
 export default function PlanningBar(props: PlanningBarProps) {
-  const { view, weekHref, dayHref, personHref, dateLabel, onPrev, onNext, onPick, pickValue, isToday, onToday, right, rightTouch, filters } = props;
+  const { view, weekHref, dayHref, personHref, dateLabel, onPrev, onNext, onPick, pickValue, isToday, onToday, right, rightTouch, filters, points } = props;
   const { dates, counts, today, selected, stripHref, linkState, onTouchStart, onTouchEnd, dropDay, dragging } = props;
 
   const tabs = [
@@ -46,6 +48,15 @@ export default function PlanningBar(props: PlanningBarProps) {
     { key: "day", label: "Jour", to: dayHref },
     ...(personHref ? [{ key: "personne", label: "Par personne", to: personHref, title: "Les lignes de chacun, pour un jour" }] : []),
   ];
+
+  const pointsTitle = points ? `${points.count} ${points.count === 1 ? "point" : "points"} à régler cette semaine` : "";
+  const pill = points && points.count > 0 ? (
+    <Button variant="subtle" size="sm" onClick={points.onOpen} title={pointsTitle} aria-label={pointsTitle}>
+      <span aria-hidden="true">📋</span>
+      <span className="tabular-nums">{points.count}</span>
+      <span className="hidden md:inline">{points.count === 1 ? "point" : "points"}</span>
+    </Button>
+  ) : null;
 
   return (
     <>
@@ -66,13 +77,13 @@ export default function PlanningBar(props: PlanningBarProps) {
               todayAlways
             />
           )}
-          right={right}
-          rightTouch={rightTouch && <span className="flex items-center gap-0.5 touch:-mr-1">{rightTouch}</span>}
+          right={pill || right ? <>{pill}{right}</> : undefined}
+          rightTouch={rightTouch && <span className="flex items-center gap-0.5 touch:-mr-1">{pill}{rightTouch}</span>}
           filters={filters}
         />
       </div>
-      {/* At xl the DayHeads row carries the seven days on both pages, so the strip would repeat every date. */}
-      <div className="no-print sticky top-topbar z-20 -mx-4 bg-background px-4 py-1 md:static md:mx-0 md:px-0 xl:hidden">
+      {/* Sticky at every stacked width; on cols the DayHeads row carries the seven days, so the strip would repeat every date. */}
+      <div className="no-print sticky top-topbar z-20 -mx-4 bg-background px-4 py-1 md:top-0 md:mx-0 md:px-0 cols:hidden">
         <DayStrip dates={dates} counts={counts} today={today} selected={selected} href={stripHref} state={linkState} dropDay={dropDay} dragging={dragging} />
       </div>
     </>

@@ -5,8 +5,9 @@ import type { AppEvent, Client, EventRecipeLine, EventTask, Person, PrepStatus, 
 import {
   addDays,
   assigneesOf,
-  buildCostSnapshot,
   calcRecipeCost,
+  checklistCount,
+  completionFields,
   datesOfIsoWeek,
   dayLabel,
   DEFAULT_PRESTATION_TYPES,
@@ -33,6 +34,7 @@ import { openAssistant } from "@/lib/assistant-compose";
 import { publishAssistantSelection } from "@/lib/assistant-context";
 import { todayIso } from "@/lib/dates";
 import { buildGroceryItems, groceryTitleFor } from "@/lib/grocery";
+import { COLS_QUERY } from "@/lib/screens";
 import { defaultTaskEventId } from "@/lib/tasks";
 import { readTour, writeTour } from "@/lib/tour-storage";
 import { dayHeaderMeta, NEXT_STATUS, plural, usePlanningData } from "@/lib/use-planning-data";
@@ -77,7 +79,7 @@ type DragItem = { kind: "recipe" | "task"; eventId: string; id: string; eventDat
 // The row whose « Déplacer au… » Sheet opens after a touch release off every day cell.
 type MoveRequest = { kind: DragItem["kind"]; id: string };
 
-const DRAG_HINT = "Maintenez une préparation pour la glisser vers un autre jour. Déplacer au… reste dans le menu ⋯.";
+const DRAG_HINT = "Pour déplacer une préparation, maintenez-la un instant puis glissez-la sur un jour de la bande en haut. « Déplacer au… » reste dans le menu ⋯.";
 
 type TaskDialogState = { mode: "create" | "edit"; eventId: string; taskId?: string; initial: TaskDialogValue };
 
@@ -86,6 +88,7 @@ const dayMonthShort = new Intl.DateTimeFormat("fr-BE", { day: "numeric", month: 
 // Row actions of the seven-column grid reveal on the row, not on the column, so the column `group` is not reused.
 const ROW_REVEAL = "pointer:opacity-0 pointer:group-hover/row:opacity-100 pointer:group-focus-within/row:opacity-100 touch:opacity-100";
 const CAPTION_ROW = "flex h-7 items-center px-1 text-caption text-muted-foreground";
+const POINTS_RING_MS = 1200;
 
 // "19 au 25 oct.", "28 sept. au 4 oct."
 function shortRange(from: string, to: string): string {
@@ -198,15 +201,18 @@ export default function Week() {
   const [drag, setDrag] = useState<DragItem | null>(null);
   const [dropDay, setDropDay] = useState<string | null>(null);
   const [moveRequest, setMoveRequest] = useState<MoveRequest | null>(null);
-  const [dragHint, setDragHint] = useState(false);
   const touch = useTouchScreen();
+  // The hint shows before the first lift on a touch screen; the × or the first lift writes the flag.
+  const [dragHint, setDragHint] = useState(() => touch && !readTour().touchDragHintSeen);
   // Under md the full right group wraps and overflows, so narrow pointer windows get the touch group.
   const narrow = useMediaQuery("(max-width: 767px)");
   const compact = touch || narrow;
+  const cols = useMediaQuery(COLS_QUERY);
   const { active: tourActive, seenAt, dismissedOffer } = useTour();
   const menu = useMenu();
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const dayRefs = useRef<Record<string, HTMLElement | null>>({});
+  const checklistRef = useRef<HTMLDivElement>(null);
 
   const activePeople = useMemo(() => people.filter((p) => p.active), [people]);
   const firstRun = !loading && recipes.length === 0 && events.length === 0 && activePeople.length === 0;
@@ -292,11 +298,11 @@ export default function Week() {
     dayRefs.current[date]?.scrollIntoView({ block: "start" });
   }, []);
 
-  // Phone: today is brought into view once loaded; on a Sunday looking at next week, the first day with events.
+  // Stacked layout: today is brought into view once loaded; on a Sunday looking at next week, the first day with events.
   // The tour scrolls to its own anchor, so this waits until it ends.
   // While the first-visit callout is still offered the page stays at the top so it can be seen.
   useEffect(() => {
-    if (loading || tourActive || window.innerWidth >= 1280) return;
+    if (loading || tourActive || cols) return;
     if (!seenAt && !dismissedOffer) return;
     const target = todayInWeek ? today : weekdayOf(today) === 7 ? plan.days.find((d) => d.events.length > 0)?.date : undefined;
     if (target && target !== dates[0]) scrollToDay(target);
@@ -356,9 +362,10 @@ export default function Week() {
     if (item) void moveItem(item, date);
   };
 
-  // Touch: a held row lifts and drops on a [data-drop-day] cell; a release elsewhere opens its « Déplacer au… » Sheet.
+  // A held row lifts and drops on a [data-drop-day] cell; a release elsewhere opens its « Déplacer au… » Sheet.
+  // Enabled everywhere: the hook lifts touch and pen pointers only, so a mouse never lifts.
   const lift = useLongPressDrag<DragItem>({
-    enabled: touch,
+    enabled: true,
     onStart: () => {
       touchStart.current = null;
       if (!readTour().touchDragHintSeen) setDragHint(true);
@@ -513,14 +520,39 @@ export default function Week() {
     const ev = events.find((e) => e.eventId === eventId);
     if (!ev) return;
     try {
-      const costSnapshot = buildCostSnapshot(ev, recipeCostById, recipePortionsById);
-      await patchEvent(eventId, { status: "completed", costSnapshot });
+      await patchEvent(eventId, completionFields(ev, people, recipeCostById, recipePortionsById));
       toast({ title: "Événement terminé" });
       reload();
     } catch (e) {
       const why = errorReason(e);
       fail(why ? `Erreur lors de la clôture · ${why}` : "Erreur lors de la clôture");
     }
+  };
+
+  // One PATCH per event; the row's « Marquer facturé » and « Marquer le mois facturé » land here.
+  const markInvoiced = async (eventIds: string[]) => {
+    const stamp = todayIso();
+    try {
+      for (const id of eventIds) await api.events.update(id, { invoicedAt: stamp });
+      toast({ title: "Marqué comme facturé" });
+      reload();
+    } catch (e) {
+      const why = errorReason(e);
+      fail(why ? `Erreur lors du marquage · ${why}` : "Erreur lors du marquage");
+    }
+  };
+
+  // The « 📋 n » pill: back to the top, the box open, its title focused and ringed for a moment.
+  const openChecklist = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setChecklistOpen(true);
+    window.requestAnimationFrame(() => {
+      const button = checklistRef.current?.querySelector<HTMLButtonElement>("button[aria-expanded]");
+      if (!button) return;
+      button.focus({ preventScroll: true });
+      button.classList.add("ring-2", "ring-primary");
+      window.setTimeout(() => button.classList.remove("ring-2", "ring-primary"), POINTS_RING_MS);
+    });
   };
 
   const share = async (person: Person) => {
@@ -740,6 +772,7 @@ export default function Week() {
       pickValue={monday}
       isToday={safeWeek === todayWeek}
       onToday={() => navigate(weekUrl(todayWeek))}
+      points={firstRun ? undefined : { count: checklistCount(checklist), onOpen: openChecklist }}
       right={compact ? (
         <span className="flex items-center gap-0.5 touch:-mr-1">{moreMenu}{newButtonTouch}</span>
       ) : (
@@ -761,9 +794,9 @@ export default function Week() {
   );
 
   const callouts = !loading ? (
-    <>
+    <div ref={checklistRef}>
       <FirstRunCallout hidden={Boolean(selectedPerson)} />
-      {dragHint && (
+      {dragHint && plan.linesTotal > 0 && (
         <div className="mb-3 flex items-start gap-2">
           <p className="min-w-0 flex-1 py-1 text-caption text-muted-foreground">{DRAG_HINT}</p>
           <IconButton size="sm" aria-label="Fermer" icon={<X />} onClick={dismissDragHint} />
@@ -786,8 +819,9 @@ export default function Week() {
         onAssign={() => setAssignOpen(true)}
         onCreateGroceries={(ids) => createGrocery(weekEvents.filter((e) => ids.includes(e.eventId)))}
         onCloseEvent={closeEvent}
+        onMarkInvoiced={markInvoiced}
       />
-    </>
+    </div>
   ) : undefined;
 
   // The seven heads of the laptop columns, one sticky row shared with the day page.
@@ -822,9 +856,9 @@ export default function Week() {
     >
       {loading && <p className="mt-6 text-sm text-muted-foreground">Chargement…</p>}
 
-      {/* Laptop: seven column bodies under the heads row */}
+      {/* Columns (laptop and landscape tablet): seven column bodies under the heads row */}
       {!loading && (
-        <div className="hidden grid-cols-[repeat(7,minmax(0,1fr))] gap-2 xl:grid print:hidden">
+        <div className="hidden grid-cols-[repeat(7,minmax(0,1fr))] gap-2 cols:grid print:hidden">
           {plan.days.map((day, i) => {
             const past = day.date < today;
             const shared = rowShared(false, i >= 4 ? "right" : "left");
@@ -922,9 +956,9 @@ export default function Week() {
         </div>
       )}
 
-      {/* Phone and tablet: every day stacked under the strip of the bar */}
+      {/* Phone and portrait tablet: every day stacked under the strip of the bar */}
       {!loading && (
-        <div className="mt-2 xl:hidden print:hidden">
+        <div className="mt-2 cols:hidden print:hidden">
           {plan.days.map((day, i) => {
             const isToday = day.date === today;
             const past = day.date < today;
@@ -933,10 +967,10 @@ export default function Week() {
             const shared = rowShared(true, "right");
             const taskEventId = taskEventFor(day.date);
             return (
-              <section key={day.date} ref={(el) => { dayRefs.current[day.date] = el; }} className={`scroll-mt-24 md:scroll-mt-0 ${past ? "opacity-60 hover:opacity-100 focus-within:opacity-100" : ""}`}>
+              <section key={day.date} ref={(el) => { dayRefs.current[day.date] = el; }} className={`scroll-mt-24 md:scroll-mt-[52px] ${past ? "opacity-60 hover:opacity-100 focus-within:opacity-100" : ""}`}>
                 <div
                   data-drop-day={day.date}
-                  className={cn("sticky top-[96px] z-10 -mx-4 flex min-h-11 items-center gap-1 bg-background px-4 md:static md:mx-0 md:px-0", lift.dragging && "bg-selected", lift.target === day.date && "ring-2 ring-inset ring-primary")}
+                  className={cn("sticky top-[96px] z-10 -mx-4 flex min-h-11 items-center gap-1 bg-background px-4 md:top-[52px] md:mx-0 md:px-0", lift.dragging && "bg-selected", lift.target === day.date && "ring-2 ring-inset ring-primary")}
                 >
                   <Link to={dayUrl(day.date)} state={state} data-tour={i === 0 ? "week-day" : undefined} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded hover:bg-hover">
                     <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold">
@@ -1186,7 +1220,7 @@ function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim:
     );
     const bodyClass = cn("flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded px-1 text-sm hover:bg-hover touch:text-base", done && "text-muted-foreground");
     return (
-      <li ref={rowRef} {...liftHandlers} className={cn("relative flex min-h-11 items-center", (dim || lifted) && "opacity-40")}>
+      <li ref={rowRef} {...liftHandlers} className={cn("relative flex min-h-11 touch-pan-y items-center", (dim || lifted) && "opacity-40")}>
         <StatusDot value={status} onCycle={cycle} />
         {item.kind === "recipe" ? (
           <Link to={item.href} state={state} className={bodyClass}>{body}</Link>
@@ -1204,8 +1238,10 @@ function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim:
 
   // Recipe rows keep the ⋯ over the portions slot; task rows make room for it on hover only.
   const rowClass = item.kind === "recipe"
-    ? "group/row relative flex h-7 items-center gap-0.5 rounded text-sm hover:bg-hover"
-    : "group/row relative flex h-7 items-center gap-0.5 rounded text-sm hover:bg-hover pointer:group-hover/row:pr-7 pointer:group-focus-within/row:pr-7";
+    ? "group/row relative flex h-7 touch-pan-y items-center gap-0.5 rounded text-sm hover:bg-hover"
+    : "group/row relative flex h-7 touch-pan-y items-center gap-0.5 rounded text-sm hover:bg-hover pointer:group-hover/row:pr-7 pointer:group-focus-within/row:pr-7";
+  // The rail hides the chips, so the title names the people: « Sablés bretons · Kristoff ».
+  const rowTitle = ids.length > 0 ? `${label} · ${ids.map((id) => personName(people, id)).join(", ")}` : label;
   // The whole row drags on a laptop; the grip only says so.
   return (
     <li
@@ -1227,17 +1263,19 @@ function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim:
       )}
       <StatusDot value={status} onCycle={cycle} />
       {item.kind === "recipe" ? (
-        <Link to={item.href} state={state} title={label} draggable={false} className={cn("min-w-0 flex-1 truncate rounded px-0.5", done && "text-muted-foreground")}>
+        <Link to={item.href} state={state} title={rowTitle} draggable={false} className={cn("min-w-0 flex-1 truncate rounded px-0.5", done && "text-muted-foreground")}>
           {label}
         </Link>
       ) : (
-        <button type="button" onClick={edit} title={label} draggable={false} className={cn("min-w-0 flex-1 truncate rounded px-0.5 text-left", done && "text-muted-foreground")}>
+        <button type="button" onClick={edit} title={rowTitle} draggable={false} className={cn("min-w-0 flex-1 truncate rounded px-0.5 text-left", done && "text-muted-foreground")}>
           {label}
         </button>
       )}
-      {/* Inherited people are shown dimmed so every row has a click target. */}
+      {/* Inherited people are shown dimmed so every row has a click target. The rail has no room for chips; the picker stays reachable from ⋯ › Assigner. */}
       {(own || ids.length > 0 || assignOpen) && (
-        <AssignChips value={ids} picked={own ? ids : []} options={people} enabled={canAssign} inherited={!own} allowInherit max={2} open={assignOpen} onOpenChange={setAssignOpen} onChange={assign} title={assignTitle} label={assignLabel} />
+        <span className={cn("inline-flex", !assignOpen && "rail:hidden")}>
+          <AssignChips value={ids} picked={own ? ids : []} options={people} enabled={canAssign} inherited={!own} allowInherit max={2} open={assignOpen} onOpenChange={setAssignOpen} onChange={assign} title={assignTitle} label={assignLabel} />
+        </span>
       )}
       {/* The ⋯ sits over the portions while the row is hovered, so the name keeps its width. */}
       {item.kind === "recipe" && (

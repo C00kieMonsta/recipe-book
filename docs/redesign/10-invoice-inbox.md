@@ -18,6 +18,8 @@ Rules:
 - Low confidence or a missing number, date or amount flags the row « À vérifier »; every field is editable before confirmation.
 - Files live in the private S3 bucket; links are presigned and short-lived.
 
+> Superseded by `11-team-margin-reminders.md` (3.2, 4.6, 6.8): in Odoo mode an event counts as invoiced through its own marker `invoicedAt` (« Marquer comme facturé » on the event page, the reminder row and Comptes › À terminer), not through a Journal entry. A sales invoice added from the dépôt does not mark the event; in app mode a ledger `facture` entry whose `eventIds` lists the event still counts (union).
+
 ## 2. Vocabulary
 
 | French (UI) | Meaning | Code |
