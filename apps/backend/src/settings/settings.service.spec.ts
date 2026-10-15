@@ -213,7 +213,7 @@ describe("SettingsService.get", () => {
     expect(settings).not.toHaveProperty("company");
   });
 
-  it("serves the legacy five-item courses list as the six defaults plus Mignardises without writing", async () => {
+  it("serves the legacy five-item courses list as the six defaults without Mignardises and without writing", async () => {
     const { ddb, service } = build();
     ddb.seed("settings", {
       settingsId: "global",
@@ -223,15 +223,16 @@ describe("SettingsService.get", () => {
 
     const settings = await service.get();
 
-    expect(settings.courses).toEqual([...DEFAULT_COURSES, "Mignardises"]);
-    expect(settings.courses).toHaveLength(7);
+    expect(settings.courses).toEqual(DEFAULT_COURSES);
+    expect(settings.courses).toHaveLength(6);
+    expect(settings.courses).not.toContain("Mignardises");
     expect(settings.recipeCategories).toEqual(settings.courses);
     expect(ddb.raw("settings", GLOBAL_KEY)?.courses).toEqual(LEGACY_DEFAULT_COURSES);
     expect(ddb.raw("settings", GLOBAL_KEY)?.updatedAt).toBe("2026-01-01T00:00:00.000Z");
     expect(ddb.updates).toHaveLength(0);
   });
 
-  it("serves the legacy six-item courses list as the same seven values", async () => {
+  it("serves the legacy six-item courses list as the same six defaults", async () => {
     const { ddb, service } = build();
     ddb.seed("settings", {
       settingsId: "global",
@@ -241,9 +242,27 @@ describe("SettingsService.get", () => {
 
     const settings = await service.get();
 
-    expect(settings.courses).toEqual([...DEFAULT_COURSES, "Mignardises"]);
+    expect(settings.courses).toEqual(DEFAULT_COURSES);
+    expect(settings.courses).not.toContain("Mignardises");
     expect(settings.recipeCategories).toEqual(settings.courses);
     expect(ddb.raw("settings", GLOBAL_KEY)?.courses).toEqual(LEGACY_DEFAULT_COURSES_V2);
+    expect(ddb.updates).toHaveLength(0);
+  });
+
+  it("serves a stored custom list without Mignardises and leaves the row untouched", async () => {
+    const { ddb, service } = build();
+    ddb.seed("settings", {
+      settingsId: "global",
+      courses: ["Apéritif", "Mignardises", "Plat", "Fromages"],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const settings = await service.get();
+
+    expect(settings.courses).toEqual(["Apéritif", "Plat", "Fromages"]);
+    expect(settings.recipeCategories).toEqual(["Apéritif", "Plat", "Fromages"]);
+    expect(ddb.raw("settings", GLOBAL_KEY)?.courses).toEqual(["Apéritif", "Mignardises", "Plat", "Fromages"]);
+    expect(ddb.updates).toHaveLength(0);
   });
 
   it("serves the six defaults when the item has no courses list", async () => {

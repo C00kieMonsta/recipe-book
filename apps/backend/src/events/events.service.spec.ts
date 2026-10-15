@@ -599,6 +599,63 @@ describe("EventsService", () => {
     });
   });
 
+  describe("team and invoicing", () => {
+    const staff = [
+      { personId: "p1", hours: 6, km: 12 },
+      { personId: "p2", hours: 4 },
+    ];
+
+    it("stores serviceTeam and staff as sent and serves [] when absent", async () => {
+      const created = await service.create(createBody);
+      expect(created).not.toHaveProperty("serviceTeam");
+      expect(created).not.toHaveProperty("staff");
+      const fetched = await service.getOrFail(created.eventId);
+      expect(fetched.serviceTeam ?? []).toEqual([]);
+      expect(fetched.staff ?? []).toEqual([]);
+
+      const event = await service.update(created.eventId, { serviceTeam: ["p2", "p3"], staff });
+      expect(event.serviceTeam).toEqual(["p2", "p3"]);
+      expect(event.staff).toEqual(staff);
+      expect(ddb.updates.at(-1)?.fields).toMatchObject({ serviceTeam: ["p2", "p3"], staff });
+
+      const viaCreate = await service.create({ ...createBody, serviceTeam: ["p1"], staff });
+      expect(viaCreate.serviceTeam).toEqual(["p1"]);
+      expect(viaCreate.staff).toEqual(staff);
+      expect(await ddb.get("events", { eventId: viaCreate.eventId })).toMatchObject({ serviceTeam: ["p1"], staff });
+    });
+
+    it("update with invoicedAt sets it, null removes the attribute", async () => {
+      await ddb.put("events", baseEvent());
+      const marked = await service.update("e1", { invoicedAt: "2026-06-03", invoiceRef: "INV/2026/0042" });
+      expect(marked.invoicedAt).toBe("2026-06-03");
+      expect(marked.invoiceRef).toBe("INV/2026/0042");
+      expect(await ddb.get("events", { eventId: "e1" })).toMatchObject({ invoicedAt: "2026-06-03", invoiceRef: "INV/2026/0042" });
+
+      const cleared = await service.update("e1", { invoicedAt: null, invoiceRef: null });
+      expect(cleared).not.toHaveProperty("invoicedAt");
+      expect(cleared).not.toHaveProperty("invoiceRef");
+      expect(ddb.updates.at(-1)?.fields).toMatchObject({ invoicedAt: null, invoiceRef: null });
+    });
+
+    it("update with invoiceRef \"\" removes it", async () => {
+      await ddb.put("events", baseEvent({ invoicedAt: "2026-06-03", invoiceRef: "INV/2026/0042" }));
+      const event = await service.update("e1", { invoiceRef: "" });
+      expect(event).not.toHaveProperty("invoiceRef");
+      expect(event.invoicedAt).toBe("2026-06-03");
+      expect(ddb.updates[0].fields.invoiceRef).toBeNull();
+    });
+
+    it("a frozen hourlyRate on a staff entry survives a later update of another field", async () => {
+      const frozen = [{ personId: "p1", hours: 6, km: 12, hourlyRate: 18.5, kmRate: 0.4 }];
+      await ddb.put("events", baseEvent({ status: "completed", staff: frozen }));
+      const event = await service.update("e1", { name: "Mariage Dupont", guestCount: 42 });
+      expect(event.name).toBe("Mariage Dupont");
+      expect(event.staff).toEqual(frozen);
+      expect(ddb.updates[0].fields).not.toHaveProperty("staff");
+      expect(await ddb.get("events", { eventId: "e1" })).toMatchObject({ staff: frozen });
+    });
+  });
+
   describe("attachments", () => {
     beforeEach(async () => {
       await ddb.put(

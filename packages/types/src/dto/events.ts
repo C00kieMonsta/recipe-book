@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { REVENUE_LINE_KINDS } from "../entities/event";
 import { isoDate, moneyNonnegative, personIds, vatRate } from "./primitives";
 
 export const eventRecipeLineSchema = z
@@ -56,9 +57,25 @@ export const costSnapshotSchema = z
 export type CostSnapshotRequest = z.infer<typeof costSnapshotSchema>;
 
 export const eventRevenueLineSchema = z
-  .object({ label: z.string().trim().min(1).max(60), amount: moneyNonnegative, vatRate })
+  .object({ label: z.string().trim().min(1).max(60), amount: moneyNonnegative, vatRate, kind: z.enum(REVENUE_LINE_KINDS).optional() })
   .strict();
 export type EventRevenueLineRequest = z.infer<typeof eventRevenueLineSchema>;
+
+export const eventStaffEntrySchema = z
+  .object({
+    personId: z.string().min(1).max(40),
+    hours: z.number().nonnegative().max(200).optional(),
+    km: z.number().nonnegative().max(5000).optional(),
+    hourlyRate: moneyNonnegative.optional(),
+    kmRate: z.number().nonnegative().max(10).optional(),
+  })
+  .strict();
+export type EventStaffEntryRequest = z.infer<typeof eventStaffEntrySchema>;
+// Refined on the array, not on the object, so .partial() on the fields schema keeps working.
+export const eventStaffSchema = z
+  .array(eventStaffEntrySchema)
+  .max(30)
+  .refine((v) => new Set(v.map((s) => s.personId)).size === v.length, "personId dupliqué");
 
 const deliveryTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "heure HH:MM");
 
@@ -84,6 +101,8 @@ const eventFieldsSchema = z.object({
   hoursSpent: z.number().nonnegative().optional(),
   costSnapshot: costSnapshotSchema.optional(),
   assignedTo: personIds.optional(),
+  serviceTeam: personIds.optional(),
+  staff: eventStaffSchema.optional(),
   pricingMode: z.enum(["par_convive", "total"]).optional(),
   sellingTotal: moneyNonnegative.optional(),
   revenueLines: z.array(eventRevenueLineSchema).max(10).default([]),
@@ -112,6 +131,9 @@ export const updateEventRequestSchema = eventFieldsSchema
     billingDetails: z.string().trim().max(500).nullable().optional(),
     sellingTotal: moneyNonnegative.nullable().optional(),
     revenueLines: z.array(eventRevenueLineSchema).max(10).optional(),
+    // The invoiced marker is set and cleared on an existing event only; null is a REMOVE.
+    invoicedAt: isoDate.nullable().optional(),
+    invoiceRef: z.string().trim().max(40).nullable().optional(),
   })
   .refine(totalNeedsAmount, "prix total requis");
 export type UpdateEventRequest = z.infer<typeof updateEventRequestSchema>;

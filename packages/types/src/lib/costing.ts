@@ -2,7 +2,7 @@ import type { AppEvent, EventExtraCost, ExtraCostKind } from "../entities/event"
 import type { Ingredient } from "../entities/ingredient";
 import type { Recipe, RecipeIngredient } from "../entities/recipe";
 import type { CostSnapshotRequest } from "../dto/events";
-import { round2 } from "./money";
+import { round2, sumMoney } from "./money";
 import { normalizePrice } from "../entities/ingredient";
 
 // Ingredients priced per kg or per litre are stored in g and ml, hence the per-1000 rule.
@@ -87,6 +87,30 @@ export function calcEventCost(
   const extras = extrasByKind(ev.extraCosts);
   const total = rawMaterial + sumExtraCosts(ev.extraCosts);
   return { rawMaterial, extras, total };
+}
+
+// rawMaterial plus the extra costs of kind matiere.
+export function foodCostOf(cost: Pick<EventCostBreakdown, "rawMaterial" | "extras">): number {
+  return round2((cost.rawMaterial || 0) + (cost.extras.matiere || 0));
+}
+
+export interface FoodMargin {
+  foodHtva: number;
+  foodCost: number;
+  margin: number;
+  // Percent of foodHtva, 0 when foodHtva is 0.
+  marginPct: number;
+}
+
+export function foodMargin(foodHtva: number, foodCost: number): FoodMargin {
+  const margin = sumMoney([foodHtva, -foodCost]);
+  const marginPct = foodHtva === 0 ? 0 : round2((margin / foodHtva) * 100);
+  return { foodHtva: round2(foodHtva), foodCost: round2(foodCost), margin, marginPct };
+}
+
+// signedHtva minus every cost and the staff amount.
+export function eventResult(signedHtva: number, costTotal: number, staffAmount: number): number {
+  return sumMoney([signedHtva, -costTotal, -staffAmount]);
 }
 
 // The figures frozen on an event when it is closed; takenAt is stamped by the server.

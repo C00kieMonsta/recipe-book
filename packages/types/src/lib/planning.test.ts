@@ -1,6 +1,14 @@
 import type { AppEvent, EventRecipeLine } from "../entities/event";
 import type { Person } from "../entities/settings";
-import { DEFAULT_COURSES, LEGACY_DEFAULT_COURSES, LEGACY_DEFAULT_COURSES_V2 } from "../entities/settings";
+import {
+  DEFAULT_COURSES,
+  LEGACY_CATEGORY_ALIASES,
+  LEGACY_DEFAULT_COURSES,
+  LEGACY_DEFAULT_COURSES_V2,
+  LEGACY_TYPE_TO_CATEGORY,
+  aliasCategory,
+  isLegacyCategory,
+} from "../entities/settings";
 import { sumMoney } from "./money";
 import {
   assigneesOf,
@@ -69,6 +77,7 @@ function event(partial: Partial<AppEvent> & Pick<AppEvent, "eventId" | "date">):
   };
 }
 
+// A list an earlier install may still store; upgradeCourses strips the alias, the libs read it as Dessert.
 const SEVEN = [...DEFAULT_COURSES, "Mignardises"];
 
 describe("courseIndex", () => {
@@ -84,9 +93,9 @@ describe("courseIndex", () => {
     expect(courseIndex("Autre", DEFAULT_COURSES)).toBe(6);
     expect(courseIndex("Fromage", ["Entrée", "Plat"])).toBe(2);
   });
-  it("places Mignardises after Dessert when the list carries it, and unknown values with Autre", () => {
+  it("reads the raw list: a value still present sorts at its position, unknown values with Autre", () => {
     expect(courseIndex("Mignardises", SEVEN)).toBe(6);
-    expect(courseIndex("Fromage", [...SEVEN, "Autre"])).toBe(7);
+    expect(courseIndex("Fromage", [...DEFAULT_COURSES, "Autre"])).toBe(6);
   });
 });
 
@@ -104,14 +113,14 @@ describe("sortEventLines", () => {
     expect(sorted.map((l) => l.lineId)).toEqual(["d", "f", "c", "b", "a", "e"]);
     expect(lines.map((l) => l.lineId)).toEqual(["a", "b", "c", "d", "e", "f"]);
   });
-  it("puts a Mignardises line after Dessert when the list carries it, else with the unknown values", () => {
+  it("sorts a Mignardises line under Dessert whether or not the list still carries it", () => {
     const lines = [
       line("poulet", { lineId: "autre" }),
       line("tarte", { lineId: "mign", course: "Mignardises" }),
       line("tarte", { lineId: "dessert" }),
     ];
-    expect(sortEventLines(lines, SEVEN, recipeById).map((l) => l.lineId)).toEqual(["dessert", "mign", "autre"]);
-    expect(sortEventLines(lines, DEFAULT_COURSES, recipeById).map((l) => l.lineId)).toEqual(["dessert", "autre", "mign"]);
+    expect(sortEventLines(lines, SEVEN, recipeById).map((l) => l.lineId)).toEqual(["mign", "dessert", "autre"]);
+    expect(sortEventLines(lines, DEFAULT_COURSES, recipeById).map((l) => l.lineId)).toEqual(["mign", "dessert", "autre"]);
   });
 });
 
@@ -125,21 +134,20 @@ describe("groupByCourse", () => {
       ["Autre", ["a"]],
     ]);
   });
-  it("follows the six-value list and buckets a Mignardises line under Autre when the list lacks it", () => {
+  it("follows the six-value list and buckets a Mignardises line under Dessert in both lists", () => {
     const lines = [
       line("tarte", { lineId: "mign", course: "Mignardises" }),
       line("poulet", { lineId: "buffet", course: "Buffet" }),
       line("tarte", { lineId: "dessert" }),
       line("quiche", { lineId: "walking", course: "Walking dinner" }),
     ];
-    const groups = groupByCourse(lines, DEFAULT_COURSES, recipeById);
-    expect(groups.map((g) => [g.course, g.lines.map((l) => l.lineId)])).toEqual([
+    const expected = [
       ["Walking dinner", ["walking"]],
       ["Buffet", ["buffet"]],
-      ["Dessert", ["dessert"]],
-      ["Autre", ["mign"]],
-    ]);
-    expect(groupByCourse(lines, SEVEN, recipeById).map((g) => g.course)).toEqual(["Walking dinner", "Buffet", "Dessert", "Mignardises"]);
+      ["Dessert", ["mign", "dessert"]],
+    ];
+    expect(groupByCourse(lines, DEFAULT_COURSES, recipeById).map((g) => [g.course, g.lines.map((l) => l.lineId)])).toEqual(expected);
+    expect(groupByCourse(lines, SEVEN, recipeById).map((g) => [g.course, g.lines.map((l) => l.lineId)])).toEqual(expected);
   });
 });
 
@@ -351,20 +359,23 @@ describe("upgradeCourses", () => {
     expect(upgradeCourses(undefined)).toBe(DEFAULT_COURSES);
     expect(upgradeCourses([])).toBe(DEFAULT_COURSES);
   });
-  it("serves the six plus Mignardises for the legacy five and for the V2 six", () => {
-    const seven = ["Apéritif", "Entrée", "Plat", "Walking dinner", "Buffet", "Dessert", "Mignardises"];
-    expect(upgradeCourses([...LEGACY_DEFAULT_COURSES])).toEqual(seven);
-    expect(upgradeCourses([...LEGACY_DEFAULT_COURSES_V2])).toEqual(seven);
-    expect(upgradeCourses([...LEGACY_DEFAULT_COURSES])).toHaveLength(7);
+  it("serves the six defaults for the legacy five and for the V2 six", () => {
+    expect(upgradeCourses([...LEGACY_DEFAULT_COURSES])).toBe(DEFAULT_COURSES);
+    expect(upgradeCourses([...LEGACY_DEFAULT_COURSES_V2])).toBe(DEFAULT_COURSES);
+    expect(upgradeCourses([...LEGACY_DEFAULT_COURSES])).toEqual(["Apéritif", "Entrée", "Plat", "Walking dinner", "Buffet", "Dessert"]);
   });
   it("keeps a custom list as is", () => {
     const custom = ["Plat", "Dessert"];
     expect(upgradeCourses(custom)).toBe(custom);
     expect(upgradeCourses(custom)).toEqual(["Plat", "Dessert"]);
   });
-  it("keeps a list that already has Mignardises", () => {
-    const withMign = ["Apéritif", "Plat", "Mignardises"];
-    expect(upgradeCourses(withMign)).toBe(withMign);
+  it("strips the alias keys from a custom list, case-insensitively", () => {
+    expect(upgradeCourses(["Apéritif", "Mignardises", "Plat"])).toEqual(["Apéritif", "Plat"]);
+    expect(upgradeCourses(["Apéritif", "mignardise", "Plat", "ZAKOUSKIS"])).toEqual(["Apéritif", "Plat"]);
+  });
+  it("serves the six defaults when the filter empties the list", () => {
+    expect(upgradeCourses(["Mignardises"])).toBe(DEFAULT_COURSES);
+    expect(upgradeCourses(["Zakouskis", "Mignardises"])).toBe(DEFAULT_COURSES);
   });
   it("keeps the legacy list in another order", () => {
     const reordered = ["Entrée", "Apéritif", "Plat", "Dessert", "Autre"];
@@ -473,7 +484,7 @@ describe("moved lines and tasks on a day", () => {
       moved: true,
       date: "2026-10-15",
       eventDate: "2026-10-17",
-      course: "Autre",
+      course: "Dessert",
       clientName: "Dupont",
       assignedTo: ["kristoff"],
       ownAssignment: true,
@@ -673,6 +684,14 @@ describe("recipeCategoryOf and courseOf", () => {
     expect(recipeCategoryOf({})).toBe("Autre");
     expect(recipeCategoryOf({ type: "", defaultCourse: "Autre" })).toBe("Autre");
   });
+  it("reads Zakouskis as Apéritif and Mignardises as Dessert from every source", () => {
+    expect(recipeCategoryOf({ type: "Zakouskis" })).toBe("Apéritif");
+    expect(recipeCategoryOf({ defaultCourse: "Mignardises" })).toBe("Dessert");
+    expect(recipeCategoryOf({ category: "Mignardises" })).toBe("Dessert");
+    expect(recipeCategoryOf({ category: "mignardise" })).toBe("Dessert");
+    expect(recipeCategoryOf({ category: "ZAKOUSKIS", type: "Buffet" })).toBe("Apéritif");
+    expect(recipeCategoryOf({ type: "Buffet" })).toBe("Buffet");
+  });
   it("courseOf: the line override wins, then the recipe category, then Autre", () => {
     expect(courseOf({ course: "Entrée" }, { category: "Plat" })).toBe("Entrée");
     expect(courseOf({}, { category: "Plat" })).toBe("Plat");
@@ -680,17 +699,42 @@ describe("recipeCategoryOf and courseOf", () => {
     expect(courseOf({}, { defaultCourse: "Apéritif" })).toBe("Apéritif");
     expect(courseOf({})).toBe("Autre");
   });
+  it("courseOf applies the alias to the line's own course", () => {
+    expect(courseOf({ course: "Mignardises" }, { category: "Apéritif" })).toBe("Dessert");
+    expect(courseOf({ course: "zakouski" })).toBe("Apéritif");
+    expect(courseOf({}, { defaultCourse: "Mignardises" })).toBe("Dessert");
+  });
+});
+
+describe("aliasCategory and isLegacyCategory", () => {
+  it("maps the two old values in any case, singular or plural, and keeps the rest", () => {
+    expect(aliasCategory("Mignardise")).toBe("Dessert");
+    expect(aliasCategory("ZAKOUSKIS")).toBe("Apéritif");
+    expect(aliasCategory(" mignardises ")).toBe("Dessert");
+    expect(aliasCategory("Dessert")).toBe("Dessert");
+    expect(aliasCategory("Fromage")).toBe("Fromage");
+    expect(LEGACY_TYPE_TO_CATEGORY).toEqual({ Lunch: "Plat", "Menu semaine": "Plat", Zakouskis: "Apéritif", Mignardises: "Dessert" });
+    expect(LEGACY_CATEGORY_ALIASES).toEqual({ zakouskis: "Apéritif", mignardises: "Dessert" });
+  });
+  it("isLegacyCategory is true for the aliases only", () => {
+    expect(isLegacyCategory("Mignardises")).toBe(true);
+    expect(isLegacyCategory("zakouski")).toBe(true);
+    expect(isLegacyCategory("Dessert")).toBe(false);
+    expect(isLegacyCategory("constructor")).toBe(false);
+    expect(isLegacyCategory(undefined)).toBe(false);
+  });
 });
 
 describe("categoryOptions", () => {
-  it("appends the values used by recipes that are not in the list, alphabetical", () => {
+  it("appends the values used by recipes that are not in the list, alphabetical, never an alias", () => {
     const recipes = [
       { category: "Mignardises", type: "Mignardises" },
       { type: "Plat" },
       { type: "Fromage" },
       { category: "Mignardises", type: "Buffet" },
+      { type: "Zakouskis" },
     ];
-    expect(categoryOptions(DEFAULT_COURSES, recipes)).toEqual([...DEFAULT_COURSES, "Fromage", "Mignardises"]);
+    expect(categoryOptions(DEFAULT_COURSES, recipes)).toEqual([...DEFAULT_COURSES, "Fromage"]);
   });
   it("returns the list as is when every recipe is in it", () => {
     expect(categoryOptions(DEFAULT_COURSES, [{ type: "Lunch" }, { category: "Dessert", type: "Buffet" }])).toEqual(DEFAULT_COURSES);

@@ -105,6 +105,8 @@ describe("RecipesService read", () => {
     await ddb.put("recipes", recipe({ recipeId: "r3", name: "Soupe", type: "Menu semaine", defaultCourse: "Autre" }));
     await ddb.put("recipes", recipe({ recipeId: "r4", name: "Cocktail", type: "Walking dinner" }));
     await ddb.put("recipes", recipe({ recipeId: "r5", name: "Houmous", type: "Lunch", category: "Apéritif" }));
+    await ddb.put("recipes", recipe({ recipeId: "r6", name: "Mini quiches", type: "Zakouskis" }));
+    await ddb.put("recipes", recipe({ recipeId: "r7", name: "Sablés", type: "Walking dinner", defaultCourse: "Mignardises" }));
 
     const all = await service.getAll();
     const byId = new Map(all.map((r) => [r.recipeId, r.category]));
@@ -113,6 +115,8 @@ describe("RecipesService read", () => {
     expect(byId.get("r3")).toBe("Plat");
     expect(byId.get("r4")).toBe("Walking dinner");
     expect(byId.get("r5")).toBe("Apéritif");
+    expect(byId.get("r6")).toBe("Apéritif");
+    expect(byId.get("r7")).toBe("Dessert");
 
     const one = await service.get("r2");
     expect(one?.category).toBe("Plat");
@@ -156,6 +160,12 @@ describe("RecipesService.create", () => {
     expect(ddb.raw("recipes", fromCourse.recipeId)?.category).toBe("Dessert");
     expect(ddb.raw("recipes", fromCourse.recipeId)?.type).toBe("Dessert");
   });
+
+  it("aliases a legacy category given directly", async () => {
+    const { ddb, service } = build();
+    const created = await service.create(createBody({ name: "Sablés", category: "Mignardises", type: "Buffet" }));
+    expect(ddb.raw("recipes", created.recipeId)).toMatchObject({ category: "Dessert", type: "Dessert" });
+  });
 });
 
 describe("RecipesService.update", () => {
@@ -168,6 +178,20 @@ describe("RecipesService.update", () => {
     expect(ddb.updates[0].fields.category).toBe("Entrée");
     expect(ddb.updates[0].fields.type).toBe("Entrée");
     expect(ddb.raw("recipes", "r1")?.defaultCourse).toBe("Dessert");
+  });
+
+  it("aliases a legacy category before mirroring it into type", async () => {
+    const { ddb, service } = build();
+    await ddb.put("recipes", recipe({ recipeId: "r1", name: "Sablés", type: "Buffet" }));
+    const updated = await service.update("r1", { category: "Mignardises" });
+    expect(updated.category).toBe("Dessert");
+    expect(updated.type).toBe("Dessert");
+    expect(ddb.updates[0].fields).toMatchObject({ category: "Dessert", type: "Dessert" });
+    expect(ddb.raw("recipes", "r1")).toMatchObject({ category: "Dessert", type: "Dessert" });
+
+    await ddb.put("recipes", recipe({ recipeId: "r2", name: "Mini quiches", type: "Buffet" }));
+    const fromType = await service.update("r2", { type: "Zakouskis" });
+    expect(fromType).toMatchObject({ category: "Apéritif", type: "Apéritif" });
   });
 
   it("maps a bare type from an old client into both keys", async () => {
@@ -196,11 +220,15 @@ describe("RecipesService.importRecipes", () => {
       { name: "Quiche", type: "Lunch" },
       { name: "Tarte", type: "Lunch", category: "Dessert" },
       { name: "Houmous" },
+      { name: "Mini quiches", type: "Zakouskis" },
+      { name: "Sablés", type: "Buffet", category: "Mignardises" },
     ]);
-    expect(result).toEqual({ created: 3, skipped: 0, unmatchedIngredients: [] });
+    expect(result).toEqual({ created: 5, skipped: 0, unmatchedIngredients: [] });
     const byName = new Map([...ddb.rows("recipes").values()].map((r) => [r.name, r]));
     expect(byName.get("Quiche")).toMatchObject({ category: "Plat", type: "Plat" });
     expect(byName.get("Tarte")).toMatchObject({ category: "Dessert", type: "Dessert" });
     expect(byName.get("Houmous")).toMatchObject({ category: "Buffet", type: "Buffet" });
+    expect(byName.get("Mini quiches")).toMatchObject({ category: "Apéritif", type: "Apéritif" });
+    expect(byName.get("Sablés")).toMatchObject({ category: "Dessert", type: "Dessert" });
   });
 });

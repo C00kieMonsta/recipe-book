@@ -3,7 +3,7 @@ import type { CreateOfferRequest } from "../dto/offers";
 import type { AppEvent, EventExtraCost, EventRevenueLine, PricingMode } from "../entities/event";
 import type { VatRate } from "../entities/ledger";
 import type { Offer, OfferLine } from "../entities/offer";
-import { calcLinesRawMaterial, sumExtraCosts } from "./costing";
+import { calcLinesRawMaterial, extrasByKind, sumExtraCosts } from "./costing";
 import { round2, sumMoney } from "./money";
 import {
   foodRevenue,
@@ -38,10 +38,15 @@ export interface QuoteTotals {
   totalHtva: number;
   totalTvac: number;
   pricePerGuest: number;
+  // rawMaterial plus the extra costs of kind matiere.
+  foodCost: number;
+  // foodHtva minus foodCost: the food margin, untouched by revenue lines and non-food extras.
   margin: number;
-  // Percent of totalHtva, 0 when totalHtva is 0.
+  // Percent of foodHtva, 0 when foodHtva is 0.
   marginPct: number;
   marginPerGuest: number;
+  // totalHtva minus costTotal.
+  resultHtva: number;
   // Lines whose recipe is known and has no ingredient.
   incompleteRecipes: number;
 }
@@ -86,6 +91,7 @@ export function quoteTotals(
   const rawMaterial = round2(calcLinesRawMaterial({ recipes }, recipeCostById, recipePortionsById));
   const extrasCost = round2(sumExtraCosts(input.extraCosts));
   const costTotal = sumMoney([rawMaterial, extrasCost]);
+  const foodCost = sumMoney([rawMaterial, extrasByKind(input.extraCosts).matiere]);
   const costPerGuest = guests > 0 ? round2(costTotal / guests) : 0;
 
   const priced: PricedEvent & { vatRate?: VatRate } = {
@@ -101,9 +107,10 @@ export function quoteTotals(
   const totalHtva = sumMoney([foodHtva, linesHtva]);
   const totalTvac = revenueTvac(priced);
   const pricePerGuest = pricePerGuestOf(priced);
-  const margin = sumMoney([totalHtva, -costTotal]);
-  const marginPct = totalHtva === 0 ? 0 : round2((margin / totalHtva) * 100);
+  const margin = sumMoney([foodHtva, -foodCost]);
+  const marginPct = foodHtva === 0 ? 0 : round2((margin / foodHtva) * 100);
   const marginPerGuest = guests > 0 ? round2(margin / guests) : 0;
+  const resultHtva = sumMoney([totalHtva, -costTotal]);
   const incompleteRecipes = recipeById ? incompleteCount(lines, recipeById) : 0;
 
   return {
@@ -117,9 +124,11 @@ export function quoteTotals(
     totalHtva,
     totalTvac,
     pricePerGuest,
+    foodCost,
     margin,
     marginPct,
     marginPerGuest,
+    resultHtva,
     incompleteRecipes,
   };
 }

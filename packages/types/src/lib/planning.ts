@@ -8,6 +8,8 @@ import {
   LEGACY_DEFAULT_COURSES,
   LEGACY_DEFAULT_COURSES_V2,
   LEGACY_TYPE_TO_CATEGORY,
+  aliasCategory,
+  isLegacyCategory,
 } from "../entities/settings";
 import { addDays, daysBetween, ymOf } from "./dates";
 import { round2, sumMoney } from "./money";
@@ -76,33 +78,36 @@ export function revenueTvac(e: PricedEvent & Pick<AppEvent, "vatRate">): number 
   return sumMoney(vatBreakdown(e).map((b) => b.tvac));
 }
 
-// category, else defaultCourse unless it is "Autre", else the legacy type mapped, else the type itself, else "Autre".
+// category, else defaultCourse unless it is "Autre", else the legacy type mapped, else the type itself, else "Autre";
+// Zakouskis and Mignardises read Apéritif and Dessert whichever source carries them.
 export function recipeCategoryOf(r: Partial<Pick<Recipe, "category" | "defaultCourse" | "type">>): string {
-  if (r.category) return r.category;
-  if (r.defaultCourse && r.defaultCourse !== FALLBACK_COURSE) return r.defaultCourse;
-  if (r.type) return LEGACY_TYPE_TO_CATEGORY[r.type] ?? r.type;
+  if (r.category) return aliasCategory(r.category);
+  if (r.defaultCourse && r.defaultCourse !== FALLBACK_COURSE) return aliasCategory(r.defaultCourse);
+  if (r.type) return aliasCategory(LEGACY_TYPE_TO_CATEGORY[r.type] ?? r.type);
   return FALLBACK_COURSE;
 }
 
-// Raw course of a line: its own value, then the recipe category, then "Autre".
+// Course of a line: its own value through the alias, then the recipe category, then "Autre".
 export function courseOf(
   line: Pick<EventRecipeLine, "course">,
   recipe?: Partial<Pick<Recipe, "category" | "defaultCourse" | "type">>,
 ): string {
-  return line.course ?? (recipe ? recipeCategoryOf(recipe) : FALLBACK_COURSE);
+  if (line.course !== undefined) return aliasCategory(line.course);
+  return recipe ? recipeCategoryOf(recipe) : FALLBACK_COURSE;
 }
 
 function sameList(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((c, i) => c === b[i]);
 }
 
-// undefined or [] gives DEFAULT_COURSES; the legacy five or the legacy six give DEFAULT_COURSES plus "Mignardises"; anything else as is.
+// undefined, [], the legacy five or the legacy six give DEFAULT_COURSES; any other list loses its alias keys,
+// and DEFAULT_COURSES again when nothing is left.
 export function upgradeCourses(stored: string[] | undefined): string[] {
   if (!stored?.length) return DEFAULT_COURSES;
-  if (sameList(stored, LEGACY_DEFAULT_COURSES) || sameList(stored, LEGACY_DEFAULT_COURSES_V2)) {
-    return [...DEFAULT_COURSES, "Mignardises"];
-  }
-  return stored;
+  if (sameList(stored, LEGACY_DEFAULT_COURSES) || sameList(stored, LEGACY_DEFAULT_COURSES_V2)) return DEFAULT_COURSES;
+  if (!stored.some(isLegacyCategory)) return stored;
+  const kept = stored.filter((c) => !isLegacyCategory(c));
+  return kept.length ? kept : DEFAULT_COURSES;
 }
 
 // Categories to offer in a select or as tabs: the settings list, then every value used by the recipes that is not in it, alphabetical.

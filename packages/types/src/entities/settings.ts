@@ -91,6 +91,10 @@ export interface CompanySettings {
 // The salmon of her sheets, sampled from the title band. Editable in Paramètres › Société.
 export const DEFAULT_BRAND_ACCENT = "#E8847A";
 
+export type PaymentMode = "nowjobs" | "cash" | "facture";
+export const PAYMENT_MODES: PaymentMode[] = ["nowjobs", "cash", "facture"];
+export const PAYMENT_MODE_LABELS: Record<PaymentMode, string> = { nowjobs: "Nowjobs", cash: "Cash", facture: "Facture" };
+
 export interface Person {
   // Slug of the name at creation, never changes.
   personId: string;
@@ -99,6 +103,11 @@ export interface Person {
   initials?: string;
   // false hides the person from pickers and filters, keeps old assignments readable.
   active: boolean;
+  // € per hour HTVA, what she pays; absent means no rate (the event shows « tarif à préciser »).
+  hourlyRate?: number;
+  // € per km, three decimals allowed (0,345).
+  kmRate?: number;
+  paymentMode?: PaymentMode;
 }
 
 export interface AppSettings {
@@ -144,11 +153,28 @@ export const DEFAULT_SUPPLIERS: SettingsSupplier[] = [
 
 // Her six values, in her order.
 export const DEFAULT_COURSES = ["Apéritif", "Entrée", "Plat", "Walking dinner", "Buffet", "Dessert"];
-// Lists stored by earlier installs; upgradeCourses maps both onto DEFAULT_COURSES plus "Mignardises", which those installs were served and may use.
+// Lists stored by earlier installs; upgradeCourses maps both onto DEFAULT_COURSES.
 export const LEGACY_DEFAULT_COURSES = ["Apéritif", "Entrée", "Plat", "Dessert", "Autre"];
 export const LEGACY_DEFAULT_COURSES_V2 = ["Apéritif", "Entrée", "Plat", "Dessert", "Mignardises", "Autre"];
 // Old « Format » values that are not categories; Buffet and Walking dinner map to themselves.
-export const LEGACY_TYPE_TO_CATEGORY: Record<string, string> = { Lunch: "Plat", "Menu semaine": "Plat" };
+export const LEGACY_TYPE_TO_CATEGORY: Record<string, string> = { Lunch: "Plat", "Menu semaine": "Plat", Zakouskis: "Apéritif", Mignardises: "Dessert" };
+// Old category values merged into her six; matched case-insensitively, singular or plural.
+export const LEGACY_CATEGORY_ALIASES: Record<string, string> = { zakouskis: "Apéritif", mignardises: "Dessert" };
+
+function aliasOf(value: string): string | undefined {
+  const k = value.trim().toLowerCase();
+  const key = k.endsWith("s") ? k : `${k}s`;
+  return Object.prototype.hasOwnProperty.call(LEGACY_CATEGORY_ALIASES, key) ? LEGACY_CATEGORY_ALIASES[key] : undefined;
+}
+
+// "Mignardise" → "Dessert", "ZAKOUSKIS" → "Apéritif", anything else as is.
+export function aliasCategory(value: string): string {
+  return aliasOf(value) ?? value;
+}
+
+export function isLegacyCategory(value: string | undefined): boolean {
+  return value !== undefined && aliasOf(value) !== undefined;
+}
 
 export const DEFAULT_PRESTATION_TYPES: PrestationTypeSetting[] = [
   { key: "menu_a_emporter", label: "Menu à emporter", defaultVatRate: 6 },

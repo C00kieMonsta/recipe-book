@@ -602,6 +602,15 @@ describe("auReel", () => {
     ]);
   });
 
+  it("drops the event row of a marked event in both modes and keeps the others", () => {
+    const marked = { ...frahan, invoicedAt: "2026-10-20" };
+    const app = auReel("2026-10", inputs({ entries: [commission], events: [marked, hoona], settings: s, clients }));
+    expect(app.rows.map((row) => [row.tag, row.label, row.htva])).toEqual([["signe", "Hoona", 360]]);
+    expect(app.totalSigne).toBe(360);
+    const externe = auReel("2026-10", inputs({ entries: [commission], events: [marked, hoona], settings: settings({ ...s, invoicing: "externe" }), clients }));
+    expect(externe.rows.map((row) => row.label)).toEqual(["Hoona"]);
+  });
+
   it("externe drops the event rows once the month has a ca_mensuel entry; app mode keeps both", () => {
     const monthly = entry({ date: "2026-10-31", htva: 1200, kind: "ca_mensuel", label: "CA · Octobre 2026", paid: true });
     const externe = settings({ ...s, invoicing: "externe" });
@@ -667,6 +676,21 @@ describe("aFacturer", () => {
       { eventId: "m", label: "Mariage Dupont", date: "2026-10-17", htva: 3300, acomptesHtva: 446, prestationType: "chef_a_domicile" },
     ]);
     expect(r.totals.toInvoiceHtva).toBe(3300);
+  });
+
+  it("drops a marked event from toInvoice and toClose, and invoicedEventIds unions the ledger and the mark", () => {
+    const events = [
+      event({ eventId: "marked", date: "2026-10-01", invoicedAt: "2026-10-15", invoiceRef: "2026-014" }),
+      event({ eventId: "billed", date: "2026-10-02" }),
+      event({ eventId: "open", date: "2026-10-03" }),
+      event({ eventId: "stale", date: "2026-10-04", status: "upcoming", invoicedAt: "2026-10-15" }),
+    ];
+    const entries = [entry({ date: "2026-10-05", kind: "facture", htva: 200, eventIds: ["billed"] })];
+    expect([...invoicedEventIds(entries, events)].sort()).toEqual(["billed", "marked", "stale"]);
+    expect(invoicedEventIds(entries).has("marked")).toBe(false);
+    const r = aFacturer({ events, entries, clients: [] }, today);
+    expect(r.toInvoice.map((e) => e.eventId)).toEqual(["open"]);
+    expect(r.toClose).toEqual([]);
   });
 
   it("drops an event listed in a facture entry's eventIds", () => {

@@ -19,12 +19,16 @@ import type {
 } from "@packages/types";
 import {
   DEFAULT_FOOD_VAT_RATE,
+  REVENUE_LINE_KINDS,
   addDays,
   calcIngredientLineCost,
   calcRecipeCost,
   choiceLabelOf,
   datesOfIsoWeek,
   defaultVatRate,
+  extrasByKind,
+  foodCostOf,
+  foodMargin,
   foodRevenue,
   guestsFact,
   longDayLabel,
@@ -300,7 +304,12 @@ const EVENT_PROPS: Record<string, Property> = {
     true,
   ),
   revenueLines: list(
-    strictObject({ label: str("Libellé (service, livraison...)."), amount: num("Montant HTVA."), vatRate: oneOf(VAT_RATES, "TVA en pourcent.") }),
+    strictObject({
+      label: str("Libellé (service, livraison...)."),
+      amount: num("Montant HTVA."),
+      vatRate: oneOf(VAT_RATES, "TVA en pourcent."),
+      kind: oneOf([...REVENUE_LINE_KINDS], "Nature : service, livraison, location_vaisselle, boissons, autre.", true),
+    }),
     "Lignes facturées en plus de la nourriture, HTVA.",
     true,
   ),
@@ -765,7 +774,7 @@ export class AssistantTools {
 
   private getEvent(): AssistantTool {
     return {
-      definition: tool("get_event", "Lit un événement complet : lignes avec lineId, tâches, lignes facturées, livraison, facturation, coûts.", {
+      definition: tool("get_event", "Lit un événement complet : lignes avec lineId, tâches, lignes facturées, équipe en cuisine et sur place avec heures et km, livraison, facturation, marge food, coûts.", {
         eventId: str("eventId de l'événement."),
       }),
       describe: () => "Lecture d'un événement",
@@ -798,6 +807,7 @@ export class AssistantTools {
           };
         });
         const extras = round2(sumExtraCosts(event.extraCosts));
+        const foodCost = foodCostOf({ rawMaterial, extras: extrasByKind(event.extraCosts) });
         const clientName = await this.clientName(event.clientId);
         return {
           content: wrapToolData({
@@ -815,7 +825,11 @@ export class AssistantTools {
             revenueLines: event.revenueLines ?? [],
             totalHtva: signedRevenue(event),
             totalTvac: revenueTvac(event),
+            foodMargin: foodMargin(foodRevenue(event), foodCost).margin,
             people: personNames(event.assignedTo),
+            surPlace: personNames(event.serviceTeam),
+            staff: (event.staff ?? []).map((s) => ({ person: people.get(s.personId) ?? s.personId, hours: s.hours ?? 0, km: s.km ?? 0 })),
+            invoicedAt: event.invoicedAt ?? null,
             lines,
             tasks: tasksOf(event).map((t) => ({
               taskId: t.taskId,
@@ -957,7 +971,7 @@ export class AssistantTools {
     return {
       definition: tool(
         "quote_price",
-        "Estime le prix d'une prestation : un ou plusieurs groupes de convives avec leurs recettes, des extras HTVA (livraison, service), la TVA par taux, le total TVAC, le coût matières et la marge.",
+        "Estime le prix d'une prestation : un ou plusieurs groupes de convives avec leurs recettes, des extras HTVA (livraison, service), la TVA par taux, le total TVAC, le coût matières et la marge sur le food.",
         {
           groups: list(groupSchema, "Les groupes de convives."),
           extras: list(

@@ -101,6 +101,9 @@ export const personSchema = z
     name: z.string().min(1).max(60).trim(),
     initials: z.string().trim().min(1).max(3).optional(),
     active: z.boolean(),
+    hourlyRate: moneyNonnegative.optional(),
+    kmRate: z.number().nonnegative().max(10).optional(),
+    paymentMode: z.enum(["nowjobs", "cash", "facture"]).optional(),
   })
   .strict();
 export type PersonRequest = z.infer<typeof personSchema>;

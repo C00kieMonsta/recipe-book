@@ -735,10 +735,11 @@ export function isInvoiceEntry(entry: Pick<LedgerEntry, "book" | "kind">): boole
   return entry.book === "ventes" && (INVOICING_KINDS as string[]).includes(entry.kind);
 }
 
-// Ids of events covered by a facture or comptoir entry, whatever the entry's month.
-export function invoicedEventIds(entries: LedgerEntry[]): Set<string> {
+// Ids covered by a facture or comptoir entry, whatever the entry's month, plus events carrying invoicedAt.
+export function invoicedEventIds(entries: LedgerEntry[], events: Pick<AppEvent, "eventId" | "invoicedAt">[] = []): Set<string> {
   const ids = new Set<string>();
   for (const e of entries) if (isInvoiceEntry(e)) for (const id of e.eventIds ?? []) ids.add(id);
+  for (const e of events) if (e.invoicedAt) ids.add(e.eventId);
   return ids;
 }
 
@@ -755,7 +756,7 @@ export function auReel(ym: string, inputs: ReportInputs): AuReel {
   const { entries, events, settings, clients } = inputs;
   const objective = objectiveOf(settings, yearOf(ym));
   const eventById = new Map(events.map((e) => [e.eventId, e]));
-  const invoiced = invoicedEventIds(entries);
+  const invoiced = invoicedEventIds(entries, events);
 
   const entryRows: AuReelRow[] = entriesOfMonth(entries, ym)
     .filter(isCaEntry)
@@ -864,7 +865,7 @@ const byDate = <T extends { date: string }>(a: T, b: T) => (a.date < b.date ? -1
 
 export function aFacturer(inputs: Pick<ReportInputs, "events" | "entries" | "clients">, today: string): AFacturer {
   const { events, entries, clients = [] } = inputs;
-  const invoiced = invoicedEventIds(entries);
+  const invoiced = invoicedEventIds(entries, events);
   const clientById = new Map(clients.map((c) => [c.clientId, c]));
   const clientOf = (e: AppEvent) => (e.clientId ? clientById.get(e.clientId) : undefined);
 

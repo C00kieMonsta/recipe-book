@@ -71,8 +71,12 @@ export interface QuoteGroupsTotals {
   htva: number;
   vatByRate: Record<string, number>;
   tvac: number;
+  // foodHtva minus cost; the extras are not counted in the margin.
   marginHtva: number;
+  // Percent of foodHtva.
   marginPct: number;
+  // htva minus cost.
+  resultHtva: number;
 }
 
 export interface QuoteResult {
@@ -154,12 +158,24 @@ export function quoteGroups(input: QuoteGroupsInput): QuoteResult {
 
   const vatTotal = sumMoney(Object.values(vatByRate));
   const tvac = sumMoney([htva, vatTotal]);
-  const marginHtva = sumMoney([htva, -cost]);
+  const marginHtva = sumMoney([foodHtva, -cost]);
+  const resultHtva = sumMoney([htva, -cost]);
 
   return {
     groups,
     extras,
-    totals: { guests, cost, foodHtva, extrasHtva, htva, vatByRate, tvac, marginHtva, marginPct: pct(marginHtva, htva) },
+    totals: {
+      guests,
+      cost,
+      foodHtva,
+      extrasHtva,
+      htva,
+      vatByRate,
+      tvac,
+      marginHtva,
+      marginPct: pct(marginHtva, foodHtva),
+      resultHtva,
+    },
     notes,
   };
 }

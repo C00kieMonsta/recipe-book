@@ -113,9 +113,11 @@ describe("quoteTotals", () => {
     expect(t.totalHtva).toBe(400);
     expect(t.totalTvac).toBe(400);
     expect(t.pricePerGuest).toBe(40);
+    expect(t.foodCost).toBe(60);
     expect(t.margin).toBe(340);
     expect(t.marginPct).toBe(85);
     expect(t.marginPerGuest).toBe(34);
+    expect(t.resultHtva).toBe(340);
     expect(t.incompleteRecipes).toBe(0);
   });
   it("ignores guests for the revenue in total mode", () => {
@@ -152,8 +154,50 @@ describe("quoteTotals", () => {
     );
     expect(t.extrasCost).toBe(40);
     expect(t.costTotal).toBe(100);
-    expect(t.margin).toBe(-100);
+    expect(t.foodCost).toBe(60);
+    expect(t.margin).toBe(-60);
     expect(t.marginPct).toBe(0);
+    expect(t.resultHtva).toBe(-100);
+  });
+  it("a revenue line leaves the food margin unchanged and moves resultHtva", () => {
+    const base = quoteTotals(quote(), recipeCostById, recipePortionsById);
+    const t = quoteTotals(
+      quote({ revenueLines: [{ label: "Service", amount: 450, vatRate: 21 }] }),
+      recipeCostById,
+      recipePortionsById,
+    );
+    expect(t.linesHtva).toBe(450);
+    expect(t.totalHtva).toBe(850);
+    expect(t.margin).toBe(base.margin);
+    expect(t.marginPct).toBe(base.marginPct);
+    expect(t.marginPerGuest).toBe(base.marginPerGuest);
+    expect(t.resultHtva).toBe(base.resultHtva + 450);
+  });
+  it("a location extra lowers resultHtva and costTotal but not the margin", () => {
+    const base = quoteTotals(quote(), recipeCostById, recipePortionsById);
+    const t = quoteTotals(
+      quote({ extraCosts: [{ label: "Salle", amount: 80, kind: "location" }] }),
+      recipeCostById,
+      recipePortionsById,
+    );
+    expect(t.costTotal).toBe(base.costTotal + 80);
+    expect(t.resultHtva).toBe(base.resultHtva - 80);
+    expect(t.foodCost).toBe(base.foodCost);
+    expect(t.margin).toBe(base.margin);
+    expect(t.marginPct).toBe(base.marginPct);
+  });
+  it("a matière extra lowers both the margin and resultHtva", () => {
+    const base = quoteTotals(quote(), recipeCostById, recipePortionsById);
+    const t = quoteTotals(
+      quote({ extraCosts: [{ label: "Fleurs", amount: 40, kind: "matiere" }] }),
+      recipeCostById,
+      recipePortionsById,
+    );
+    expect(t.costTotal).toBe(base.costTotal + 40);
+    expect(t.foodCost).toBe(base.foodCost + 40);
+    expect(t.margin).toBe(base.margin - 40);
+    expect(t.marginPct).toBe(75);
+    expect(t.resultHtva).toBe(base.resultHtva - 40);
   });
   it("counts a recipe with no ingredient and not an unknown id", () => {
     const t = quoteTotals(

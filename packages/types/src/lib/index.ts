@@ -15,3 +15,6 @@ export * from "./invoice-inbox";
 export * from "./offers";
 export * from "./quote";
 export * from "./offer-document";
+export * from "./staff";
+export * from "./payroll";
+export * from "./revenue";

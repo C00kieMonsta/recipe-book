@@ -2,11 +2,35 @@ import type { VatRate } from "./ledger";
 
 export type PricingMode = "par_convive" | "total";
 
+export const REVENUE_LINE_KINDS = ["service", "livraison", "location_vaisselle", "boissons", "autre"] as const;
+export type RevenueLineKind = (typeof REVENUE_LINE_KINDS)[number];
+export const REVENUE_LINE_KIND_LABELS: Record<RevenueLineKind, string> = {
+  service: "Service",
+  livraison: "Livraison",
+  location_vaisselle: "Location vaisselle",
+  boissons: "Boissons",
+  autre: "Autre",
+};
+// Every kind defaults to 21 %; she changes the VAT pill on the row when needed.
+export const REVENUE_LINE_DEFAULT_VAT: VatRate = 21;
+
 // A billed line on top of the food price (service, delivery, other): revenue HTVA at its own VAT rate.
 export interface EventRevenueLine {
   label: string;
   amount: number;
   vatRate: VatRate;
+  // Absent on lines stored before this spec; revenueLineKindOf infers it from the label.
+  kind?: RevenueLineKind;
+}
+
+// Hours and km of one person on the event, whatever the role; one entry per person.
+export interface EventStaffEntry {
+  personId: string;
+  hours?: number;
+  km?: number;
+  // Copied from the person by completionFields when the event is terminated, so a later rate change leaves the figure.
+  hourlyRate?: number;
+  kmRate?: number;
 }
 
 export interface EventAttachment {
@@ -109,8 +133,17 @@ export interface AppEvent {
   templateId?: string;
   prestationType?: string;
   vatRate?: VatRate;
+  // Dalia's own hours (« Mes heures »); still read by Au réel and the objectives.
   hoursSpent?: number;
   costSnapshot?: EventCostSnapshot;
-  // personIds, the default for its lines.
+  // personIds, the default for its lines and tasks (« En cuisine »).
   assignedTo?: string[];
+  // personIds serving on the day (« Sur place »); never inherited by lines or tasks.
+  serviceTeam?: string[];
+  // Absent reads as []; written by the Heures et frais section and by completionFields.
+  staff?: EventStaffEntry[];
+  // YYYY-MM-DD, set by « Marquer comme facturé »; absent when not invoiced or when the invoice lives in the ledger only.
+  invoicedAt?: string;
+  // Free text, « N° Odoo », 40 chars.
+  invoiceRef?: string;
 }

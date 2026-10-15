@@ -210,6 +210,39 @@ Both steps are one-off and safe to re-run. `$API` is the API base URL (the `API_
 
    To go back: the same call with `{"invoicing":"app"}`, or Paramètres › Société › Factures.
 
+### After the deploy that regroups Zakouskis and Mignardises (spec 11)
+
+Every command is safe to re-run. `$API` is the API base URL. Full runbook in [docs/redesign/11-team-margin-reminders.md](docs/redesign/11-team-margin-reminders.md), section 7.
+
+1. Check what the categories script would do (nothing is written):
+
+   ```bash
+   API=$API SMOKE_EMAIL=<admin email> SMOKE_PASSWORD=<password> node scripts/migrate-categories-2026-10.mjs
+   ```
+
+   Read the lines. Recipes read `Mini quiches · Zakouskis → Apéritif`; event lines, offers and client templates have their own lines; the last line counts them.
+
+2. Apply, then run the dry run again and check it prints `rien à faire` for every step:
+
+   ```bash
+   API=$API SMOKE_EMAIL=<admin email> SMOKE_PASSWORD=<password> node scripts/migrate-categories-2026-10.mjs --apply
+   API=$API SMOKE_EMAIL=<admin email> SMOKE_PASSWORD=<password> node scripts/migrate-categories-2026-10.mjs
+   ```
+
+   Run it when Dalia is not editing an event; a line reports `conflit, à relancer` if she was, and a second `--apply` picks it up.
+
+3. Check her grocery lists before telling her about the reminder:
+
+   ```bash
+   API=$API SMOKE_EMAIL=<admin email> SMOKE_PASSWORD=<password> node scripts/list-grocery-lists.mjs
+   ```
+
+   Lists `sans événements` and `sans plage` cover nothing, so the week box will say the courses are not created for those weeks; that is the row she asked for. Lists with a range and no events cover their range.
+
+4. Nothing to run for the other points. Tell Dalia: add her team in Paramètres › Équipe with the rates and the payment mode; the first week after the deploy lists every completed event since the start under « à facturer », one tap per row marks them.
+
+Local check before the release: the seeded app has Mignardises on one event line and one offer line; run the dry run against `http://localhost:3101`, then `--apply`, then the dry run again.
+
 ### After the deploy that adds the offer documents
 
 One-off and safe to re-run. The import creates the seven 2026 brochures ([docs/redesign/09-offer-catalogue.md](docs/redesign/09-offer-catalogue.md)) and skips any title and year already present, so Dalia's edits survive a second run.
@@ -298,6 +331,8 @@ The backend connects to real AWS DynamoDB by default. To use DynamoDB Local inst
 | `scripts/seed-local.mjs` | Seed a realistic week (recipes, clients, events, ledger, two offers, the seven offer documents, placeholder brand images) into a local stack |
 | `scripts/import-offer-documents.mjs` | Import the seven 2026 offer documents through the API; skips the ones already present |
 | `scripts/merge-categories.mjs` | Persist the merged recipe category and the category list; dry run without `--apply` |
+| `scripts/migrate-categories-2026-10.mjs` | Rewrite Zakouskis and Mignardises into Apéritif and Dessert on recipes, event lines, offers, client templates and the category list; dry run without `--apply` |
+| `scripts/list-grocery-lists.mjs` | Read-only: one line per grocery list with its events and range, and the count of lists without `eventIds` |
 
 ## Provisioning the clients and ledger tables on an existing deployment
 

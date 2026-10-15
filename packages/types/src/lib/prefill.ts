@@ -28,11 +28,12 @@ export function depositsForEvents(eventIds: string[], entries: LedgerEntry[]): n
   );
 }
 
-// Facturé when a facture or comptoir entry includes the event; Payé when every entry including it is paid.
-export function eventBillingStatus(eventId: string, entries: LedgerEntry[]): EventBillingStatus | undefined {
+// Facturé when a facture or comptoir entry includes the event or the event carries invoicedAt; Payé when every entry including it is paid.
+export function eventBillingStatus(eventId: string, entries: LedgerEntry[], event?: Pick<AppEvent, "invoicedAt">): EventBillingStatus | undefined {
   const linked = entriesForEvent(eventId, entries);
-  if (linked.length === 0) return undefined;
-  if (!linked.some(isInvoiceEntry)) return linked.some((e) => e.kind === "acompte") ? "acompte_recu" : undefined;
+  const marked = event?.invoicedAt ? "facture" : undefined;
+  if (linked.length === 0) return marked;
+  if (!linked.some(isInvoiceEntry)) return linked.some((e) => e.kind === "acompte") ? "acompte_recu" : marked;
   return linked.every((e) => e.paid) ? "paye" : "facture";
 }
 
@@ -148,7 +149,7 @@ export function prefillForClientMonth(
   settings: Pick<AppSettings, "prestationTypes">,
   ym: string,
 ): ClientMonthPrefill {
-  const invoiced = invoicedEventIds(entries);
+  const invoiced = invoicedEventIds(entries, events);
   const selected = events
     .filter((e) => e.clientId === client.clientId && ymOf(e.date) <= ym && !invoiced.has(e.eventId))
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));

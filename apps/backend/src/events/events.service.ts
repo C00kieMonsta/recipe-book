@@ -29,7 +29,7 @@ type PricingFields = Pick<UpdateEventRequest, "pricingMode" | "sellingTotal" | "
 type PricingWrite = { sellingPricePerGuest?: number; sellingTotal?: number | null };
 
 // Text fields the editor can clear; an empty value is stored as a REMOVE.
-const CLEARABLE_TEXT = ["contactName", "contactPhone", "contactEmail", "deliveryAddress", "deliveryTime", "billingDetails"] as const;
+const CLEARABLE_TEXT = ["contactName", "contactPhone", "contactEmail", "deliveryAddress", "deliveryTime", "billingDetails", "invoiceRef"] as const;
 
 // Drops undefined values so a spread never clears a stored field the caller did not send.
 const definedEntries = <T extends object>(obj: T): Partial<T> =>

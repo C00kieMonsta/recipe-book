@@ -120,7 +120,7 @@ type Fakes = {
   eventsAddLine: jest.Mock;
 };
 
-function build(documents: OfferDocument[] = []): Fakes {
+function build(documents: OfferDocument[] = [], event: AppEvent = EVENT, appSettings: AppSettings = SETTINGS): Fakes {
   const recipesCreate = jest.fn(async (data: Record<string, unknown>) => ({ ...data, recipeId: "r-new" }));
   const ingredientsCreate = jest.fn(async (data: Record<string, unknown>) => ({
     ...data,
@@ -130,24 +130,24 @@ function build(documents: OfferDocument[] = []): Fakes {
     updatedAt: NOW,
   }));
   const eventsUpdate = jest.fn(async (eventId: string) => {
-    if (eventId !== EVENT.eventId) throw new NotFoundException("Event not found");
-    return EVENT;
+    if (eventId !== event.eventId) throw new NotFoundException("Event not found");
+    return event;
   });
-  const eventsAddTask = jest.fn(async () => EVENT);
-  const eventsAddLine = jest.fn(async () => EVENT);
+  const eventsAddTask = jest.fn(async () => event);
+  const eventsAddLine = jest.fn(async () => event);
 
   const recipes = { getAll: async () => RECIPES, get: async (id: string) => RECIPES.find((r) => r.recipeId === id) ?? null, create: recipesCreate } as unknown as RecipesService;
   // getAll never returns the created ingredient: a scan right after a put may not show it either.
   const ingredients = { getAll: async () => INGREDIENTS, create: ingredientsCreate } as unknown as IngredientsService;
   const events = {
-    getAll: async () => [EVENT],
-    get: async (id: string) => (id === EVENT.eventId ? EVENT : null),
+    getAll: async () => [event],
+    get: async (id: string) => (id === event.eventId ? event : null),
     update: eventsUpdate,
     addTask: eventsAddTask,
     addLine: eventsAddLine,
   } as unknown as EventsService;
   const clients = { get: async () => null } as unknown as ClientsService;
-  const settings = { get: async () => SETTINGS } as unknown as SettingsService;
+  const settings = { get: async () => appSettings } as unknown as SettingsService;
   const offers = { getAll: async () => [] } as unknown as OffersService;
   const offerDocuments = { getAll: async () => documents } as unknown as OfferDocumentsService;
   return {
@@ -324,6 +324,83 @@ describe("AssistantTools proposals", () => {
     const { tools } = build();
     const result = await tools.run("delete_everything", {}, createTurnState("t"));
     expect(JSON.parse(result.content).data).toEqual({ error: "Outil inconnu : delete_everything" });
+  });
+});
+
+describe("AssistantTools get_event", () => {
+  const TEAM_SETTINGS: AppSettings = {
+    ...SETTINGS,
+    people: [
+      { personId: "p1", name: "Kristoff", active: true, hourlyRate: 15 },
+      { personId: "p2", name: "Léa", active: true },
+    ],
+  };
+  const TEAM_EVENT: AppEvent = {
+    ...EVENT,
+    assignedTo: ["p1"],
+    serviceTeam: ["p2", "p9"],
+    staff: [
+      { personId: "p1", hours: 4, km: 12 },
+      { personId: "p2", hours: 6 },
+    ],
+    extraCosts: [
+      { label: "Fromages", amount: 100, kind: "matiere" },
+      { label: "Serveur", amount: 200, kind: "personnel" },
+    ],
+    revenueLines: [{ label: "Service", amount: 300, vatRate: 21, kind: "service" }],
+    invoicedAt: "2026-10-15",
+  };
+
+  async function readEvent(event: AppEvent = TEAM_EVENT, settings: AppSettings = TEAM_SETTINGS) {
+    const { tools } = build([], event, settings);
+    const result = await tools.run("get_event", { eventId: event.eventId }, createTurnState("t"));
+    return JSON.parse(result.content).data as Record<string, unknown>;
+  }
+
+  it("accepts an optional kind on the revenueLines input of the event proposals", () => {
+    const definition = build().tools.definitions().find((d) => d.name === "propose_create_event");
+    const parameters = definition?.parameters as { properties: Record<string, { items?: { properties: Record<string, unknown>; required: string[] } }> };
+    const item = parameters.properties.revenueLines.items;
+    expect(item?.properties.kind).toEqual({
+      type: ["string", "null"],
+      enum: ["service", "livraison", "location_vaisselle", "boissons", "autre", null],
+      description: "Nature : service, livraison, location_vaisselle, boissons, autre.",
+    });
+    expect(item?.required).toContain("kind");
+  });
+
+  it("names the service team as surPlace next to the kitchen people", async () => {
+    const data = await readEvent();
+    expect(data.people).toEqual(["Kristoff"]);
+    expect(data.surPlace).toEqual(["Léa", "p9"]);
+  });
+
+  it("serves surPlace as [] when the event has no service team", async () => {
+    const data = await readEvent(EVENT);
+    expect(data.surPlace).toEqual([]);
+  });
+
+  it("lists the staff hours and km per person by name", async () => {
+    const data = await readEvent();
+    expect(data.staff).toEqual([
+      { person: "Kristoff", hours: 4, km: 12 },
+      { person: "Léa", hours: 6, km: 0 },
+    ]);
+    expect((await readEvent(EVENT)).staff).toEqual([]);
+  });
+
+  it("serves invoicedAt, null when the event is not marked", async () => {
+    expect((await readEvent()).invoicedAt).toBe("2026-10-15");
+    expect((await readEvent(EVENT)).invoicedAt).toBeNull();
+  });
+
+  it("computes the food margin from the food revenue and the matière costs only", async () => {
+    const data = await readEvent();
+    expect(data.foodHtva).toBe(2750);
+    expect(data.totalHtva).toBe(3050);
+    expect(data.foodMargin).toBe(2650);
+    expect(data.cost).toEqual({ rawMaterial: 0, extras: 300, total: 300, actualCost: null });
+    expect(data.revenueLines).toEqual([{ label: "Service", amount: 300, vatRate: 21, kind: "service" }]);
   });
 });
 

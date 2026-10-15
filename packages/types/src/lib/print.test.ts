@@ -119,12 +119,13 @@ describe("weekPrintPages, whole week", () => {
     expect(rows.map((r) => [r.label, r.course])).toEqual([
       ["Poulet basquaise", "Plat"],
       ["Tarte citron", "Dessert"],
+      ["Sablés bretons", "Dessert"],
       ["Mini quiches", "Autre"],
-      ["Sablés bretons", "Autre"],
     ]);
     expect(rows[0]).toMatchObject({ kind: "recipe", done: false, portions: 10, initials: [] });
+    // Mignardises is an alias of Dessert, so a list carrying it changes nothing.
     const withMignardises = weekPrintPages(input({ events: [ev], courses: [...DEFAULT_COURSES, "Mignardises"] }));
-    expect(withMignardises[0].sections[0].blocks[0].rows.map((r) => r.course)).toEqual(["Plat", "Dessert", "Mignardises", "Autre"]);
+    expect(withMignardises[0].sections[0].blocks[0].rows.map((r) => r.course)).toEqual(["Plat", "Dessert", "Dessert", "Autre"]);
   });
 
   it("captions an event-day block with the delivery time and address", () => {

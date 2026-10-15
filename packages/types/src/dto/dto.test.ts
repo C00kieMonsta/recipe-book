@@ -15,6 +15,8 @@ import {
   addEventTaskSchema,
   createEventRequestSchema,
   eventRevenueLineSchema,
+  eventStaffEntrySchema,
+  eventStaffSchema,
   eventTaskSchema,
   patchEventLineSchema,
   patchEventTaskSchema,
@@ -246,6 +248,66 @@ describe("event schemas", () => {
     expect(eventRevenueLineSchema.safeParse({ label: "Livraison", amount: -1, vatRate: 21 }).success).toBe(false);
     expect(eventRevenueLineSchema.safeParse({ label: "Livraison", amount: 1, vatRate: 7 }).success).toBe(false);
     expect(eventRevenueLineSchema.safeParse({ label: "Livraison", amount: 1, vatRate: 21, kind: "x" }).success).toBe(false);
+  });
+  it("revenue line kind is one of the five and optional", () => {
+    const base = { label: "Boissons", amount: 120, vatRate: 21 };
+    expect(eventRevenueLineSchema.safeParse({ ...base, kind: "boissons" }).success).toBe(true);
+    expect(eventRevenueLineSchema.safeParse({ ...base, kind: "vin" }).success).toBe(false);
+    const r = eventRevenueLineSchema.safeParse(base);
+    expect(r.success).toBe(true);
+    if (r.success) expect("kind" in r.data).toBe(false);
+    expect(updateEventRequestSchema.safeParse({ revenueLines: [{ ...base, kind: "location_vaisselle" }] }).success).toBe(true);
+  });
+  it("staff entries are strict, bounded and unique per person", () => {
+    expect(eventStaffEntrySchema.safeParse({ personId: "kristoff", hours: 6, km: 12 }).success).toBe(true);
+    expect(eventStaffEntrySchema.safeParse({ personId: "kristoff", hours: -1 }).success).toBe(false);
+    expect(eventStaffEntrySchema.safeParse({ personId: "kristoff", hours: 201 }).success).toBe(false);
+    expect(eventStaffEntrySchema.safeParse({ personId: "kristoff", km: 5001 }).success).toBe(false);
+    expect(eventStaffEntrySchema.safeParse({ personId: "kristoff", hourlyRate: 18.123 }).success).toBe(false);
+    expect(eventStaffEntrySchema.safeParse({ personId: "kristoff", hourlyRate: 18, kmRate: 0.345 }).success).toBe(true);
+    expect(eventStaffEntrySchema.safeParse({ personId: "kristoff", kmRate: 11 }).success).toBe(false);
+    expect(eventStaffEntrySchema.safeParse({ personId: "", hours: 1 }).success).toBe(false);
+    expect(eventStaffEntrySchema.safeParse({ personId: "kristoff", role: "cuisine" }).success).toBe(false);
+    expect(eventStaffSchema.safeParse([{ personId: "kristoff", hours: 6 }, { personId: "kristoff", km: 12 }]).success).toBe(false);
+    expect(eventStaffSchema.safeParse(Array.from({ length: 31 }, (_, i) => ({ personId: `p${i}`, hours: 1 }))).success).toBe(false);
+    expect(eventStaffSchema.safeParse(Array.from({ length: 30 }, (_, i) => ({ personId: `p${i}`, hours: 1 }))).success).toBe(true);
+    const updated = updateEventRequestSchema.safeParse({ staff: [{ personId: "kristoff", hours: 6, km: 12 }] });
+    expect(updated.success).toBe(true);
+    if (updated.success) expect(updated.data.staff).toEqual([{ personId: "kristoff", hours: 6, km: 12 }]);
+    expect(updateEventRequestSchema.safeParse({ staff: [{ personId: "a" }, { personId: "a" }] }).success).toBe(false);
+    const created = createEventRequestSchema.safeParse({ name: "x", date: "2026-10-18", guestCount: 1, staff: [{ personId: "kristoff", hours: 6 }] });
+    expect(created.success).toBe(true);
+    if (created.success) expect(created.data.staff).toEqual([{ personId: "kristoff", hours: 6 }]);
+    const none = updateEventRequestSchema.safeParse({ name: "y" });
+    expect(none.success).toBe(true);
+    if (none.success) expect(none.data.staff).toBeUndefined();
+  });
+  it("serviceTeam is a list of at most ten person ids", () => {
+    expect(updateEventRequestSchema.safeParse({ serviceTeam: [] }).success).toBe(true);
+    expect(updateEventRequestSchema.safeParse({ serviceTeam: ["amelie", "kristoff"] }).success).toBe(true);
+    expect(updateEventRequestSchema.safeParse({ serviceTeam: Array.from({ length: 11 }, (_, i) => `p${i}`) }).success).toBe(false);
+    expect(createEventRequestSchema.safeParse({ name: "x", date: "2026-10-18", guestCount: 1, serviceTeam: ["amelie"] }).success).toBe(true);
+    expect(updateEventRequestSchema.safeParse({ serviceTeam: [""] }).success).toBe(false);
+  });
+  it("invoicedAt and invoiceRef are update-only, nullable, and bounded", () => {
+    const marked = updateEventRequestSchema.safeParse({ invoicedAt: "2026-10-15" });
+    expect(marked.success).toBe(true);
+    if (marked.success) expect(marked.data.invoicedAt).toBe("2026-10-15");
+    const cleared = updateEventRequestSchema.safeParse({ invoicedAt: null, invoiceRef: null });
+    expect(cleared.success).toBe(true);
+    if (cleared.success) expect(cleared.data).toEqual({ invoicedAt: null, invoiceRef: null });
+    expect(updateEventRequestSchema.safeParse({ invoicedAt: "15/10/2026" }).success).toBe(false);
+    expect(updateEventRequestSchema.safeParse({ invoicedAt: "2026-02-30" }).success).toBe(false);
+    const created = createEventRequestSchema.safeParse({ name: "x", date: "2026-10-18", guestCount: 1, invoicedAt: "2026-10-15", invoiceRef: "F-1" });
+    expect(created.success).toBe(true);
+    if (created.success) {
+      expect("invoicedAt" in created.data).toBe(false);
+      expect("invoiceRef" in created.data).toBe(false);
+    }
+    expect(updateEventRequestSchema.safeParse({ invoiceRef: "x".repeat(41) }).success).toBe(false);
+    const ref = updateEventRequestSchema.safeParse({ invoiceRef: ` ${"x".repeat(40)} ` });
+    expect(ref.success).toBe(true);
+    if (ref.success) expect(ref.data.invoiceRef).toBe("x".repeat(40));
   });
   it("attachments in a body are stripped, rename is strict", () => {
     const attachments = [{ attachmentId: "a", key: "k", name: "n", contentType: "application/pdf", size: 1, addedAt: "x" }];

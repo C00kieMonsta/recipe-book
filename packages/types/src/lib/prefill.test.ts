@@ -223,6 +223,16 @@ describe("prefillForClientMonth", () => {
     expect(createLedgerEntrySchema.safeParse(p.entry).success).toBe(true);
   });
 
+  it("leaves a marked event out of the month sweep", () => {
+    const events = [
+      event({ eventId: "s1", date: "2026-09-01", clientId: "hoona", guestCount: 30, sellingPricePerGuest: 14 }),
+      event({ eventId: "s2", date: "2026-09-08", clientId: "hoona", guestCount: 30, sellingPricePerGuest: 14, invoicedAt: "2026-09-10" }),
+    ];
+    const r = prefillForClientMonth(hoona, events, [], settings, "2026-09");
+    expect(r.events.map((e) => e.eventId)).toEqual(["s1"]);
+    expect(r.entry.htva).toBe(420);
+  });
+
   it("is empty when everything is invoiced", () => {
     const covered = entries.concat(entry({ date: "2026-10-31", htva: 1, kind: "comptoir", eventIds: ["sep-15", "oct-3", "oct-10"] }));
     const p = prefillForClientMonth(hoona, events, covered, settings, "2026-10");
@@ -293,6 +303,17 @@ describe("billing helpers", () => {
     expect(eventBillingStatus("ev", [{ ...acompte, paid: false }, { ...facture, paid: true }])).toBe("facture");
     expect(eventBillingStatus("ev", [{ ...facture, kind: "comptoir", paid: true }])).toBe("paye");
     expect(eventBillingStatus("ev", [{ ...facture, kind: "commission" }])).toBeUndefined();
+  });
+
+  it("reads a marked event as facture unless the ledger says acompte_recu or paye", () => {
+    const marked = { invoicedAt: "2026-10-15" };
+    expect(eventBillingStatus("ev", [], marked)).toBe("facture");
+    expect(eventBillingStatus("ev", [], { invoicedAt: undefined })).toBeUndefined();
+    expect(eventBillingStatus("ev", [{ ...facture, paid: true }], marked)).toBe("paye");
+    expect(eventBillingStatus("ev", [facture], marked)).toBe("facture");
+    expect(eventBillingStatus("ev", [acompte], marked)).toBe("acompte_recu");
+    expect(eventBillingStatus("ev", [{ ...facture, kind: "commission" }], marked)).toBe("facture");
+    expect(eventBillingStatus("other", [facture], marked)).toBe("facture");
   });
 
   it("sums deposits over several events once each", () => {

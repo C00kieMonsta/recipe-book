@@ -100,7 +100,16 @@ describe("quoteGroups", () => {
       marginPct: 69.99,
     });
     expect(b.lines.map((l) => l.cost)).toEqual([0.65, 2]);
-    expect(out.totals).toMatchObject({ guests: 51, cost: 72.65, foodHtva: 2758.83, extrasHtva: 0, htva: 2758.83 });
+    expect(out.totals).toMatchObject({
+      guests: 51,
+      cost: 72.65,
+      foodHtva: 2758.83,
+      extrasHtva: 0,
+      htva: 2758.83,
+      marginHtva: 2686.18,
+      marginPct: 97.37,
+      resultHtva: 2686.18,
+    });
     expect(out.totals.vatByRate).toEqual({ "12": 331.06 });
     expect(out.totals.tvac).toBe(3089.89);
     expect(out.notes).toHaveLength(1);
@@ -119,8 +128,9 @@ describe("quoteGroups", () => {
       htva: 2900,
       vatByRate: { "12": 330, "21": 31.5 },
       tvac: 3261.5,
-      marginHtva: 2830,
-      marginPct: 97.59,
+      marginHtva: 2680,
+      marginPct: 97.45,
+      resultHtva: 2830,
     });
     expect(out.notes).toEqual([]);
   });
@@ -168,11 +178,11 @@ describe("quoteGroups", () => {
   it("gives a 100 % margin with a given price and cost 0, and 0 % when the suggested price is 0", () => {
     const given = quoteGroups(input({ groups: [{ label: "Eau", guests: 5, lines: [{ recipeId: "eau" }], pricePerGuest: 10 }] }));
     expect(given.groups[0]).toMatchObject({ cost: 0, costPerGuest: 0, revenueHtva: 50, marginHtva: 50, marginPct: 100 });
-    expect(given.totals).toMatchObject({ cost: 0, htva: 50, marginHtva: 50, marginPct: 100 });
+    expect(given.totals).toMatchObject({ cost: 0, htva: 50, marginHtva: 50, marginPct: 100, resultHtva: 50 });
 
     const suggested = quoteGroups(input({ groups: [{ label: "Eau", guests: 5, lines: [{ recipeId: "eau" }] }] }));
     expect(suggested.groups[0]).toMatchObject({ pricePerGuest: 0, priceSource: "suggéré", revenueHtva: 0, marginHtva: 0, marginPct: 0 });
-    expect(suggested.totals).toMatchObject({ htva: 0, tvac: 0, marginPct: 0 });
+    expect(suggested.totals).toMatchObject({ htva: 0, tvac: 0, marginHtva: 0, marginPct: 0, resultHtva: 0 });
     expect(Number.isNaN(suggested.totals.marginPct)).toBe(false);
   });
 

@@ -95,8 +95,8 @@ await check("a2 settings patch then get", async (req) => {
   if (p.status !== 200) return false;
   const r = await req("GET", "/api/admin/settings");
   return r.body.objectives?.["2026"]?.annualRevenue === 160000 && r.body.objectives["2026"].monthsActive === 10
-    // The legacy five-item list is served as the six defaults plus Mignardises.
-    && r.body.courses.length === 7 && r.body.prestationTypes.length === 7;
+    // The legacy five-item list is served as the six defaults.
+    && r.body.courses.length === 6 && r.body.prestationTypes.length === 7;
 });
 
 // b. Ingredients and recipes

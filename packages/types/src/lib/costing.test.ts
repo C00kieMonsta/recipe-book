@@ -7,7 +7,10 @@ import {
   calcIngredientLineCost,
   calcLinesRawMaterial,
   calcRecipeCost,
+  eventResult,
   extrasByKind,
+  foodCostOf,
+  foodMargin,
   rawMaterialOf,
   scaleQty,
   scaleQtyNumber,
@@ -246,5 +249,27 @@ describe("legacy ingredient data", () => {
     const snap = buildCostSnapshot(event, new Map([["r1", Number.NaN]]), new Map([["r1", 10]]));
     expect(snap.lines[0].unitCost).toBe(0);
     expect(snap.rawMaterial).toBe(0);
+  });
+});
+
+describe("food margin", () => {
+  it("foodCostOf adds the matière extras only", () => {
+    const extras = { matiere: 12, personnel: 20, location: 30, transport: 40, autre: 6 };
+    expect(foodCostOf({ rawMaterial: 115, extras })).toBe(127);
+    expect(foodCostOf({ rawMaterial: 115, extras: { ...extras, matiere: 0 } })).toBe(115);
+  });
+
+  it("foodMargin(2000, 650) gives 1350 and 67,5 %", () => {
+    expect(foodMargin(2000, 650)).toEqual({ foodHtva: 2000, foodCost: 650, margin: 1350, marginPct: 67.5 });
+  });
+
+  it("foodMargin(0, 10) keeps marginPct at 0", () => {
+    const m = foodMargin(0, 10);
+    expect(m.margin).toBe(-10);
+    expect(m.marginPct).toBe(0);
+  });
+
+  it("eventResult(1700, 770, 184) gives 746", () => {
+    expect(eventResult(1700, 770, 184)).toBe(746);
   });
 });
