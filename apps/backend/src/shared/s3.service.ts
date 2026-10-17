@@ -1,11 +1,15 @@
 import { Injectable } from "@nestjs/common";
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { ConfigService } from "../config/config.service";
 
 const PRESIGN_EXPIRES = 3600;
 
 export type PresignOptions = { filename?: string; inline?: boolean; expiresIn?: number };
+
+export type S3ObjectSummary = { key: string; size: number; lastModified?: Date };
+
+export type S3ObjectStream = { body: AsyncIterable<Uint8Array>; contentType: string; contentLength?: number; lastModified?: Date };
 
 @Injectable()
 export class S3Service {
@@ -34,6 +38,34 @@ export class S3Service {
     }));
     const body = Buffer.from(await res.Body!.transformToByteArray());
     return { body, contentType: res.ContentType ?? "application/octet-stream", metadata: res.Metadata };
+  }
+
+  // The body as chunks, for copying an object somewhere without holding it whole.
+  async stream(key: string): Promise<S3ObjectStream> {
+    const res = await this.client.send(new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+    }));
+    return {
+      body: res.Body as unknown as AsyncIterable<Uint8Array>,
+      contentType: res.ContentType ?? "application/octet-stream",
+      contentLength: res.ContentLength,
+      lastModified: res.LastModified,
+    };
+  }
+
+  // Every key in the bucket, a thousand per page. Needs s3:ListBucket on the bucket itself.
+  async listAll(): Promise<S3ObjectSummary[]> {
+    const objects: S3ObjectSummary[] = [];
+    let cursor: string | undefined;
+    do {
+      const res = await this.client.send(new ListObjectsV2Command({ Bucket: this.bucket, ContinuationToken: cursor }));
+      for (const object of res.Contents ?? []) {
+        if (object.Key) objects.push({ key: object.Key, size: object.Size ?? 0, lastModified: object.LastModified });
+      }
+      cursor = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (cursor);
+    return objects;
   }
 
   async delete(key: string): Promise<void> {

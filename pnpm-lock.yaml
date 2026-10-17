@@ -108,6 +108,9 @@ importers:
       dotenv:
         specifier: ^16.4.0
         version: 16.6.1
+      fflate:
+        specifier: 0.8.2
+        version: 0.8.2
       jsonwebtoken:
         specifier: 9.0.3
         version: 9.0.3

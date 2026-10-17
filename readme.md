@@ -89,7 +89,7 @@ The SPA is a pure client-side app. It authenticates with a JWT from `POST /api/a
 | `/events` | Event list with filters, sort and search; « Liste de courses » opens the events picker that builds one grocery list from the ticked events |
 | `/events/:id` | Event detail: cost/margin, PDF recipe export |
 | `/grocery-list` | Grocery list: check items, track stock, save to DB |
-| `/settings` | App settings |
+| `/settings` | App settings; the Société tab also downloads a full backup (see « Backup and restore ») |
 
 **Build output:** `apps/frontend/dist/` → deployed to S3 + CloudFront.
 
@@ -126,6 +126,7 @@ All routes are under `/api/admin/*` and protected by a JWT `AdminGuard`. The API
 | `OffersModule` | `/admin/offers` | `ta-settings-{stage}` (item `settingsId = "offers"`) |
 | `OfferDocumentsModule` | `/admin/offer-documents` | `ta-settings-{stage}` (one item per document, `settingsId = "document:<id>"`) |
 | `AuthModule` | `/admin/auth/login`, `/admin/auth/refresh` | none (credentials in env) |
+| `BackupModule` | `/admin/backup` | every table above, plus every object of the bucket |
 
 **DynamoDB access pattern:** every module uses a shared `DdbService` that wraps the AWS DocumentClient. All tables use a single string partition key (e.g. `ingredientId`, `recipeId`) with no sort key and pay-per-request billing.
 
@@ -257,6 +258,41 @@ One-off and safe to re-run. The import creates the seven 2026 brochures ([docs/r
 
 2. Dalia uploads her logo and banner in Paramètres › Société (JPEG or PNG, 5 Mo max; the banner prints in 4:1, 1600 × 400 px advised) and fills in the phone, e-mail, website and accent colour there. The images are stored in the S3 bucket under `brand/logo.*` and `brand/banner.*`. Her real brand images are never committed; `scripts/fixtures/brand/` holds placeholders for the local seed only.
 
+### After the deploy that adds the backup
+
+One-off and safe to re-run. The download lists the bucket, and the instance role only had the three object actions:
+
+```bash
+./scripts/grant-backup-permissions.sh production la-table-amelie-uploads-prod eu-north-1
+```
+
+Until it runs, « Télécharger une sauvegarde » answers 503 with the same hint. No restart: the instance sees the new policy within minutes. `scripts/create-ec2.sh` grants it on a fresh instance.
+
+### Backup and restore
+
+Paramètres › Société › Sauvegarde downloads one zip with everything the app owns, for a copy kept outside AWS or a move to another account. `POST /admin/backup` (admin token) lists the bucket, so a missing permission is an error the page can show, and answers the counts plus a two-minute ticket; `GET /admin/backup?token=…` streams the archive with that ticket, since a browser download cannot carry the `Authorization` header. The ticket is signed with `JWT_SECRET` like a session token but carries `scope: "backup"`, which `AdminGuard` refuses, so it opens one download and nothing else. The archive is streamed as it is built (table JSON deflated, bucket objects stored as is), nothing is spooled on the instance, and a read that fails part-way breaks the download rather than ending a short archive.
+
+| Entry | Content |
+|---|---|
+| `manifest.json` | `format`, `version`, `exportedAt`, `region`; one row per table (`name`, `table`, `keyAttribute`, `items`, `file`); the bucket name, object count and byte total |
+| `dynamodb/<name>.json` | every item of the table as the Document Client reads it (plain JSON), one file per configured table: `ingredients`, `recipes`, `settings` (which also holds the offers and the offer documents), `events`, `groceryLists`, `clients`, `ledger` |
+| `s3-objects.json` | one row per object: `key`, `size`, `contentType`, `lastModified`, `file` |
+| `s3/<key>` | the object itself: `brand/`, `recipe-photos/`, `event-files/<eventId>/`, `ledger-inbox/` |
+
+To restore into another account:
+
+1. Create the seven tables (one string partition key each, named in the manifest's `keyAttribute`; `scripts/dynamodb-local-tables.sh` shows the `create-table` call) and an empty bucket, then store the names in SSM as in « Deployment ».
+2. Unzip the archive and run the restore. It reads the same `*_TABLE`, `S3_BUCKET`, `AWS_REGION` and `DDB_ENDPOINT` variables as the API, so the new account's `apps/backend/.env` works as is:
+
+   ```bash
+   set -a; . apps/backend/.env; set +a
+   node scripts/restore-backup.mjs ~/Downloads/la-table-amelie-2026-10-17-1030            # dry run
+   node scripts/restore-backup.mjs ~/Downloads/la-table-amelie-2026-10-17-1030 --apply
+   ```
+
+   It refuses a table or bucket that already holds data unless `FORCE=1`, writes items in batches of 25 and uploads each object with its content type. Ids and keys are unchanged, so the restored app finds the same recipes, photos and attachments.
+3. Point the API at the new tables and bucket (the SSM parameters, then a deploy or a `.env` edit and `pm2 restart`) and log in. The admin credentials and `JWT_SECRET` are not in the archive; they stay in SSM.
+
 ### Assistant
 
 The Assistant (chat sheet, [docs/redesign/08-assistant.md](docs/redesign/08-assistant.md)) needs an OpenAI key. The key never goes in the repo, the deploy template, `.env` on the server or the logs. The API reads it from one SSM SecureString through the instance role, cached and re-read every 15 minutes.
@@ -333,6 +369,8 @@ The backend connects to real AWS DynamoDB by default. To use DynamoDB Local inst
 | `scripts/merge-categories.mjs` | Persist the merged recipe category and the category list; dry run without `--apply` |
 | `scripts/migrate-categories-2026-10.mjs` | Rewrite Zakouskis and Mignardises into Apéritif and Dessert on recipes, event lines, offers, client templates and the category list; dry run without `--apply` |
 | `scripts/list-grocery-lists.mjs` | Read-only: one line per grocery list with its events and range, and the count of lists without `eventIds` |
+| `scripts/grant-backup-permissions.sh` | Add `s3:ListBucket` to the instance role so the backup download can list the bucket; safe to re-run |
+| `scripts/restore-backup.mjs` | Load an extracted backup into the tables and bucket named in the environment; dry run without `--apply`, refuses non-empty targets unless `FORCE=1` |
 
 ## Provisioning the clients and ledger tables on an existing deployment
 

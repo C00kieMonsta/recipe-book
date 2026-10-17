@@ -12,10 +12,11 @@ import { OffersModule } from "./offers/offers.module";
 import { OfferDocumentsModule } from "./offer-documents/offer-documents.module";
 import { AuthModule } from "./auth/auth.module";
 import { AssistantModule } from "./assistant/assistant.module";
+import { BackupModule } from "./backup/backup.module";
 import { HealthController } from "./health.controller";
 
 @Module({
-  imports: [ConfigModule, SharedModule, IngredientsModule, RecipesModule, SettingsModule, EventsModule, GroceryListsModule, ClientsModule, LedgerModule, OffersModule, OfferDocumentsModule, AuthModule, AssistantModule],
+  imports: [ConfigModule, SharedModule, IngredientsModule, RecipesModule, SettingsModule, EventsModule, GroceryListsModule, ClientsModule, LedgerModule, OffersModule, OfferDocumentsModule, AuthModule, AssistantModule, BackupModule],
   controllers: [HealthController],
 })
 export class AppModule {}

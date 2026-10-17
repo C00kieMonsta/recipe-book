@@ -204,6 +204,15 @@ export interface HealthResponse {
   assistant: boolean;
 }
 
+// Answer of POST /admin/backup: the counts and the two-minute ticket the download URL carries.
+export interface BackupTicket {
+  token: string;
+  expiresAt: string;
+  tables: number;
+  objects: number;
+  bytes: number;
+}
+
 export interface CreateGroceryListRequest {
   title: string;
   items?: GroceryList["items"];
@@ -260,6 +269,11 @@ export const api = {
       remove: withInvalidate(["settings"], (kind: BrandKind) => request<AppSettings>(`/admin/settings/brand/${kind}`, { method: "DELETE" })),
       url: (kind: BrandKind, version: string) => `${API_BASE}/admin/settings/brand/${kind}?v=${encodeURIComponent(version)}`,
     },
+  },
+  // A navigation cannot send the Authorization header, so prepare answers a short ticket the download URL carries instead.
+  backup: {
+    prepare: () => request<BackupTicket>("/admin/backup", { method: "POST" }),
+    url: (token: string) => `${API_BASE}/admin/backup?token=${encodeURIComponent(token)}`,
   },
   events: {
     list: cached("events", () => request<AppEvent[]>("/admin/events")),

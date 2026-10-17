@@ -134,6 +134,10 @@ if ! aws_cmd iam get-role --role-name "$ROLE_NAME" &>/dev/null; then
         \"Effect\": \"Allow\",
         \"Action\": [\"s3:PutObject\", \"s3:GetObject\", \"s3:DeleteObject\"],
         \"Resource\": \"arn:aws:s3:::la-table-amelie-uploads-prod/*\"
+      }, {
+        \"Effect\": \"Allow\",
+        \"Action\": [\"s3:ListBucket\"],
+        \"Resource\": \"arn:aws:s3:::la-table-amelie-uploads-prod\"
       }]
     }"
 

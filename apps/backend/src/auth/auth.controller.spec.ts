@@ -142,4 +142,9 @@ describe("AdminGuard", () => {
   it("rejects a missing header", () => {
     expect(() => guard.canActivate(contextWith())).toThrow(UnauthorizedException);
   });
+
+  it("rejects a backup ticket, which carries a scope", () => {
+    const ticket = sign({ scope: "backup" }, JWT_SECRET, { expiresIn: 120 });
+    expect(() => guard.canActivate(contextWith(ticket))).toThrow(UnauthorizedException);
+  });
 });

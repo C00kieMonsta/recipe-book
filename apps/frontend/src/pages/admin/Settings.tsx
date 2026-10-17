@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowDown, ArrowUp, GripVertical, Link2, Plus, Save, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Download, GripVertical, Link2, Plus, Save, Trash2, X } from "lucide-react";
 import type {
   AppEvent,
   AppSettings,
@@ -32,7 +32,7 @@ import {
   slugifyPersonId,
   sumMoney,
 } from "@packages/types";
-import { api, ApiError, invalidate, type HealthResponse } from "@/lib/api";
+import { api, ApiError, errorReason, invalidate, type HealthResponse } from "@/lib/api";
 import { supplierColor } from "@/lib/recipe-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { useTopTitle } from "@/components/admin/AdminLayout";
@@ -245,6 +245,15 @@ function parsePastedCharges(text: string): FixedCharge[] {
   return rows;
 }
 
+// 850 ko, 12,5 Mo, 1,2 Go.
+function fmtBytes(bytes: number): string {
+  const units: [number, string][] = [[1e9, "Go"], [1e6, "Mo"], [1e3, "ko"]];
+  for (const [size, unit] of units) {
+    if (bytes >= size) return `${(bytes / size).toLocaleString("fr-BE", { maximumFractionDigits: 1 })} ${unit}`;
+  }
+  return `${bytes} o`;
+}
+
 function moveItem<T>(list: T[], from: number, to: number): T[] {
   if (to < 0 || to >= list.length) return list;
   const next = [...list];
@@ -449,6 +458,7 @@ export default function Settings() {
   const [newPersonName, setNewPersonName] = useState<string | null>(null);
   const [chargeSheet, setChargeSheet] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthResponse | null | undefined>(undefined);
+  const [backingUp, setBackingUp] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -1325,6 +1335,23 @@ export default function Settings() {
     setDraft((d) => (d ? { ...d, brandLogoKey: s.brandLogoKey, brandBannerKey: s.brandBannerKey, updatedAt: s.updatedAt } : d));
   };
 
+  // The ticket is minted with the session token; the download itself is a navigation the browser shows progress for.
+  const downloadBackup = async () => {
+    setBackingUp(true);
+    try {
+      const ticket = await api.backup.prepare();
+      window.location.assign(api.backup.url(ticket.token));
+      toast({
+        title: "Sauvegarde en cours de téléchargement",
+        description: `${ticket.tables} tables · ${ticket.objects} fichier${ticket.objects > 1 ? "s" : ""} · ${fmtBytes(ticket.bytes)}`,
+      });
+    } catch (e) {
+      toast({ title: errorReason(e) || "Sauvegarde impossible", variant: "destructive" });
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
   const societe = (
     <>
       <Section title="Société">
@@ -1371,6 +1398,19 @@ export default function Settings() {
             onSave={(v) => patch((d) => ({ ...d, invoicing: v === "externe" ? "externe" : "app" }))}
           />
         </PropertyList>
+      </Section>
+
+      <Section title="Sauvegarde">
+        <p className="text-sm text-muted-foreground">
+          Une archive zip de toutes les données : chaque table en JSON (ingrédients, recettes, événements, listes de courses, clients, journal,
+          paramètres, offres et documents) et chaque fichier du bucket (photos, pièces jointes, factures déposées, logo et bannière).
+          À garder hors d'AWS ; elle permet de remonter l'application dans un autre compte (readme, « Backup and restore »).
+        </p>
+        <div className="mt-3">
+          <Button variant="default" size="md" icon={<Download />} onClick={() => { void downloadBackup(); }} disabled={backingUp}>
+            {backingUp ? "Préparation…" : "Télécharger une sauvegarde"}
+          </Button>
+        </div>
       </Section>
 
       <Section title="À propos">
