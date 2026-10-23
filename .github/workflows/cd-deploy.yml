@@ -109,13 +109,16 @@ jobs:
       - name: Build backend
         run: pnpm --filter @apps/backend build
 
+      - name: Audit backend production dependencies
+        run: pnpm audit:backend
+
       - name: Upload dist to EC2
         uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "apps/backend/dist/,apps/backend/package.json,packages/types/dist/,packages/types/package.json,package.json,pnpm-lock.yaml,pnpm-workspace.yaml"
+          source: "apps/backend/dist/,apps/backend/package.json,apps/frontend/package.json,packages/types/dist/,packages/types/package.json,packages/utils/package.json,packages/ui/package.json,infrastructure/package.json,package.json,pnpm-lock.yaml,pnpm-workspace.yaml,.nvmrc"
           target: "/home/ec2-user/la-table-amelie/"
           tar_dereference: true
           overwrite: true
@@ -132,6 +135,9 @@ jobs:
             REGION="eu-north-1"
             PREFIX="/la-table-amelie/production"
             APP_DIR="/home/ec2-user/la-table-amelie"
+
+            cd "${APP_DIR}"
+            node -e 'const v = process.versions.node.split(".").map(Number); if (v[0] !== 24 || v[1] < 22 || (v[1] === 22 && v[2] < 1)) throw new Error("Upgrade the EC2 Node.js runtime to 24.22.1 or a newer 24.x release before deploying");'
 
             echo "Refreshing secrets from SSM..."
             ssm_get() {
@@ -188,7 +194,7 @@ jobs:
             cd "${APP_DIR}"
             rm -rf node_modules apps/backend/node_modules packages/types/node_modules
             export HUSKY=0
-            pnpm install --prod --no-frozen-lockfile --ignore-scripts --filter @apps/backend...
+            pnpm install --prod --frozen-lockfile --ignore-scripts --filter @apps/backend...
 
             echo "Restarting backend with PM2..."
             pm2 restart la-table-amelie-api || pm2 start ${APP_DIR}/apps/backend/dist/main.js \
@@ -199,7 +205,7 @@ jobs:
 
             echo "Health check..."
             sleep 5
-            curl -f http://localhost:3001/health || (echo "Health check failed, PM2 logs:" && pm2 logs la-table-amelie-api --lines 20 --nostream)
+            curl --fail --retry 5 --retry-delay 2 --retry-connrefused http://localhost:3001/health
 
   # ─── Summary ────────────────────────────────────────────────────────────
   deployment-complete:

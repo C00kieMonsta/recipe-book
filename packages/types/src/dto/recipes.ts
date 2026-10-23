@@ -40,7 +40,16 @@ export const createRecipeRequestSchema = z.object({
 });
 export type CreateRecipeRequest = z.infer<typeof createRecipeRequestSchema>;
 
-export const updateRecipeRequestSchema = createRecipeRequestSchema.partial();
+// Zod 4 applies defaults inside optional fields. PATCH must keep omitted fields absent.
+export const updateRecipeRequestSchema = createRecipeRequestSchema.partial().extend({
+  type: createRecipeRequestSchema.shape.type.removeDefault().optional(),
+  portions: createRecipeRequestSchema.shape.portions.removeDefault().optional(),
+  portionWeight: createRecipeRequestSchema.shape.portionWeight.removeDefault().optional(),
+  techniques: createRecipeRequestSchema.shape.techniques.removeDefault().optional(),
+  ingredients: createRecipeRequestSchema.shape.ingredients.removeDefault().optional(),
+  photos: createRecipeRequestSchema.shape.photos.removeDefault().optional(),
+  pricing: createRecipeRequestSchema.shape.pricing.removeDefault().optional(),
+});
 export type UpdateRecipeRequest = z.infer<typeof updateRecipeRequestSchema>;
 
 export const importRecipeIngredientSchema = z

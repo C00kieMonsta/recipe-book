@@ -27,14 +27,14 @@ log "Installing system packages..."
 dnf update -y
 dnf install -y git nginx
 
-# ── Node.js 20 via NodeSource ─────────────────────────────────────────────
-log "Installing Node.js 20..."
-curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+# ── Node.js 24 via NodeSource ─────────────────────────────────────────────
+log "Installing Node.js 24..."
+curl -fsSL https://rpm.nodesource.com/setup_24.x | bash -
 dnf install -y nodejs
 
 # ── pnpm ─────────────────────────────────────────────────────────────────
 log "Installing pnpm..."
-npm install -g pnpm@latest
+npm install -g pnpm@10.8.0
 
 # ── PM2 ──────────────────────────────────────────────────────────────────
 log "Installing PM2..."

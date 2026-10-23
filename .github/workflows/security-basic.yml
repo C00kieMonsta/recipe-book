@@ -34,21 +34,15 @@ jobs:
       - name: Setup build environment
         uses: ./.github/actions/setup-build-env
 
-      - name: Run npm audit
-        run: |
-          echo "🔍 Checking for vulnerabilities in root dependencies..."
-          npm audit --audit-level=moderate || true
+      - name: Test dependency audit gate
+        run: node --test scripts/audit-backend.test.mjs
 
-          echo "🔍 Checking for vulnerabilities in backend dependencies..."
-          cd apps/backend && npm audit --audit-level=moderate || true && cd ../..
+      - name: Audit backend production dependencies
+        run: pnpm audit:backend
 
-          echo "🔍 Checking for vulnerabilities in frontend dependencies..."
-          cd apps/frontend && npm audit --audit-level=moderate || true && cd ../..
-
-      - name: Run pnpm audit
-        run: |
-          echo "🔍 Running pnpm audit for all packages..."
-          pnpm audit --audit-level=moderate || true
+      - name: Audit remaining workspace dependencies
+        continue-on-error: true
+        run: pnpm audit --audit-level=moderate
 
       - name: Check for outdated dependencies
         run: |
@@ -72,13 +66,3 @@ jobs:
           head: ${{ github.event.pull_request.head.sha || 'HEAD' }}
           extra_args: --only-verified
 
-      - name: Security Scan Summary
-        run: |
-          echo "🔒 Basic security scan completed!"
-          echo "📊 Results:"
-          echo "  - Dependency audit: ✅"
-          echo "  - Secret detection: ✅"
-          echo "  - Outdated packages check: ✅"
-          echo ""
-          echo "📝 Note: This is a basic security scan without CodeQL analysis."
-          echo "   For full security analysis, use the main security workflow."

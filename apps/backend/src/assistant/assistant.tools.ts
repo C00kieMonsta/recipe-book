@@ -168,21 +168,19 @@ export function wrapToolData(data: unknown, limit = TOOL_RESULT_MAX): string {
 function issueFr(issue: ZodIssue): string {
   switch (issue.code) {
     case "invalid_type":
-      return issue.received === "undefined" ? "champ requis" : `type attendu ${issue.expected}, reçu ${issue.received}`;
+      return issue.input === undefined ? "champ requis" : `type attendu ${issue.expected}`;
     case "too_small":
-      if (issue.type === "string") return issue.minimum === 1 ? "ne peut pas être vide" : `au moins ${issue.minimum} caractères`;
-      if (issue.type === "array") return `au moins ${issue.minimum} éléments`;
+      if (issue.origin === "string") return issue.minimum === 1 ? "ne peut pas être vide" : `au moins ${issue.minimum} caractères`;
+      if (issue.origin === "array") return `au moins ${issue.minimum} éléments`;
       return `doit être ${issue.inclusive ? "au moins" : "supérieur à"} ${issue.minimum}`;
     case "too_big":
-      if (issue.type === "string") return `au plus ${issue.maximum} caractères`;
-      if (issue.type === "array") return `au plus ${issue.maximum} éléments`;
+      if (issue.origin === "string") return `au plus ${issue.maximum} caractères`;
+      if (issue.origin === "array") return `au plus ${issue.maximum} éléments`;
       return `doit être ${issue.inclusive ? "au plus" : "inférieur à"} ${issue.maximum}`;
-    case "invalid_enum_value":
-      return `valeur attendue parmi ${issue.options.join(", ")}`;
+    case "invalid_value":
+      return `valeur attendue parmi ${issue.values.join(", ")}`;
     case "unrecognized_keys":
       return `champs inconnus : ${issue.keys.join(", ")}`;
-    case "invalid_union_discriminator":
-      return `valeur attendue parmi ${issue.options.join(", ")}`;
     default:
       return issue.message;
   }
@@ -528,7 +526,7 @@ export class AssistantTools {
     };
 
     for (const raw of actions) {
-      const parsed = proposedActionSchema.safeParse(raw);
+      const parsed = proposedActionSchema.safeParse(raw, { reportInput: true });
       if (!parsed.success) {
         results.push({ id: String(raw.id ?? "?"), ok: false, kind: raw.kind, error: issuesFr(parsed.error) });
         continue;
@@ -1259,7 +1257,7 @@ export class AssistantTools {
 
   private propose(turn: TurnState, kind: ProposedActionKind, fields: Args, summary: unknown, extra: Args = {}): ToolResult {
     const candidate = { kind, id: "pending", summary: typeof summary === "string" ? summary.trim() : "", ...fields };
-    const parsed = proposedActionSchema.safeParse(candidate);
+    const parsed = proposedActionSchema.safeParse(candidate, { reportInput: true });
     if (!parsed.success) return this.refuse(turn, `propose_${kind}`, issuesFr(parsed.error));
     // Only a registered proposal takes an id, so the ids count what the user will see.
     const action: ProposedAction = { ...parsed.data, id: turn.nextActionId() };

@@ -123,6 +123,11 @@ export type CreateEventRequest = z.infer<typeof createEventRequestSchema>;
 export const updateEventRequestSchema = eventFieldsSchema
   .partial()
   .extend({
+    recipes: eventFieldsSchema.shape.recipes.removeDefault().optional(),
+    tasks: eventFieldsSchema.shape.tasks.removeDefault().optional(),
+    extraCosts: eventFieldsSchema.shape.extraCosts.removeDefault().optional(),
+    sellingPricePerGuest: eventFieldsSchema.shape.sellingPricePerGuest.removeDefault().optional(),
+    status: eventFieldsSchema.shape.status.removeDefault().optional(),
     contactName: z.string().trim().nullable().optional(),
     contactPhone: z.string().trim().nullable().optional(),
     contactEmail: z.string().trim().nullable().optional(),

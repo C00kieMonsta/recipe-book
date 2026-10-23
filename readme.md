@@ -100,7 +100,7 @@ The SPA is a pure client-side app. It authenticates with a JWT from `POST /api/a
 | Concern | Choice |
 |---|---|
 | Framework | NestJS 10 |
-| Runtime | Node.js 20 |
+| Runtime | Node.js 24.22.1 or newer 24.x (see `.nvmrc`) |
 | Database | AWS DynamoDB (Document Client) |
 | Auth | JWT (HS256) + bcrypt password hashing |
 | Validation | Zod (schemas from `@packages/types`) |

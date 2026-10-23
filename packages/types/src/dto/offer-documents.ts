@@ -135,6 +135,11 @@ export type CreateOfferDocumentRequest = z.infer<typeof createOfferDocumentSchem
 export const updateOfferDocumentSchema = documentFieldsSchema
   .partial()
   .extend({
+    prestationLabel: documentFieldsSchema.shape.prestationLabel.removeDefault().optional(),
+    sections: documentFieldsSchema.shape.sections.removeDefault().optional(),
+    services: documentFieldsSchema.shape.services.removeDefault().optional(),
+    conditions: documentFieldsSchema.shape.conditions.removeDefault().optional(),
+    vatLines: documentFieldsSchema.shape.vatLines.removeDefault().optional(),
     season: docSeason.nullable().optional(),
     prestationType: z.string().min(1).nullable().optional(),
     minGuests: z.number().int().positive().max(5000).nullable().optional(),

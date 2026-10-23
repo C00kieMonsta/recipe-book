@@ -49,6 +49,8 @@ export type CreateClientRequest = z.infer<typeof createClientSchema>;
 export const updateClientSchema = createClientSchema
   .partial()
   .extend({
+    templates: createClientSchema.shape.templates.removeDefault().optional(),
+    active: createClientSchema.shape.active.removeDefault().optional(),
     kind: createClientSchema.shape.kind.nullable(),
     contactName: createClientSchema.shape.contactName.nullable(),
     phone: createClientSchema.shape.phone.nullable(),

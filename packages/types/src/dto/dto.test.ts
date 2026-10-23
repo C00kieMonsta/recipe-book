@@ -43,6 +43,25 @@ const sale = {
   vatAmount: 6,
 };
 
+describe("partial updates after the Zod security upgrade", () => {
+  it.each([
+    ["recipe", updateRecipeRequestSchema],
+    ["client", updateClientSchema],
+    ["event", updateEventRequestSchema],
+    ["offer", updateOfferSchema],
+    ["offer document", updateOfferDocumentSchema],
+  ])("keeps omitted %s fields absent", (_name, schema) => {
+    expect(schema.parse({})).toEqual({});
+  });
+
+  it("keeps explicit empty arrays, false, and zero in an update", () => {
+    expect(updateRecipeRequestSchema.parse({ ingredients: [] })).toEqual({ ingredients: [] });
+    expect(updateClientSchema.parse({ active: false })).toEqual({ active: false });
+    expect(updateEventRequestSchema.parse({ sellingPricePerGuest: 0 })).toEqual({ sellingPricePerGuest: 0 });
+    expect(updateOfferDocumentSchema.parse({ sections: [] })).toEqual({ sections: [] });
+  });
+});
+
 describe("primitives", () => {
   it("money accepts two decimals and rejects three", () => {
     expect(money.safeParse(12.34).success).toBe(true);

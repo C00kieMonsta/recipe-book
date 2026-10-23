@@ -55,9 +55,9 @@ export class BackendStack extends cdk.Stack {
     const userData = ec2.UserData.forLinux();
     userData.addCommands(
       "yum update -y",
-      "curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -",
+      "curl -fsSL https://rpm.nodesource.com/setup_24.x | bash -",
       "yum install -y nodejs git",
-      "npm install -g pnpm@10",
+      "npm install -g pnpm@10.8.0",
       "mkdir -p /opt/la-table-amelie",
       `cat > /opt/la-table-amelie/.env << 'ENVEOF'`,
       `PORT=3001`,

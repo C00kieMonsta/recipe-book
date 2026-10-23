@@ -37,6 +37,12 @@ export type CreateOfferRequest = z.infer<typeof createOfferSchema>;
 export const updateOfferSchema = offerFieldsSchema
   .partial()
   .extend({
+    guestCountRef: offerFieldsSchema.shape.guestCountRef.removeDefault().optional(),
+    lines: offerFieldsSchema.shape.lines.removeDefault().optional(),
+    extraCosts: offerFieldsSchema.shape.extraCosts.removeDefault().optional(),
+    revenueLines: offerFieldsSchema.shape.revenueLines.removeDefault().optional(),
+    pricingMode: offerFieldsSchema.shape.pricingMode.removeDefault().optional(),
+    sellingPricePerGuest: offerFieldsSchema.shape.sellingPricePerGuest.removeDefault().optional(),
     prestationType: z.string().min(1).nullable().optional(),
     vatRate: vatRate.nullable().optional(),
     sellingTotal: moneyNonnegative.nullable().optional(),
