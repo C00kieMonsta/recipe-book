@@ -154,7 +154,8 @@ jobs:
               curl -fsSL "https://rpm.nodesource.com/setup_${NODE_MAJOR}.x" -o "$NODE_SETUP"
               sudo bash "$NODE_SETUP"
               rm -f "$NODE_SETUP"
-              sudo dnf install -y nodejs
+              # Request the major explicitly so dnf replaces an installed older release.
+              sudo dnf install -y --refresh --best "nodejs-${NODE_MAJOR}.*"
               hash -r
               NODE_RUNTIME_CHANGED=true
             fi
