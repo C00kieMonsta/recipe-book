@@ -58,7 +58,7 @@ recipe-book/
 ```
 
 **Package manager:** pnpm workspaces  
-**Node version:** 20.x
+**Node version:** 24.22.1 or newer 24.x (see `.nvmrc`)
 
 ---
 
@@ -165,8 +165,8 @@ AWS CDK (TypeScript) with three stacks:
 
 ### How it works
 
-1. **Frontend**: built locally (`pnpm build:frontend`) then deployed via CDK or manual S3 upload + CloudFront invalidation.
-2. **Backend**: runs on a single EC2 instance. The `scripts/ec2-bootstrap.sh` User Data script runs once on first boot: pulls secrets from SSM Parameter Store, clones the repo, builds, and starts with PM2.
+1. **Frontend**: the `Deploy Application` workflow builds the admin frontend, uploads it to S3, and invalidates CloudFront on pushes to `main` or manual dispatch.
+2. **Backend**: runs on a single EC2 instance. The `scripts/ec2-bootstrap.sh` User Data script runs once on first boot: pulls secrets from SSM Parameter Store, clones the repo, builds, and starts with PM2. Later deployments upload the build through the same workflow. Before installing production dependencies, the workflow upgrades unsupported Node.js runtimes through NodeSource and checks the minimum version in `.nvmrc`. It also installs the pnpm version from `package.json`, refreshes SSM secrets, restarts PM2 with the selected Node.js binary, and checks `/health`.
 
 ### Environment variables (backend)
 

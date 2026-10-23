@@ -131,13 +131,39 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           timeout: 120s
           script: |
-            set -e
+            set -euo pipefail
             REGION="eu-north-1"
             PREFIX="/la-table-amelie/production"
             APP_DIR="/home/ec2-user/la-table-amelie"
 
             cd "${APP_DIR}"
-            node -e 'const v = process.versions.node.split(".").map(Number); if (v[0] !== 24 || v[1] < 22 || (v[1] === 22 && v[2] < 1)) throw new Error("Upgrade the EC2 Node.js runtime to 24.22.1 or a newer 24.x release before deploying");'
+            node_is_supported() {
+              node -e '
+                const fs = require("node:fs");
+                const [major, minor, patch] = fs.readFileSync(".nvmrc", "utf8").trim().split(".").map(Number);
+                const [currentMajor, currentMinor, currentPatch] = process.versions.node.split(".").map(Number);
+                process.exit(currentMajor === major && (currentMinor > minor || (currentMinor === minor && currentPatch >= patch)) ? 0 : 1);
+              '
+            }
+
+            NODE_RUNTIME_CHANGED=false
+            if ! node_is_supported; then
+              NODE_MAJOR=$(cut -d . -f 1 .nvmrc)
+              echo "Upgrading EC2 to Node.js ${NODE_MAJOR}.x..."
+              NODE_SETUP=$(mktemp)
+              curl -fsSL "https://rpm.nodesource.com/setup_${NODE_MAJOR}.x" -o "$NODE_SETUP"
+              sudo bash "$NODE_SETUP"
+              rm -f "$NODE_SETUP"
+              sudo dnf install -y nodejs
+              hash -r
+              NODE_RUNTIME_CHANGED=true
+            fi
+
+            if ! node_is_supported; then
+              echo "EC2 must run Node.js $(cat .nvmrc) or newer in the same major release; found $(node --version)."
+              exit 1
+            fi
+            node --version
 
             echo "Refreshing secrets from SSM..."
             ssm_get() {
@@ -187,9 +213,9 @@ jobs:
             fi
 
             echo "Installing backend runtime dependencies..."
-            if ! command -v pnpm >/dev/null 2>&1; then
-              sudo corepack enable
-              corepack prepare pnpm@10.8.0 --activate
+            PNPM_PACKAGE=$(node -p 'require("./package.json").packageManager')
+            if ! command -v pnpm >/dev/null 2>&1 || [ "$(pnpm --version)" != "${PNPM_PACKAGE#pnpm@}" ]; then
+              sudo npm install -g --force "$PNPM_PACKAGE"
             fi
             cd "${APP_DIR}"
             rm -rf node_modules apps/backend/node_modules packages/types/node_modules
@@ -197,9 +223,17 @@ jobs:
             pnpm install --prod --frozen-lockfile --ignore-scripts --filter @apps/backend...
 
             echo "Restarting backend with PM2..."
-            pm2 restart la-table-amelie-api || pm2 start ${APP_DIR}/apps/backend/dist/main.js \
+            if ! command -v pm2 >/dev/null 2>&1; then
+              sudo npm install -g pm2
+            fi
+            if [ "$NODE_RUNTIME_CHANGED" = true ]; then
+              pm2 update
+              sudo env PATH="$PATH" "$(command -v pm2)" startup systemd -u ec2-user --hp /home/ec2-user
+            fi
+            pm2 restart la-table-amelie-api --interpreter "$(command -v node)" --update-env || pm2 start "${APP_DIR}/apps/backend/dist/main.js" \
               --name la-table-amelie-api \
               --cwd "${APP_DIR}/apps/backend" \
+              --interpreter "$(command -v node)" \
               --env production
             pm2 save
 
