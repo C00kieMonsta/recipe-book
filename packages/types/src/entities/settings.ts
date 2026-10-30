@@ -111,6 +111,7 @@ export interface Person {
 }
 
 export interface AppSettings {
+  stockAutoConsume?: boolean;
   settingsId: "global";
   // Served equal to courses and ignored on write; goes away once the merge script has run everywhere.
   recipeCategories: string[];

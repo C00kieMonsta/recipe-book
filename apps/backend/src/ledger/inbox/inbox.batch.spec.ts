@@ -1,3 +1,4 @@
+import * as pdfReader from "./odoo-pdf";
 import { BadGatewayException, BadRequestException } from "@nestjs/common";
 import type OpenAI from "openai";
 import { PDFDocument } from "pdf-lib";
@@ -55,7 +56,8 @@ class MemoryStore implements InboxStore {
   async delete(key: string) { this.objects.delete(key); }
 }
 
-type Script = { json?: unknown; text?: string; refusal?: boolean; status?: "completed" | "incomplete" };
+type Script = { json?: unknown; text?: string; refusal?: boolean; status?: "completed" | "incomplete";
+};
 class ScriptedClient implements ExtractClient {
   readonly calls: ExtractParams[] = [];
   private readonly scripts: Script[];
@@ -116,11 +118,11 @@ const sale = (overrides: Partial<CreateLedgerEntryRequest> = {}): CreateLedgerEn
   book: "ventes", kind: "facture", date: "2026-10-05", label: "Mme Dupont", number: "INV-2026-001",
   totalTvac: 106, htva: 100, vatRate: 6, vatAmount: 6, paid: false,
   ...overrides,
-} as CreateLedgerEntryRequest);
+}) as CreateLedgerEntryRequest;
 const purchase = (supplier: string, number = "SUP-2026-001"): CreateLedgerEntryRequest => ({
   book: "achats", kind: "mp", date: "2026-10-05", label: supplier, supplier, number,
   totalTvac: 121, htva: 100, vatRate: 21, vatAmount: 21,
-} as CreateLedgerEntryRequest);
+}) as CreateLedgerEntryRequest;
 
 const pdfFile = (name = "achats-octobre.pdf") => ({ originalname: name, mimetype: "application/pdf", buffer: Buffer.from("not used") });
 const photoFile = () => ({ originalname: "facture.jpg", mimetype: "image/jpeg", buffer: Buffer.from([0xff, 0xd8, 0xff, 0xe0]) });
@@ -148,7 +150,8 @@ async function uploadPdf(h: ReturnType<typeof harness>) {
   return h.service.upload({ ...pdfFile(), buffer: Buffer.from(new Uint8Array(await threePagePdf())) });
 }
 
-const batch = (...invoices: { pageStart: number; pageEnd: number; invoice: ExtractedInvoice }[]) => ({ invoices, truncated: false });
+const batch = (...invoices: { pageStart: number; pageEnd: number; invoice: ExtractedInvoice;
+  }[]) => ({ invoices, truncated: false });
 
 let log: jest.SpyInstance;
 let error: jest.SpyInstance;
@@ -162,6 +165,57 @@ afterEach(() => {
 });
 
 describe("InboxService.extractBatch", () => {
+  it("splits a complete 80-invoice export, excludes reversals, and confirms 74 exact VAT breakdowns idempotently", async () => {
+    const h = harness([]);
+    const doc = await PDFDocument.create();
+    const textPages: string[] = [];
+    for (let i = 0; i < 80; i++) {
+      doc.addPage([300, 400]);
+      textPages.push(
+        `Table d'Amélie\nBE 0766 607 232\nClient ${i}\nFacture TEST-${i}\nDate de facturation   Date d'échéance\n19/10/2026   19/10/2026\nMontant hors taxes  300,00 €\nTVA 6% sur 100,00 €  6,00 €\nTVA 21% sur 200,00 €  42,00 €\nTotal  348,00 €\n${i < 6 ? "Extourné le 19/10/2026" : ""}\nPage 1 / 1`,
+      );
+    }
+    const reader = jest
+      .spyOn(pdfReader, "pdfTextPages")
+      .mockResolvedValue(textPages);
+    try {
+      const uploaded = await h.service.upload({
+        ...pdfFile(),
+        buffer: Buffer.from(await doc.save()),
+      });
+      const proposals = (await h.service.extractBatch(uploaded.inboxId))
+        .invoices;
+      expect(proposals).toHaveLength(80);
+      expect(proposals.filter((p) => !p.entry)).toHaveLength(6);
+      const items = proposals
+        .filter((p) => p.entry)
+        .map((p) => ({ inboxId: p.inboxId, entry: p.entry!, replace: false }));
+      expect((await h.service.confirm(items)).every((r) => r.ok)).toBe(true);
+      await h.service.confirm(items);
+      const entries = await h.ledger.list();
+      expect(entries).toHaveLength(74);
+      expect(
+        entries.every(
+          (e) =>
+            e.vatLines?.length === 2 &&
+            e.paymentStatus === "unknown" &&
+            e.attachment,
+        ),
+      ).toBe(true);
+      expect(h.client.calls).toHaveLength(0);
+      const reversed = proposals[0];
+      expect(
+        (
+          await h.service.confirm([
+            { inboxId: reversed.inboxId, entry: sale({ number: "REVERSED" }), replace: false },
+          ])
+        )[0].ok,
+      ).toBe(false);
+    } finally {
+      reader.mockRestore();
+    }
+  });
+
   it("reuses cached page extraction and child IDs while refreshing duplicate flags", async () => {
     const h = harness([{ json: batch(
       { pageStart: 1, pageEnd: 2, invoice: invoice({ number: "INV-ONE" }) },
@@ -306,7 +360,8 @@ describe("InboxService.extractBatch", () => {
     const proposal = await h.service.extractBatch(upload.inboxId);
     expect(proposal.invoices).toHaveLength(1);
     expect(proposal.invoices[0]).toMatchObject({ inboxId: upload.inboxId, name: "facture.jpg", size: 4, entry: { number: "PHOTO-1" } });
-    const [message] = h.client.calls[0].input as unknown as { content: Record<string, unknown>[] }[];
+    const [message] = h.client.calls[0].input as unknown as { content: Record<string, unknown>[];
+    }[];
     expect(message.content[1]?.type).toBe("input_image");
   });
 

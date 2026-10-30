@@ -23,6 +23,7 @@ new BackendStack(app, `TA-Backend-${stage}`, {
   stage,
   ingredientsTable: data.ingredientsTable,
   recipesTable: data.recipesTable,
+  stockTable: data.stockTable,
   domainName,
 });
 

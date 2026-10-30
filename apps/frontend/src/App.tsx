@@ -1,3 +1,4 @@
+import PlanningOptimizer from "@/pages/admin/PlanningOptimizer";
 import { lazy, Suspense, useEffect } from "react";
 import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { addDays, isoWeekOf, weekdayOf } from "@packages/types";
@@ -31,6 +32,7 @@ import Resultats from "@/pages/admin/comptes/Resultats";
 import Previsionnel from "@/pages/admin/comptes/Previsionnel";
 import AuReel from "@/pages/admin/comptes/AuReel";
 import Settings from "@/pages/admin/Settings";
+import Stock from "@/pages/admin/Stock";
 
 const AFacturer = lazy(() => import("@/pages/admin/comptes/AFacturer"));
 const Equipe = lazy(() => import("@/pages/admin/comptes/Equipe"));
@@ -38,7 +40,9 @@ const InvoiceInbox = lazy(() => import("@/pages/admin/comptes/InvoiceInbox"));
 const OfferDocuments = lazy(() => import("@/pages/admin/OfferDocuments"));
 const OfferDocumentDetail = lazy(() => import("@/pages/admin/OfferDocumentDetail"));
 
-const lazyFallback = <p className="text-base text-muted-foreground">Chargement…</p>;
+const lazyFallback = (
+  <p className="text-base text-muted-foreground">Chargement…</p>
+);
 
 const LAST_WEEK_KEY = "recipe-book:last-week";
 
@@ -66,7 +70,9 @@ function HomeRedirect() {
 function WeekIndexRedirect() {
   const { search } = useLocation();
   const last = sessionStorage.getItem(LAST_WEEK_KEY);
-  return <Navigate to={withSearch(last && last.startsWith("/semaine/") ? last : `/semaine/${planningWeek()}`, search)} replace />;
+  return (
+    <Navigate to={withSearch(last && last.startsWith("/semaine/") ? last : `/semaine/${planningWeek()}`, search)} replace />
+  );
 }
 
 // Drops ?assistant=open once the sheet has read it, so a week link or the stored last week does not reopen it.
@@ -115,7 +121,12 @@ export default function App() {
         <Route path="/events/:id/edit" element={<EventEditor />} />
         <Route path="/events/:eventId/lines/:lineId" element={<PrepSheet />} />
         <Route path="/grocery-list" element={<GroceryListPage />} />
-        <Route path="/clients" element={<Clients />} />
+        <Route path="/stock" element={<Stock />} />
+          <Route
+            path="/planning/optimisation"
+            element={<PlanningOptimizer />}
+          />
+          <Route path="/clients" element={<Clients />} />
         <Route path="/clients/new" element={<ClientDetail />} />
         <Route path="/clients/:id" element={<ClientDetail />} />
         <Route path="/offres" element={<Offers />} />
@@ -129,7 +140,9 @@ export default function App() {
           <Route
             path="depot"
             element={
-              <Suspense fallback={<p className="text-base text-muted-foreground">Chargement…</p>}>
+              <Suspense fallback={<p className="text-base text-muted-foreground">
+                      Chargement…
+                    </p>}>
                 <InvoiceInbox />
               </Suspense>
             }
@@ -137,7 +150,9 @@ export default function App() {
           <Route
             path="a-facturer"
             element={
-              <Suspense fallback={<p className="text-base text-muted-foreground">Chargement…</p>}>
+              <Suspense fallback={<p className="text-base text-muted-foreground">
+                      Chargement…
+                    </p>}>
                 <AFacturer />
               </Suspense>
             }
@@ -149,7 +164,9 @@ export default function App() {
           <Route
             path="equipe"
             element={
-              <Suspense fallback={<p className="text-base text-muted-foreground">Chargement…</p>}>
+              <Suspense fallback={<p className="text-base text-muted-foreground">
+                      Chargement…
+                    </p>}>
                 <Equipe />
               </Suspense>
             }

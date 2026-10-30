@@ -1,3 +1,4 @@
+import { PlanningModule } from "./planning/planning.module";
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "./config/config.module";
 import { SharedModule } from "./shared/shared.module";
@@ -13,10 +14,14 @@ import { OfferDocumentsModule } from "./offer-documents/offer-documents.module";
 import { AuthModule } from "./auth/auth.module";
 import { AssistantModule } from "./assistant/assistant.module";
 import { BackupModule } from "./backup/backup.module";
+import { StockModule } from "./stock/stock.module";
 import { HealthController } from "./health.controller";
 
 @Module({
-  imports: [ConfigModule, SharedModule, IngredientsModule, RecipesModule, SettingsModule, EventsModule, GroceryListsModule, ClientsModule, LedgerModule, OffersModule, OfferDocumentsModule, AuthModule, AssistantModule, BackupModule],
+  imports: [ConfigModule, SharedModule, IngredientsModule, RecipesModule, SettingsModule, EventsModule, GroceryListsModule, ClientsModule, LedgerModule, OffersModule, OfferDocumentsModule, AuthModule, AssistantModule, BackupModule,
+    StockModule,
+    PlanningModule,
+  ],
   controllers: [HealthController],
 })
 export class AppModule {}

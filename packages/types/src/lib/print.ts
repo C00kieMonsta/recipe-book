@@ -101,7 +101,7 @@ function byDateThenName(a: Pick<AppEvent, "date" | "name">, b: Pick<AppEvent, "d
 function initialsOf(ids: string[], people: Person[]): string[] {
   return ids.map((id) => {
     const p = people.find((x) => x.personId === id);
-    return personInitials(p ?? { name: id });
+    return personInitials(p ?? { name: id }, people);
   });
 }
 

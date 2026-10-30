@@ -25,6 +25,7 @@ export const KEY_ATTRIBUTES: Record<TableName, string> = {
   groceryLists: "listId",
   clients: "clientId",
   ledger: "entryId",
+  stock: "stockId",
 };
 
 export interface BackupTableEntry {

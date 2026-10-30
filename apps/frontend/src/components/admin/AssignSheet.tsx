@@ -108,7 +108,7 @@ export default function AssignSheet({ days, people, clientById, recipeById, cour
                 className={LINE_TOGGLE}
               >
                 <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-caption font-medium leading-none ${on ? `bg-selected text-primary${own ? "" : " opacity-50"}` : "border border-dashed border-divider text-icon"}`}>
-                  {personInitials(p)}
+                  {personInitials(p, people)}
                 </span>
               </button>
             );

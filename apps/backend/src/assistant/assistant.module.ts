@@ -1,3 +1,4 @@
+import { StockModule } from "../stock/stock.module";
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
 import { ClientsModule } from "../clients/clients.module";
@@ -13,7 +14,9 @@ import { AssistantService } from "./assistant.service";
 import { AssistantTools } from "./assistant.tools";
 
 @Module({
-  imports: [AuthModule, RecipesModule, IngredientsModule, EventsModule, ClientsModule, SettingsModule, OffersModule, OfferDocumentsModule, LedgerModule],
+  imports: [
+    StockModule,
+    AuthModule, RecipesModule, IngredientsModule, EventsModule, ClientsModule, SettingsModule, OffersModule, OfferDocumentsModule, LedgerModule],
   controllers: [AssistantController],
   providers: [AssistantService, AssistantTools],
 })

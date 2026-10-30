@@ -19,6 +19,7 @@ const schema = z.object({
   GROCERY_LISTS_TABLE: z.string().min(1),
   CLIENTS_TABLE: optionalString,
   LEDGER_TABLE: optionalString,
+  STOCK_TABLE: optionalString,
   DDB_ENDPOINT: optionalUrl,
   S3_BUCKET: z.string().min(1),
   ADMIN_CREDENTIALS: z.string().min(1),
@@ -39,6 +40,7 @@ export type Tables = {
   groceryLists: string;
   clients?: string;
   ledger?: string;
+  stock?: string;
 };
 
 @Injectable()
@@ -68,6 +70,7 @@ export class ConfigService {
       groceryLists: this.env.GROCERY_LISTS_TABLE,
       clients: this.env.CLIENTS_TABLE,
       ledger: this.env.LEDGER_TABLE,
+      stock: this.env.STOCK_TABLE,
     };
   }
 }

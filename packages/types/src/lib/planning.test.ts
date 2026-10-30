@@ -290,6 +290,12 @@ describe("person helpers", () => {
     expect(personInitials({ name: "Margaux Dupont" })).toBe("MD");
     expect(personInitials({ name: "Maxime Martin" })).toBe("MM");
   });
+  it("distinguishes Margaux and Maxime even when stored initials collide", () => {
+    const team = [{ personId: "margaux", name: "Margaux", initials: "M" }, { personId: "maxime", name: "Maxime", initials: "M" }];
+    expect(team.map(p => personInitials(p, team))).toEqual(["MAR", "MAX"]);
+    const duplicates = [{ personId: "a", name: "Marie" }, { personId: "b", name: "Marie" }];
+    expect(new Set(duplicates.map(p => personInitials(p, duplicates))).size).toBe(2);
+  });
   it("slugifyPersonId strips accents, replaces symbols and suffixes on collision", () => {
     expect(slugifyPersonId("Kristoff", [])).toBe("kristoff");
     expect(slugifyPersonId("Amélie Van Acker", [])).toBe("amelie-van-acker");

@@ -7,7 +7,8 @@ import { todayIso } from "@/lib/dates";
 // Files are expanded into one row per invoice after reading a grouped PDF.
 // The queue lives in memory only: a reload clears it and the uploads already in S3 stay orphaned until a nightly cleanup (out of scope).
 
-export type InboxItemState = "queued" | "uploading" | "extracting" | "review" | "ready" | "duplicate" | "locked" | "error" | "added" | "excluded";
+export type InboxItemState =
+  | "queued" | "uploading" | "extracting" | "review" | "ready" | "duplicate" | "locked" | "error" | "added" | "excluded";
 
 export interface InboxItem {
   id: string;
@@ -15,6 +16,7 @@ export interface InboxItem {
   name: string;
   size: number;
   contentType: string;
+  fingerprint?: string;
   pageStart?: number;
   pageEnd?: number;
   state: InboxItemState;
@@ -46,7 +48,8 @@ export interface InboxConfirmSummary {
   errors: number;
 }
 
-export type InboxField = "book" | "kind" | "date" | "number" | "label" | "htva" | "vatAmount" | "totalTvac" | "paid" | "supplier";
+export type InboxField =
+  | "book" | "kind" | "date" | "number" | "label" | "htva" | "vatAmount" | "totalTvac" | "paid" | "supplier";
 export type InboxFieldValue = string | number | boolean;
 
 export const MAX_INBOX_BYTES = 20 * 1024 * 1024;
@@ -84,7 +87,10 @@ function find(id: string): InboxItem | undefined {
 
 function update(id: string, change: Partial<InboxItem> | ((item: InboxItem) => InboxItem)) {
   if (!find(id)) return;
-  emit({ ...state, items: state.items.map((item) => (item.id === id ? (typeof change === "function" ? change(item) : { ...item, ...change }) : item)) });
+  emit({ ...state, items: state.items.map((item) =>
+      item.id === id ? typeof change === "function" ? change(item) : { ...item, ...change }
+        : item,
+    ) });
 }
 
 const isPdf = (type: string) => type === "application/pdf";
@@ -97,7 +103,9 @@ function localProblem(file: File): string | null {
 }
 
 export function isAssistantDisabled(e: unknown): boolean {
-  return e instanceof ApiError && e.status === 503 && (e.body as { code?: string } | null)?.code === "ASSISTANT_DISABLED";
+  return (
+    e instanceof ApiError && e.status === 503 && (e.body as { code?: string } | null)?.code === "ASSISTANT_DISABLED"
+  );
 }
 
 export function inboxErrorMessage(e: unknown): string {
@@ -149,6 +157,40 @@ async function processItem(id: string): Promise<void> {
   const item = find(id);
   if (!item) return;
   try {
+    if (
+      !item.inboxId &&
+      crypto.subtle &&
+      typeof item.file.arrayBuffer === "function"
+    ) {
+      const digest = await crypto.subtle.digest(
+        "SHA-256",
+        await item.file.arrayBuffer(),
+      );
+      const fingerprint = Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, "0"),
+      ).join("");
+      if (
+        state.items.some(
+          (other) =>
+            other.id !== id &&
+            other.fingerprint === fingerprint &&
+            other.state !== "excluded",
+        )
+      ) {
+        update(id, {
+          state: "excluded",
+          flags: [
+            {
+              code: "duplicate_file",
+              message:
+                "Ce fichier identique a déjà été déposé. Un seul exemplaire est traité.",
+            },
+          ],
+        });
+        return;
+      }
+      update(id, { fingerprint });
+    }
     let inboxId = item.inboxId;
     if (!inboxId) {
       update(id, { state: "uploading", error: undefined });
@@ -166,9 +208,9 @@ async function processItem(id: string): Promise<void> {
     }
     const expanded: InboxItem[] = [];
     for (const proposal of invoices) {
-      const entry = proposal.flags.some(flag => flag.code === "reversed") ? null : proposal.entry ?? (await draftEntry(proposal.extracted));
+      const entry = proposal.flags.some((flag) => flag.code === "reversed") ? null : (proposal.entry ?? (await draftEntry(proposal.extracted)));
       expanded.push({
-        ...item,
+        ...(find(id) ?? item),
         id: crypto.randomUUID(),
         inboxId: proposal.inboxId,
         name: proposal.name,
@@ -217,7 +259,9 @@ async function draftEntry(extracted: ExtractedInvoice): Promise<CreateLedgerEntr
 
 // A file refused before any upload (size, format) is not worth retrying.
 export function canRetryInboxItem(item: InboxItem): boolean {
-  return item.state === "error" && !item.busy && localProblem(item.file) === null;
+  return (
+    item.state === "error" && !item.busy && localProblem(item.file) === null
+  );
 }
 
 export function retryInboxItem(id: string): void {
@@ -262,7 +306,8 @@ export function identityGap(entry: Pick<CreateLedgerEntryRequest, "htva" | "vatA
 }
 
 export function deriveState(item: Pick<InboxItem, "entry" | "flags" | "replace">): InboxItemState {
-  if (item.flags.some(flag => flag.code === "reversed" || flag.code === "duplicate_file")) return "excluded";
+  if (item.flags.some(
+      (flag) => flag.code === "reversed" || flag.code === "duplicate_file")) return "excluded";
   if (item.flags.some((f) => f.code === "locked_month")) return "locked";
   if (!item.replace && item.flags.some((f) => f.code === "duplicate")) return "duplicate";
   if (entryProblem(item.entry)) return "review";
@@ -286,13 +331,16 @@ const CLEARS: Record<InboxField, InboxFlagCode[]> = {
 
 function signed(entry: CreateLedgerEntryRequest): CreateLedgerEntryRequest {
   const credit = entry.book === "ventes" && entry.kind === "note_de_credit";
-  const fix = (n: number) => (n === 0 ? 0 : credit ? -Math.abs(n) : Math.abs(n));
-  return { ...entry, totalTvac: fix(entry.totalTvac), htva: fix(entry.htva), vatAmount: fix(entry.vatAmount), ...(entry.vatLines ? { vatLines: entry.vatLines.map(line => ({ ...line, base: fix(line.base), amount: fix(line.amount) })) } : {}) };
+  const fix = (n: number) =>
+    n === 0 ? 0 : credit ? -Math.abs(n) : Math.abs(n);
+  return { ...entry, totalTvac: fix(entry.totalTvac), htva: fix(entry.htva), vatAmount: fix(entry.vatAmount), ...(entry.vatLines ? { vatLines: entry.vatLines.map((line) => ({ ...line, base: fix(line.base), amount: fix(line.amount) })) } : {}) };
 }
 
 const text = (v: InboxFieldValue) => String(v);
-const optional = (v: InboxFieldValue) => (String(v).trim() ? String(v) : undefined);
-const amount = (v: InboxFieldValue) => (typeof v === "number" && Number.isFinite(v) ? round2(v) : 0);
+const optional = (v: InboxFieldValue) =>
+  String(v).trim() ? String(v) : undefined;
+const amount = (v: InboxFieldValue) =>
+  typeof v === "number" && Number.isFinite(v) ? round2(v) : 0;
 
 export function applyInboxEdit(entry: CreateLedgerEntryRequest, field: InboxField, value: InboxFieldValue): CreateLedgerEntryRequest {
   const common = {
@@ -331,7 +379,7 @@ export function applyInboxEdit(entry: CreateLedgerEntryRequest, field: InboxFiel
     case "totalTvac":
       return signed({ ...entry, vatLines: undefined, totalTvac: amount(value) });
     case "paid":
-      return entry.book === "ventes" ? { ...entry, paid: Boolean(value) } : entry;
+      return entry.book === "ventes" ? { ...entry, paid: Boolean(value), paymentStatus: "confirmed" } : entry;
     case "supplier":
       return entry.book === "achats" ? { ...entry, supplier: optional(value) } : entry;
   }
@@ -378,16 +426,21 @@ export async function confirmInboxItems(ids: string[]): Promise<InboxConfirmSumm
     return summary;
   }
   const pickedIds = new Set(picked.map((i) => i.id));
-  emit({ ...state, items: state.items.map((i) => (pickedIds.has(i.id) ? { ...i, busy: true, error: undefined } : i)) });
+  emit({ ...state, items: state.items.map((i) =>
+      pickedIds.has(i.id) ? { ...i, busy: true, error: undefined } : i,
+    ) });
   const payload = picked.map((i) => ({ inboxId: i.inboxId as string, entry: i.entry as CreateLedgerEntryRequest, replace: i.replace }));
-  let results: { inboxId: string; ok: boolean; entryId?: string; error?: string }[];
+  let results: { inboxId: string; ok: boolean; entryId?: string; error?: string;
+  }[];
   try {
     results = (await api.ledger.inbox.confirm(payload)).results;
   } catch (e) {
     if (isAssistantDisabled(e)) emit({ ...state, disabled: true });
     const message = inboxErrorMessage(e);
     // A transport failure keeps the edited rows resendable; only the message changes.
-    emit({ ...state, items: state.items.map((i) => (pickedIds.has(i.id) ? { ...i, busy: false, error: message, state: deriveState(i) } : i)) });
+    emit({ ...state, items: state.items.map((i) =>
+        pickedIds.has(i.id) ? { ...i, busy: false, error: message, state: deriveState(i) } : i,
+      ) });
     summary.errors = picked.length;
     return summary;
   }

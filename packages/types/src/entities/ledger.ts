@@ -12,7 +12,8 @@ export type SalesKind =
   | "ca_mensuel"
   | "autre";
 export type PurchaseKind = "mp" | "personnel" | "autre";
-export type PaymentMethod = "virement" | "cash" | "bancontact" | "payconiq" | "autre";
+export type PaymentMethod =
+  | "virement" | "cash" | "bancontact" | "payconiq" | "autre";
 export type LedgerBook = "ventes" | "achats";
 
 export interface LedgerShift {
@@ -37,6 +38,14 @@ export interface LedgerVatLine {
   amount: number;
 }
 
+export interface LedgerPurchaseItem {
+  lineId: string;
+  label: string;
+  quantity: number | null;
+  unit: string | null;
+  htva: number | null;
+}
+
 export interface LedgerEntry {
   entryId: string;
   book: LedgerBook;
@@ -57,6 +66,7 @@ export interface LedgerEntry {
   vatLines?: LedgerVatLine[];
   refEntryId?: string;
   paid: boolean;
+  paymentStatus?: "unknown" | "confirmed";
   paymentMethod?: PaymentMethod;
   paidAt?: string;
   description?: string;
@@ -65,6 +75,7 @@ export interface LedgerEntry {
   hourlyRate?: number;
   shifts?: LedgerShift[];
   supplier?: string;
+  purchaseItems?: LedgerPurchaseItem[];
   imported?: boolean;
   locked?: boolean;
   attachment?: LedgerAttachment;

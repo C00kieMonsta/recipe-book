@@ -25,7 +25,52 @@ export const recipePreparationSchema = z.object({
   name: z.string().trim().min(1).max(100),
   daysBefore: z.number().int().min(0).max(60).default(0),
   description: z.string().trim().max(500).optional(),
+  durationMinutes: z.number().int().min(1).max(1440).optional(),
+  resource: z.enum(["bench", "oven", "stove"]).optional(),
+  dependsOn: z.array(z.string().min(1)).max(50).optional(),
+  ingredientShares: z
+    .record(z.string(), z.number().finite().min(0).max(100))
+    .optional(),
 });
+
+const preparationsSchema = z
+  .array(recipePreparationSchema)
+  .max(50)
+  .superRefine((parts, ctx) => {
+    const byId = new Map(parts.map((p) => [p.preparationId, p]));
+    if (byId.size !== parts.length)
+      ctx.addIssue({
+        code: "custom",
+        message: "Identifiants de préparation en double.",
+      });
+    const visited = new Set<string>();
+    const visit = (id: string, path: Set<string>): boolean => {
+      if (path.has(id)) return false;
+      if (visited.has(id)) return true;
+      const valid = (byId.get(id)?.dependsOn ?? []).every(
+        (dep) => byId.has(dep) && visit(dep, new Set([...path, id])),
+      );
+      if (valid) visited.add(id);
+      return valid;
+    };
+    for (const p of parts)
+      if (!visit(p.preparationId, new Set())) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Dépendance manquante ou circulaire.",
+        });
+        break;
+      }
+    const sums = new Map<string, number>();
+    for (const p of parts)
+      for (const [id, share] of Object.entries(p.ingredientShares ?? {}))
+        sums.set(id, (sums.get(id) ?? 0) + share);
+    if ([...sums.values()].some((sum) => sum > 100.001))
+      ctx.addIssue({
+        code: "custom",
+        message: "La répartition d'un ingrédient dépasse 100 %.",
+      });
+  });
 
 export const createRecipeRequestSchema = z.object({
   name: z.string().min(1).trim(),
@@ -37,7 +82,7 @@ export const createRecipeRequestSchema = z.object({
   defaultCourse: z.string().trim().optional(),
   description: z.string().trim().optional(),
   techniques: z.array(z.string()).default([]),
-  preparations: z.array(recipePreparationSchema).default([]),
+  preparations: preparationsSchema.default([]),
   ingredients: z.array(recipeIngredientSchema).default([]),
   photos: z.array(recipePhotoSchema).default([]),
   pricing: recipePricingSchema.default({

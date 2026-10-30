@@ -4,6 +4,7 @@ import type {
   CreateLedgerEntryRequest,
   LedgerBook,
   LedgerEntry,
+  LedgerVatLine,
   PatchLedgerEntryRequest,
   PaymentMethod,
   PrestationTypeSetting,
@@ -85,6 +86,8 @@ interface FormState {
   eventIds: string[];
   prestationType: string;
   vatRate: VatRate;
+  vatLines: LedgerVatLine[];
+  paymentStatus?: "unknown" | "confirmed";
   tvac: string;
   htva: string;
   tva: string;
@@ -110,7 +113,8 @@ function txt(n: number | undefined): string {
 }
 
 // Every field either request shape or the stored entry can carry, all optional.
-type EntrySource = Partial<Omit<LedgerEntry, "book" | "kind">> & { book?: LedgerBook; kind?: string };
+type EntrySource = Partial<Omit<LedgerEntry, "book" | "kind">> & { book?: LedgerBook; kind?: string;
+};
 
 function initialState(props: LedgerEntryFormProps): FormState {
   const src: EntrySource = (props.entry ?? props.initial ?? {}) as EntrySource;
@@ -129,12 +133,19 @@ function initialState(props: LedgerEntryFormProps): FormState {
     eventIds: src.eventIds ?? [],
     prestationType: sales.prestationType ?? "",
     vatRate: src.vatRate ?? 0,
+    vatLines:
+      src.vatLines?.map((line) => ({
+        ...line,
+        base: Math.abs(line.base),
+        amount: Math.abs(line.amount),
+      })) ?? [],
+    paymentStatus: src.paymentStatus,
     tvac: txt(src.totalTvac),
     htva: txt(src.htva),
     tva: txt(src.vatAmount),
     paid: sales.paid ?? (kind === "acompte" || kind === "ca_mensuel"),
     paymentMethod: sales.paymentMethod ?? "",
-    paidAt: sales.paidAt ?? (kind === "acompte" && !props.entry ? src.date ?? todayIso() : ""),
+    paidAt: sales.paidAt ?? (kind === "acompte" && !props.entry ? (src.date ?? todayIso()) : ""),
     km: sales.km !== undefined ? String(sales.km) : "",
     description: src.description ?? "",
     personName: purchase.personName ?? "",
@@ -165,7 +176,9 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
   // After "Même facture, autre taux de TVA" the next save creates a new entry.
   const target = createNext ? undefined : entry;
 
-  const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((p) => ({ ...p, [k]: v }));
+  const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((p) => ({ ...p, [k]: v,
+      ...(k === "paid" ? { paymentStatus: "confirmed" as const } : {}),
+    }));
   const isSales = f.book === "ventes";
   const isCredit = isSales && f.kind === "note_de_credit";
   const isMonthly = isSales && f.kind === "ca_mensuel";
@@ -233,6 +246,18 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
       htva: round2(sign * num(f.htva)),
       vatRate: f.vatRate,
       vatAmount: round2(sign * num(f.tva)),
+      ...(f.vatLines.length
+        ? {
+            vatLines: f.vatLines.map((line) => ({
+              ...line,
+              base: round2(sign * line.base),
+              amount: round2(sign * line.amount),
+            })),
+          }
+        : {}),
+      ...(f.paymentStatus === "unknown" && !f.paid
+        ? { paymentStatus: "unknown" as const }
+        : {}),
     };
     if (isSales) {
       return compact({
@@ -250,6 +275,8 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
     return compact({
       ...base,
       book: "achats" as const,
+      purchaseItems:
+        props.entry?.book === "achats" ? props.entry.purchaseItems : undefined,
       kind: f.kind as PurchaseKind,
       supplier: f.kind === "mp" && f.supplier.trim() ? f.supplier.trim() : undefined,
       personName: isPersonnel && f.personName.trim() ? f.personName.trim() : undefined,
@@ -259,7 +286,7 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
   };
 
   const patchBody = (): PatchLedgerEntryRequest => ({
-    paid: isMonthly || f.paid,
+    ...(f.paymentStatus === "unknown" ? {} : { paid: isMonthly || f.paid }),
     ...(f.paymentMethod ? { paymentMethod: f.paymentMethod as PaymentMethod } : {}),
     ...(f.paidAt ? { paidAt: f.paidAt } : {}),
     description: f.description.trim(),
@@ -324,7 +351,8 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
   // « CA mensuel » stays listed for an entry that already carries it.
   const salesKinds = props.allowMonthly || f.kind === "ca_mensuel" ? SALES_KINDS : SALES_KINDS.filter((k) => k !== "ca_mensuel");
   const kinds = isSales ? salesKinds : PURCHASE_KINDS;
-  const kindLabelOf = (k: string) => (isSales ? SALES_KIND_LABEL[k as SalesKind] : PURCHASE_KIND_LABEL[k as PurchaseKind]);
+  const kindLabelOf = (k: string) =>
+    isSales ? SALES_KIND_LABEL[k as SalesKind] : PURCHASE_KIND_LABEL[k as PurchaseKind];
   const title = props.title
     ?? (target ? "Modifier la ligne"
       : props.kind === "acompte" ? "Enregistrer un acompte"
@@ -338,19 +366,31 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
       {target && onDeleted && !ro && (
         confirmDelete ? (
           <span className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Supprimer cette ligne ?</span>
-            <Button variant="danger" size="md" disabled={saving} onClick={() => void remove()}>Oui</Button>
-            <Button variant="subtle" size="md" onClick={() => setConfirmDelete(false)}>Non</Button>
+            <span className="text-sm text-muted-foreground">
+              Supprimer cette ligne ?
+            </span>
+            <Button variant="danger" size="md" disabled={saving} onClick={() => void remove()}>
+              Oui
+            </Button>
+            <Button variant="subtle" size="md" onClick={() => setConfirmDelete(false)}>
+              Non
+            </Button>
           </span>
         ) : (
-          <Button variant="danger" size="md" onClick={() => setConfirmDelete(true)}>Supprimer</Button>
+          <Button variant="danger" size="md" onClick={() => setConfirmDelete(true)}>
+            Supprimer
+          </Button>
         )
       )}
       <span className="ml-auto flex flex-wrap items-center justify-end gap-2">
         {!ro && (
-          <Button variant="subtle" size="md" disabled={saving} onClick={() => void save(true)}>Même facture, autre taux de TVA</Button>
+          <Button variant="subtle" size="md" disabled={saving} onClick={() => void save(true)}>
+            Même facture, autre taux de TVA
+          </Button>
         )}
-        <Button variant="default" size="md" onClick={onCancel}>Annuler</Button>
+        <Button variant="default" size="md" onClick={onCancel}>
+          Annuler
+        </Button>
         <Button variant="primary" size="md" type="submit" form={FORM_ID} disabled={saving}>{saving ? "Enregistrement…" : "Enregistrer"}</Button>
       </span>
     </div>
@@ -367,11 +407,17 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           {!dialog && <h2 className="text-h3">{title}</h2>}
           {locked && <Tag colour="yellow">Mois verrouillé</Tag>}
-          {savedNumber !== null && <Tag colour="green">Ligne {savedNumber || "sans numéro"} enregistrée, ajoutez l'autre taux</Tag>}
+          {savedNumber !== null && (
+            <Tag colour="green">Ligne {savedNumber || "sans numéro"} enregistrée, ajoutez l'autre
+              taux
+            </Tag>
+          )}
         </div>
       )}
 
-      {above && <div className="rounded-lg bg-surface p-3 text-sm">{above}</div>}
+      {above && (
+        <div className="rounded-lg bg-surface p-3 text-sm">{above}</div>
+      )}
 
       {!bookFixed && (
         <div className="flex h-10 items-center border-b border-border">
@@ -441,14 +487,21 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
               <option key={o.entryId} value={o.entryId}>{o.label}</option>
             ))}
           </select>
-          <p className="mt-1 text-sm text-muted-foreground">Montants saisis en positif, enregistrés en négatif.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Montants saisis en positif, enregistrés en négatif.
+          </p>
         </div>
       )}
 
       {eventOptions.length > 0 && !isMonthly && (
         <div>
-          <FieldLabel htmlFor="le-event-search">Événements{f.eventIds.length ? ` · ${f.eventIds.length} sélectionné${f.eventIds.length > 1 ? "s" : ""}` : ""}</FieldLabel>
-          <p className="mb-2 text-sm text-muted-foreground">Cochez l'événement couvert : il passe en Facturé et sort de À facturer.</p>
+          <FieldLabel htmlFor="le-event-search">
+            Événements
+            {f.eventIds.length ? ` · ${f.eventIds.length} sélectionné${f.eventIds.length > 1 ? "s" : ""}` : ""}</FieldLabel>
+          <p className="mb-2 text-sm text-muted-foreground">
+            Cochez l'événement couvert : il passe en Facturé et sort de À
+            facturer.
+          </p>
           {!ro && (
             <input id="le-event-search" className="input-field mb-2" placeholder="Rechercher un événement" value={eventQuery} onChange={(e) => setEventQuery(e.target.value)} />
           )}
@@ -463,8 +516,16 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
                 className="mx-1 flex h-8 w-auto items-center gap-2 rounded px-2 text-sm hover:bg-hover touch:h-11 touch:text-base"
               />
             ))}
-            {filteredEvents.length === 0 && !ro && <p className="px-3 py-2 text-sm text-muted-foreground">Aucun événement</p>}
-            {ro && f.eventIds.length === 0 && <p className="px-3 py-2 text-sm text-muted-foreground">Aucun événement lié</p>}
+            {filteredEvents.length === 0 && !ro && (
+              <p className="px-3 py-2 text-sm text-muted-foreground">
+                Aucun événement
+              </p>
+            )}
+            {ro && f.eventIds.length === 0 && (
+              <p className="px-3 py-2 text-sm text-muted-foreground">
+                Aucun événement lié
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -484,13 +545,19 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
           <div className="mt-3 flex items-center justify-between">
             <span className="text-sm font-medium">Prestations</span>
             {!ro && (
-              <Button variant="link" size="sm" icon={<Plus />} onClick={() => set("shifts", [...f.shifts, { date: f.date, hours: "" }])}>Ajouter une date</Button>
+              <Button variant="link" size="sm" icon={<Plus />} onClick={() => set("shifts", [...f.shifts, { date: f.date, hours: "" }])}>
+                Ajouter une date
+              </Button>
             )}
           </div>
           {f.shifts.map((s, i) => (
             <div key={i} className="mt-2 flex items-center gap-2">
-              <input type="date" aria-label="Date" className={field} value={s.date} readOnly={ro} onChange={(e) => set("shifts", f.shifts.map((x, j) => (j === i ? { ...x, date: e.target.value } : x)))} />
-              <input inputMode="decimal" aria-label="Heures" className={`${field} w-28`} placeholder="Heures" value={s.hours} readOnly={ro} onChange={(e) => set("shifts", f.shifts.map((x, j) => (j === i ? { ...x, hours: e.target.value } : x)))} />
+              <input type="date" aria-label="Date" className={field} value={s.date} readOnly={ro} onChange={(e) => set("shifts", f.shifts.map((x, j) =>
+                      j === i ? { ...x, date: e.target.value } : x,
+                    ))} />
+              <input inputMode="decimal" aria-label="Heures" className={`${field} w-28`} placeholder="Heures" value={s.hours} readOnly={ro} onChange={(e) => set("shifts", f.shifts.map((x, j) =>
+                      j === i ? { ...x, hours: e.target.value } : x,
+                    ))} />
               {!ro && (
                 <IconButton size="md" aria-label="Retirer" icon={<Trash2 />} onClick={() => set("shifts", f.shifts.filter((_, j) => j !== i))} />
               )}
@@ -498,9 +565,13 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
           ))}
           {f.shifts.length > 0 && (
             <p className="mt-2 text-sm text-muted-foreground">
-              Σ {f.shifts.reduce((n, s) => n + num(s.hours), 0)} h × {num(f.hourlyRate)} € = <span className="font-medium text-foreground">{fmtEur(suggestedHtva)}</span>
+              Σ {f.shifts.reduce((n, s) => n + num(s.hours), 0)} h ×{" "}
+              {num(f.hourlyRate)} € ={" "}
+              <span className="font-medium text-foreground">{fmtEur(suggestedHtva)}</span>
               {!ro && suggestedHtva > 0 && num(f.htva) !== suggestedHtva && (
-                <Button variant="link" size="sm" className="ml-2" onClick={() => onHtva(String(suggestedHtva))}>Utiliser comme HTVA</Button>
+                <Button variant="link" size="sm" className="ml-2" onClick={() => onHtva(String(suggestedHtva))}>
+                  Utiliser comme HTVA
+                </Button>
               )}
             </p>
           )}
@@ -517,33 +588,113 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div>
           <FieldLabel htmlFor="le-tvac">Total TVAC</FieldLabel>
-          <input id="le-tvac" inputMode="decimal" className={`${field} text-right tabular-nums`} value={f.tvac} readOnly={ro} onChange={(e) => onTvac(e.target.value)} />
+          <input id="le-tvac" inputMode="decimal" className={`${field} text-right tabular-nums`} value={f.tvac} readOnly={ro || f.vatLines.length > 0} onChange={(e) => onTvac(e.target.value)} />
         </div>
         <div>
           <FieldLabel htmlFor="le-rate-select">Taux TVA</FieldLabel>
-          <select id="le-rate-select" className={field} value={f.vatRate} disabled={ro} onChange={(e) => onRate(Number(e.target.value) as VatRate)}>
+          <select id="le-rate-select" className={field} value={f.vatRate} disabled={ro || f.vatLines.length > 0} onChange={(e) => onRate(Number(e.target.value) as VatRate)}>
             {VAT_RATES.map((r) => (
-              <option key={r} value={r}>{r} %</option>
+              <option key={r} value={r}>{r} %
+              </option>
             ))}
           </select>
         </div>
         <div>
           <FieldLabel htmlFor="le-htva">HTVA</FieldLabel>
-          <input id="le-htva" inputMode="decimal" className={`${field} text-right tabular-nums`} value={f.htva} readOnly={ro} onChange={(e) => onHtva(e.target.value)} />
+          <input id="le-htva" inputMode="decimal" className={`${field} text-right tabular-nums`} value={f.htva} readOnly={ro || f.vatLines.length > 0} onChange={(e) => onHtva(e.target.value)} />
         </div>
         <div>
           <FieldLabel htmlFor="le-tva">TVA</FieldLabel>
-          <input id="le-tva" inputMode="decimal" className={`${field} text-right tabular-nums`} value={f.tva} readOnly={ro} onChange={(e) => onTva(e.target.value)} />
+          <input id="le-tva" inputMode="decimal" className={`${field} text-right tabular-nums`} value={f.tva} readOnly={ro || f.vatLines.length > 0} onChange={(e) => onTva(e.target.value)} />
         </div>
       </div>
+      {f.vatLines.length > 0 && (
+        <div className="rounded border border-border p-3">
+          <p className="mb-2 text-sm font-medium">Ventilation TVA</p>
+          {f.vatLines.map((line, index) => (
+            <div
+              key={line.rate}
+              className="mb-2 grid grid-cols-3 gap-2 text-sm"
+            >
+              <span className="self-center">{line.rate} %</span>
+              {(["base", "amount"] as const).map((key) => (
+                <label key={key} className="text-muted-foreground">
+                  {key === "base" ? "Base HTVA" : "TVA"}
+                  <input
+                    aria-label={`${key === "base" ? "Base" : "TVA"} ${line.rate} %`}
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    readOnly={ro}
+                    className={field}
+                    value={line[key]}
+                    onChange={(event) => {
+                      const value = Math.max(0, Number(event.target.value));
+                      setF((previous) => {
+                        const vatLines = previous.vatLines.map(
+                          (candidate, i) =>
+                            i === index
+                              ? { ...candidate, [key]: round2(value) }
+                              : candidate,
+                        );
+                        const htva = sumMoney(
+                          vatLines.map((candidate) => candidate.base),
+                        );
+                        const vat = sumMoney(
+                          vatLines.map((candidate) => candidate.amount),
+                        );
+                        return {
+                          ...previous,
+                          vatLines,
+                          htva: txt(htva),
+                          tva: txt(vat),
+                          tvac: txt(sumMoney([htva, vat])),
+                        };
+                      });
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+          ))}
+          {!ro && (
+            <Button
+              variant="link"
+              size="sm"
+              onClick={() => set("vatLines", [])}
+            >
+              Revenir à un taux unique
+            </Button>
+          )}
+        </div>
+      )}
+      {!ro && f.vatLines.length === 0 && (
+        <Button
+          variant="link"
+          size="sm"
+          onClick={() =>
+            set("vatLines", [
+              { rate: f.vatRate, base: num(f.htva), amount: num(f.tva) },
+              { rate: f.vatRate === 21 ? 6 : 21, base: 0, amount: 0 },
+            ])
+          }
+        >
+          Ventiler plusieurs taux de TVA
+        </Button>
+      )}
       {!identityOk && !ro && (
-        <p className="text-sm text-danger">HTVA + TVA diffère de TVAC de {fmtEur(round2(identityGap))}.</p>
+        <p className="text-sm text-danger">HTVA + TVA diffère de TVAC de {fmtEur(round2(identityGap))}.
+        </p>
       )}
       {f.kind === "acompte" && (
-        <p className="text-sm text-muted-foreground">Traitement TVA des acomptes à confirmer avec le comptable.</p>
+        <p className="text-sm text-muted-foreground">
+          Traitement TVA des acomptes à confirmer avec le comptable.
+        </p>
       )}
       {isMonthly && (
-        <p className="text-caption text-muted-foreground">Une ligne par mois et par taux de TVA.</p>
+        <p className="text-caption text-muted-foreground">
+          Une ligne par mois et par taux de TVA.
+        </p>
       )}
 
       {!isMonthly && (
@@ -584,8 +735,13 @@ export default function LedgerEntryForm(props: LedgerEntryFormProps) {
 
       {target?.attachment && (
         <p className="flex flex-wrap items-center gap-x-1 text-sm text-muted-foreground">
-          <span>Pièce jointe : <span className="text-foreground">{target.attachment.name}</span> ·</span>
-          <Button variant="link" size="sm" onClick={() => { void openLedgerAttachment(target.entryId, touch).then((ok) => { if (!ok) setError("Impossible d'ouvrir la pièce jointe."); }); }}>Ouvrir</Button>
+          <span>
+            Pièce jointe :{" "}
+            <span className="text-foreground">{target.attachment.name}</span> ·
+          </span>
+          <Button variant="link" size="sm" onClick={() => { void openLedgerAttachment(target.entryId, touch).then((ok) => { if (!ok) setError("Impossible d'ouvrir la pièce jointe."); }); }}>
+            Ouvrir
+          </Button>
         </p>
       )}
 

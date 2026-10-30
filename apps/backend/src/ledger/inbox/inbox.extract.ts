@@ -74,6 +74,29 @@ export const EXTRACTED_INVOICE_JSON_SCHEMA = {
     confidence: { type: "number", minimum: 0, maximum: 1, description: "Confiance globale dans la lecture" },
     remarks: nullable("string", "Ce qui a gêné la lecture, en français, null sinon"),
     documentStatus: { type: ["string", "null"], enum: ["active", "reversed", null], description: "reversed si Extourné, Reversed ou Annulée est imprimé. Sinon active, null si incertain." },
+    paidAt: nullable(
+      "string",
+      "Date du dernier paiement complet AAAA-MM-JJ, null si absente",
+    ),
+    items: {
+      type: "array",
+      description:
+        "Lignes de produits achetés utiles au stock. Quantités et unités imprimées uniquement. [] si absent ou si vente.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          label: { type: "string" },
+          quantity: nullable("number", "Quantité imprimée, null si absente"),
+          unit: nullable(
+            "string",
+            "Unité imprimée, sans inventer le contenu d'un colis",
+          ),
+          htva: nullable("number", "Montant HTVA de la ligne, null si inconnu"),
+        },
+        required: ["label", "quantity", "unit", "htva"],
+      },
+    },
   },
   required: [
     "issuerName",
@@ -93,6 +116,8 @@ export const EXTRACTED_INVOICE_JSON_SCHEMA = {
     "confidence",
     "remarks",
     "documentStatus",
+    "paidAt",
+    "items",
   ],
 } as const;
 
@@ -138,7 +163,8 @@ export type ExtractedInvoicePages = z.infer<typeof batchReadingSchema>["invoices
 export type ExtractParams = OpenAI.Responses.ResponseCreateParamsNonStreaming;
 export type ExtractRequestOptions = { signal?: AbortSignal; timeout?: number };
 export type ExtractClient = {
-  responses: { create(params: ExtractParams, options?: ExtractRequestOptions): Promise<OpenAI.Responses.Response> };
+  responses: { create(params: ExtractParams, options?: ExtractRequestOptions): Promise<OpenAI.Responses.Response>;
+  };
 };
 export type ExtractClientFactory = () => Promise<ExtractClient>;
 
@@ -178,7 +204,7 @@ function outputTextOf(response: OpenAI.Responses.Response): string {
       if (part.type === "output_text") parts.push(part.text);
     }
   }
-  return parts.length ? parts.join("") : response.output_text ?? "";
+  return parts.length ? parts.join("") : (response.output_text ?? "");
 }
 
 const STRING_LIMITS: Partial<Record<keyof ExtractedInvoice, number>> = {

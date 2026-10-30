@@ -10,7 +10,8 @@ export interface InboxMappingContext {
   companyVat: string | null;
   // settings.suppliers names.
   suppliers: string[];
-  existingNumbers: { book: LedgerBook; number: string; entryId: string; locked: boolean; party?: string }[];
+  existingNumbers: { book: LedgerBook; number: string; entryId: string; locked: boolean; party?: string;
+  }[];
   // ym values.
   lockedMonths: string[];
   today: string;
@@ -79,14 +80,18 @@ function asPercent(rate: number): number {
 function snapVatRate(pct: number): VatRate {
   const exact = VAT_RATES.find((rate) => Math.abs(rate - pct) < 0.1);
   if (exact !== undefined) return exact;
-  return VAT_RATES.find((rate) => rate > pct) ?? VAT_RATES[VAT_RATES.length - 1];
+  return (
+    VAT_RATES.find((rate) => rate > pct) ?? VAT_RATES[VAT_RATES.length - 1]
+  );
 }
 
 function pickVatRate(x: ExtractedInvoice, htva: number, vatAmount: number): { vatRate: VatRate; rates: number[] } {
   const lines = x.vatLines.filter((l) => Number.isFinite(l.rate) && Number.isFinite(l.base) && l.base !== 0);
   const rates = [...new Set(lines.map((l) => asPercent(l.rate)))];
   if (lines.length === 0) return { vatRate: nearestVatRate(htva, vatAmount), rates };
-  const dominant = lines.reduce((a, b) => (Math.abs(b.base) > Math.abs(a.base) ? b : a));
+  const dominant = lines.reduce((a, b) =>
+    Math.abs(b.base) > Math.abs(a.base) ? b : a,
+  );
   return { vatRate: snapVatRate(asPercent(dominant.rate)), rates };
 }
 
@@ -98,8 +103,10 @@ function negative(n: number): number {
 function isVentes(x: ExtractedInvoice, companyVat: string | null): boolean {
   const issuer = normalizeVat(x.issuerVat);
   const company = normalizeVat(companyVat);
-  if (issuer !== null) return company !== null && issuer === company;
-  return x.issuerName !== null && foldAscii(x.issuerName).includes(COMPANY_NAME_HINT);
+  if (issuer !== null && company !== null) return issuer === company;
+  return (
+    x.issuerName !== null && foldAscii(x.issuerName).includes(COMPANY_NAME_HINT)
+  );
 }
 
 export function mapExtractedInvoice(
@@ -164,13 +171,14 @@ export function mapExtractedInvoice(
 
   const { vatRate, rates } = pickVatRate(x, htva, vatAmount);
   if (rates.length > 1) {
-    flags.push({ code: "multi_rate", message: `${rates.length} taux lus, ${vatRate} % retenu` });
+    flags.push({ code: "multi_rate", message: `${rates.length} taux lus, vérifiez la ventilation TVA`,
+    });
   }
 
   const common = { date, number, totalTvac, htva, vatRate, vatAmount };
-  const breakdown = x.vatLines.map(line => ({ rate: asPercent(line.rate), base: round2(line.base), amount: round2(line.amount) }));
-  const completeBreakdown = breakdown.length > 1 && breakdown.every(line => VAT_RATES.includes(line.rate as VatRate)) &&
-    new Set(breakdown.map(line => line.rate)).size === breakdown.length &&
+  const breakdown = x.vatLines.map((line) => ({ rate: asPercent(line.rate), base: round2(line.base), amount: round2(line.amount) }));
+  const completeBreakdown = breakdown.length > 1 && breakdown.every((line) => VAT_RATES.includes(line.rate as VatRate)) &&
+    new Set(breakdown.map((line) => line.rate)).size === breakdown.length &&
     Math.abs(breakdown.reduce((sum, line) => sum + line.base, 0) - htva) < 0.011 &&
     Math.abs(breakdown.reduce((sum, line) => sum + line.amount, 0) - vatAmount) < 0.011;
   if (book === "ventes") {
@@ -185,7 +193,11 @@ export function mapExtractedInvoice(
       htva: signed(htva),
       vatAmount: signed(vatAmount),
       paid: x.paid ?? false,
-      ...(completeBreakdown ? { vatLines: breakdown.map(line => ({ rate: line.rate as VatRate, base: signed(line.base), amount: signed(line.amount) })) } : {}),
+      ...(x.paid === null ? { paymentStatus: "unknown" as const } : {}),
+      ...(x.paid === true && x.paidAt && isoDate.safeParse(x.paidAt).success
+        ? { paidAt: x.paidAt }
+        : {}),
+      ...(completeBreakdown ? { vatLines: breakdown.map((line) => ({ rate: line.rate as VatRate, base: signed(line.base), amount: signed(line.amount) })) } : {}),
     };
     return { entry, flags };
   }
@@ -200,7 +212,18 @@ export function mapExtractedInvoice(
     htva: Math.abs(htva),
     vatAmount: Math.abs(vatAmount),
     supplier: supplier ?? issuerName ?? undefined,
-    ...(completeBreakdown ? { vatLines: breakdown.map(line => ({ rate: line.rate as VatRate, base: Math.abs(line.base), amount: Math.abs(line.amount) })) } : {}),
+    ...(x.items?.length
+      ? {
+          purchaseItems: x.items
+            .filter((item) => item.label.trim())
+            .map((item, index) => ({
+              ...item,
+              label: item.label.trim(),
+              lineId: String(index + 1),
+            })),
+        }
+      : {}),
+    ...(completeBreakdown ? { vatLines: breakdown.map((line) => ({ rate: line.rate as VatRate, base: Math.abs(line.base), amount: Math.abs(line.amount) })) } : {}),
   };
   return { entry, flags };
 }

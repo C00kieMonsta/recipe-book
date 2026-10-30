@@ -19,7 +19,8 @@ const LOCKED = { code: "LOCKED", message: "Mois verrouillé" };
 const ATTACHMENT_URL_SECONDS = 600;
 
 // Fields the server writes itself; the public DTOs never carry them.
-export type EntryProvenance = { source: LedgerEntrySource; attachment?: LedgerAttachment };
+export type EntryProvenance = { source: LedgerEntrySource; attachment?: LedgerAttachment;
+};
 
 export interface ImportInvoicesResult {
   created: number;
@@ -108,7 +109,8 @@ export class LedgerService {
     await this.ddb.update(
       this.table,
       { entryId },
-      { paid, paymentMethod, paidAt, description, updatedAt: new Date().toISOString() },
+      { paid,
+        ...(paid !== undefined ? { paymentStatus: "confirmed" } : {}), paymentMethod, paidAt, description, updatedAt: new Date().toISOString() },
     );
     return this.getOrFail(entryId);
   }

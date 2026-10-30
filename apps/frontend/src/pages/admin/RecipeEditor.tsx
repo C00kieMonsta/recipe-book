@@ -42,7 +42,8 @@ export default function RecipeEditor() {
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [creatingIngredient, setCreatingIngredient] = useState<{ name: string; row: number } | null>(null);
+  const [creatingIngredient, setCreatingIngredient] = useState<{ name: string; row: number;
+  } | null>(null);
   const [supplierNames, setSupplierNames] = useState(() => DEFAULT_SUPPLIERS.map((s) => s.name));
 
   const [form, setForm] = useState<FormState>({
@@ -102,7 +103,13 @@ export default function RecipeEditor() {
   const removeTechnique = (i: number) => update("techniques", form.techniques.filter((_, idx) => idx !== i));
   const addPreparation = () => update("preparations", [...form.preparations, { preparationId: crypto.randomUUID(), name: "", daysBefore: 0 }]);
   const updatePreparation = (i: number, patch: Partial<RecipePreparation>) => update("preparations", form.preparations.map((item, index) => index === i ? { ...item, ...patch } : item));
-  const removePreparation = (i: number) => update("preparations", form.preparations.filter((_, index) => index !== i));
+  const removePreparation = (i: number) => update("preparations", form.preparations.filter((_, index) => index !== i)
+        .map((p) => ({
+          ...p,
+          dependsOn: p.dependsOn?.filter(
+            (id) => id !== form.preparations[i].preparationId,
+          ),
+        })));
 
   const addIngLine = () => {
     focusRow.current = form.ingredients.length;
@@ -206,7 +213,9 @@ export default function RecipeEditor() {
   const cancel = () => navigate(isNew ? "/recipes" : backTo);
   const footer = (
     <>
-      <Button variant="default" size="md" onClick={cancel}>Annuler</Button>
+      <Button variant="default" size="md" onClick={cancel}>
+        Annuler
+      </Button>
       <Button variant="primary" size="md" icon={<Save />} onClick={handleSave} disabled={saving}>{saving ? "Sauvegarde…" : "Enregistrer"}</Button>
     </>
   );
@@ -223,13 +232,17 @@ export default function RecipeEditor() {
       <Section title="Informations" className="!mt-0">
         <FieldLabel htmlFor="recipe-name">Nom</FieldLabel>
         <input id="recipe-name" className="input-field" value={form.name} onChange={(e) => update("name", e.target.value)} />
-        <FieldLabel htmlFor="recipe-description" className="mt-3">Description</FieldLabel>
+        <FieldLabel htmlFor="recipe-description" className="mt-3">
+          Description
+        </FieldLabel>
         <textarea id="recipe-description" className="input-field" value={form.description} onChange={(e) => update("description", e.target.value)} />
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
             <FieldLabel htmlFor="recipe-category">Catégorie</FieldLabel>
             <select id="recipe-category" className="input-field" value={form.category} onChange={(e) => update("category", e.target.value)}>
-              {(form.category && !categories.includes(form.category) ? [form.category, ...categories] : categories).map((c) => <option key={c}>{c}</option>)}
+              {(form.category && !categories.includes(form.category) ? [form.category, ...categories] : categories).map((c) => (
+                <option key={c}>{c}</option>
+              ))}
             </select>
           </div>
           <div>
@@ -237,7 +250,9 @@ export default function RecipeEditor() {
             <NumericInput id="recipe-portions" className="input-field" value={form.portions} onChange={(v) => update("portions", v)} min={1} />
           </div>
           <div>
-            <FieldLabel htmlFor="recipe-weight">Poids par personne (g)</FieldLabel>
+            <FieldLabel htmlFor="recipe-weight">
+              Poids par personne (g)
+            </FieldLabel>
             <NumericInput id="recipe-weight" className="input-field" value={form.portionWeight} onChange={(v) => update("portionWeight", v)} />
           </div>
         </div>
@@ -261,32 +276,162 @@ export default function RecipeEditor() {
         </div>
       </Section>
 
-      <Section title="Préparations à planifier" action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addPreparation}>Ajouter</Button>}>
-        <p className="mb-3 text-sm text-muted-foreground">Chaque élément devient une tâche à planifier dans l'événement. Indiquez le nombre de jours avant l'événement.</p>
+      <Section title="Préparations à planifier" action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addPreparation}>
+            Ajouter
+          </Button>}>
+        <p className="mb-3 text-sm text-muted-foreground">
+          Chaque élément devient une tâche à planifier dans l'événement.
+          Indiquez le nombre de jours avant l'événement.
+        </p>
         {form.preparations.map((preparation, i) => (
           <div key={preparation.preparationId} className="mb-3 grid grid-cols-1 items-end gap-2 rounded-lg border border-border p-3 sm:grid-cols-[minmax(0,1fr)_8rem_auto]">
             <div>
-              <FieldLabel htmlFor={`preparation-name-${i}`}>Préparation</FieldLabel>
+              <FieldLabel htmlFor={`preparation-name-${i}`}>
+                Préparation
+              </FieldLabel>
               <input id={`preparation-name-${i}`} className="input-field" value={preparation.name} placeholder="Ex. Mousse de chèvre" onChange={(e) => updatePreparation(i, { name: e.target.value })} />
               <input className="input-field mt-2" aria-label={`Détails de ${preparation.name || "la préparation"}`} value={preparation.description ?? ""} placeholder="Consigne (facultatif)" onChange={(e) => updatePreparation(i, { description: e.target.value })} />
             </div>
             <div>
-              <FieldLabel htmlFor={`preparation-days-${i}`}>Jours avant</FieldLabel>
+              <FieldLabel htmlFor={`preparation-days-${i}`}>
+                Jours avant
+              </FieldLabel>
               <NumericInput id={`preparation-days-${i}`} className="input-field" value={preparation.daysBefore} min={0} onChange={(v) => updatePreparation(i, { daysBefore: Math.max(0, Math.min(60, Math.round(v))) })} />
             </div>
+            <div className="flex flex-wrap gap-3 sm:col-span-3">
+              <label className="text-sm">
+                Minutes par lot ({form.portions} portions)
+                <input
+                  aria-label={`Durée de ${preparation.name}`}
+                  type="number"
+                  min="1"
+                  max="1440"
+                  className="input-field"
+                  value={preparation.durationMinutes ?? ""}
+                  onChange={(e) =>
+                    updatePreparation(i, {
+                      durationMinutes: e.target.value
+                        ? Number(e.target.value)
+                        : undefined,
+                    })
+                  }
+                />
+              </label>
+              <label className="text-sm">
+                Matériel
+                <select
+                  aria-label={`Matériel de ${preparation.name}`}
+                  className="input-field"
+                  value={preparation.resource ?? ""}
+                  onChange={(e) =>
+                    updatePreparation(i, {
+                      resource:
+                        (e.target.value as RecipePreparation["resource"]) ||
+                        undefined,
+                    })
+                  }
+                >
+                  <option value="">À préciser</option>
+                  <option value="bench">Plan de travail</option>
+                  <option value="oven">Four</option>
+                  <option value="stove">Feu</option>
+                </select>
+              </label>
+              <fieldset className="text-sm">
+                <legend>Après</legend>
+                {form.preparations
+                  .filter((p) => p.preparationId !== preparation.preparationId)
+                  .map((p) => (
+                    <label
+                      key={p.preparationId}
+                      className="mr-3 inline-flex gap-1"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={
+                          preparation.dependsOn?.includes(p.preparationId) ??
+                          false
+                        }
+                        onChange={(e) =>
+                          updatePreparation(i, {
+                            dependsOn: e.target.checked
+                              ? [
+                                  ...(preparation.dependsOn ?? []),
+                                  p.preparationId,
+                                ]
+                              : (preparation.dependsOn ?? []).filter(
+                                  (id) => id !== p.preparationId,
+                                ),
+                          })
+                        }
+                      />
+                      {p.name || "Préparation sans nom"}
+                    </label>
+                  ))}
+              </fieldset>
+            </div>
+            <details className="text-sm sm:col-span-3">
+              <summary>Répartition des ingrédients (%)</summary>
+              <p className="my-2 text-muted-foreground">
+                Répartissez 100 % de chaque ingrédient entre les préparations
+                pour obtenir des totaux précis par jour.
+              </p>
+              {form.ingredients.map((ingredient) => (
+                <label
+                  className="mb-2 flex items-center gap-2"
+                  key={ingredient.ingredientId}
+                >
+                  {allIngredients.find(
+                    (item) => item.ingredientId === ingredient.ingredientId,
+                  )?.name ?? ingredient.ingredientId}
+                  <input
+                    aria-label={`Part ${ingredient.ingredientId} dans ${preparation.name}`}
+                    type="number"
+                    min="0"
+                    max="100"
+                    className="input-field w-24"
+                    value={
+                      preparation.ingredientShares?.[ingredient.ingredientId] ??
+                      ""
+                    }
+                    onChange={(e) => {
+                      const shares = { ...preparation.ingredientShares };
+                      if (e.target.value === "")
+                        delete shares[ingredient.ingredientId];
+                      else
+                        shares[ingredient.ingredientId] = Number(
+                          e.target.value,
+                        );
+                      updatePreparation(i, { ingredientShares: shares });
+                    }}
+                  />{" "}
+                  %
+                </label>
+              ))}
+            </details>
             <IconButton size="md" aria-label={`Retirer ${preparation.name || "la préparation"}`} onClick={() => removePreparation(i)} icon={<X />} />
           </div>
         ))}
-        {form.preparations.length === 0 && <Button variant="subtle" size="sm" icon={<Plus />} onClick={addPreparation}>Ajouter la première préparation</Button>}
+        {form.preparations.length === 0 && (
+          <Button variant="subtle" size="sm" icon={<Plus />} onClick={addPreparation}>
+            Ajouter la première préparation
+          </Button>
+        )}
       </Section>
 
       <Section
         title="Étapes de préparation"
-        action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addTechnique}>Étape</Button>}
+        action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addTechnique}>
+            Étape
+          </Button>}
       >
-        <p className="mb-3 text-sm text-muted-foreground">Décrivez chaque étape de la recette. Entrée passe à l'étape suivante.</p>
+        <p className="mb-3 text-sm text-muted-foreground">
+          Décrivez chaque étape de la recette. Entrée passe à l'étape suivante.
+        </p>
         {form.techniques.length === 0 && (
-          <Button variant="subtle" size="sm" icon={<Plus />} onClick={addTechnique} className="-mx-1">Ajouter la première étape</Button>
+          <Button variant="subtle" size="sm" icon={<Plus />} onClick={addTechnique} className="-mx-1">
+            Ajouter la première étape
+          </Button>
         )}
         <div ref={stepsList}>
           {form.techniques.map((t, i) => (
@@ -308,12 +453,16 @@ export default function RecipeEditor() {
             />
           ))}
         </div>
-        <p className="mt-1 text-caption text-muted-foreground">Sélectionnez un mot puis Gras ou Surligner.</p>
+        <p className="mt-1 text-caption text-muted-foreground">
+          Sélectionnez un mot puis Gras ou Surligner.
+        </p>
       </Section>
 
       <Section
         title="Ingrédients"
-        action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addIngLine}>Ajouter</Button>}
+        action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addIngLine}>
+            Ajouter
+          </Button>}
       >
         <div className="-mx-2 overflow-x-auto px-2">
           <table className="table table-fixed min-w-[560px]">
@@ -336,7 +485,9 @@ export default function RecipeEditor() {
                 <tr key={i}>
                   <td className="!px-1"><SearchSelect options={allIngredients.map((ig) => ({ value: ig.ingredientId, label: ig.name, detail: fmtUnitPrice(ig.price, ig.unit) }))} value={ri.ingredientId} onChange={(v) => { const ing = allIngredients.find((ig) => ig.ingredientId === v); const updates: Partial<RecipeIngredient> = { ingredientId: v }; if (ing) updates.unit = PRICE_TO_QTY_UNIT[ing.unit] || "g"; const a = [...form.ingredients]; a[i] = { ...a[i], ...updates }; update("ingredients", a); }} onCommit={() => focusCell(i, "qty")} placeholder="Produit…" onCreateNew={(name) => setCreatingIngredient({ name, row: i })} /></td>
                   <td className="!px-1" onKeyDown={onEnterTo(() => focusCell(i, "unit"))}><NumericInput className="input-field w-full text-right" value={ri.qty} onChange={(v) => updateIngLine(i, "qty", v)} aria-label="Quantité" /></td>
-                  <td className="!px-1"><select className="input-field w-full" aria-label="Unité" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)} onKeyDown={onEnterTo(() => focusCell(i, "loss"))}>{UNITS_QTY.map((u) => <option key={u}>{u}</option>)}</select></td>
+                  <td className="!px-1"><select className="input-field w-full" aria-label="Unité" value={ri.unit} onChange={(e) => updateIngLine(i, "unit", e.target.value)} onKeyDown={onEnterTo(() => focusCell(i, "loss"))}>{UNITS_QTY.map((u) => (
+                        <option key={u}>{u}</option>
+                      ))}</select></td>
                   <td className="!px-1" onKeyDown={onEnterTo(() => { if (i === form.ingredients.length - 1) addIngLine(); else focusCell(i + 1, "search"); })}><NumericInput className="input-field w-full text-right" value={ri.lossPct} onChange={(v) => updateIngLine(i, "lossPct", v)} aria-label="Perte" /></td>
                   <td className="!px-0 text-center"><IconButton size="md" aria-label="Retirer la ligne" onClick={() => removeIngLine(i)} icon={<X />} /></td>
                 </tr>
@@ -344,7 +495,10 @@ export default function RecipeEditor() {
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-caption text-muted-foreground touch:hidden">Entrée choisit le premier produit et passe à la quantité ; Entrée sur la dernière case ajoute une ligne.</p>
+        <p className="mt-2 text-caption text-muted-foreground touch:hidden">
+          Entrée choisit le premier produit et passe à la quantité ; Entrée sur
+          la dernière case ajoute une ligne.
+        </p>
       </Section>
 
       <Section title="Tarification">
@@ -353,18 +507,26 @@ export default function RecipeEditor() {
             <h3 className="mb-3 text-base font-semibold">Sur place</h3>
             <FieldLabel htmlFor="sp-coef">Coefficient</FieldLabel>
             <NumericInput id="sp-coef" className="input-field" value={form.pricing.surPlace.coef} onChange={(v) => updatePricing("surPlace.coef", v)} />
-            <FieldLabel htmlFor="sp-tva" className="mt-3">TVA %</FieldLabel>
+            <FieldLabel htmlFor="sp-tva" className="mt-3">
+              TVA %
+            </FieldLabel>
             <NumericInput id="sp-tva" className="input-field" value={form.pricing.surPlace.tva} onChange={(v) => updatePricing("surPlace.tva", v)} />
-            <FieldLabel htmlFor="sp-price" className="mt-3">Prix choisi TVAC</FieldLabel>
+            <FieldLabel htmlFor="sp-price" className="mt-3">
+              Prix choisi TVAC
+            </FieldLabel>
             <NumericInput id="sp-price" className="input-field" value={form.pricing.chosenPrice.surPlace} onChange={(v) => updatePricing("chosenPrice.surPlace", v)} />
           </div>
           <div>
             <h3 className="mb-3 text-base font-semibold">Take away</h3>
             <FieldLabel htmlFor="ta-coef">Coefficient</FieldLabel>
             <NumericInput id="ta-coef" className="input-field" value={form.pricing.takeAway.coef} onChange={(v) => updatePricing("takeAway.coef", v)} />
-            <FieldLabel htmlFor="ta-tva" className="mt-3">TVA %</FieldLabel>
+            <FieldLabel htmlFor="ta-tva" className="mt-3">
+              TVA %
+            </FieldLabel>
             <NumericInput id="ta-tva" className="input-field" value={form.pricing.takeAway.tva} onChange={(v) => updatePricing("takeAway.tva", v)} />
-            <FieldLabel htmlFor="ta-price" className="mt-3">Prix choisi TVAC</FieldLabel>
+            <FieldLabel htmlFor="ta-price" className="mt-3">
+              Prix choisi TVAC
+            </FieldLabel>
             <NumericInput id="ta-price" className="input-field" value={form.pricing.chosenPrice.takeAway} onChange={(v) => updatePricing("chosenPrice.takeAway", v)} />
           </div>
         </div>

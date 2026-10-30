@@ -17,6 +17,14 @@ export const eventRecipeLineSchema = z
 
 export const eventTaskSchema = z
   .object({
+    scheduledStart: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+      .optional(),
+    scheduledEnd: z
+      .string()
+      .regex(/^(?:([01]\d|2[0-3]):[0-5]\d|24:00)$/)
+      .optional(),
     taskId: z.string().min(1).optional(),
     label: z.string().trim().min(1).max(120),
     date: isoDate,
@@ -120,7 +128,8 @@ const eventFieldsSchema = z.object({
 });
 
 // Shared with the offer schemas: total mode needs the amount it is priced at.
-export const totalNeedsAmount = (v: { pricingMode?: string; sellingTotal?: number | null }) =>
+export const totalNeedsAmount = (v: { pricingMode?: string; sellingTotal?: number | null;
+}) =>
   v.pricingMode !== "total" || typeof v.sellingTotal === "number";
 
 export const createEventRequestSchema = eventFieldsSchema.refine(totalNeedsAmount, "prix total requis");

@@ -1,3 +1,4 @@
+import type { ProductionSchedule, ScheduleOptions } from "@packages/types";
 import type {
   Ingredient,
   Recipe,
@@ -42,6 +43,10 @@ import type {
   UpdateOfferDocumentRequest,
   DuplicateOfferDocumentRequest,
   BrandKind,
+  StockOverview,
+  StockBalance,
+  StockMovementRequest,
+  StockReceiptRequest,
 } from "@packages/types";
 
 export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
@@ -76,7 +81,8 @@ export function isTokenPersisted(): boolean {
   return localStorage.getItem(TOKEN_KEY) !== null;
 }
 
-export interface AuthTokenResponse { ok: boolean; token: string; expiresAt: string }
+export interface AuthTokenResponse { ok: boolean; token: string; expiresAt: string;
+}
 
 // Sends the browser to the login page and keeps the current page so it reopens after signing in.
 function handleUnauthorized() {
@@ -101,9 +107,13 @@ export function apiErrorMessage(status: number, body: unknown): string {
   const d = (body ?? {}) as { message?: unknown; error?: unknown };
   if (status === 413) return "Fichier trop volumineux";
   if (Array.isArray(d.message)) {
-    return d.message.map((m) => (m && typeof m === "object" && "message" in m ? String((m as { message: unknown }).message) : String(m))).join(", ");
+    return d.message.map((m) =>
+        m && typeof m === "object" && "message" in m ? String((m as { message: unknown }).message) : String(m))
+      .join(", ");
   }
-  return (typeof d.message === "string" && d.message) || (typeof d.error === "string" && d.error) || `Request failed: ${status}`;
+  return (
+    (typeof d.message === "string" && d.message) || (typeof d.error === "string" && d.error) || `Request failed: ${status}`
+  );
 }
 
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
@@ -133,7 +143,8 @@ const json = (method: "POST" | "PATCH" | "PUT", body: unknown): RequestInit => (
 const DEFAULT_TTL = 30_000;
 const SETTINGS_TTL = 30_000;
 
-interface CacheEntry<T> { data: T; ts: number; promise?: Promise<T> }
+interface CacheEntry<T> { data: T; ts: number; promise?: Promise<T>;
+}
 const cache = new Map<string, CacheEntry<unknown>>();
 
 function cached<T>(key: string, fetcher: () => Promise<T>, ttl = DEFAULT_TTL): () => Promise<T> {
@@ -171,18 +182,24 @@ function withInvalidate(keys: string[], fn: (...args: unknown[]) => Promise<unkn
 
 // ── Response shapes ─────────────────────────────────────────────────────────
 export type DuplicateMemberDetail = DuplicateMember & Pick<Ingredient, "price" | "supplier" | "updatedAt">;
-export type DuplicateGroupDetail = Omit<DuplicateGroup, "members"> & { members: DuplicateMemberDetail[] };
-export interface DuplicatesResponse { groups: DuplicateGroupDetail[] }
+export type DuplicateGroupDetail = Omit<DuplicateGroup, "members"> & { members: DuplicateMemberDetail[];
+};
+export interface DuplicatesResponse { groups: DuplicateGroupDetail[];
+}
 
 export type MergeResponse =
-  | { ok: true; recipesUpdated: number; listsUpdated: number; removed: number; preexisting?: number }
-  | { ok: false; recipesUpdated: number; listsUpdated: number; failures: unknown[]; preexisting?: number };
+  | { ok: true; recipesUpdated: number; listsUpdated: number; removed: number; preexisting?: number;
+    }
+  | { ok: false; recipesUpdated: number; listsUpdated: number; failures: unknown[]; preexisting?: number;
+    };
 
 // Text fields the server clears when the update sends null or "".
-type ClearableEventField = "contactName" | "contactPhone" | "contactEmail" | "deliveryAddress" | "deliveryTime" | "billingDetails" | "invoicedAt" | "invoiceRef";
+type ClearableEventField =
+  | "contactName" | "contactPhone" | "contactEmail" | "deliveryAddress" | "deliveryTime" | "billingDetails" | "invoicedAt" | "invoiceRef";
 
 // Lines and tasks sent on create or update may omit their id; the server fills it. Attachments only change through their own routes.
-export type EventInput = Omit<Partial<AppEvent>, "recipes" | "tasks" | "costSnapshot" | "attachments" | ClearableEventField | "sellingTotal"> & {
+export type EventInput = Omit<Partial<AppEvent>,
+  | "recipes" | "tasks" | "costSnapshot" | "attachments" | ClearableEventField | "sellingTotal"> & {
   // The server stamps takenAt, so a client sends the request shape.
   costSnapshot?: CostSnapshotRequest;
   recipes?: (Omit<EventRecipeLine, "lineId"> & { lineId?: string })[];
@@ -190,13 +207,19 @@ export type EventInput = Omit<Partial<AppEvent>, "recipes" | "tasks" | "costSnap
   sellingTotal?: number | null;
 } & { [K in ClearableEventField]?: string | null };
 
-export interface ImportIngredientsResponse { created: number; updated: number; unmatched: string[]; notFound: string[] }
-export interface ImportLedgerResponse { created: number; updated: number; skippedLocked: number; invalid: string[] }
+export interface ImportIngredientsResponse { created: number; updated: number; unmatched: string[]; notFound: string[];
+}
+export interface ImportLedgerResponse { created: number; updated: number; skippedLocked: number; invalid: string[];
+}
 
-export interface InstantiateResponse { created: AppEvent[]; skipped: string[] }
-export interface LinkEventsResponse { linked: number }
-export interface LockMonthResponse { locked: number }
-export interface UnlockMonthResponse { unlocked: number }
+export interface InstantiateResponse { created: AppEvent[]; skipped: string[];
+}
+export interface LinkEventsResponse { linked: number;
+}
+export interface LockMonthResponse { locked: number;
+}
+export interface UnlockMonthResponse { unlocked: number;
+}
 
 export interface HealthResponse {
   status: string;
@@ -233,6 +256,33 @@ function importQuery(options?: Partial<ImportIngredientsOptions>): string {
 
 // ── API ─────────────────────────────────────────────────────────────────────
 export const api = {
+  planning: {
+    preview: (options: ScheduleOptions) =>
+      request<ProductionSchedule & { fingerprint: string }>(
+        "/admin/planning/preview",
+        { method: "POST", body: JSON.stringify(options) },
+      ),
+    apply: withInvalidate(
+      ["events"],
+      (options: ScheduleOptions, fingerprint: string) =>
+        request<{
+          results: { eventId: string; ok: boolean; error?: string }[];
+        }>("/admin/planning/apply", json("POST", { options, fingerprint })),
+    ),
+  },
+  stock: {
+    list: () => request<StockOverview>("/admin/stock"),
+    move: (body: StockMovementRequest) =>
+      request<StockBalance[]>("/admin/stock/movements", json("POST", body)),
+    receive: (body: StockReceiptRequest) =>
+      request<StockBalance[]>("/admin/stock/receipts", json("POST", body)),
+    consume: withInvalidate(["events"], (eventId: string) =>
+      request<StockBalance[]>(
+        `/admin/stock/events/${encodeURIComponent(eventId)}/consume`,
+        json("POST", {}),
+      ),
+    ),
+  },
   health: {
     get: async (): Promise<HealthResponse> => parseResponse<HealthResponse>(await fetch(HEALTH_URL)),
   },
@@ -253,12 +303,14 @@ export const api = {
   },
   recipes: {
     // The whole list is cached; a category filter goes to the server uncached.
-    list: (category?: string) => (category ? request<Recipe[]>(`/admin/recipes?category=${encodeURIComponent(category)}`) : allRecipes()),
+    list: (category?: string) =>
+      category ? request<Recipe[]>(`/admin/recipes?category=${encodeURIComponent(category)}`) : allRecipes(),
     get: (id: string) => request<Recipe>(`/admin/recipes/${id}`),
     create: withInvalidate(["recipes"], (data: Partial<Recipe>) => request<Recipe>("/admin/recipes", json("POST", data))),
     update: withInvalidate(["recipes"], (id: string, data: Partial<Recipe>) => request<Recipe>(`/admin/recipes/${id}`, json("PATCH", data))),
     delete: withInvalidate(["recipes"], (id: string) => request<{ ok: boolean }>(`/admin/recipes/${id}`, { method: "DELETE" })),
-    import: withInvalidate(["recipes"], (rows: unknown[]) => request<{ created: number; skipped: number; unmatchedIngredients: string[] }>("/admin/recipes/import", json("POST", rows))),
+    import: withInvalidate(["recipes"], (rows: unknown[]) => request<{ created: number; skipped: number; unmatchedIngredients: string[];
+      }>("/admin/recipes/import", json("POST", rows))),
     uploadPhoto: (file: File) => uploadRequest<{ key: string; url: string }>("/admin/recipes/upload-photo", file),
   },
   settings: {

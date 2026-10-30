@@ -19,3 +19,4 @@ export * from "./staff";
 export * from "./payroll";
 export * from "./revenue";
 export * from "./ledger-vat";
+export * from "./production-schedule";

@@ -89,8 +89,8 @@ export const PURCHASE_KIND_LABEL: Record<PurchaseKind, string> = {
 
 export function kindLabel(entry: Pick<LedgerEntry, "book" | "kind">): string {
   return entry.book === "achats"
-    ? PURCHASE_KIND_LABEL[entry.kind as PurchaseKind] ?? entry.kind
-    : SALES_KIND_LABEL[entry.kind as SalesKind] ?? entry.kind;
+    ? (PURCHASE_KIND_LABEL[entry.kind as PurchaseKind] ?? entry.kind)
+    : (SALES_KIND_LABEL[entry.kind as SalesKind] ?? entry.kind);
 }
 
 export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
@@ -165,7 +165,7 @@ export function applyJournalFilter(entries: LedgerEntry[], filter: JournalFilter
     case "tous":
       return entries;
     case "non_regles":
-      return entries.filter((e) => !e.paid);
+      return entries.filter((e) => !e.paid && e.paymentStatus !== "unknown");
     case "evenements":
       return entries.filter((e) => (e.eventIds?.length ?? 0) > 0);
     case "comptoir":
@@ -262,8 +262,10 @@ export function entryHours(entry: Pick<LedgerEntry, "shifts">): number {
 }
 
 // Count and Σ TVAC of unpaid sales entries.
-export function aEncaisser(entries: LedgerEntry[]): { count: number; total: number } {
-  const unpaid = entries.filter((e) => e.book === "ventes" && !e.paid);
+export function aEncaisser(entries: LedgerEntry[]): { count: number; total: number;
+} {
+  const unpaid = entries.filter((e) => e.book === "ventes" && !e.paid && e.paymentStatus !== "unknown",
+  );
   return { count: unpaid.length, total: sumMoney(unpaid.map((e) => e.totalTvac)) };
 }
 
@@ -310,7 +312,7 @@ export function ledgerErrorMessage(err: unknown): string {
     const issues = Array.isArray(body?.message) ? (body!.message as ZodIssueLike[]) : [];
     const lines = issues.map((i) => {
       const path = (i.path ?? []).join(".");
-      return path ? `${path} : ${i.message ?? "invalide"}` : i.message ?? "invalide";
+      return path ? `${path} : ${i.message ?? "invalide"}` : (i.message ?? "invalide");
     });
     if (lines.length) return lines.join(" · ");
   }

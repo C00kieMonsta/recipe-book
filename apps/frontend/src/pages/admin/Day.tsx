@@ -102,7 +102,9 @@ interface TaskDialogState {
 function isTypingTarget(e: KeyboardEvent): boolean {
   const t = e.target as HTMLElement | null;
   if (!t) return false;
-  return t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable;
+  return (
+    t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable
+  );
 }
 
 function isLine(item: DayItem): item is PrepLine {
@@ -156,7 +158,9 @@ function isMode(v: string | null): v is Mode {
 }
 
 function byDateThenName(a: AppEvent, b: AppEvent): number {
-  return a.date.slice(0, 10).localeCompare(b.date.slice(0, 10)) || a.name.localeCompare(b.name, "fr");
+  return (
+    a.date.slice(0, 10).localeCompare(b.date.slice(0, 10)) || a.name.localeCompare(b.name, "fr")
+  );
 }
 
 const is409 = (e: unknown) => e instanceof ApiError && e.status === 409;
@@ -205,7 +209,8 @@ export default function Day() {
   const mode: Mode = isMode(modeParam) && (modeParam !== "personne" || activePeople.length > 0) ? modeParam : "evenement";
 
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<{ name: string; next?: PrepLine } | null>(null);
+  const [notice, setNotice] = useState<{ name: string; next?: PrepLine;
+  } | null>(null);
   const [printPending, setPrintPending] = useState(false);
   const [taskDialog, setTaskDialog] = useState<TaskDialogState | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
@@ -284,7 +289,8 @@ export default function Day() {
   const guests = dayEvents.reduce((n, e) => n + e.guestCount, 0);
   // Events the person is on without a line or a task of theirs.
   const serviceEvents = useMemo(
-    () => (personne ? dayEvents.filter((ev) => (ev.assignedTo ?? []).includes(personne) && !items.some((i) => i.eventId === ev.eventId)) : []),
+    () =>
+      personne ? dayEvents.filter((ev) => (ev.assignedTo ?? []).includes(personne) && !items.some((i) => i.eventId === ev.eventId)) : [],
     [personne, dayEvents, items],
   );
   const defaultEventId = useMemo(() => defaultTaskEventId(weekEvents, safeDate), [weekEvents, safeDate]);
@@ -769,22 +775,38 @@ export default function Day() {
     <>
       {canAddTask && (
         <>
-          <MenuItem icon={<Plus />} onSelect={openCreateTask}>Ajouter une tâche…</MenuItem>
+          <MenuItem icon={<Plus />} onSelect={openCreateTask}>
+            Ajouter une tâche…
+          </MenuItem>
           <MenuSeparator />
         </>
       )}
-      <MenuItem icon={<ShoppingCart />} disabled={busy} onSelect={createGrocery}>Courses du jour</MenuItem>
-      <MenuItem icon={<Printer />} onSelect={() => window.print()}>Imprimer</MenuItem>
+      <MenuItem icon={<ShoppingCart />} disabled={busy} onSelect={createGrocery}>
+        Courses du jour
+      </MenuItem>
+      <MenuItem icon={<Printer />} onSelect={() => window.print()}>
+        Imprimer
+      </MenuItem>
       {activePeople.length > 0 && !personne && (
-        <MenuItem icon={<Printer />} onSelect={() => { setParam("mode", "personne"); setPrintPending(true); }}>Imprimer par personne</MenuItem>
+        <MenuItem icon={<Printer />} onSelect={() => { setParam("mode", "personne"); setPrintPending(true); }}>
+          Imprimer par personne
+        </MenuItem>
       )}
-      <MenuItem icon={<Printer />} to={printWeekUrl}>Imprimer la semaine…</MenuItem>
+      <MenuItem icon={<Printer />} to={printWeekUrl}>
+        Imprimer la semaine…
+      </MenuItem>
       {personne ? (
-        <MenuItem icon={<Share2 />} onSelect={() => share(personne)}>Partager…</MenuItem>
+        <MenuItem icon={<Share2 />} onSelect={() => share(personne)}>
+          Partager…
+        </MenuItem>
       ) : activePeople.length > 0 ? (
-        activePeople.map((p) => <MenuItem key={p.personId} icon={<Share2 />} onSelect={() => share(p.personId)}>Partager · {p.name}</MenuItem>)
+        activePeople.map((p) => (
+          <MenuItem key={p.personId} icon={<Share2 />} onSelect={() => share(p.personId)}>Partager · {p.name}</MenuItem>)
+      )
       ) : (
-        <MenuItem icon={<Share2 />} onSelect={() => share()}>Partager…</MenuItem>
+        <MenuItem icon={<Share2 />} onSelect={() => share()}>
+          Partager…
+        </MenuItem>
       )}
       {canFinish && (
         <>
@@ -809,13 +831,17 @@ export default function Day() {
       {groupItems}
       {personOptions.length > 0 && (
         <MenuSection label="Personne">
-          <MenuRadio checked={!personne} onSelect={() => setParam("personne", null)}>Toutes les personnes</MenuRadio>
+          <MenuRadio checked={!personne} onSelect={() => setParam("personne", null)}>
+            Toutes les personnes
+          </MenuRadio>
           {personOptions.map((p) => (
             <MenuRadio key={p.personId} checked={personne === p.personId} onSelect={() => setParam("personne", p.personId)}>{p.name}</MenuRadio>
           ))}
         </MenuSection>
       )}
-      <MenuCheck icon={<EyeOff />} checked={hideDone} onChange={(v) => setParam("masquer", v ? "faites" : null)}>Masquer les lignes faites</MenuCheck>
+      <MenuCheck icon={<EyeOff />} checked={hideDone} onChange={(v) => setParam("masquer", v ? "faites" : null)}>
+        Masquer les lignes faites
+      </MenuCheck>
       <MenuSeparator />
     </>
   );
@@ -824,7 +850,9 @@ export default function Day() {
     <div ref={menu.ref} className="relative inline-flex">
       <IconButton size="sm" aria-label="Plus d'actions" aria-haspopup="menu" aria-expanded={menu.open} onClick={menu.toggle} icon={<MoreHorizontal />} />
       <Menu {...menu.props} align="right" title={longDayLabel(safeDate)} aria-label="Plus d'actions">
-        {compact ? touchFilterItems : !groupInBar && groupItems && <>{groupItems}<MenuSeparator /></>}
+        {compact ? touchFilterItems : !groupInBar && groupItems && (
+              <>{groupItems}<MenuSeparator /></>
+            )}
         {actionItems}
       </Menu>
     </div>
@@ -847,8 +875,14 @@ export default function Day() {
 
   const filterChips = filterCount > 0 ? (
     <>
-      {personne && <FilterChip onRemove={() => setParam("personne", null)}>{personName(people, personne)}</FilterChip>}
-      {hideDone && <FilterChip onRemove={() => setParam("masquer", null)}>Lignes faites masquées</FilterChip>}
+      {personne && (
+          <FilterChip onRemove={() => setParam("personne", null)}>{personName(people, personne)}</FilterChip>
+        )}
+      {hideDone && (
+          <FilterChip onRemove={() => setParam("masquer", null)}>
+            Lignes faites masquées
+          </FilterChip>
+        )}
     </>
   ) : undefined;
 
@@ -883,7 +917,12 @@ export default function Day() {
                 value={personne}
                 onChange={(v) => setParam("personne", v || null)}
                 options={[{ value: "", label: "Toutes les personnes" }, ...personOptions.map((p) => ({ value: p.personId, label: p.name }))]}
-                renderOption={(o) => o.value ? <span className="inline-flex items-center gap-2"><PersonChip personId={o.value} people={people} size="sm" />{o.label}</span> : o.label}
+                renderOption={(o) => o.value ? (
+                      <span className="inline-flex items-center gap-2"><PersonChip personId={o.value} people={people} size="sm" />{o.label}</span>
+                    ) : (
+                      o.label
+                    )
+                  }
               />
             )}
             <FilterGroup
@@ -895,7 +934,9 @@ export default function Day() {
             />
           </FilterButton>
           {moreMenu}
-          <Button variant="primary" size="sm" as={Link} to={newEventUrl} icon={<Plus />}>Nouvel événement</Button>
+          <Button variant="primary" size="sm" as={Link} to={newEventUrl} icon={<Plus />}>
+              Nouvel événement
+            </Button>
         </>
       )}
       filters={filterChips}
@@ -969,7 +1010,12 @@ export default function Day() {
     <PlanningFrame
       weekNo={weekNumber}
       titleSuffix={` · ${title}`}
-      meta={personne ? `${personName(people, personne)} · ${meta}` : <WeekMeta weekTotals={summary.weekTotals} started={started} monthLink={summary.monthLink} state={{ from: here }} />}
+      meta={personne ? (
+          `${personName(people, personne)} · ${meta}`
+        ) : (
+          <WeekMeta weekTotals={summary.weekTotals} started={started} monthLink={summary.monthLink} state={{ from: here }} />
+        )
+      }
       bar={bar}
       error={error}
       callouts={callouts}
@@ -982,23 +1028,34 @@ export default function Day() {
       <div className="mt-3 max-w-doc cols:min-h-screen">
         <h2 className="text-h3 print:text-h1">{title}</h2>
         <p className="mt-1 text-sm text-muted-foreground tabular-nums">{meta}</p>
-        {loading && <p className="mt-6 text-sm text-muted-foreground">Chargement…</p>}
+        {loading && (
+          <p className="mt-6 text-sm text-muted-foreground">Chargement…</p>
+        )}
         {empty && !personne && (
           <>
-            <p className="mt-4 text-sm text-muted-foreground touch:text-base">Aucune préparation ce jour.</p>
-            <Button variant="ghost" size="sm" as={Link} to={newEventUrl} icon={<Plus />} className="mt-1 justify-start text-muted-foreground">Nouvel événement</Button>
+            <p className="mt-4 text-sm text-muted-foreground touch:text-base">
+              Aucune préparation ce jour.
+            </p>
+            <Button variant="ghost" size="sm" as={Link} to={newEventUrl} icon={<Plus />} className="mt-1 justify-start text-muted-foreground">
+              Nouvel événement
+            </Button>
           </>
         )}
         {empty && personne && serviceEvents.length === 0 && (
           <>
-            <p className="mt-4 text-sm text-muted-foreground touch:text-base">Aucune préparation pour {personName(people, personne)} ce jour.</p>
+            <p className="mt-4 text-sm text-muted-foreground touch:text-base">Aucune préparation pour {personName(people, personne)} ce jour.
+            </p>
             <p className="mt-1">
-              <Button variant="link" size="sm" as={Link} to={`/jour/${safeDate}`}>Toutes les personnes</Button>
+              <Button variant="link" size="sm" as={Link} to={`/jour/${safeDate}`}>
+                Toutes les personnes
+              </Button>
             </p>
           </>
         )}
         {!loading && !error && items.length > 0 && (personne ? personItems.length === 0 : groups.every((g) => g.lines.length === 0)) && (
-          <p className="mt-6 text-sm text-muted-foreground touch:text-base">Tout est fait.</p>
+          <p className="mt-6 text-sm text-muted-foreground touch:text-base">
+              Tout est fait.
+            </p>
         )}
 
         {personne ? (
@@ -1026,7 +1083,9 @@ export default function Day() {
             )}
             {!(empty && serviceEvents.length === 0) && (
               <p className="no-print mt-6">
-                <Button variant="link" size="sm" as={Link} to={`/jour/${safeDate}${hideDone ? "?masquer=faites" : ""}`}>Toutes les personnes</Button>
+                <Button variant="link" size="sm" as={Link} to={`/jour/${safeDate}${hideDone ? "?masquer=faites" : ""}`}>
+                  Toutes les personnes
+                </Button>
               </p>
             )}
           </>
@@ -1036,14 +1095,20 @@ export default function Day() {
               <header className="sticky top-[96px] z-[15] bg-background py-2 md:top-[52px] cols:top-0">
                 <div className="flex min-h-7 items-center gap-3">
                   <h3 className={`flex min-w-0 items-center gap-2 text-h3 ${group.tag ? "flex-wrap" : ""}`}>
-                    {mode === "personne" && group.personId && <PersonChip personId={group.personId} people={people} size="md" />}
+                    {mode === "personne" && group.personId && (
+                      <PersonChip personId={group.personId} people={people} size="md" />
+                    )}
                     <span className="min-w-0 truncate">{group.title}</span>
-                    {group.tag && <Tag colour="gray" className="shrink-0">{group.tag}</Tag>}
+                    {group.tag && (
+                      <Tag colour="gray" className="shrink-0">{group.tag}</Tag>
+                    )}
                   </h3>
                   <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{group.count}</span>
                   {mode === "personne" && group.personId && (
                     <>
-                      <Button variant="ghost" size="sm" aria-label={`Partager la liste de ${group.title}`} className="no-print ml-auto hidden md:inline-flex" onClick={() => share(group.personId ?? undefined)} icon={<Share2 />}>Partager</Button>
+                      <Button variant="ghost" size="sm" aria-label={`Partager la liste de ${group.title}`} className="no-print ml-auto hidden md:inline-flex" onClick={() => share(group.personId ?? undefined)} icon={<Share2 />}>
+                        Partager
+                      </Button>
                       <IconButton variant="ghost" size="sm" aria-label={`Partager la liste de ${group.title}`} className="no-print ml-auto md:hidden" onClick={() => share(group.personId ?? undefined)} icon={<Share2 />} />
                     </>
                   )}
@@ -1051,11 +1116,15 @@ export default function Day() {
                     <GroupAssign people={activePeople} onChange={(next) => assignAll(group.lines, next)} className="ml-auto" />
                   )}
                 </div>
-                {group.subtitle && <p className="text-sm text-muted-foreground">{group.subtitle}</p>}
+                {group.subtitle && (
+                  <p className="text-sm text-muted-foreground">{group.subtitle}</p>
+                )}
               </header>
 
               {group.lines.length === 0 ? (
-                <p className="py-2 text-sm text-muted-foreground">Rien ce jour.</p>
+                <p className="py-2 text-sm text-muted-foreground">
+                  Rien ce jour.
+                </p>
               ) : mode === "recette" && group.key !== TASKS_KEY ? (
                 <RecipeGroupBody group={group} lines={group.lines.filter(isLine)} people={people} ingredientById={ingredientById} prepUrl={prepUrl} from={here} onStatus={(s) => setAllStatus(group.lines, s)} />
               ) : (
@@ -1079,7 +1148,8 @@ export default function Day() {
                 onClose={() => setComposerOpen(false)}
               />
             ) : (
-              <Button variant="ghost" size="sm" icon={<Plus />} className="text-muted-foreground" onClick={() => (touch ? openCreateTask() : setComposerOpen(true))}>
+              <Button variant="ghost" size="sm" icon={<Plus />} className="text-muted-foreground" onClick={() =>
+                  touch ? openCreateTask() : setComposerOpen(true)}>
                 Tâche
               </Button>
             )}
@@ -1087,7 +1157,9 @@ export default function Day() {
         )}
       </div>
 
-      {lift.item && <DragGhost point={lift.ghost} status={lift.item.prepStatus} label={itemLabel(lift.item)} target={lift.target} />}
+      {lift.item && (
+        <DragGhost point={lift.ghost} status={lift.item.prepStatus} label={itemLabel(lift.item)} target={lift.target} />
+      )}
 
       <TaskDialog
         open={taskDialog !== null}
@@ -1106,12 +1178,16 @@ export default function Day() {
         title={`Supprimer la tâche « ${confirmTask?.label ?? ""} » ?`}
         size="sm"
         aria-label="Supprimer la tâche"
-        footer={(
+        footer={
           <>
-            <Button variant="default" size="md" onClick={() => setConfirmTask(null)} disabled={busy}>Annuler</Button>
-            <Button variant="danger" size="md" onClick={() => void confirmDelete()} disabled={busy}>Supprimer</Button>
+            <Button variant="default" size="md" onClick={() => setConfirmTask(null)} disabled={busy}>
+              Annuler
+            </Button>
+            <Button variant="danger" size="md" onClick={() => void confirmDelete()} disabled={busy}>
+              Supprimer
+            </Button>
           </>
-        )}
+        }
       >
         <p className="text-muted-foreground">Cette action est irréversible.</p>
       </Dialog>
@@ -1120,14 +1196,20 @@ export default function Day() {
         <div role="status" className="no-print fixed bottom-4 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 rounded-lg bg-background px-4 py-3 shadow-dialog">
           <span className="min-w-0 flex-1 text-sm font-medium touch:text-base">Fait : {notice.name}</span>
           {notice.next ? (
-            <Button variant="primary" size="md" as={Link} to={prepUrl(notice.next)}>Suivante</Button>
+            <Button variant="primary" size="md" as={Link} to={prepUrl(notice.next)}>
+              Suivante
+            </Button>
           ) : (
             <span className="text-sm text-muted-foreground">Tout est fait</span>
           )}
           <IconButton size="sm" aria-label="Fermer" onClick={() => setNotice(null)} icon={<X />} />
         </div>
       )}
-      {busy && <span className="sr-only" aria-live="polite">Enregistrement…</span>}
+      {busy && (
+        <span className="sr-only" aria-live="polite">
+          Enregistrement…
+        </span>
+      )}
     </PlanningFrame>
   );
 }
@@ -1241,7 +1323,9 @@ function LineRow({ line, people, to, from, second, onStatus, onCycle, onAssign, 
       <Link to={to} state={{ from }} draggable={false} className="flex min-h-9 min-w-0 flex-1 items-center py-1 before:absolute before:inset-0 before:rounded touch:min-h-11">
         <span className="min-w-0 flex-1">
           <span className="block text-base">{line.recipeName}</span>
-          {second && <span className="block text-sm text-muted-foreground">{second}</span>}
+          {second && (
+            <span className="block text-sm text-muted-foreground">{second}</span>
+          )}
         </span>
       </Link>
       {onAssign ? (
@@ -1286,8 +1370,16 @@ function TaskRow({ task, people, second, onStatus, onCycle, onAssign, onEdit, on
       <span className="hidden print:inline-block"><Dot status={task.prepStatus} /></span>
       <button type="button" onClick={onEdit} title={task.label} className="flex min-h-9 min-w-0 flex-1 items-center py-1 text-left before:absolute before:inset-0 before:rounded touch:min-h-11">
         <span className="min-w-0 flex-1">
-          <span className="block text-base">{task.label}</span>
-          {second && <span className="block text-sm text-muted-foreground">{second}</span>}
+          <span className="block text-base">{task.label}
+            {task.scheduledStart && task.scheduledEnd ? (
+              <span className="ml-2 text-sm text-muted-foreground">
+                {task.scheduledStart} à {task.scheduledEnd}
+              </span>
+            ) : null}
+          </span>
+          {second && (
+            <span className="block text-sm text-muted-foreground">{second}</span>
+          )}
         </span>
       </button>
       {onAssign ? (
@@ -1311,12 +1403,15 @@ function TaskRow({ task, people, second, onStatus, onCycle, onAssign, onEdit, on
 }
 
 // "Assigner tout" on the Sans personne heading; every toggle writes the whole group.
-function GroupAssign({ people, onChange, className }: { people: Person[]; onChange: (next: string[]) => void; className?: string }) {
+function GroupAssign({ people, onChange, className }: { people: Person[]; onChange: (next: string[]) => void; className?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState<string[]>([]);
   return (
     <span className={`no-print relative inline-flex shrink-0 ${open ? "z-20" : ""} ${className ?? ""}`}>
-      <Button variant="link" size="sm" aria-haspopup="dialog" onClick={() => setOpen(true)}>Assigner tout</Button>
+      <Button variant="link" size="sm" aria-haspopup="dialog" onClick={() => setOpen(true)}>
+        Assigner tout
+      </Button>
       {open && (
         <PersonPicker
           value={value}
@@ -1360,9 +1455,17 @@ function RecipeGroupBody({ group, lines, people, ingredientById, prepUrl, from, 
               <Dot status={line.prepStatus} />
               <span className="min-w-0 flex-1">
                 {line.clientName ?? line.eventName}
-                {line.moved && <span className="text-muted-foreground"> · pour {shortDayLabel(line.eventDate)}</span>}
-                <span className="text-muted-foreground"> · {STATUS_LABEL[line.prepStatus]}</span>
-                {line.notes && <span className="block text-sm text-muted-foreground">{line.notes}</span>}
+                {line.moved && (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · pour {shortDayLabel(line.eventDate)}</span>
+                )}
+                <span className="text-muted-foreground">
+                  {" "}
+                  · {STATUS_LABEL[line.prepStatus]}</span>
+                {line.notes && (
+                  <span className="block text-sm text-muted-foreground">{line.notes}</span>
+                )}
               </span>
               <PersonChips personIds={line.assignedTo} people={people} size="sm" inherited={!line.ownAssignment} />
               <span className="shrink-0 tabular-nums">{line.portions}</span>
@@ -1397,7 +1500,8 @@ function IngredientList({ items }: { items: ScaledIngredient[] }) {
           <li key={`${it.name}-${it.unit}-${i}`} className="flex min-h-8 items-center justify-between gap-4 touch:min-h-11">
             <span className="min-w-0">{it.name}</span>
             <span className="shrink-0 font-medium tabular-nums">
-              {q.value} <span className="font-normal text-muted-foreground">{q.unit}</span>
+              {q.value}{" "}
+              <span className="font-normal text-muted-foreground">{q.unit}</span>
             </span>
           </li>
         );

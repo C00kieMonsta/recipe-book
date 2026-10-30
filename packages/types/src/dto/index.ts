@@ -10,3 +10,5 @@ export * from "./grocery-lists";
 export * from "./clients";
 export * from "./ledger";
 export * from "./assistant";
+export * from "./stock";
+export * from "./planning";

@@ -57,3 +57,46 @@ describe("productionPlan", () => {
     expect(plan.warnings[0]).toContain("r1");
   });
 });
+
+it("counts only the ingredient share assigned to preparations in the selected day", () => {
+  const recipe = {
+    recipeId: "r",
+    portions: 10,
+    ingredients: [{ ingredientId: "onion", qty: 1000, unit: "g", lossPct: 10 }],
+    preparations: [
+      { preparationId: "a", ingredientShares: { onion: 40 } },
+      { preparationId: "b", ingredientShares: { onion: 60 } },
+    ],
+  } as unknown as Recipe;
+  const event = {
+    eventId: "e",
+    date: "2026-10-30",
+    status: "upcoming",
+    recipes: [{ lineId: "l", recipeId: "r", portions: 20 }],
+    tasks: [
+      {
+        taskId: "a",
+        recipeLineId: "l",
+        preparationId: "a",
+        date: "2026-10-29",
+        label: "Base",
+      },
+      {
+        taskId: "b",
+        recipeLineId: "l",
+        preparationId: "b",
+        date: "2026-10-30",
+        label: "Dressage",
+      },
+    ],
+  } as unknown as AppEvent;
+  const plan = productionPlan(
+    [event],
+    [recipe],
+    [{ ingredientId: "onion", name: "Oignon" }] as Ingredient[],
+    "2026-10-29",
+    "2026-10-29",
+  );
+  expect(plan.ingredients[0]).toMatchObject({ qty: 800, purchaseQty: 880 });
+  expect(plan.warnings).toEqual([]);
+});

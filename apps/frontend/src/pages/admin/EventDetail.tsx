@@ -166,7 +166,9 @@ const NEXT_STATUS: Record<PrepStatus, PrepStatus> = { todo: "doing", doing: "don
 const STATUS_LABEL: Record<PrepStatus, string> = { todo: "À préparer", doing: "En cours", done: "Fait" };
 
 function safeFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9àâéèêëïîôùûüç\s-]/g, "").trim() || "evenement";
+  return (
+    name.replace(/[^a-zA-Z0-9àâéèêëïîôùûüç\s-]/g, "").trim() || "evenement"
+  );
 }
 
 // « 3 300 € » for a whole amount, « 32,50 € » otherwise.
@@ -189,7 +191,8 @@ function dayPhrase(date: string): string {
 
 type DropTarget = { course: string; lineId: string | null };
 type MoveTarget = { kind: "line" | "task"; id: string };
-type TaskDialogState = { mode: "create" | "edit"; taskId?: string; initial: TaskDialogValue };
+type TaskDialogState = { mode: "create" | "edit"; taskId?: string; initial: TaskDialogValue;
+};
 
 const ROW = "group flex min-h-9 items-center gap-1 rounded px-1 hover:bg-hover touch:min-h-11";
 
@@ -241,7 +244,8 @@ export default function EventDetail() {
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const [billingForm, setBillingForm] = useState<"facture" | "acompte" | null>(null);
   // The « Facture 2 / 2 » forms, one per VAT rate of the billed lines, after the food invoice is saved.
-  const [extraForm, setExtraForm] = useState<{ entries: SalesEntryPrefill[]; index: number } | null>(null);
+  const [extraForm, setExtraForm] = useState<{ entries: SalesEntryPrefill[]; index: number;
+  } | null>(null);
   const [pickerLineId, setPickerLineId] = useState<string | null>(null);
   const [teamOpen, setTeamOpen] = useState(false);
   const [serviceOpen, setServiceOpen] = useState(false);
@@ -308,7 +312,8 @@ export default function EventDetail() {
   const recipePortionsById = useMemo(() => new Map(recipes.map((r) => [r.recipeId, r.portions || 1])), [recipes]);
 
   const categories = useMemo(() => (settings?.courses?.length ? settings.courses : DEFAULT_COURSES), [settings]);
-  const courses = useMemo(() => (categories.includes("Autre") ? categories : [...categories, "Autre"]), [categories]);
+  const courses = useMemo(() =>
+      categories.includes("Autre") ? categories : [...categories, "Autre"], [categories]);
   const invoicing: InvoicingMode = settings?.invoicing ?? "app";
   const prestationTypes = settings?.prestationTypes?.length ? settings.prestationTypes : DEFAULT_PRESTATION_TYPES;
 
@@ -423,7 +428,9 @@ export default function EventDetail() {
   };
 
   if (loading) return <div className="p-8 text-muted-foreground">Chargement…</div>;
-  if (loadError || !event || !id) return <div className="p-8 text-muted-foreground">Événement introuvable.</div>;
+  if (loadError || !event || !id) return (
+      <div className="p-8 text-muted-foreground">Événement introuvable.</div>
+    );
 
   const client = event.clientId ? clients.find((c) => c.clientId === event.clientId) : undefined;
   const weekUrl = `/semaine/${isoWeekOf(event.date)}`;
@@ -506,7 +513,7 @@ export default function EventDetail() {
       const fresh = await api.events.get(id).catch(() => null);
       if (fresh && queue.current === optimisticStaff) {
         queue.reset(fresh.staff ?? []);
-        setEvent((current) => current?.eventId === id ? fresh : current);
+        setEvent((current) => (current?.eventId === id ? fresh : current));
       }
     });
   };
@@ -531,7 +538,7 @@ export default function EventDetail() {
         const fresh = await api.events.get(id).catch(() => null);
         if (fresh && queue.current === optimisticStaff) {
           queue.reset(fresh.staff ?? []);
-          setEvent((current) => current?.eventId === id ? fresh : current);
+          setEvent((current) => (current?.eventId === id ? fresh : current));
         }
       });
     }
@@ -546,9 +553,9 @@ export default function EventDetail() {
 
   // ── Menu lines ────────────────────────────────────────────────────────────
   const orderedPut = (groups: { course: string; lines: EventRecipeLine[] }[], changed?: { lineId: string; course: string }) =>
-    runLines(api.events.lines.put(id, groups.flatMap((g) => g.lines.map((l) => (
-      changed && l.lineId === changed.lineId ? { lineId: l.lineId, course: changed.course } : { lineId: l.lineId }
-    )))));
+    runLines(api.events.lines.put(id, groups.flatMap((g) => g.lines.map((l) =>
+            changed && l.lineId === changed.lineId ? { lineId: l.lineId, course: changed.course } : { lineId: l.lineId },
+          ))));
 
   const allGroups = () => courses.map((c) => ({ course: c, lines: [...(grouped.find((g) => g.course === c)?.lines ?? [])] }));
 
@@ -583,7 +590,8 @@ export default function EventDetail() {
     orderedPut(groups, target.course !== sourceCourse ? { lineId: dragged.lineId, course: target.course } : undefined);
   };
 
-  const patchLine = (lineId: string, patch: { portions?: number; prepStatus?: PrepStatus; notes?: string; assignedTo?: string[]; prepDate?: string | null }) =>
+  const patchLine = (lineId: string, patch: { portions?: number; prepStatus?: PrepStatus; notes?: string; assignedTo?: string[]; prepDate?: string | null;
+    }) =>
     runLines(api.events.lines.patch(id, lineId, patch));
 
   // ── Tasks ─────────────────────────────────────────────────────────────────
@@ -657,7 +665,9 @@ export default function EventDetail() {
   };
 
   const addCreatedRecipe = async (recipe: Recipe) => {
-    setRecipes((prev) => (prev.some((r) => r.recipeId === recipe.recipeId) ? prev : [...prev, recipe]));
+    setRecipes((prev) =>
+      prev.some((r) => r.recipeId === recipe.recipeId) ? prev : [...prev, recipe],
+    );
     setAddingRecipe(false);
     try {
       const updated = await api.events.lines.add(id, {
@@ -682,7 +692,9 @@ export default function EventDetail() {
 
   // ── Extra costs ───────────────────────────────────────────────────────────
   const updateExtraCost = (idx: number, patch: Partial<EventExtraCost>) => {
-    const extraCosts = event.extraCosts.map((c, i) => (i === idx ? { ...c, ...patch } : c));
+    const extraCosts = event.extraCosts.map((c, i) =>
+      i === idx ? { ...c, ...patch } : c,
+    );
     save({ extraCosts });
   };
   const addExtraCost = () => save({ extraCosts: [...event.extraCosts, { label: "Nouveau coût", amount: 0, kind: "autre" }] });
@@ -847,7 +859,8 @@ export default function EventDetail() {
     }
   };
 
-  const prestationLabel = event.prestationType ? prestationTypes.find((t) => t.key === event.prestationType)?.label ?? event.prestationType : undefined;
+  const prestationLabel = event.prestationType ? (prestationTypes.find((t) => t.key === event.prestationType)?.label ?? event.prestationType)
+    : undefined;
 
   // « Livraison le samedi 17 octobre à 11h30, Rue des Lilas 4 », either part alone when the other is missing.
   const deliveryLine = (() => {
@@ -1017,8 +1030,14 @@ export default function EventDetail() {
             <Link to={`/recipes/${line.recipeId}`} title={recipe?.name} className="text-sm text-foreground hover:underline touch:text-base">
               {recipe?.name ?? "Recette supprimée"}
             </Link>
-            {needsIngredients && <Tag colour="gray" className="ml-1.5 align-text-bottom">Sans ingrédients</Tag>}
-            {line.notes && noteLineId !== line.lineId && <span className="block text-sm text-muted-foreground md:inline"><span className="hidden md:inline"> · </span>{line.notes}</span>}
+            {needsIngredients && (
+              <Tag colour="gray" className="ml-1.5 align-text-bottom">
+                Sans ingrédients
+              </Tag>
+            )}
+            {line.notes && noteLineId !== line.lineId && (
+              <span className="block text-sm text-muted-foreground md:inline"><span className="hidden md:inline"> · </span>{line.notes}</span>
+            )}
             {isMoved(line, event) && (
               <Tag colour="gray" className="mt-0.5 md:hidden" title={`Préparée le ${dayPhrase(prepDateOf(line, event))}`}>{shortDayLabel(prepDateOf(line, event))}</Tag>
             )}
@@ -1106,8 +1125,13 @@ export default function EventDetail() {
         <div className="min-w-0 flex-1 px-1">
           <button type="button" onClick={() => openTaskEdit(task)} title={task.label} className="text-left text-sm text-foreground hover:underline touch:text-base">
             {task.label}
+            {task.scheduledStart && task.scheduledEnd
+              ? ` (${task.scheduledStart} à ${task.scheduledEnd})`
+              : ""}
           </button>
-          {task.notes && <span className="block text-sm text-muted-foreground md:inline"><span className="hidden md:inline"> · </span>{task.notes}</span>}
+          {task.notes && (
+            <span className="block text-sm text-muted-foreground md:inline"><span className="hidden md:inline"> · </span>{task.notes}</span>
+          )}
           <Tag colour="gray" className="mt-0.5 md:hidden" title={`Le ${dayPhrase(task.date)}`}>{shortDayLabel(task.date)}</Tag>
         </div>
         <Tag colour="gray" className="hidden shrink-0 md:inline-flex" title={`Le ${dayPhrase(task.date)}`}>{shortDayLabel(task.date)}</Tag>
@@ -1205,7 +1229,11 @@ export default function EventDetail() {
           <span className="flex w-24 items-center justify-end gap-1 text-right text-sm tabular-nums touch:text-base">
             <span className="text-sm text-muted-foreground">Km €</span>
             <EditableInlineNum value={entry?.kmAmount} placeholder="Montant" min={0} onSave={(v) => patchStaff(row.personId, { kmAmount: round2(Math.max(0, v)) })} />
-            {entry?.kmAmount !== undefined && <button type="button" className="text-sm text-primary hover:underline" onClick={() => patchStaff(row.personId, { kmAmount: undefined })}>Calcul</button>}
+            {entry?.kmAmount !== undefined && (
+              <button type="button" className="text-sm text-primary hover:underline" onClick={() => patchStaff(row.personId, { kmAmount: undefined })}>
+                Calcul
+              </button>
+            )}
           </span>
           <span className="w-24 text-right text-sm tabular-nums touch:text-base">
             {entry?.actualAmount !== undefined ? null : row.rate.missing ? (
@@ -1219,7 +1247,11 @@ export default function EventDetail() {
           <span className="flex w-32 items-center justify-end gap-1 text-right text-sm tabular-nums touch:text-base">
             <span className="text-sm text-muted-foreground">Donné</span>
             <EditableInlineNum value={entry?.actualAmount} placeholder="Montant" suffix=" €" min={0} onSave={(v) => patchStaff(row.personId, { actualAmount: round2(Math.max(0, v)) })} />
-            {entry?.actualAmount !== undefined && <button type="button" className="text-sm text-primary hover:underline" onClick={() => patchStaff(row.personId, { actualAmount: undefined })}>Calcul</button>}
+            {entry?.actualAmount !== undefined && (
+              <button type="button" className="text-sm text-primary hover:underline" onClick={() => patchStaff(row.personId, { actualAmount: undefined })}>
+                Calcul
+              </button>
+            )}
           </span>
           {isTouch ? (
             <ActionMenu title={name} items={[{ label: "Retirer les heures", onClick: () => removeStaff(row.personId), variant: "danger", disabled: !removable }]} />
@@ -1231,7 +1263,8 @@ export default function EventDetail() {
     );
   };
 
-  const renderCourseBlock = (group: { course: string; lines: EventRecipeLine[] }) => {
+  const renderCourseBlock = (group: { course: string; lines: EventRecipeLine[];
+  }) => {
     const isDropHere = dropTarget?.course === group.course && dropTarget.lineId === null;
     return (
       <div key={group.course} className="mt-4 first:mt-0">
@@ -1249,8 +1282,12 @@ export default function EventDetail() {
 
   const billingButtons = (size: "md" | "lg") => (
     <>
-      <Button variant="default" size={size} onClick={() => setBillingForm("acompte")}>Enregistrer un acompte</Button>
-      <Button variant="primary" size={size} icon={<Plus />} onClick={() => setBillingForm("facture")}>Créer la facture</Button>
+      <Button variant="default" size={size} onClick={() => setBillingForm("acompte")}>
+        Enregistrer un acompte
+      </Button>
+      <Button variant="primary" size={size} icon={<Plus />} onClick={() => setBillingForm("facture")}>
+        Créer la facture
+      </Button>
     </>
   );
 
@@ -1262,6 +1299,14 @@ export default function EventDetail() {
 
   return (
     <div className="mx-auto max-w-doc">
+      {event.stockConsumption?.state === "error" && (
+        <div role="alert" className="rounded border border-red-300 p-3 text-sm">
+          <p>Sortie de stock à corriger : {event.stockConsumption.message}</p>
+          <Link className="underline" to="/stock">
+            Ouvrir le stock et réessayer
+          </Link>
+        </div>
+      )}
       <PageHeader
         breadcrumb={[
           { label: `Semaine ${weekNumber}`, to: weekUrl },
@@ -1297,7 +1342,9 @@ export default function EventDetail() {
                 onSave={(v) => saveField({ clientId: v || undefined })}
               />
             ) : (
-              <Property icon={Building2} label="Client" kind="computed" value={<Link to="/settings#apropos" className="text-primary hover:underline">Clients non configurés</Link>} />
+              <Property icon={Building2} label="Client" kind="computed" value={<Link to="/settings#apropos" className="text-primary hover:underline">
+                    Clients non configurés
+                  </Link>} />
             )}
             <Property icon="💶" label="Prix" kind="custom" sub={isTotalMode ? `soit ${fmtEur(pricePerGuestOf(event))} / convive` : undefined}>
               <div ref={priceRef} className="flex w-full flex-wrap items-center gap-1">
@@ -1344,23 +1391,37 @@ export default function EventDetail() {
               onSave={(v) => saveField({ billingDetails: v.trim() || null })}
               sub={
                 client && clientBilling
-                  ? billingText === clientBilling
-                    ? "Depuis la fiche client"
-                    : <Button variant="link" size="sm" className="-mx-2" onClick={() => save({ billingDetails: clientBilling })}>Reprendre le client</Button>
-                  : undefined
+                  ? (
+                  billingText === clientBilling
+                    ? (
+                    "Depuis la fiche client"
+                  ) : (
+                    <Button variant="link" size="sm" className="-mx-2" onClick={() => save({ billingDetails: clientBilling })}>
+                      Reprendre le client
+                    </Button>
+                  )
+                ) : undefined
               }
             />
             <Property icon={Circle} label="Statut" kind="custom">
               <EditableStatus value={event.status} onSave={(v) => { if (v === "completed") complete(); else reopen(); }} />
-              {ledgerBilling === "facture" && <StatusTag status="invoiced" label={invoiceNumber ? `Facturé n° ${invoiceNumber}` : "Facturé"} />}
-              {ledgerBilling === "acompte_recu" && <StatusTag status="deposit" />}
-              {ledgerBilling === "paye" && <StatusTag status="paid" label={lastPaidAt ? `Payé le ${dayMonthLabel(lastPaidAt)}` : "Payé"} />}
+              {ledgerBilling === "facture" && (
+                <StatusTag status="invoiced" label={invoiceNumber ? `Facturé n° ${invoiceNumber}` : "Facturé"} />
+              )}
+              {ledgerBilling === "acompte_recu" && (
+                <StatusTag status="deposit" />
+              )}
+              {ledgerBilling === "paye" && (
+                <StatusTag status="paid" label={lastPaidAt ? `Payé le ${dayMonthLabel(lastPaidAt)}` : "Payé"} />
+              )}
               {event.invoicedAt && !invoicedByLedger && (
                 <span className="inline-flex" title={event.invoiceRef ? `N° ${event.invoiceRef}` : undefined}>
                   <StatusTag status="invoiced" label={`Facturé le ${dayMonthLabel(event.invoicedAt)}`} />
                 </span>
               )}
-              {!event.prestationType && <Tag colour="red">Type de prestation manquant</Tag>}
+              {!event.prestationType && (
+                <Tag colour="red">Type de prestation manquant</Tag>
+              )}
             </Property>
             <Property icon="👩‍🍳" label="En cuisine" kind="custom" sub={isTouch ? undefined : KITCHEN_SUB}>
               <div ref={teamRef} className="relative flex flex-wrap items-center gap-1">
@@ -1428,7 +1489,9 @@ export default function EventDetail() {
             <EmptyState message="Aucune recette dans le catalogue pour l'instant." action={{ label: "+ Créer une recette", to: "/recipes" }} />
           ) : (
             <>
-              {grouped.length === 0 && !addingRecipe && <EmptyState message="Aucune recette au menu." action={{ label: "+ Ajouter une recette", onClick: () => setAddingRecipe(true) }} />}
+              {grouped.length === 0 && !addingRecipe && (
+                <EmptyState message="Aucune recette au menu." action={{ label: "+ Ajouter une recette", onClick: () => setAddingRecipe(true) }} />
+              )}
               <div>{grouped.map(renderCourseBlock)}</div>
               <div className="mt-2" ref={addRef}>
                 {addingRecipe ? (
@@ -1458,7 +1521,9 @@ export default function EventDetail() {
 
       <Section
         title="Heures et frais"
-        meta={staffMeta ? <span className="hidden md:inline">{staffMeta}</span> : undefined}
+        meta={staffMeta ? (
+            <span className="hidden md:inline">{staffMeta}</span>
+          ) : undefined}
         action={
           <span className="relative inline-flex">
             <Button variant="ghost" size="sm" icon={<Plus />} onClick={() => setStaffPickerOpen((o) => !o)}>Personne</Button>
@@ -1475,7 +1540,9 @@ export default function EventDetail() {
           </span>
         }
       >
-        {staffMeta && <p className="mb-2 text-sm text-muted-foreground md:hidden">{staffMeta}</p>}
+        {staffMeta && (
+          <p className="mb-2 text-sm text-muted-foreground md:hidden">{staffMeta}</p>
+        )}
         {staff.rows.length === 0 ? (
           <p className="text-sm text-muted-foreground touch:text-base">{STAFF_EMPTY}</p>
         ) : (
@@ -1483,7 +1550,8 @@ export default function EventDetail() {
         )}
         {cost.extras.personnel > 0 && (
           <p className="mt-2 text-caption text-muted-foreground">
-            + {fmtEurShort(cost.extras.personnel)} de personnel en coûts supplémentaires (forfaits, agence) ; les heures de l'équipe se notent ci-dessus.
+            + {fmtEurShort(cost.extras.personnel)} de personnel en coûts supplémentaires (forfaits, agence) ; les heures de l'équipe se
+            notent ci-dessus.
           </p>
         )}
       </Section>
@@ -1492,10 +1560,14 @@ export default function EventDetail() {
 
       <Section
         title="Coûts supplémentaires"
-        meta={event.extraCosts.length > 0 ? <span className="hidden md:inline">{fmtEur(sumExtraCosts(event.extraCosts))}</span> : undefined}
+        meta={event.extraCosts.length > 0 ? (
+            <span className="hidden md:inline">{fmtEur(sumExtraCosts(event.extraCosts))}</span>
+          ) : undefined}
         action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addExtraCost}>Ajouter</Button>}
       >
-        {event.extraCosts.length > 0 && <p className="mb-2 text-sm text-muted-foreground md:hidden">{fmtEur(sumExtraCosts(event.extraCosts))}</p>}
+        {event.extraCosts.length > 0 && (
+          <p className="mb-2 text-sm text-muted-foreground md:hidden">{fmtEur(sumExtraCosts(event.extraCosts))}</p>
+        )}
         {event.extraCosts.length === 0 ? (
           <p className="text-sm text-muted-foreground">Aucun coût supplémentaire.</p>
         ) : (
@@ -1529,9 +1601,13 @@ export default function EventDetail() {
       <div id="facturation" className="scroll-mt-20">
         <Section
           title="Facturation"
-          action={invoicing === "app" && !ledgerNotConfigured && !billingForm && !extraForm ? <div className="hidden items-center gap-1 md:flex">{billingButtons("md")}</div> : undefined}
+          action={invoicing === "app" && !ledgerNotConfigured && !billingForm && !extraForm ? (
+              <div className="hidden items-center gap-1 md:flex">{billingButtons("md")}</div>
+            ) : undefined}
         >
-          {invoicing === "app" && !ledgerNotConfigured && !billingForm && !extraForm && <div className="mb-3 flex flex-col gap-2 md:hidden">{billingButtons("lg")}</div>}
+          {invoicing === "app" && !ledgerNotConfigured && !billingForm && !extraForm && (
+              <div className="mb-3 flex flex-col gap-2 md:hidden">{billingButtons("lg")}</div>
+            )}
           {ledgerNotConfigured ? (
             <Callout emoji="💶" tone="warning">{NOT_CONFIGURED}</Callout>
           ) : (
@@ -1560,11 +1636,15 @@ export default function EventDetail() {
                   <h3 className="text-base font-semibold">{billingForm === "facture" ? "Créer la facture" : "Enregistrer un acompte"}</h3>
                   <dl className="mt-3 grid grid-cols-2 gap-3">
                     <div>
-                      <dt className="text-sm text-muted-foreground">Revenu prévu</dt>
+                      <dt className="text-sm text-muted-foreground">
+                        Revenu prévu
+                      </dt>
                       <dd className="text-base font-medium tabular-nums">{fmtEur(prefill.revenuePrevu)}</dd>
                     </div>
                     <div>
-                      <dt className="text-sm text-muted-foreground">Acomptes déjà reçus</dt>
+                      <dt className="text-sm text-muted-foreground">
+                        Acomptes déjà reçus
+                      </dt>
                       <dd className="text-base font-medium tabular-nums">{fmtEur(prefill.acomptesRecus)}</dd>
                     </div>
                   </dl>
@@ -1614,14 +1694,18 @@ export default function EventDetail() {
                 trailing={
                   <>
                     <EditableInlineText value={event.invoiceRef ?? ""} placeholder="N° Odoo" onSave={(v) => save({ invoiceRef: v.trim() || null })} />
-                    <Button variant="link" size="sm" onClick={unmarkInvoiced}>Annuler</Button>
+                    <Button variant="link" size="sm" onClick={unmarkInvoiced}>
+                      Annuler
+                    </Button>
                   </>
                 }
               />
             </div>
           )}
           {markable && !marked && !invoicedByLedger && (
-            <Button variant="default" size="md" className="mt-3 w-full md:w-auto" onClick={markInvoiced}>Marquer comme facturé</Button>
+            <Button variant="default" size="md" className="mt-3 w-full md:w-auto" onClick={markInvoiced}>
+              Marquer comme facturé
+            </Button>
           )}
         </Section>
       </div>
@@ -1654,14 +1738,15 @@ export default function EventDetail() {
         footer={<DialogActions onCancel={() => setDialog(null)} onConfirm={() => { if (dialog?.kind === "removeLine") removeLine(dialog.lineId); }} confirmLabel="Retirer" danger />}
       >
         <p className="text-muted-foreground">
-          {dialog?.kind === "removeLine" ? recipeById.get(event.recipes.find((l) => l.lineId === dialog.lineId)?.recipeId ?? "")?.name ?? "Cette ligne" : ""} sera retirée de l'événement.
+          {dialog?.kind === "removeLine" ? (recipeById.get(event.recipes.find((l) => l.lineId === dialog.lineId)?.recipeId ?? "")?.name ?? "Cette ligne")
+            : ""}{" "} sera retirée de l'événement.
         </p>
       </Dialog>
 
       <Dialog
         open={dialog?.kind === "removeTask"}
         onClose={() => setDialog(null)}
-        title={`Supprimer la tâche « ${dialog?.kind === "removeTask" ? tasks.find((t) => t.taskId === dialog.taskId)?.label ?? "" : ""} » ?`}
+        title={`Supprimer la tâche « ${dialog?.kind === "removeTask" ? (tasks.find((t) => t.taskId === dialog.taskId)?.label ?? "") : ""} » ?`}
         size="sm"
         footer={
           <DialogActions
@@ -1719,9 +1804,14 @@ export default function EventDetail() {
         size="sm"
         footer={<DialogActions onCancel={() => setDialog(null)} onConfirm={adjustPortions} confirmLabel="Ajuster" busy={busy} />}
       >
-        <p className="text-muted-foreground">Chaque ligne sera rescalée par le rapport nouveau / ancien nombre de convives ({event.guestCount} aujourd'hui).</p>
+        <p className="text-muted-foreground">
+          Chaque ligne sera rescalée par le rapport nouveau / ancien nombre de
+          convives ({event.guestCount} aujourd'hui).
+        </p>
         <div className="mt-4">
-          <FieldLabel htmlFor="adjust-guests">Nouveau nombre de convives</FieldLabel>
+          <FieldLabel htmlFor="adjust-guests">
+            Nouveau nombre de convives
+          </FieldLabel>
           <input id="adjust-guests" type="number" min={1} inputMode="numeric" value={adjustGuests} onChange={(e) => setAdjustGuests(e.target.value)} className="input-field" />
         </div>
       </Dialog>
@@ -1733,7 +1823,9 @@ export default function EventDetail() {
         size="sm"
         footer={<DialogActions onCancel={() => setDialog(null)} onConfirm={duplicate} confirmLabel="Dupliquer" busy={busy} />}
       >
-        <FieldLabel htmlFor="duplicate-date">Date du nouvel événement (même jour, semaine suivante par défaut)</FieldLabel>
+        <FieldLabel htmlFor="duplicate-date">
+          Date du nouvel événement (même jour, semaine suivante par défaut)
+        </FieldLabel>
         <input id="duplicate-date" type="date" value={duplicateDate} onChange={(e) => setDuplicateDate(e.target.value)} className="input-field" />
       </Dialog>
 
@@ -1744,11 +1836,17 @@ export default function EventDetail() {
         size="sm"
         footer={<DialogActions onCancel={() => setDialog(null)} onConfirm={saveAsTemplate} confirmLabel="Enregistrer" busy={busy} />}
       >
-        <p className="text-muted-foreground">Le menu, les convives, le prix et les coûts de cet événement deviennent le modèle de {client?.name ?? "ce client"} pour le jour choisi.</p>
+        <p className="text-muted-foreground">
+          Le menu, les convives, le prix et les coûts de cet événement
+          deviennent le modèle de {client?.name ?? "ce client"} pour le jour
+          choisi.
+        </p>
         <div className="mt-4">
           <FieldLabel htmlFor="template-weekday">Jour de la semaine</FieldLabel>
           <select id="template-weekday" value={templateWeekday} onChange={(e) => setTemplateWeekday(Number(e.target.value))} className="input-field">
-            {WEEKDAYS.map((w, i) => <option key={w} value={i + 1}>{w}</option>)}
+            {WEEKDAYS.map((w, i) => (
+              <option key={w} value={i + 1}>{w}</option>
+            ))}
           </select>
         </div>
       </Dialog>
@@ -1763,7 +1861,9 @@ export default function EventDetail() {
         <form id="offer-name-form" onSubmit={(e) => { e.preventDefault(); void saveAsOffer(); }}>
           <FieldLabel htmlFor="offer-name">Nom de l'offre</FieldLabel>
           <input id="offer-name" autoFocus value={offerName} onChange={(e) => setOfferName(e.target.value)} className="input-field" />
-          <p className="mt-2 text-caption text-muted-foreground">Les portions sont converties par convive.</p>
+          <p className="mt-2 text-caption text-muted-foreground">
+            Les portions sont converties par convive.
+          </p>
         </form>
       </Dialog>
 
@@ -1782,11 +1882,16 @@ export default function EventDetail() {
 }
 
 function Dot({ className = "" }: { className?: string }) {
-  return <span aria-hidden="true" className={`text-icon ${className}`}>·</span>;
+  return (
+    <span aria-hidden="true" className={`text-icon ${className}`}>
+      ·
+    </span>
+  );
 }
 
 // 16px status dot in a 28px hit area; a tap cycles on touch, a click opens the three options on pointer screens.
-function LineStatus({ value, isTouch, onChange }: { value: PrepStatus; isTouch: boolean; onChange: (v: PrepStatus) => void }) {
+function LineStatus({ value, isTouch, onChange }: { value: PrepStatus; isTouch: boolean; onChange: (v: PrepStatus) => void;
+}) {
   const menu = useMenu();
   const dot = value === "done"
     ? "bg-status-done text-white"
@@ -1818,7 +1923,8 @@ function LineStatus({ value, isTouch, onChange }: { value: PrepStatus; isTouch: 
 }
 
 // Inline contact value with a placeholder; the placeholder is not printed.
-function InlineContact({ value, onSave, placeholder, inputMode }: { value: string; onSave: (v: string) => void; placeholder: string; inputMode: "tel" | "email" | "text" }) {
+function InlineContact({ value, onSave, placeholder, inputMode }: { value: string; onSave: (v: string) => void; placeholder: string; inputMode: "tel" | "email" | "text";
+}) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
   useEffect(() => { if (!editing) setText(value); }, [value, editing]);
@@ -1850,7 +1956,8 @@ function InlineContact({ value, onSave, placeholder, inputMode }: { value: strin
 }
 
 // Delivery time: « 11h30 » through fmtTime, a native time input while editing.
-function InlineTime({ value, onSave, placeholder }: { value: string; onSave: (v: string) => void; placeholder: string }) {
+function InlineTime({ value, onSave, placeholder }: { value: string; onSave: (v: string) => void; placeholder: string;
+}) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
   useEffect(() => { if (!editing) setText(value); }, [value, editing]);
@@ -1882,7 +1989,8 @@ function InlineTime({ value, onSave, placeholder }: { value: string; onSave: (v:
   );
 }
 
-function LineNote({ value, onSave, onCancel }: { value: string; onSave: (v: string) => void; onCancel: () => void }) {
+function LineNote({ value, onSave, onCancel }: { value: string; onSave: (v: string) => void; onCancel: () => void;
+}) {
   const [text, setText] = useState(value);
   return (
     <div className="px-1 pb-2 pl-8">
@@ -1900,10 +2008,13 @@ function LineNote({ value, onSave, onCancel }: { value: string; onSave: (v: stri
   );
 }
 
-function DialogActions({ onCancel, onConfirm, confirmLabel, danger, busy }: { onCancel: () => void; onConfirm: () => void; confirmLabel: string; danger?: boolean; busy?: boolean }) {
+function DialogActions({ onCancel, onConfirm, confirmLabel, danger, busy }: { onCancel: () => void; onConfirm: () => void; confirmLabel: string; danger?: boolean; busy?: boolean;
+}) {
   return (
     <>
-      <Button variant="default" size="md" onClick={onCancel}>Annuler</Button>
+      <Button variant="default" size="md" onClick={onCancel}>
+        Annuler
+      </Button>
       <Button variant={danger ? "danger" : "primary"} size="md" onClick={onConfirm} disabled={busy}>{confirmLabel}</Button>
     </>
   );

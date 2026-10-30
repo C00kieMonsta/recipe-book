@@ -22,11 +22,23 @@ const startsWith = (...prefixes: string[]) => (pathname: string) =>
 const isPrepSheet = (pathname: string) => /^\/events\/[^/]+\/lines(\/|$)/.test(pathname);
 
 const menuItems: MenuItem[] = [
-  { path: "/semaine", icon: PAGE_ICONS.semaine, label: "Semaine", isActive: (p) => startsWith("/semaine", "/jour")(p) || isPrepSheet(p) },
+  { path: "/planning/optimisation",
+    icon: "⏱️",
+    label: "Optimiser",
+    isActive: startsWith("/planning"),
+  },
+  {
+    path: "/semaine", icon: PAGE_ICONS.semaine, label: "Semaine", isActive: (p) => startsWith("/semaine", "/jour")(p) || isPrepSheet(p) },
   { path: "/events", icon: PAGE_ICONS.evenements, label: "Événements", isActive: (p) => startsWith("/events")(p) && !isPrepSheet(p) },
   { path: "/recipes", icon: PAGE_ICONS.recettes, label: "Recettes", isActive: startsWith("/recipes") },
   { path: "/ingredients", icon: PAGE_ICONS.ingredients, label: "Ingrédients", isActive: startsWith("/ingredients") },
-  { path: "/grocery-list", icon: PAGE_ICONS.courses, label: "Courses", isActive: startsWith("/grocery-list") },
+  { path: "/grocery-list", icon: PAGE_ICONS.courses, label: "Courses", isActive: startsWith("/grocery-list"),
+  },
+  {
+    path: "/stock",
+    icon: "📦",
+    label: "Stock",
+    isActive: startsWith("/stock") },
   { path: "/clients", icon: PAGE_ICONS.clients, label: "Clients", isActive: startsWith("/clients") },
   { path: "/offres/documents", icon: PAGE_ICONS.offres, label: "Offres", isActive: startsWith("/offres", "/devis") },
   { path: "/comptes/journal", icon: PAGE_ICONS.comptabilite, label: "Comptabilité", isActive: startsWith("/comptes") },
@@ -60,7 +72,9 @@ export default function AdminSidebar({ hidden = false, collapsed = false, onColl
 
   if (hidden) return null;
 
-  const menuButton = <IconButton size="lg" aria-label="Menu" onClick={() => setMobileOpen(true)} icon={<Menu />} />;
+  const menuButton = (
+    <IconButton size="lg" aria-label="Menu" onClick={() => setMobileOpen(true)} icon={<Menu />} />
+  );
 
   const openAssistantCell = () => {
     setMobileOpen(false);
@@ -100,7 +114,9 @@ export default function AdminSidebar({ hidden = false, collapsed = false, onColl
 
   const brand = (
     <>
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm bg-muted text-caption font-semibold" aria-hidden="true">A</span>
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm bg-muted text-caption font-semibold" aria-hidden="true">
+        A
+      </span>
       <span className="truncate text-sm font-medium">La Table d'Amélie</span>
     </>
   );
@@ -119,7 +135,9 @@ export default function AdminSidebar({ hidden = false, collapsed = false, onColl
       )}
 
       {/* Rail: the menu button alone, over the page */}
-      {rail && <IconButton size="sm" aria-label="Menu" className="fixed left-2 top-2 z-30 print:hidden" onClick={() => setMobileOpen(true)} icon={<Menu />} />}
+      {rail && (
+        <IconButton size="sm" aria-label="Menu" className="fixed left-2 top-2 z-30 print:hidden" onClick={() => setMobileOpen(true)} icon={<Menu />} />
+      )}
 
       {/* Phone top bar */}
       {!rail && (
@@ -134,7 +152,11 @@ export default function AdminSidebar({ hidden = false, collapsed = false, onColl
         )}
         <span className="min-w-0 flex-1 truncate text-center text-sm font-medium">{topTitle ?? ""}</span>
         {/* The menu stays reachable on every phone page, back link or not. */}
-        {backTo ? menuButton : <span className="w-11 shrink-0" aria-hidden="true" />}
+        {backTo ? (
+            menuButton
+          ) : (
+            <span className="w-11 shrink-0" aria-hidden="true" />
+          )}
       </div>
       )}
 

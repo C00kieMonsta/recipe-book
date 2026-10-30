@@ -24,6 +24,7 @@ import {
   isCommissionEntry,
   lastDayOfMonth,
   mapOdooRow,
+  ledgerVatLabel,
   odooHeaderKey,
   prefillForClientMonth,
   rawMaterialOfMonth,
@@ -101,9 +102,12 @@ function shiftYm(ym: string, delta: number): string {
 }
 
 // Where the line came from; hand entries show nothing. Older CSV imports carry only `imported`.
-function SourceTag({ entry, className = "ml-2" }: { entry: LedgerEntry; className?: string }) {
+function SourceTag({ entry, className = "ml-2" }: { entry: LedgerEntry; className?: string;
+}) {
   const label = entry.source === "depot" ? "dépôt" : entry.source === "import_csv" || entry.imported ? "import" : null;
-  return label ? <Tag colour="gray" className={className}>{label}</Tag> : null;
+  return label ? (
+    <Tag colour="gray" className={className}>{label}</Tag>
+  ) : null;
 }
 
 // Paperclip of a line with an attached invoice; stops the row click.
@@ -125,11 +129,14 @@ function PieceButton({ entry }: { entry: LedgerEntry }) {
 const PIECE_COLUMN: TableColumn<LedgerEntry> = { key: "piece", label: "", width: "2.5rem", render: (e) => <PieceButton entry={e} /> };
 
 function PaidTag({ paid }: { paid: boolean }) {
-  return <Tag colour={paid ? "green" : "red"}>{paid ? "Réglée" : "Non réglée"}</Tag>;
+  return (
+    <Tag colour={paid ? "green" : "red"}>{paid ? "Réglée" : "Non réglée"}</Tag>
+  );
 }
 
 // Body of the "Réglé" menu: two choices, the payment fields once "Réglée" is picked.
-function PaidMenuBody({ entry, onSaved, onClose }: { entry: LedgerEntry; onSaved: () => void; onClose: () => void }) {
+function PaidMenuBody({ entry, onSaved, onClose }: { entry: LedgerEntry; onSaved: () => void; onClose: () => void;
+}) {
   const { touch } = useMenuContext();
   const [paid, setPaid] = useState(entry.paid);
   const [method, setMethod] = useState<string>(entry.paymentMethod ?? "");
@@ -158,7 +165,7 @@ function PaidMenuBody({ entry, onSaved, onClose }: { entry: LedgerEntry; onSaved
   const item = `${MENU_ITEM} ${touch ? MENU_ITEM_TOUCH : ""}`;
   return (
     <div className="w-[260px] max-w-full touch:w-full">
-      <button type="button" role="menuitemradio" aria-checked={!paid} className={item} onClick={() => { if (entry.paid) void save(false); else { setPaid(false); onClose(); } }}>
+      <button type="button" role="menuitemradio" aria-checked={!paid} className={item} onClick={() => { if (entry.paid || entry.paymentStatus === "unknown") void save(false); else { setPaid(false); onClose(); } }}>
         <span className="flex-1"><PaidTag paid={false} /></span>
       </button>
       <button type="button" role="menuitemradio" aria-checked={paid} className={item} onClick={() => setPaid(true)}>
@@ -167,7 +174,9 @@ function PaidMenuBody({ entry, onSaved, onClose }: { entry: LedgerEntry; onSaved
       {paid && (
         <div className={`flex flex-col gap-2 pt-2 ${touch ? "px-4" : "px-3"}`}>
           <div>
-            <FieldLabel htmlFor={`paid-method-${entry.entryId}`}>Mode</FieldLabel>
+            <FieldLabel htmlFor={`paid-method-${entry.entryId}`}>
+              Mode
+            </FieldLabel>
             <select id={`paid-method-${entry.entryId}`} className="input-field" value={method} onChange={(e) => setMethod(e.target.value)}>
               <option value="">Non précisé</option>
               {PAYMENT_METHODS.map((m) => (
@@ -176,13 +185,19 @@ function PaidMenuBody({ entry, onSaved, onClose }: { entry: LedgerEntry; onSaved
             </select>
           </div>
           <div>
-            <FieldLabel htmlFor={`paid-at-${entry.entryId}`}>Encaissé le</FieldLabel>
+            <FieldLabel htmlFor={`paid-at-${entry.entryId}`}>
+              Encaissé le
+            </FieldLabel>
             <input id={`paid-at-${entry.entryId}`} type="date" className="input-field" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
           </div>
           {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex justify-end gap-2 pb-1">
-            <Button variant="subtle" size="sm" onClick={onClose}>Annuler</Button>
-            <Button variant="primary" size="sm" disabled={busy} onClick={() => void save(true)}>Enregistrer</Button>
+            <Button variant="subtle" size="sm" onClick={onClose}>
+              Annuler
+            </Button>
+            <Button variant="primary" size="sm" disabled={busy} onClick={() => void save(true)}>
+              Enregistrer
+            </Button>
           </div>
         </div>
       )}
@@ -191,7 +206,8 @@ function PaidMenuBody({ entry, onSaved, onClose }: { entry: LedgerEntry; onSaved
 }
 
 // "Réglé" pill shared with the event page and À facturer; opens a Menu (a Sheet on touch) with the payment fields.
-export function PaidPopover({ entry, onSaved, trigger, align = "left", className = "" }: { entry: LedgerEntry; onSaved: () => void; trigger?: ReactNode; align?: "left" | "right"; className?: string }) {
+export function PaidPopover({ entry, onSaved, trigger, align = "left", className = "" }: { entry: LedgerEntry; onSaved: () => void; trigger?: ReactNode; align?: "left" | "right"; className?: string;
+}) {
   const menu = useMenu();
   return (
     <div ref={menu.ref} className={`relative inline-flex ${className}`} onClick={(e) => e.stopPropagation()}>
@@ -203,11 +219,20 @@ export function PaidPopover({ entry, onSaved, trigger, align = "left", className
         aria-haspopup="menu"
         aria-label="Réglé"
       >
-        {trigger ?? <PaidTag paid={entry.paid} />}
-        {!trigger && <ChevronDown className="h-3 w-3 text-icon reveal" aria-hidden="true" />}
+        {trigger ??
+          (entry.paymentStatus === "unknown" ? (
+            <Tag colour="yellow">À confirmer</Tag>
+          ) : (
+            <PaidTag paid={entry.paid} />
+          ))}
+        {!trigger && (
+          <ChevronDown className="h-3 w-3 text-icon reveal" aria-hidden="true" />
+        )}
       </button>
       <Menu {...menu.props} align={align} title="Réglé" aria-label="Réglé">
-        {menu.open && <PaidMenuBody entry={entry} onSaved={onSaved} onClose={menu.close} />}
+        {menu.open && (
+          <PaidMenuBody entry={entry} onSaved={onSaved} onClose={menu.close} />
+        )}
       </Menu>
     </div>
   );
@@ -326,16 +351,24 @@ export default function Journal() {
       above: (
         <div>
           <div className="flex flex-wrap justify-between gap-2">
-            <span>Revenu prévu <span className="font-medium tabular-nums">{fmtEur(p.revenuePrevu)}</span></span>
-            <span>Acomptes déjà reçus <span className="font-medium tabular-nums">{fmtEur(p.acomptesRecus)}</span></span>
+            <span>
+              Revenu prévu{" "}
+              <span className="font-medium tabular-nums">{fmtEur(p.revenuePrevu)}</span></span>
+            <span>
+              Acomptes déjà reçus{" "}
+              <span className="font-medium tabular-nums">{fmtEur(p.acomptesRecus)}</span></span>
           </div>
-          {p.byMonth.length === 0 && <p className="mt-2 text-muted-foreground">Aucun événement non facturé jusqu'à {monthLabel(ym)}.</p>}
+          {p.byMonth.length === 0 && (
+            <p className="mt-2 text-muted-foreground">Aucun événement non facturé jusqu'à {monthLabel(ym)}.
+            </p>
+          )}
           {p.byMonth.map((g) => (
             <div key={g.ym} className="mt-2">
               <div className="text-sm text-muted-foreground">{monthLabel(g.ym)} · {fmtEur(g.revenue)}</div>
               <ul className="mt-1 list-disc pl-5">
                 {g.events.map((e) => (
-                  <li key={e.eventId}>{fmtDateFr(e.date)} · {e.name} · {e.guestCount} couverts</li>
+                  <li key={e.eventId}>{fmtDateFr(e.date)} · {e.name} · {e.guestCount} couverts
+                  </li>
                 ))}
               </ul>
             </div>
@@ -446,30 +479,47 @@ export default function Journal() {
               )}
               {externe && (
                 <>
-                  <MenuItem icon={<CalendarDays />} onSelect={openMonthly}>Saisir le CA du mois…</MenuItem>
-                  <MenuItem icon={<Upload />} disabled={!settings} onSelect={() => setImportOpen(true)}>Importer des factures (CSV)…</MenuItem>
+                  <MenuItem icon={<CalendarDays />} onSelect={openMonthly}>
+                    Saisir le CA du mois…
+                  </MenuItem>
+                  <MenuItem icon={<Upload />} disabled={!settings} onSelect={() => setImportOpen(true)}>
+                    Importer des factures (CSV)…
+                  </MenuItem>
                 </>
               )}
-              <MenuItem icon={<Inbox />} to="/comptes/depot">Déposer des factures…</MenuItem>
+              <MenuItem icon={<Inbox />} to="/comptes/depot">
+                Déposer des factures…
+              </MenuItem>
               <MenuSeparator />
-              <MenuItem icon={<Download />} disabled={!inputs} onSelect={onExport}>Exporter {year} (xlsx)</MenuItem>
-              <MenuItem icon={<FileText />} disabled={!settings} onSelect={() => settings && downloadMonthCsv(ym, entries, settings)}>CSV du mois</MenuItem>
+              <MenuItem icon={<Download />} disabled={!inputs} onSelect={onExport}>Exporter {year} (xlsx)
+              </MenuItem>
+              <MenuItem icon={<FileText />} disabled={!settings} onSelect={() => settings && downloadMonthCsv(ym, entries, settings)}>
+                CSV du mois
+              </MenuItem>
               <MenuSeparator />
               {locked ? (
-                <MenuItem icon={<LockOpen />} onSelect={() => setUnlockOpen(true)}>Déverrouiller</MenuItem>
+                <MenuItem icon={<LockOpen />} onSelect={() => setUnlockOpen(true)}>
+                  Déverrouiller
+                </MenuItem>
               ) : (
-                <MenuItem icon={<Lock />} danger disabled={!inputs} onSelect={() => setLockOpen(true)}>Verrouiller le mois</MenuItem>
+                <MenuItem icon={<Lock />} danger disabled={!inputs} onSelect={() => setLockOpen(true)}>
+                  Verrouiller le mois
+                </MenuItem>
               )}
             </Menu>
           </div>
-          <Button variant="primary" size="sm" icon={<Plus />} onClick={openNew}>Nouvelle ligne</Button>
+          <Button variant="primary" size="sm" icon={<Plus />} onClick={openNew}>
+            Nouvelle ligne
+          </Button>
         </>
       }
       filters={
         typeParam !== null || (touch && filter !== "tous") ? (
           <>
             {typeParam !== null && (
-              <FilterChip onRemove={() => setParam({ type: null })}>Type : {typeParam ? prestationLabel(settings, typeParam) : "Sans type"}</FilterChip>
+              <FilterChip onRemove={() => setParam({ type: null })}>
+                Type :{" "}
+                {typeParam ? prestationLabel(settings, typeParam) : "Sans type"}</FilterChip>
             )}
             {touch && filter !== "tous" && (
               <FilterChip onRemove={() => setParam({ filtre: null, kind: null })}>{filterLabel}</FilterChip>
@@ -483,36 +533,59 @@ export default function Journal() {
   const statLine = (
     <p className="mt-3 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm text-muted-foreground tabular-nums">
       <span>Ce mois ·</span>
-      <span>Acomptes <span className="text-foreground">{fmtEur(sumMoney(acomptes.map((e) => e.totalTvac)))}</span></span>
+      <span>
+        Acomptes{" "}
+        <span className="text-foreground">{fmtEur(sumMoney(acomptes.map((e) => e.totalTvac)))}</span></span>
       <span aria-hidden="true">·</span>
-      <span>Commissions <span className="text-foreground">{fmtEur(sumMoney(commissions.map((e) => e.htva)))}</span> (hors CA)</span>
+      <span>
+        Commissions{" "}
+        <span className="text-foreground">{fmtEur(sumMoney(commissions.map((e) => e.htva)))}</span>{" "}
+        (hors CA)
+      </span>
       <span aria-hidden="true">·</span>
-      <span>À encaisser <span className="text-foreground">{fmtEur(encaisser.total)}</span></span>
+      <span>
+        À encaisser{" "}
+        <span className="text-foreground">{fmtEur(encaisser.total)}</span></span>
       <span aria-hidden="true">·</span>
       <span>{plural(encaisser.count, "facture non réglée", "factures non réglées")}</span>
-      {locked && monthClose?.lockedAt && <Tag colour="yellow" className="ml-1">Verrouillé le {fmtDateFr(monthClose.lockedAt.slice(0, 10))}</Tag>}
-      {monthClose && !locked && monthClose.unlockedAt && <Tag colour="gray" className="ml-1">Déverrouillé le {fmtDateFr(monthClose.unlockedAt.slice(0, 10))}</Tag>}
+      {locked && monthClose?.lockedAt && (
+        <Tag colour="yellow" className="ml-1">Verrouillé le {fmtDateFr(monthClose.lockedAt.slice(0, 10))}</Tag>
+      )}
+      {monthClose && !locked && monthClose.unlockedAt && (
+        <Tag colour="gray" className="ml-1">Déverrouillé le {fmtDateFr(monthClose.unlockedAt.slice(0, 10))}</Tag>
+      )}
     </p>
   );
 
   const salesColumns: TableColumn<LedgerEntry>[] = [
     { key: "number", label: "N°", width: "6rem", render: (e) => e.number ?? "" },
     { key: "date", label: "Date", width: "7rem", render: (e) => fmtDateFr(e.date) },
-    { key: "label", label: "Intitulé", render: (e) => <>{e.label}{e.kind !== "facture" && <span className="ml-2 text-muted-foreground">{kindLabel(e)}</span>}<SourceTag entry={e} /></> },
+    { key: "label", label: "Intitulé", render: (e) => (
+        <>{e.label}{e.kind !== "facture" && (
+            <span className="ml-2 text-muted-foreground">{kindLabel(e)}</span>
+          )}<SourceTag entry={e} /></>
+      ),
+    },
     { key: "type", label: "Type", render: (e) => (typeOf(e) ? <Tag colour="gray">{typeOf(e)}</Tag> : "") },
     { key: "tvac", label: "Total TVAC", align: "right", render: (e) => fmtEur(e.totalTvac) },
     { key: "htva", label: "HTVA", align: "right", render: (e) => fmtEur(e.htva) },
-    { key: "vat", label: "TVA %", align: "right", width: "5rem", render: (e) => `${e.vatRate} %` },
+    { key: "vat", label: "TVA %", align: "right", width: "7rem", render: (e) => ledgerVatLabel(e),
+    },
     { key: "paid", label: "Réglé", width: "8rem", render: (e) => <PaidPopover entry={e} onSaved={reload} align="right" /> },
     PIECE_COLUMN,
   ];
 
   const purchaseColumns: TableColumn<LedgerEntry>[] = [
     { key: "date", label: "Date", width: "7rem", render: (e) => fmtDateFr(e.date) },
-    { key: "label", label: "Intitulé", render: (e) => <>{e.label}<SourceTag entry={e} /></> },
+    { key: "label", label: "Intitulé", render: (e) => (
+        <>{e.label}<SourceTag entry={e} /></>
+      ),
+    },
     { key: "type", label: "Type", render: (e) => <Tag colour="gray">{kindLabel(e)}</Tag> },
     { key: "who", label: "Fournisseur ou Personne", render: (e) => e.personName ?? e.supplier ?? "" },
-    { key: "hours", label: "Heures", align: "right", render: (e) => (e.kind === "personnel" && entryHours(e) ? String(entryHours(e)) : "") },
+    { key: "hours", label: "Heures", align: "right", render: (e) =>
+        e.kind === "personnel" && entryHours(e) ? String(entryHours(e)) : "",
+    },
     { key: "rate", label: "Taux", align: "right", render: (e) => (e.hourlyRate !== undefined ? fmtEur(e.hourlyRate) : "") },
     { key: "htva", label: "HTVA", align: "right", render: (e) => fmtEur(e.htva) },
     { key: "vat", label: "TVA", align: "right", render: (e) => fmtEur(e.vatAmount) },
@@ -558,7 +631,9 @@ export default function Journal() {
           </div>
         ))}
       </div>
-      {shown.length === 0 && <EmptyState message={emptyText} action={emptyAction} />}
+      {shown.length === 0 && (
+        <EmptyState message={emptyText} action={emptyAction} />
+      )}
       <div className="sticky bottom-0 -mx-4 mt-2 border-t border-divider bg-background px-4 py-2 text-sm tabular-nums">
         {book === "ventes" ? (
           <>
@@ -584,9 +659,15 @@ export default function Journal() {
           <StatRowLine key={t.label} label={t.label} value={money(t.amount)} />
         ))}
         <StatRowLine label="Commissions (hors CA)" value={money(sales.commissions)} />
-        {sales.vat6 !== 0 && <StatRowLine label="TVA 6 %" value={money(sales.vat6)} />}
-        {sales.vat12 !== 0 && <StatRowLine label="TVA 12 %" value={money(sales.vat12)} />}
-        {sales.vat21 !== 0 && <StatRowLine label="TVA 21 %" value={money(sales.vat21)} />}
+        {sales.vat6 !== 0 && (
+          <StatRowLine label="TVA 6 %" value={money(sales.vat6)} />
+        )}
+        {sales.vat12 !== 0 && (
+          <StatRowLine label="TVA 12 %" value={money(sales.vat12)} />
+        )}
+        {sales.vat21 !== 0 && (
+          <StatRowLine label="TVA 21 %" value={money(sales.vat21)} />
+        )}
       </div>
     </SectionToggle>
   );
@@ -598,7 +679,8 @@ export default function Journal() {
           <StatRowLine
             key={p.personName}
             label={`${p.personName} · ${p.dates.map(fmtDateFr).join(", ") || "Aucune date"}`}
-            value={<>{p.hours} h{p.hourlyRate !== undefined ? ` × ${fmtEur(p.hourlyRate)}` : ""} = <span className="font-medium">{fmtEur(p.amount)}</span></>}
+            value={<>{p.hours} h
+                {p.hourlyRate !== undefined ? ` × ${fmtEur(p.hourlyRate)}` : ""}{" "} = <span className="font-medium">{fmtEur(p.amount)}</span></>}
           />
         ))}
       </div>
@@ -609,13 +691,17 @@ export default function Journal() {
     <div>
       {toolbar}
 
-      {error && <div className="mt-3"><Callout tone="danger">{error}</Callout></div>}
+      {error && (
+        <div className="mt-3"><Callout tone="danger">{error}</Callout></div>
+      )}
       {notice && (
         <div className="mt-3">
           <Callout>
             <div className="flex items-center justify-between gap-3">
               <span>{notice}</span>
-              <Button variant="subtle" size="sm" onClick={() => setNotice(null)}>Fermer</Button>
+              <Button variant="subtle" size="sm" onClick={() => setNotice(null)}>
+                Fermer
+              </Button>
             </div>
           </Callout>
         </div>
@@ -625,8 +711,12 @@ export default function Journal() {
           <Callout emoji="📦">
             <div className="flex flex-wrap items-center gap-3">
               <span>Export téléchargé. Verrouiller {monthLabel(ym)} ?</span>
-              <Button variant="default" size="sm" onClick={() => { setAskLock(false); setLockOpen(true); }}>Oui</Button>
-              <Button variant="subtle" size="sm" onClick={() => setAskLock(false)}>Plus tard</Button>
+              <Button variant="default" size="sm" onClick={() => { setAskLock(false); setLockOpen(true); }}>
+                Oui
+              </Button>
+              <Button variant="subtle" size="sm" onClick={() => setAskLock(false)}>
+                Plus tard
+              </Button>
             </div>
           </Callout>
         </div>
@@ -639,7 +729,10 @@ export default function Journal() {
           {statLine}
           {book === "ventes" && doubleCount && (
             <div className="mt-3">
-              <Callout tone="warning">Ce mois contient des factures et un CA mensuel : le chiffre d'affaires est compté deux fois.</Callout>
+              <Callout tone="warning">
+                Ce mois contient des factures et un CA mensuel : le chiffre
+                d'affaires est compté deux fois.
+              </Callout>
             </div>
           )}
           <div className="mt-3 hidden md:block">{table}</div>
@@ -745,13 +838,20 @@ function LockDialog({
       size="md"
       footer={
         <>
-          <Button variant="default" size="md" onClick={onCancel}>Annuler</Button>
-          <Button variant="primary" size="md" icon={<Lock />} disabled={busy} onClick={() => void submit()}>Verrouiller</Button>
+          <Button variant="default" size="md" onClick={onCancel}>
+            Annuler
+          </Button>
+          <Button variant="primary" size="md" icon={<Lock />} disabled={busy} onClick={() => void submit()}>
+            Verrouiller
+          </Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">Coût matières premières retenu pour le mois. Les montants, dates, numéros et types deviennent en lecture seule.</p>
+        <p className="text-sm text-muted-foreground">
+          Coût matières premières retenu pour le mois. Les montants, dates,
+          numéros et types deviennent en lecture seule.
+        </p>
         <div className="-mx-2 flex flex-col">
           {options.map((o) => (
             <Checkbox
@@ -764,7 +864,11 @@ function LockDialog({
             />
           ))}
         </div>
-        {mp.nonTermines ? <p className="text-sm text-muted-foreground">{mp.nonTermines} événement{mp.nonTermines > 1 ? "s" : ""} non terminé{mp.nonTermines > 1 ? "s" : ""} ce mois.</p> : null}
+        {mp.nonTermines ? (
+          <p className="text-sm text-muted-foreground">{mp.nonTermines} événement{mp.nonTermines > 1 ? "s" : ""} non
+            terminé{mp.nonTermines > 1 ? "s" : ""} ce mois.
+          </p>
+        ) : null}
         {source === "saisi" && (
           <div>
             <FieldLabel htmlFor="lock-saisi">Montant saisi (HTVA)</FieldLabel>
@@ -775,14 +879,16 @@ function LockDialog({
           <FieldLabel htmlFor="lock-note">Note</FieldLabel>
           <textarea id="lock-note" className="input-field" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
         </div>
-        <p className="text-sm text-muted-foreground">Source actuelle : {MP_SOURCE_LABEL[mp.source]}.</p>
+        <p className="text-sm text-muted-foreground">Source actuelle : {MP_SOURCE_LABEL[mp.source]}.
+        </p>
         {error && <Callout tone="danger">{error}</Callout>}
       </div>
     </Dialog>
   );
 }
 
-function UnlockDialog({ ym, onDone, onCancel }: { ym: string; onDone: () => void; onCancel: () => void }) {
+function UnlockDialog({ ym, onDone, onCancel }: { ym: string; onDone: () => void; onCancel: () => void;
+}) {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -809,8 +915,12 @@ function UnlockDialog({ ym, onDone, onCancel }: { ym: string; onDone: () => void
       size="md"
       footer={
         <>
-          <Button variant="default" size="md" onClick={onCancel}>Annuler</Button>
-          <Button variant="primary" size="md" icon={<LockOpen />} disabled={busy} onClick={() => void submit()}>Déverrouiller</Button>
+          <Button variant="default" size="md" onClick={onCancel}>
+            Annuler
+          </Button>
+          <Button variant="primary" size="md" icon={<LockOpen />} disabled={busy} onClick={() => void submit()}>
+            Déverrouiller
+          </Button>
         </>
       }
     >
@@ -977,7 +1087,10 @@ function ImportInvoicesDialog({
       ),
     },
     { key: "date", label: "Date", width: "6.5rem", render: (r) => (r.row ? fmtDateFr(r.row.date) : "") },
-    { key: "label", label: "Client", render: (r) => r.row?.label ?? <span className="text-muted-foreground">{r.reason}</span> },
+    { key: "label", label: "Client", render: (r) => r.row?.label ?? (
+          <span className="text-muted-foreground">{r.reason}</span>
+        ),
+    },
     { key: "htva", label: "HTVA", align: "right", render: (r) => (r.row ? fmtEur(r.row.htva) : "") },
     { key: "vat", label: "TVA", align: "right", render: (r) => (r.row ? fmtEur(r.row.vatAmount) : "") },
     { key: "tvac", label: "TVAC", align: "right", trailing: true, render: (r) => (r.row ? <span>{fmtEur(r.row.totalTvac)}</span> : "") },
@@ -985,12 +1098,18 @@ function ImportInvoicesDialog({
   ];
 
   const footer = step === "upload" ? (
-    <Button variant="default" size="md" onClick={onCancel}>Annuler</Button>
+    <Button variant="default" size="md" onClick={onCancel}>
+        Annuler
+      </Button>
   ) : (
     <div className="flex w-full flex-wrap items-center justify-between gap-2">
-      <Button variant="default" size="md" onClick={() => { setStep("upload"); setRows([]); }}>Changer de fichier</Button>
+      <Button variant="default" size="md" onClick={() => { setStep("upload"); setRows([]); }}>
+          Changer de fichier
+        </Button>
       <span className="flex gap-2">
-        <Button variant="default" size="md" onClick={onCancel} disabled={importing}>Annuler</Button>
+        <Button variant="default" size="md" onClick={onCancel} disabled={importing}>
+            Annuler
+          </Button>
         <Button variant="primary" size="md" disabled={importing || toImport === 0} onClick={() => void submit()}>
           {importing ? "Import en cours…" : `Importer ${countLabel(toImport, "facture", "factures")}`}
         </Button>
@@ -1011,10 +1130,15 @@ function ImportInvoicesDialog({
             onClick={() => fileRef.current?.click()}
           >
             <Upload className="h-8 w-8" aria-hidden="true" />
-            <span className="text-base font-medium text-foreground">Déposez l'export Odoo (CSV ou XLSX) ou cliquez pour choisir</span>
+            <span className="text-base font-medium text-foreground">
+              Déposez l'export Odoo (CSV ou XLSX) ou cliquez pour choisir
+            </span>
           </button>
           <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" className="hidden" onChange={(e) => { handleFile(e.target.files?.[0]); e.target.value = ""; }} />
-          <p className="text-caption text-muted-foreground">Export Facturation › Factures clients, avec les colonnes Numéro, Date, Partenaire, Montant HT, Taxes, Total, État du paiement.</p>
+          <p className="text-caption text-muted-foreground">
+            Export Facturation › Factures clients, avec les colonnes Numéro,
+            Date, Partenaire, Montant HT, Taxes, Total, État du paiement.
+          </p>
           {problem && <Callout tone="danger">{problem}</Callout>}
         </div>
       ) : (

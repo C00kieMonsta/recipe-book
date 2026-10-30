@@ -14,6 +14,7 @@ export class DataStack extends cdk.Stack {
   readonly groceryListsTable: dynamodb.Table;
   readonly clientsTable: dynamodb.Table;
   readonly ledgerTable: dynamodb.Table;
+  readonly stockTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -64,6 +65,14 @@ export class DataStack extends cdk.Stack {
     this.clientsTable = new dynamodb.Table(this, "ClientsTable", {
       tableName: `ta-clients-${props.stage}`,
       partitionKey: { name: "clientId", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: isProd,
+      removalPolicy: retention,
+    });
+
+    this.stockTable = new dynamodb.Table(this, "StockTable", {
+      tableName: `ta-stock-${props.stage}`,
+      partitionKey: { name: "stockId", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       pointInTimeRecovery: isProd,
       removalPolicy: retention,

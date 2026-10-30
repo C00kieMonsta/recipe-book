@@ -22,7 +22,7 @@ export interface PersonChipProps {
 export function PersonChip({ personId, people, size = "md", className = "" }: PersonChipProps) {
   const person = people.find((p) => p.personId === personId);
   const name = personName(people, personId);
-  const text = person ? personInitials(person) : personId.slice(0, 2).toUpperCase();
+  const text = person ? personInitials(person, people) : personId.slice(0, 2).toUpperCase();
   return (
     <span
       title={name}

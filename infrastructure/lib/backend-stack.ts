@@ -8,6 +8,7 @@ interface BackendStackProps extends cdk.StackProps {
   stage: string;
   ingredientsTable: dynamodb.Table;
   recipesTable: dynamodb.Table;
+  stockTable?: dynamodb.Table;
   domainName?: string;
 }
 
@@ -44,6 +45,7 @@ export class BackendStack extends cdk.Stack {
 
     props.ingredientsTable.grantReadWriteData(role);
     props.recipesTable.grantReadWriteData(role);
+    props.stockTable?.grantReadWriteData(role);
 
     role.addToPrincipalPolicy(new iam.PolicyStatement({
       actions: ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
@@ -64,6 +66,7 @@ export class BackendStack extends cdk.Stack {
       `AWS_REGION=${this.region}`,
       `INGREDIENTS_TABLE=${props.ingredientsTable.tableName}`,
       `RECIPES_TABLE=${props.recipesTable.tableName}`,
+      `STOCK_TABLE=${props.stockTable?.tableName ?? ""}`,
       `ENVEOF`,
     );
 

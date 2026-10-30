@@ -79,7 +79,9 @@ function batchSummary(s: InboxConfirmSummary): string {
 
 // The server's flag messages as one muted sentence; a replaced duplicate says so.
 function flagsSentence(item: InboxItem): string {
-  const parts = item.flags.map((f) => (f.code === "duplicate" && item.replace ? `${f.message} · sera remplacée` : f.message));
+  const parts = item.flags.map((f) =>
+    f.code === "duplicate" && item.replace ? `${f.message} · sera remplacée` : f.message,
+  );
   return parts.join(" · ");
 }
 
@@ -94,7 +96,8 @@ function KindIcon({ contentType }: { contentType: string }) {
 }
 
 // Text while typing, a number on blur or Enter, like the entry form's money fields.
-function MoneyInput({ value, onCommit, label, className }: { value: number; onCommit: (n: number) => void; label: string; className?: string }) {
+function MoneyInput({ value, onCommit, label, className }: { value: number; onCommit: (n: number) => void; label: string; className?: string;
+}) {
   const [text, setText] = useState(value === 0 ? "" : String(Math.abs(value)));
   const [focused, setFocused] = useState(false);
   useEffect(() => { if (!focused) setText(value === 0 ? "" : String(Math.abs(value))); }, [value, focused]);
@@ -120,7 +123,8 @@ function MoneyInput({ value, onCommit, label, className }: { value: number; onCo
 const editable = (item: InboxItem) => Boolean(item.entry) && item.state !== "added" && !item.busy;
 
 // Inline controls of one row at laptop width; the sheet on phones uses Property rows instead.
-function InlineFields({ item, suppliers }: { item: InboxItem; suppliers: string[] }) {
+function InlineFields({ item, suppliers }: { item: InboxItem; suppliers: string[];
+}) {
   const entry = item.entry;
   if (!entry) return null;
   const edit = (field: InboxField, value: InboxFieldValue) => editInboxItem(item.id, field, value);
@@ -131,9 +135,14 @@ function InlineFields({ item, suppliers }: { item: InboxItem; suppliers: string[
         <span>{fmtDateFr(entry.date)}</span>
         {entry.number && <span>N° {entry.number}</span>}
         <span className="font-medium">{entry.label}</span>
-        <span className="tabular-nums">{fmtEur(entry.htva)} + {fmtEur(entry.vatAmount)} = {fmtEur(entry.totalTvac)}</span>
-        {entry.book === "ventes" && <span className="text-muted-foreground">{entry.paid ? "Payée" : "Non payée"}</span>}
-        {entry.book === "achats" && entry.supplier && <span className="text-muted-foreground">{entry.supplier}</span>}
+        <span className="tabular-nums">{fmtEur(entry.htva)} + {fmtEur(entry.vatAmount)} ={" "}
+          {fmtEur(entry.totalTvac)}</span>
+        {entry.book === "ventes" && (
+          <span className="text-muted-foreground">{entry.paid ? "Payée" : "Non payée"}</span>
+        )}
+        {entry.book === "achats" && entry.supplier && (
+          <span className="text-muted-foreground">{entry.supplier}</span>
+        )}
       </div>
     );
   }
@@ -169,14 +178,32 @@ function InlineFields({ item, suppliers }: { item: InboxItem; suppliers: string[
           <span className={FIELD_NAME}>TVAC</span>
           <MoneyInput label="TVAC" value={entry.totalTvac} onCommit={(n) => edit("totalTvac", n)} />
         </label>
-        <span className="text-sm text-muted-foreground">{entry.vatRate} %</span>
-        {entry.book === "ventes" && entry.kind === "note_de_credit" && <span className="text-sm text-muted-foreground">Montants saisis en positif, enregistrés en négatif.</span>}
-        {entry.book === "ventes" && <Checkbox checked={entry.paid} onChange={(v) => edit("paid", v)} label="Payé" className="-mx-1" />}
+        <span className="text-sm text-muted-foreground">{entry.vatLines?.length
+            ? entry.vatLines
+                .map((line) => `${line.rate} % : ${fmtEur(line.amount)}`)
+                .join(" · ")
+            : `${entry.vatRate} %`}
+        </span>
+        {entry.book === "ventes" && entry.kind === "note_de_credit" && (
+          <span className="text-sm text-muted-foreground">
+            Montants saisis en positif, enregistrés en négatif.
+          </span>
+        )}
+        {entry.book === "ventes" && (
+          <Checkbox checked={entry.paid} onChange={(v) => edit("paid", v)} label={
+              entry.paymentStatus === "unknown"
+                ? "Paiement à confirmer"
+                : "Payé"
+            }
+            className="-mx-1" />
+        )}
         {entry.book === "achats" && (
           <label className={cn(FIELD, "min-w-[10rem]")}>
             <span className={FIELD_NAME}>Fournisseur</span>
             <input className={cn(CELL_INPUT, "w-full")} list={listId} value={entry.supplier ?? ""} onChange={(e) => edit("supplier", e.target.value)} />
-            <datalist id={listId}>{suppliers.map((s) => <option key={s} value={s} />)}</datalist>
+            <datalist id={listId}>{suppliers.map((s) => (
+                <option key={s} value={s} />
+              ))}</datalist>
           </label>
         )}
       </div>
@@ -192,8 +219,13 @@ function RowNotes({ item }: { item: InboxItem }) {
   return (
     <>
       {sentence && <p className="text-sm text-muted-foreground">{sentence}</p>}
-      {item.entry && gap >= 0.011 && item.state !== "added" && <p className="text-sm text-danger">HTVA + TVA diffère de TVAC de {fmtEur(gap)}.</p>}
-      {problem && gap < 0.011 && item.state === "review" && <p className="text-sm text-danger">{problem}</p>}
+      {item.entry && gap >= 0.011 && item.state !== "added" && (
+        <p className="text-sm text-danger">HTVA + TVA diffère de TVAC de {fmtEur(gap)}.
+        </p>
+      )}
+      {problem && gap < 0.011 && item.state === "review" && (
+        <p className="text-sm text-danger">{problem}</p>
+      )}
       {item.error && <p className="text-sm text-danger">{item.error}</p>}
     </>
   );
@@ -205,7 +237,8 @@ interface Actions {
   onIgnore: (item: InboxItem) => void;
 }
 
-function RowActions({ item, actions, size = "sm" }: { item: InboxItem; actions: Actions; size?: "sm" | "md" }) {
+function RowActions({ item, actions, size = "sm" }: { item: InboxItem; actions: Actions; size?: "sm" | "md";
+}) {
   const problem = item.entry ? entryProblem(item.entry) : "Lecture en cours";
   // Zeros drafted for unread amounts pass entryProblem; the flag keeps the row out of the Journal until an amount is typed.
   const blocked = problem ?? (item.flags.some((f) => f.code === "missing_amount") ? "Montants illisibles, complétez-les." : null);
@@ -213,32 +246,44 @@ function RowActions({ item, actions, size = "sm" }: { item: InboxItem; actions: 
   if (item.state === "added") {
     return (
       <div className="flex flex-wrap items-center justify-end gap-1">
-        <Button as={Link} to={journalLink(item)} variant="link" size={size}>Voir</Button>
-        <Button variant="link" size={size} icon={<ExternalLink />} onClick={() => actions.onOpen(item)}>Ouvrir</Button>
+        <Button as={Link} to={journalLink(item)} variant="link" size={size}>
+          Voir
+        </Button>
+        <Button variant="link" size={size} icon={<ExternalLink />} onClick={() => actions.onOpen(item)}>
+          Ouvrir
+        </Button>
       </div>
     );
   }
   return (
     <div className="flex flex-wrap items-center justify-end gap-1">
       {canRetryInboxItem(item) && (
-        <Button variant="default" size={size} icon={<RefreshCw />} onClick={() => retryInboxItem(item.id)}>Réessayer</Button>
+        <Button variant="default" size={size} icon={<RefreshCw />} onClick={() => retryInboxItem(item.id)}>
+          Réessayer
+        </Button>
       )}
       {item.state === "duplicate" && (
-        <Button variant="link" size={size} onClick={() => setInboxReplace(item.id, true)}>Remplacer</Button>
+        <Button variant="link" size={size} onClick={() => setInboxReplace(item.id, true)}>
+          Remplacer
+        </Button>
       )}
       {(item.state === "ready" || item.state === "review") && (
         <Button variant="default" size={size} disabled={!canAdd} title={blocked ?? undefined} onClick={() => actions.onAdd(item)}>{item.busy ? "Ajout…" : "Ajouter"}</Button>
       )}
-      <Button variant="link" size={size} icon={<ExternalLink />} onClick={() => actions.onOpen(item)}>Ouvrir</Button>
+      <Button variant="link" size={size} icon={<ExternalLink />} onClick={() => actions.onOpen(item)}>
+        Ouvrir
+      </Button>
       <IconButton size={size} aria-label="Ignorer" title="Ignorer" icon={<X />} disabled={item.busy} onClick={() => actions.onIgnore(item)} />
     </div>
   );
 }
 
 // Phone: the row's fields as Property rows in a bottom sheet.
-function ItemSheet({ item, suppliers, actions, onClose }: { item: InboxItem; suppliers: string[]; actions: Actions; onClose: () => void }) {
+function ItemSheet({ item, suppliers, actions, onClose }: { item: InboxItem; suppliers: string[]; actions: Actions; onClose: () => void;
+}) {
   const entry = item.entry;
-  const edit = (field: InboxField) => (editable(item) ? (v: InboxFieldValue) => editInboxItem(item.id, field, v) : undefined);
+  const edit = (field: InboxField) =>
+    editable(item) ? (v: InboxFieldValue) => editInboxItem(item.id, field, v) : undefined;
   const money = (field: "htva" | "vatAmount" | "totalTvac", label: string) => (
     <Property kind="number" label={label} value={entry ? Math.abs(entry[field]) : null} decimals={2} suffix="€" onSave={edit(field)} />
   );
@@ -273,7 +318,9 @@ function ItemSheet({ item, suppliers, actions, onClose }: { item: InboxItem; sup
           </PropertyList>
         )}
         {entry && entry.book === "ventes" && entry.kind === "note_de_credit" && (
-          <p className="mt-1 text-sm text-muted-foreground">Montants saisis en positif, enregistrés en négatif.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+              Montants saisis en positif, enregistrés en négatif.
+            </p>
         )}
       </div>
       <div className="mt-3 flex shrink-0 flex-wrap justify-end gap-2 px-4 pt-3">
@@ -299,7 +346,8 @@ export default function InvoiceInbox() {
   const disabled = !assistant || queueDisabled;
   const suppliers = useMemo(() => settings?.suppliers.map((s) => s.name) ?? [], [settings]);
   const ready = items.filter((i) => i.state === "ready");
-  const sheetItem = sheetId ? items.find((i) => i.id === sheetId) ?? null : null;
+  const sheetItem = sheetId ? (items.find((i) => i.id === sheetId) ?? null)
+    : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -380,11 +428,22 @@ export default function InvoiceInbox() {
     >
       <Upload className="h-6 w-6 text-icon" aria-hidden="true" />
       <p className="text-base font-medium">Déposez vos factures ici</p>
-      <p className="text-sm text-muted-foreground">Plusieurs fichiers ou un PDF regroupant vos factures · 20 Mo par fichier</p>
-      <p className="text-sm text-muted-foreground">Jusqu’à 200 pages par PDF. Les exports Odoo volumineux sont lus en entier. Une ligne par facture, à vérifier avant l’ajout en lot.</p>
+      <p className="text-sm text-muted-foreground">
+        Plusieurs fichiers ou un PDF regroupant vos factures · 20 Mo par fichier
+      </p>
+      <p className="text-sm text-muted-foreground">
+        Jusqu’à 200 pages par PDF. Les exports Odoo volumineux sont lus en
+        entier. Une ligne par facture, à vérifier avant l’ajout en lot.
+      </p>
       <div className="mt-1 flex flex-wrap justify-center gap-2">
-        <Button variant="default" size="md" onClick={() => fileRef.current?.click()}>Choisir des fichiers</Button>
-        {touch && <Button variant="default" size="md" icon={<Camera />} onClick={() => cameraRef.current?.click()}>Prendre une photo</Button>}
+        <Button variant="default" size="md" onClick={() => fileRef.current?.click()}>
+          Choisir des fichiers
+        </Button>
+        {touch && (
+          <Button variant="default" size="md" icon={<Camera />} onClick={() => cameraRef.current?.click()}>
+            Prendre une photo
+          </Button>
+        )}
       </div>
       <input ref={fileRef} type="file" multiple accept="application/pdf,image/*" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={onPick} />
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={onPick} />
@@ -397,7 +456,9 @@ export default function InvoiceInbox() {
         <tr>
           <th style={{ width: "13rem" }}>Fichier</th>
           <th>Proposition</th>
-          <th style={{ width: "12rem" }} className="text-right">Actions</th>
+          <th style={{ width: "12rem" }} className="text-right">
+            Actions
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -440,12 +501,16 @@ export default function InvoiceInbox() {
             icon={<KindIcon contentType={item.contentType} />}
             title={item.name}
             subtitle={summary.filter(Boolean).join(" · ")}
-            trailing={(
+            trailing={
               <span className="flex items-center gap-1">
-                {item.error && <Tag colour="red" title={item.error}>Échec</Tag>}
+                {item.error && (
+                  <Tag colour="red" title={item.error}>
+                    Échec
+                  </Tag>
+                )}
                 <StateTag state={item.state} />
               </span>
-            )}
+            }
             onClick={() => setSheetId(item.id)}
           />
         );
@@ -459,10 +524,14 @@ export default function InvoiceInbox() {
         <Callout emoji={PAGE_ICONS.depot}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span>{DISABLED_TEXT}</span>
-            <Button as={Link} to="/comptes/journal" variant="link" size="sm">Ouvrir le journal</Button>
+            <Button as={Link} to="/comptes/journal" variant="link" size="sm">
+              Ouvrir le journal
+            </Button>
           </div>
         </Callout>
-      ) : dropZone}
+      ) : (
+        dropZone
+      )}
 
       {items.length === 0 ? (
         !disabled && <EmptyState message="Aucune facture déposée." />
@@ -472,12 +541,16 @@ export default function InvoiceInbox() {
           <div className="md:hidden">{phoneList}</div>
           <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center justify-between gap-2 border-t border-divider bg-background px-4 py-2 md:mx-0 md:px-0">
             <span className="text-sm text-muted-foreground">{readyLabel}</span>
-            <Button variant="primary" size="lg" disabled={ready.length === 0 || ready.some((i) => i.busy)} onClick={() => void confirm(ready.map((i) => i.id))}>Ajouter au journal</Button>
+            <Button variant="primary" size="lg" disabled={ready.length === 0 || ready.some((i) => i.busy)} onClick={() => void confirm(ready.map((i) => i.id))}>
+              Ajouter au journal
+            </Button>
           </div>
         </>
       )}
 
-      {sheetItem && <ItemSheet item={sheetItem} suppliers={suppliers} actions={actions} onClose={() => setSheetId(null)} />}
+      {sheetItem && (
+        <ItemSheet item={sheetItem} suppliers={suppliers} actions={actions} onClose={() => setSheetId(null)} />
+      )}
     </div>
   );
 }

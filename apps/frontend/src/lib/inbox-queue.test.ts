@@ -106,3 +106,21 @@ describe("invoice inbox queue", () => {
     expect(getInboxQueue().items.every((item) => item.state === "added" && item.entryId?.startsWith("entry-child-") === true)).toBe(true);
   });
 });
+
+it("uploads identical PDF bytes only once even when filenames differ", async () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis.crypto, "subtle");
+  Object.defineProperty(globalThis.crypto, "subtle", { configurable: true, value: { digest: async () => new Uint8Array([1, 2, 3]).buffer } });
+  const first = file("factures.pdf"), second = file("factures-copie.pdf");
+  for (const upload of [first, second]) Object.defineProperty(upload, "arrayBuffer", { value: async () => new Uint8Array([7, 8, 9]).buffer });
+  inboxApi.upload.mockResolvedValue({ inboxId: "source.pdf", name: first.name, contentType: "application/pdf", size: 3 });
+  inboxApi.extractBatch.mockResolvedValue({ invoices: [proposal("child.pdf", 1)] });
+  try {
+    enqueueInboxFiles([first, second]);
+    await waitForQueue(() => getInboxQueue().items.some(item => item.state === "excluded"));
+    expect(inboxApi.upload).toHaveBeenCalledTimes(1);
+    expect(getInboxQueue().items.find(item => item.state === "excluded")?.flags[0].code).toBe("duplicate_file");
+  } finally {
+    if (previous) Object.defineProperty(globalThis.crypto, "subtle", previous);
+    else Reflect.deleteProperty(globalThis.crypto, "subtle");
+  }
+});

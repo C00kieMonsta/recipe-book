@@ -908,7 +908,7 @@ export function aFacturer(inputs: Pick<ReportInputs, "events" | "entries" | "cli
   const toInvoiceMonthly = [...months.values()].sort((a, b) => (a.ym < b.ym ? -1 : a.ym > b.ym ? 1 : a.clientName.localeCompare(b.clientName)));
 
   const unpaid = entries
-    .filter((e) => isInvoiceEntry(e) && !e.paid)
+    .filter((e) => isInvoiceEntry(e) && !e.paid && e.paymentStatus !== "unknown")
     .sort(byDate)
     .map((e) => ({ ...e, daysOutstanding: Math.max(0, daysBetween(e.date, today)) }));
 

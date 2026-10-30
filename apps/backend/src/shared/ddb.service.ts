@@ -9,6 +9,8 @@ import {
   ScanCommand,
   BatchWriteCommand,
   BatchWriteCommandInput,
+  TransactWriteCommand,
+  TransactWriteCommandInput,
 } from "@aws-sdk/lib-dynamodb";
 import { ConfigService, Tables } from "../config/config.service";
 
@@ -44,7 +46,7 @@ export class DdbService {
   }
 
   // Optional tables may be missing until their SSM parameter exists; fail the request, not the boot.
-  requireTable(name: "clients" | "ledger"): string {
+  requireTable(name: "clients" | "ledger" | "stock"): string {
     const table = this.tables[name];
     if (!table) throw new ServiceUnavailableException(`Table ${name} non configurée`);
     return table;
@@ -123,6 +125,12 @@ export class DdbService {
 
   async delete(table: string, key: Record<string, string>) {
     await this.client.send(new DeleteCommand({ TableName: table, Key: key }));
+  }
+
+  async transactWrite(
+    items: NonNullable<TransactWriteCommandInput["TransactItems"]>,
+  ): Promise<void> {
+    await this.client.send(new TransactWriteCommand({ TransactItems: items }));
   }
 
   async batchWrite(table: string, items: Record<string, unknown>[]) {

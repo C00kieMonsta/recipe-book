@@ -74,14 +74,16 @@ const LAST_WEEK_KEY = "recipe-book:last-week";
 type WeekView = "lines" | "events";
 
 // A line or a task being dragged or moved; `current` is its prep day today.
-type DragItem = { kind: "recipe" | "task"; eventId: string; id: string; eventDate: string; current: string; label: string; status: PrepStatus };
+type DragItem = { kind: "recipe" | "task"; eventId: string; id: string; eventDate: string; current: string; label: string; status: PrepStatus;
+};
 
 // The row whose « Déplacer au… » Sheet opens after a touch release off every day cell.
 type MoveRequest = { kind: DragItem["kind"]; id: string };
 
 const DRAG_HINT = "Pour déplacer une préparation, maintenez-la un instant puis glissez-la sur un jour de la bande en haut. « Déplacer au… » reste dans le menu ⋯.";
 
-type TaskDialogState = { mode: "create" | "edit"; eventId: string; taskId?: string; initial: TaskDialogValue };
+type TaskDialogState = { mode: "create" | "edit"; eventId: string; taskId?: string; initial: TaskDialogValue;
+};
 
 const dayMonthShort = new Intl.DateTimeFormat("fr-BE", { day: "numeric", month: "short", timeZone: "UTC" });
 
@@ -101,7 +103,9 @@ function shortRange(from: string, to: string): string {
 function isTypingTarget(e: KeyboardEvent): boolean {
   const t = e.target as HTMLElement | null;
   if (!t) return false;
-  return t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable;
+  return (
+    t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable
+  );
 }
 
 // The tap's click lands after pointerup, on the Sheet backdrop by then, so it is dropped before React sees it.
@@ -192,11 +196,13 @@ export default function Week() {
 
   const [view, setView] = useLocalStorage<WeekView>("recipe-book:week-view", "lines");
   const [checklistOpen, setChecklistOpen] = useLocalStorage<boolean>("recipe-book:checklist-open", true);
-  const [sheet, setSheet] = useState<{ client: Client; guestCount: number } | null>(null);
+  const [sheet, setSheet] = useState<{ client: Client; guestCount: number;
+  } | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [taskDialog, setTaskDialog] = useState<TaskDialogState | null>(null);
-  const [confirmTask, setConfirmTask] = useState<{ eventId: string; taskId: string; label: string } | null>(null);
+  const [confirmTask, setConfirmTask] = useState<{ eventId: string; taskId: string; label: string;
+  } | null>(null);
   const [composerDay, setComposerDay] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragItem | null>(null);
   const [dropDay, setDropDay] = useState<string | null>(null);
@@ -217,7 +223,8 @@ export default function Week() {
   const activePeople = useMemo(() => people.filter((p) => p.active), [people]);
   const firstRun = !loading && recipes.length === 0 && events.length === 0 && activePeople.length === 0;
   const prestationTypes: PrestationTypeSetting[] = settings?.prestationTypes?.length ? settings.prestationTypes : DEFAULT_PRESTATION_TYPES;
-  const clientOf = (ev: AppEvent) => (ev.clientId ? clientById.get(ev.clientId) : undefined);
+  const clientOf = (ev: AppEvent) =>
+    ev.clientId ? clientById.get(ev.clientId) : undefined;
 
   const weekEvents = useMemo(
     () => events.filter((e) => e.date.slice(0, 10) >= dates[0] && e.date.slice(0, 10) <= dates[6]),
@@ -230,11 +237,13 @@ export default function Week() {
   );
   // Every event, so a line moved into this week from another week renders; the plan keeps the week's days.
   const filteredEvents = useMemo(
-    () => (selectedClient ? events.filter((e) => e.clientId === selectedClient) : events),
+    () =>
+      selectedClient ? events.filter((e) => e.clientId === selectedClient) : events,
     [events, selectedClient],
   );
   const weekFilteredEvents = useMemo(
-    () => (selectedClient ? weekEvents.filter((e) => e.clientId === selectedClient) : weekEvents),
+    () =>
+      selectedClient ? weekEvents.filter((e) => e.clientId === selectedClient) : weekEvents,
     [weekEvents, selectedClient],
   );
   const plan = useMemo(() => weekPlan(filteredEvents, monday, people), [filteredEvents, monday, people]);
@@ -651,7 +660,12 @@ export default function Week() {
           value={selectedPerson}
           onChange={(v) => setParam("personne", v)}
           options={[{ value: "", label: "Toutes les personnes" }, ...activePeople.map((p) => ({ value: p.personId, label: p.name }))]}
-          renderOption={(o) => o.value ? <span className="inline-flex items-center gap-2"><PersonChip personId={o.value} people={people} size="sm" />{o.label}</span> : o.label}
+          renderOption={(o) => o.value ? (
+              <span className="inline-flex items-center gap-2"><PersonChip personId={o.value} people={people} size="sm" />{o.label}</span>
+            ) : (
+              o.label
+            )
+          }
         />
       )}
       <FilterGroup
@@ -667,16 +681,28 @@ export default function Week() {
   const actionItems = (
     <>
       <MenuSection label="Afficher">
-        <MenuCheck checked={view === "lines"} onChange={() => setView("lines")}>Afficher les lignes</MenuCheck>
-        <MenuCheck checked={view === "events"} onChange={() => setView("events")}>Afficher les événements</MenuCheck>
+        <MenuCheck checked={view === "lines"} onChange={() => setView("lines")}>
+          Afficher les lignes
+        </MenuCheck>
+        <MenuCheck checked={view === "events"} onChange={() => setView("events")}>
+          Afficher les événements
+        </MenuCheck>
       </MenuSection>
       <MenuSeparator />
-      <MenuItem icon={<ShoppingCart />} disabled={busy || loading} onSelect={() => createGrocery(weekFilteredEvents)}>Créer les courses de la semaine</MenuItem>
-      <MenuItem icon={<Printer />} to={printUrl}>Imprimer la semaine…</MenuItem>
+      <MenuItem icon={<ShoppingCart />} disabled={busy || loading} onSelect={() => createGrocery(weekFilteredEvents)}>
+        Créer les courses de la semaine
+      </MenuItem>
+      <MenuItem icon={<Printer />} to={printUrl}>
+        Imprimer la semaine…
+      </MenuItem>
       {activePeople.map((p) => (
         <MenuItem key={p.personId} icon={<Share2 />} onSelect={() => share(p)}>Partager avec {p.name}</MenuItem>
       ))}
-      {assistant && <MenuItem icon={<MessageSquare />} onSelect={openAssistant}>Demander à l'assistant</MenuItem>}
+      {assistant && (
+        <MenuItem icon={<MessageSquare />} onSelect={openAssistant}>
+          Demander à l'assistant
+        </MenuItem>
+      )}
     </>
   );
 
@@ -685,7 +711,9 @@ export default function Week() {
     <>
       {showClientFilter && (
         <MenuSection label="Client">
-          <MenuRadio checked={!selectedClient} onSelect={() => setParam("client", "")}>Tous les clients</MenuRadio>
+          <MenuRadio checked={!selectedClient} onSelect={() => setParam("client", "")}>
+            Tous les clients
+          </MenuRadio>
           {clientsThisWeek.map((c) => (
             <MenuRadio key={c.clientId} checked={selectedClient === c.clientId} onSelect={() => setParam("client", c.clientId)}>{c.name}</MenuRadio>
           ))}
@@ -693,13 +721,17 @@ export default function Week() {
       )}
       {showPersonFilter && (
         <MenuSection label="Personne">
-          <MenuRadio checked={!selectedPerson} onSelect={() => setParam("personne", "")}>Toutes les personnes</MenuRadio>
+          <MenuRadio checked={!selectedPerson} onSelect={() => setParam("personne", "")}>
+            Toutes les personnes
+          </MenuRadio>
           {activePeople.map((p) => (
             <MenuRadio key={p.personId} checked={selectedPerson === p.personId} onSelect={() => setParam("personne", p.personId)}>{p.name}</MenuRadio>
           ))}
         </MenuSection>
       )}
-      <MenuCheck icon={<EyeOff />} checked={hideDone} onChange={(v) => setParam("masquer", v ? "faites" : "")}>Masquer les lignes faites</MenuCheck>
+      <MenuCheck icon={<EyeOff />} checked={hideDone} onChange={(v) => setParam("masquer", v ? "faites" : "")}>
+        Masquer les lignes faites
+      </MenuCheck>
       <MenuSeparator />
     </>
   );
@@ -716,7 +748,9 @@ export default function Week() {
   );
 
   const newButton = (
-    <Button variant="primary" size="sm" as={Link} to={newEventUrl(anchorDay)} icon={<Plus />}>Nouvel événement</Button>
+    <Button variant="primary" size="sm" as={Link} to={newEventUrl(anchorDay)} icon={<Plus />}>
+      Nouvel événement
+    </Button>
   );
   // The 44px tabs leave no room for the label on a phone.
   const newButtonTouch = (
@@ -725,9 +759,17 @@ export default function Week() {
 
   const filterChips = filterCount > 0 ? (
     <>
-      {selectedClient && <FilterChip onRemove={() => setParam("client", "")}>{clientById.get(selectedClient)?.name ?? selectedClient}</FilterChip>}
-      {selectedPerson && <FilterChip onRemove={() => setParam("personne", "")}>{personName(people, selectedPerson)}</FilterChip>}
-      {hideDone && <FilterChip onRemove={() => setParam("masquer", "")}>Lignes faites masquées</FilterChip>}
+      {selectedClient && (
+          <FilterChip onRemove={() => setParam("client", "")}>{clientById.get(selectedClient)?.name ?? selectedClient}</FilterChip>
+        )}
+      {selectedPerson && (
+          <FilterChip onRemove={() => setParam("personne", "")}>{personName(people, selectedPerson)}</FilterChip>
+        )}
+      {hideDone && (
+          <FilterChip onRemove={() => setParam("masquer", "")}>
+            Lignes faites masquées
+          </FilterChip>
+        )}
     </>
   ) : undefined;
 
@@ -757,7 +799,10 @@ export default function Week() {
     ));
 
   const taskRows = (ev: AppEvent, tasks: EventTask[], shared: RowShared) =>
-    (hideDone ? tasks.filter((t) => t.prepStatus !== "done") : tasks).map((task) => <ItemRow key={task.taskId} shared={shared} dim={isOtherPerson(ev, task)} item={{ kind: "task", ev, task }} />);
+    (hideDone ? tasks.filter((t) => t.prepStatus !== "done") : tasks).map((task) => (
+        <ItemRow key={task.taskId} shared={shared} dim={isOtherPerson(ev, task)} item={{ kind: "task", ev, task }} />
+      ),
+    );
 
   // Navigation and strip, shared with the day page.
   const bar = (
@@ -859,7 +904,9 @@ export default function Week() {
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      {loading && <p className="mt-6 text-sm text-muted-foreground">Chargement…</p>}
+      {loading && (
+        <p className="mt-6 text-sm text-muted-foreground">Chargement…</p>
+      )}
 
       {/* Columns (laptop and landscape tablet): seven column bodies under the heads row */}
       {!loading && (
@@ -902,7 +949,9 @@ export default function Week() {
                             <div className="text-sm font-medium line-clamp-2">{title}</div>
                             <div className="mt-0.5 truncate text-caption text-muted-foreground" title={meta + (movedOut.length > 0 ? ` · ${movedOut.length} un autre jour (${movedTitle})` : "")}>
                               {meta}
-                              {movedOut.length > 0 && <span> · {movedOut.length} un autre jour</span>}
+                              {movedOut.length > 0 && (
+                                <span> · {movedOut.length} un autre jour</span>
+                              )}
                             </div>
                             {started && total > 0 && (
                               <div className="mt-2 h-1 w-full rounded-full bg-divider">
@@ -910,7 +959,7 @@ export default function Week() {
                               </div>
                             )}
                           </Link>
-                          {(ev.assignedTo?.length || canAssign) ? (
+                          {ev.assignedTo?.length || canAssign ? (
                             <div className={unassigned ? "w-full px-1 pb-1" : "pr-1 pt-0.5"} data-tour={ev.eventId === firstEventId ? "assign" : undefined}>
                               <AssignChips value={ev.assignedTo ?? []} options={people} enabled={canAssign} onChange={(ids) => assignEvent(ev.eventId, ids)} title="Assigner l'événement" label={`Assigner ${title}`} />
                             </div>
@@ -952,7 +1001,8 @@ export default function Week() {
                       onClose={() => setComposerDay(null)}
                     />
                   ) : (
-                    <Button variant="ghost" size="sm" icon={<Plus />} className="w-full min-w-0 justify-start overflow-hidden text-muted-foreground" onClick={() => (touch ? openTaskCreate(day.date) : setComposerDay(day.date))}><span className="truncate">Tâche</span></Button>
+                    <Button variant="ghost" size="sm" icon={<Plus />} className="w-full min-w-0 justify-start overflow-hidden text-muted-foreground" onClick={() =>
+                          touch ? openTaskCreate(day.date) : setComposerDay(day.date)}><span className="truncate">Tâche</span></Button>
                   ))}
                 </div>
               </div>
@@ -990,7 +1040,9 @@ export default function Week() {
                       <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${isToday ? "bg-danger-solid text-white" : ""}`}>{dayNum}</span>
                     </span>
                     <span className="min-w-0 truncate text-sm text-muted-foreground">{dayHeaderMeta(day, started)}</span>
-                    {!empty && <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-icon" aria-hidden="true" />}
+                    {!empty && (
+                      <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-icon" aria-hidden="true" />
+                    )}
                   </Link>
                   {empty && (
                     <IconButton size="sm" as={Link} to={newEventUrl(day.date)} aria-label={`Nouvel événement le ${longDayLabel(day.date)}`} icon={<Plus />} />
@@ -1005,7 +1057,9 @@ export default function Week() {
                     <div key={ev.eventId} className="mt-1">
                       <Link to={`/events/${ev.eventId}`} state={state} className={`flex min-h-11 items-center gap-2 rounded-lg bg-background px-3 shadow-card hover:bg-hover ${collapsed ? "text-muted-foreground" : ""}`}>
                         <span className="min-w-0 flex-1 truncate text-sm font-medium touch:text-base">{title}</span>
-                        {!collapsed && <span className="shrink-0 text-sm text-muted-foreground">{ev.guestCount} conv.{time ? ` · ${time}` : ""}</span>}
+                        {!collapsed && (
+                          <span className="shrink-0 text-sm text-muted-foreground">{ev.guestCount} conv.{time ? ` · ${time}` : ""}</span>
+                        )}
                         <PersonChips personIds={ev.assignedTo ?? []} people={people} size="sm" />
                       </Link>
                       {!collapsed && outsideRows(ev)}
@@ -1044,7 +1098,9 @@ export default function Week() {
         </div>
       )}
 
-      {lift.item && <DragGhost point={lift.ghost} status={lift.item.status} label={lift.item.label} target={lift.target} />}
+      {lift.item && (
+        <DragGhost point={lift.ghost} status={lift.item.status} label={lift.item.label} target={lift.target} />
+      )}
 
       {assignOpen && (
         <AssignSheet
@@ -1078,12 +1134,16 @@ export default function Week() {
         title={confirmTask ? `Supprimer la tâche « ${confirmTask.label} » ?` : ""}
         size="sm"
         aria-label="Supprimer la tâche"
-        footer={(
+        footer={
           <>
-            <Button variant="default" size="md" onClick={() => setConfirmTask(null)} disabled={busy}>Annuler</Button>
-            <Button variant="danger" size="md" onClick={() => void confirmDelete()} disabled={busy}>Supprimer</Button>
+            <Button variant="default" size="md" onClick={() => setConfirmTask(null)} disabled={busy}>
+              Annuler
+            </Button>
+            <Button variant="danger" size="md" onClick={() => void confirmDelete()} disabled={busy}>
+              Supprimer
+            </Button>
           </>
-        )}
+        }
       >
         <p className="text-muted-foreground">Cette action est irréversible.</p>
       </Dialog>
@@ -1094,16 +1154,21 @@ export default function Week() {
         onClose={() => { if (!busy) setSheet(null); }}
         title={sheet ? `Créer la semaine ${sheet.client.name}` : ""}
         size="sm"
-        footer={(
+        footer={
           <>
-            <Button variant="default" size="md" onClick={() => setSheet(null)} disabled={busy}>Annuler</Button>
-            <Button variant="primary" size="md" form="create-week" type="submit" disabled={busy}>Créer la semaine</Button>
+            <Button variant="default" size="md" onClick={() => setSheet(null)} disabled={busy}>
+              Annuler
+            </Button>
+            <Button variant="primary" size="md" form="create-week" type="submit" disabled={busy}>
+              Créer la semaine
+            </Button>
           </>
-        )}
+        }
       >
         {sheet && (
           <form id="create-week" onSubmit={(e) => { e.preventDefault(); createClientWeek(); }}>
-            <p className="text-sm text-muted-foreground">{rangeLabel(dates[0], dates[6])} · un événement par jour de modèle</p>
+            <p className="text-sm text-muted-foreground">{rangeLabel(dates[0], dates[6])} · un événement par jour de modèle
+            </p>
             <div className="mt-4">
               <FieldLabel htmlFor="create-week-guests">Convives</FieldLabel>
               <input
@@ -1127,7 +1192,8 @@ export default function Week() {
 // ── Rows ──────────────────────────────────────────────────────────────────────
 
 type RowItem =
-  | { kind: "recipe"; ev: AppEvent; line: EventRecipeLine; name: string; href: string }
+  | { kind: "recipe"; ev: AppEvent; line: EventRecipeLine; name: string; href: string;
+    }
   | { kind: "task"; ev: AppEvent; task: EventTask };
 
 interface RowShared {
@@ -1165,7 +1231,8 @@ function guardLift(h: LongPressDragHandlers): LongPressDragHandlers {
 }
 
 // One line or task row of the week; `stacked` is the phone and tablet shape.
-function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim: boolean }) {
+function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim: boolean;
+}) {
   const { stacked, people, canAssign, canDrag, days, align, state, drag, lift, moveRequest, clearMoveRequest } = shared;
   const rowRef = useRef<HTMLLIElement>(null);
   const [moveOpenLocal, setMoveOpenLocal] = useState(false);
@@ -1188,8 +1255,10 @@ function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim:
   const moveOpen = moveOpenLocal || (moveRequest?.kind === item.kind && moveRequest.id === id);
   const done = status === "done";
 
-  const cycle = () => (item.kind === "recipe" ? shared.cycleLine(ev, item.line) : shared.cycleTask(ev, item.task));
-  const assign = (next: string[]) => (item.kind === "recipe" ? shared.assignLine(ev.eventId, item.line.lineId, next) : shared.assignTask(ev.eventId, item.task.taskId, next));
+  const cycle = () =>
+    item.kind === "recipe" ? shared.cycleLine(ev, item.line) : shared.cycleTask(ev, item.task);
+  const assign = (next: string[]) =>
+    item.kind === "recipe" ? shared.assignLine(ev.eventId, item.line.lineId, next) : shared.assignTask(ev.eventId, item.task.taskId, next);
   const edit = () => { if (item.kind === "task") shared.editTask(ev, item.task); };
 
   const menuItems: ActionMenuItem[] = item.kind === "recipe"
@@ -1226,7 +1295,9 @@ function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim:
     const body = (
       <>
         <span className="min-w-0 flex-1 truncate">{label}</span>
-        {item.kind === "recipe" && <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{item.line.portions}</span>}
+        {item.kind === "recipe" && (
+          <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{item.line.portions}</span>
+        )}
         <PersonChips personIds={ids} people={people} size="sm" inherited={!own && ids.length > 0} />
       </>
     );
@@ -1287,6 +1358,7 @@ function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim:
         </Link>
       ) : (
         <button type="button" onClick={edit} title={rowTitle} draggable={false} className={cn("min-w-0 flex-1 truncate rounded px-0.5 text-left", done && "text-muted-foreground")}>
+          {item.task.scheduledStart ? `${item.task.scheduledStart} · ` : ""}
           {label}
         </button>
       )}
@@ -1353,7 +1425,9 @@ function AssignChips({ value, options, enabled, inherited = false, allowInherit 
   return (
     <span ref={anchor} className="inline-flex">
       {showButton ? (
-        <Button variant="ghost" size="sm" icon={<UserPlus />} onClick={toggle} aria-label={label} aria-haspopup="dialog" className={cn("text-muted-foreground", className)}>Assigner</Button>
+        <Button variant="ghost" size="sm" icon={<UserPlus />} onClick={toggle} aria-label={label} aria-haspopup="dialog" className={cn("text-muted-foreground", className)}>
+          Assigner
+        </Button>
       ) : (
         <PersonChips personIds={value} people={options} size="sm" inherited={inherited} max={max} label={value.length === 0 ? label : undefined} className={className} onClick={enabled ? toggle : undefined} />
       )}

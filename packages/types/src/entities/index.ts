@@ -7,3 +7,4 @@ export * from "./offer-document";
 export * from "./grocery-list";
 export * from "./client";
 export * from "./ledger";
+export * from "./stock";

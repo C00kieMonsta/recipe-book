@@ -67,6 +67,8 @@ export interface EventRecipeLine {
 }
 
 export interface EventTask {
+  scheduledStart?: string;
+  scheduledEnd?: string;
   // Filled by EventsService on every write.
   taskId: string;
   label: string;
@@ -82,7 +84,8 @@ export interface EventTask {
   preparationId?: string;
 }
 
-export type ExtraCostKind = "matiere" | "personnel" | "location" | "transport" | "autre";
+export type ExtraCostKind =
+  | "matiere" | "personnel" | "location" | "transport" | "autre";
 
 export interface EventExtraCost {
   label: string;
@@ -107,6 +110,7 @@ export interface EventCostSnapshot {
 export type EventStatus = "upcoming" | "completed";
 
 export interface AppEvent {
+  stockConsumption?: { state: "done" | "error"; at: string; message?: string };
   eventId: string;
   name: string;
   nameLower: string;

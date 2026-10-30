@@ -26,6 +26,12 @@ export interface RecipePreparation {
   name: string;
   daysBefore: number;
   description?: string;
+  /** Minutes for one recipe batch. The planner reserves a worker for the full duration. */
+  durationMinutes?: number;
+  resource?: "bench" | "oven" | "stove";
+  dependsOn?: string[];
+  /** Percentage of each recipe ingredient used by this preparation. */
+  ingredientShares?: Record<string, number>;
 }
 
 export interface Recipe {

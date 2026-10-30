@@ -3,12 +3,23 @@ import { isoDate, money, moneyNonnegative, vatRate, yearMonth } from "./primitiv
 
 const paymentMethodSchema = z.enum(["virement", "cash", "bancontact", "payconiq", "autre"]);
 
-const vatIdentity = (e: { htva: number; totalTvac: number; vatAmount: number }) =>
+const vatIdentity = (e: { htva: number; totalTvac: number; vatAmount: number;
+}) =>
   Math.abs(e.htva + e.vatAmount - e.totalTvac) < 0.011;
 
 export const ledgerVatLineSchema = z.object({ rate: vatRate, base: money, amount: money }).strict();
-const vatBreakdownIdentity = (e: { htva: number; vatAmount: number; vatLines?: { rate: number; base: number; amount: number }[] }) =>
-  !e.vatLines || (new Set(e.vatLines.map(line => line.rate)).size === e.vatLines.length &&
+export const ledgerPurchaseItemSchema = z
+  .object({
+    lineId: z.string().min(1).max(80),
+    label: z.string().trim().min(1).max(200),
+    quantity: z.number().nonnegative().nullable(),
+    unit: z.string().max(40).nullable(),
+    htva: money.nullable(),
+  })
+  .strict();
+const vatBreakdownIdentity = (e: { htva: number; vatAmount: number; vatLines?: { rate: number; base: number; amount: number }[];
+}) =>
+  !e.vatLines || (new Set(e.vatLines.map((line) => line.rate)).size === e.vatLines.length &&
     Math.abs(e.vatLines.reduce((sum, line) => sum + line.base, 0) - e.htva) < 0.011 &&
     Math.abs(e.vatLines.reduce((sum, line) => sum + line.amount, 0) - e.vatAmount) < 0.011);
 
@@ -24,6 +35,7 @@ const base = {
   vatRate,
   vatAmount: money,
   vatLines: z.array(ledgerVatLineSchema).min(1).max(4).optional(),
+  paymentStatus: z.enum(["unknown", "confirmed"]).optional(),
 };
 
 export const salesEntrySchema = z
@@ -46,13 +58,15 @@ export const purchaseEntrySchema = z
     book: z.literal("achats"),
     kind: z.enum(["mp", "personnel", "autre"]),
     supplier: z.string().optional(),
+    purchaseItems: z.array(ledgerPurchaseItemSchema).max(1000).optional(),
     personName: z.string().optional(),
     hourlyRate: moneyNonnegative.optional(),
     shifts: z.array(z.object({ date: isoDate, hours: z.number().positive() }).strict()).optional(),
   })
   .strict();
 
-const signRule = (e: { kind: string; totalTvac: number; htva: number; vatAmount: number; number?: string }) =>
+const signRule = (e: { kind: string; totalTvac: number; htva: number; vatAmount: number; number?: string;
+}) =>
   e.kind === "note_de_credit"
     ? e.totalTvac <= 0 && e.htva <= 0 && e.vatAmount <= 0 && !!e.number
     : e.totalTvac >= 0 && e.htva >= 0 && e.vatAmount >= 0;
@@ -135,6 +149,19 @@ export const extractedInvoiceSchema = z
     confidence: z.number().min(0).max(1),
     remarks: z.string().max(300).nullable(),
     documentStatus: z.enum(["active", "reversed"]).nullable().optional(),
+    paidAt: z.string().nullable().optional(),
+    items: z
+      .array(
+        z
+          .object({
+            label: z.string().max(200),
+            quantity: z.number().nonnegative().nullable(),
+            unit: z.string().max(40).nullable(),
+            htva: z.number().nullable(),
+          })
+          .strict(),
+      )
+      .max(1000).optional(),
   })
   .strict();
 export type ExtractedInvoice = z.infer<typeof extractedInvoiceSchema>;
@@ -194,7 +221,8 @@ export interface InboxProposal {
 
 export interface InboxBatchProposal {
   // Each invoice has its own uploaded document and can be confirmed independently.
-  invoices: (InboxProposal & { name: string; size: number; pageStart?: number; pageEnd?: number })[];
+  invoices: (InboxProposal & { name: string; size: number; pageStart?: number; pageEnd?: number;
+  })[];
 }
 
 export type InboxConfirmResult =

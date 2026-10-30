@@ -18,11 +18,14 @@ import { ATTACHMENT_TYPES, MAX_ATTACHMENTS, hoursBetween, round2, recipePreparat
 import { DdbService, UpdateOptions } from "../shared/ddb.service";
 import { S3Service } from "../shared/s3.service";
 import { RecipesService } from "../recipes/recipes.service";
+import { StockService } from "../stock/stock.service";
+import { SettingsService } from "../settings/settings.service";
 
 type IncomingLine = Omit<EventRecipeLine, "lineId"> & { lineId?: string };
 type IncomingTask = Omit<EventTask, "taskId"> & { taskId?: string };
 // A line before normalizeLines: a patch may carry prepDate null to clear it.
-type LooseLine = Omit<EventRecipeLine, "prepDate"> & { prepDate?: string | null };
+type LooseLine = Omit<EventRecipeLine, "prepDate"> & { prepDate?: string | null;
+};
 
 function staffWithDerivedHours(staff: EventStaffEntry[] | undefined): EventStaffEntry[] | undefined {
   if (!staff) return undefined;
@@ -33,10 +36,12 @@ function staffWithDerivedHours(staff: EventStaffEntry[] | undefined): EventStaff
 }
 
 // The multer fields the service reads; the controller passes the uploaded file as is.
-export type UploadedAttachment = { originalname: string; mimetype: string; size: number; buffer: Buffer };
+export type UploadedAttachment = { originalname: string; mimetype: string; size: number; buffer: Buffer;
+};
 
 type PricingFields = Pick<UpdateEventRequest, "pricingMode" | "sellingTotal" | "sellingPricePerGuest" | "guestCount">;
-type PricingWrite = { sellingPricePerGuest?: number; sellingTotal?: number | null };
+type PricingWrite = { sellingPricePerGuest?: number; sellingTotal?: number | null;
+};
 
 // Text fields the editor can clear; an empty value is stored as a REMOVE.
 const CLEARABLE_TEXT = ["contactName", "contactPhone", "contactEmail", "deliveryAddress", "deliveryTime", "billingDetails", "invoiceRef"] as const;
@@ -91,7 +96,10 @@ const attachmentsOf = (event: AppEvent): EventAttachment[] => event.attachments 
 export class EventsService {
   private get table() { return this.ddb.tables.events; }
 
-  constructor(private ddb: DdbService, private s3: S3Service, @Optional() private recipesService?: RecipesService) {}
+  constructor(private ddb: DdbService, private s3: S3Service, @Optional() private recipesService?: RecipesService,
+    @Optional() private stock?: StockService,
+    @Optional() private settings?: SettingsService,
+  ) {}
 
   async getAll(): Promise<AppEvent[]> {
     const items = (await this.ddb.scanAll(this.table)) as unknown as AppEvent[];
@@ -131,7 +139,7 @@ export class EventsService {
 
   // Guarded like the line and task writes, so a stale editor save cannot overwrite a status tick that landed in between.
   async update(eventId: string, fields: UpdateEventRequest): Promise<AppEvent> {
-    return this.withFreshEvent(eventId, async (stored) => {
+    const updated = await this.withFreshEvent(eventId, async (stored) => {
       const now = new Date().toISOString();
       const updates: Record<string, unknown> = { ...sanitizeFields(fields), ...this.applyPricing(stored, fields) };
       if (fields.staff !== undefined) updates.staff = staffWithDerivedHours(fields.staff);
@@ -157,6 +165,33 @@ export class EventsService {
       await this.ddb.update(this.table, { eventId }, updates, this.guardFor(stored));
       return this.getOrFail(eventId);
     });
+    if (
+      fields.status === "completed" &&
+      this.stock &&
+      (await this.settings?.get())?.stockAutoConsume
+    ) {
+      let result: AppEvent["stockConsumption"];
+      try {
+        await this.stock.consume(updated);
+        result = { state: "done", at: new Date().toISOString() };
+      } catch (error) {
+        result = {
+          state: "error",
+          at: new Date().toISOString(),
+          message:
+            error instanceof Error
+              ? error.message
+              : "Sortie de stock à vérifier",
+        };
+      }
+      await this.ddb.update(
+        this.table,
+        { eventId },
+        { stockConsumption: result },
+      );
+      return { ...updated, stockConsumption: result };
+    }
+    return updated;
   }
 
   // Deletes the attachment objects best-effort before the item; an unknown event is a no-op.
@@ -179,7 +214,9 @@ export class EventsService {
     return this.withFreshEvent(eventId, (stored) => {
       const index = stored.recipes.findIndex((l) => l.lineId === lineId);
       if (index === -1) throw new NotFoundException("Line not found");
-      const recipes = stored.recipes.map((l, i) => (i === index ? { ...l, ...definedEntries(patch) } : l));
+      const recipes = stored.recipes.map((l, i) =>
+        i === index ? { ...l, ...definedEntries(patch) } : l,
+      );
       return this.writeFields(stored, { recipes: normalizeLines(recipes, stored.date) });
     });
   }
@@ -224,7 +261,15 @@ export class EventsService {
       const tasks = tasksOf(stored);
       const index = tasks.findIndex((t) => t.taskId === taskId);
       if (index === -1) throw new NotFoundException("Task not found");
-      const next = tasks.map((t, i) => (i === index ? { ...t, ...definedEntries(patch) } : t));
+      const next = tasks.map((t, i) => {
+        if (i !== index) return t;
+        const updated = { ...t, ...definedEntries(patch) };
+        if (patch.date && patch.date !== t.date) {
+          delete updated.scheduledStart;
+          delete updated.scheduledEnd;
+        }
+        return updated;
+      });
       return this.writeFields(stored, { tasks: next });
     });
   }
@@ -268,7 +313,9 @@ export class EventsService {
     return this.withFreshEvent(eventId, (stored) => {
       const current = attachmentsOf(stored);
       if (!current.some((a) => a.attachmentId === attachmentId)) throw new NotFoundException("Attachment not found");
-      const attachments = current.map((a) => (a.attachmentId === attachmentId ? { ...a, name } : a));
+      const attachments = current.map((a) =>
+        a.attachmentId === attachmentId ? { ...a, name } : a,
+      );
       return this.writeFields(stored, { attachments });
     });
   }
@@ -318,6 +365,28 @@ export class EventsService {
   }
 
   // Runs op on a fresh read and retries up to four times, with a short jittered pause, when another write moved updatedAt in between.
+  async applySchedule(
+    eventId: string,
+    expectedUpdatedAt: string,
+    slots: { taskId: string; start: string; end: string }[],
+  ): Promise<AppEvent> {
+    return this.withFreshEvent(eventId, async (stored) => {
+      if (stored.updatedAt !== expectedUpdatedAt)
+        throw new ConflictException(
+          "Le planning a changé. Recalculez la proposition.",
+        );
+      const byId = new Map(slots.map((slot) => [slot.taskId, slot]));
+      return this.writeFields(stored, {
+        tasks: (stored.tasks ?? []).map((task) => {
+          const slot = byId.get(task.taskId);
+          return slot
+            ? { ...task, scheduledStart: slot.start, scheduledEnd: slot.end }
+            : task;
+        }),
+      });
+    });
+  }
+
   private async withFreshEvent(eventId: string, op: (stored: AppEvent) => Promise<AppEvent>): Promise<AppEvent> {
     for (let attempt = 0; ; attempt++) {
       const stored = await this.getOrFail(eventId);
@@ -341,7 +410,8 @@ export class EventsService {
   // Writes the arrays only when updatedAt still matches the read they were computed from.
   private async writeFields(
     stored: AppEvent,
-    fields: { recipes?: EventRecipeLine[]; tasks?: EventTask[]; attachments?: EventAttachment[] },
+    fields: { recipes?: EventRecipeLine[]; tasks?: EventTask[]; attachments?: EventAttachment[];
+    },
   ): Promise<AppEvent> {
     const updates = { ...definedEntries(fields), updatedAt: nextStamp(stored.updatedAt) };
     await this.ddb.update(this.table, { eventId: stored.eventId }, updates, this.guardFor(stored));
@@ -378,7 +448,9 @@ export class EventsService {
       ids.add(task.preparationId);
       existingByLine.set(task.recipeLineId, ids);
     }
-    const recipes = await this.recipesService?.getPreparationDefinitions(lines.map((line) => line.recipeId)) ?? [];
+    const recipes =
+      (await this.recipesService?.getPreparationDefinitions(lines.map((line) => line.recipeId),
+      )) ?? [];
     for (const line of lines) {
       const recipe = recipes.find((candidate) => candidate.recipeId === line.recipeId);
       if (!recipe?.preparations?.length) continue;

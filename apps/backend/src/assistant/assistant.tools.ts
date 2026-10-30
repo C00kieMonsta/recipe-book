@@ -1,3 +1,5 @@
+import { StockService } from "../stock/stock.service";
+import { productionSchedule, scheduleOptionsSchema } from "@packages/types";
 import { HttpException, Injectable, Optional } from "@nestjs/common";
 import type OpenAI from "openai";
 import type { ZodError, ZodIssue } from "zod";
@@ -397,6 +399,7 @@ export class AssistantTools {
     private offers: OffersService,
     private documents: OfferDocumentsService,
     @Optional() private ledger?: LedgerService,
+    @Optional() private stock?: StockService,
   ) {}
 
   definitions(): OpenAI.Responses.FunctionTool[] {
@@ -600,6 +603,8 @@ export class AssistantTools {
       this.getEvent(),
       this.getPurchases(),
       this.getProductionPlan(),
+      this.getStock(),
+      this.getOptimizedSchedule(),
       this.getCatalogueSummary(),
       this.getOfferDocument(),
       this.searchOfferRows(),
@@ -912,6 +917,120 @@ export class AssistantTools {
     };
   }
 
+  private getStock(): AssistantTool {
+    return {
+      definition: tool(
+        "get_stock",
+        "Lit le stock physique, la date du dernier inventaire, les seuils et les achats réceptionnés. Un solde non vérifié ne représente pas le stock réel. Lecture seule.",
+        {
+          ingredient: str("Nom à rechercher, facultatif.", true),
+          offset: int("Décalage de pagination, 0 par défaut.", true),
+        },
+      ),
+      describe: () => "Lecture du stock physique",
+      handler: async (input) => {
+        if (!this.stock)
+          return {
+            content: wrapToolData({ error: "Stock non configuré." }),
+            summary: "Stock indisponible",
+          };
+        const [stock, ingredients] = await Promise.all([
+          this.stock.overview(),
+          this.ingredients.getAll(),
+        ]);
+        const query = fold(text(input, "ingredient") ?? "");
+        const balances = new Map(
+          stock.balances.map((b) => [b.ingredientId, b]),
+        );
+        const rows = ingredients
+          .filter((i) => !query || fold(i.name).includes(query))
+          .map((i) => ({
+            name: i.name,
+            ...(balances.get(i.ingredientId) ?? {
+              ingredientId: i.ingredientId,
+              verified: false,
+              quantity: null,
+            }),
+            warning: balances.get(i.ingredientId)?.verified
+              ? undefined
+              : "Inventaire physique initial requis.",
+          }));
+        const offset =
+          typeof input.offset === "number" &&
+          Number.isSafeInteger(input.offset) &&
+          input.offset >= 0
+            ? input.offset
+            : 0;
+        return {
+          content: wrapToolData({
+            balances: rows.slice(offset, offset + 20),
+            nextOffset: offset + 20 < rows.length ? offset + 20 : null,
+            total: rows.length,
+            autoConsume: stock.autoConsume,
+          }),
+          summary: `Stock : ${rows.length} ingrédient(s)`,
+        };
+      },
+    };
+  }
+
+  private getOptimizedSchedule(): AssistantTool {
+    return {
+      definition: tool(
+        "get_optimized_schedule",
+        "Calcule une proposition déterministe à partir des durées par lot, matériel et dépendances saisis. Dates fixes, une personne occupée pendant toute la durée. Signale les informations manquantes. Ne modifie rien. Pour appliquer, ouvrir /planning/optimisation.",
+        {
+          from: str("Premier jour YYYY-MM-DD"),
+          to: str("Dernier jour YYYY-MM-DD"),
+          start: str("Début HH:MM"),
+          end: str("Fin HH:MM"),
+          workers: int("Personnes disponibles"),
+          ovens: int("Places au four"),
+          stoves: int("Feux disponibles"),
+          offset: int("Pagination, 0 par défaut", true),
+        },
+      ),
+      describe: () => "Calcul des horaires de préparation",
+      handler: async (input) => {
+        const { offset: rawOffset, ...options } = input;
+        const parsed = scheduleOptionsSchema.safeParse(options);
+        if (!parsed.success)
+          return {
+            content: wrapToolData({
+              error: "Horaires, période ou capacités invalides.",
+            }),
+            summary: "Paramètres invalides",
+          };
+        const [events, recipes] = await Promise.all([
+          this.events.getAll(),
+          this.recipes.getAll(),
+        ]);
+        const plan = productionSchedule(events, recipes, parsed.data);
+        const offset =
+          typeof rawOffset === "number" &&
+          Number.isSafeInteger(rawOffset) &&
+          rawOffset >= 0
+            ? rawOffset
+            : 0;
+        return {
+          content: wrapToolData({
+            ...plan,
+            slots: plan.slots.slice(offset, offset + 15),
+            issues: plan.issues.slice(offset, offset + 15),
+            nextOffset:
+              offset + 15 < Math.max(plan.slots.length, plan.issues.length)
+                ? offset + 15
+                : null,
+            slotCount: plan.slots.length,
+            issueCount: plan.issues.length,
+            applyUrl: "/planning/optimisation",
+          }),
+          summary: `${plan.slots.length} horaire(s), ${plan.issues.length} point(s) à compléter`,
+        };
+      },
+    };
+  }
+
   private getProductionPlan(): AssistantTool {
     return {
       definition: tool("get_production_plan", "Calcule les ingrédients cumulés et lit les préparations restantes sur une période. Suggère de commencer les cuissons explicites. Une ligne de recette n'est comptée qu'une fois. Filtrez ingredient pour une question sur les oignons par exemple. Les listes sont paginées.", {
@@ -932,7 +1051,8 @@ export class AssistantTools {
         const plan = productionPlan(events, recipes, ingredients, range.from, range.to);
         const query = fold(text(input, "ingredient") ?? "");
         const selectedIngredients = plan.ingredients.filter((item) => !query || fold(item.name).includes(query));
-        const offsetOf = (key: string) => typeof input[key] === "number" && Number.isSafeInteger(input[key]) && (input[key] as number) >= 0 ? input[key] as number : 0;
+        const offsetOf = (key: string) => typeof input[key] === "number" && Number.isSafeInteger(input[key]) && (input[key] as number) >= 0 ? (input[key] as number)
+            : 0;
         const ingredientOffset = offsetOf("ingredientOffset");
         const workOffset = offsetOf("workOffset");
         return {
@@ -1193,7 +1313,8 @@ export class AssistantTools {
       ),
       describe: () => "Proposition d'une nouvelle recette",
       handler: async (input, turn) => {
-        const { summary, steps, ...rest } = withoutNulls(input) as Args & { steps?: string[] };
+        const { summary, steps, ...rest } = withoutNulls(input) as Args & { steps?: string[];
+        };
         const payload: Args = { ...rest, ...(steps ? { techniques: steps } : {}) };
         const unknown: string[] = [];
         if (Array.isArray(payload.ingredients)) {
@@ -1379,7 +1500,9 @@ export class AssistantTools {
   private async eventOrRefuse(turn: TurnState, toolName: string, eventId: unknown): Promise<AppEvent | { refused: ToolResult }> {
     const id = typeof eventId === "string" ? eventId.trim() : "";
     const event = id ? await this.events.get(id) : null;
-    return event ?? { refused: this.refuse(turn, toolName, `Événement introuvable : ${id}`) };
+    return (
+      event ?? { refused: this.refuse(turn, toolName, `Événement introuvable : ${id}`) }
+    );
   }
 
   private async unknownRecipes(lines: Args[]): Promise<string[]> {

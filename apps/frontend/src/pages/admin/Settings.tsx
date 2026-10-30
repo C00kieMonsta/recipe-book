@@ -514,7 +514,7 @@ export default function Settings() {
         kmRate: p.kmRate,
         paymentMode: p.paymentMode || undefined,
       }));
-    const activeInitials = people.filter((p) => p.active).map((p) => personInitials(p).toUpperCase());
+    const activeInitials = people.filter((p) => p.active).map((p) => personInitials(p, people).toUpperCase());
     if (new Set(activeInitials).size !== activeInitials.length) {
       return toast({ title: "Deux personnes actives ont les mêmes initiales", variant: "destructive" });
     }
@@ -709,7 +709,7 @@ export default function Settings() {
   const activeInitialCounts = new Map<string, number>();
   for (const p of draft.people) {
     if (!p.active) continue;
-    const key = personInitials(p).toUpperCase();
+    const key = personInitials(p, draft.people).toUpperCase();
     activeInitialCounts.set(key, (activeInitialCounts.get(key) ?? 0) + 1);
   }
   const copyDayLink = async (p: Person) => {
@@ -926,7 +926,7 @@ export default function Settings() {
       </p>
       <div>
         {draft.people.map((p, i) => {
-          const duplicate = p.active && (activeInitialCounts.get(personInitials(p).toUpperCase()) ?? 0) > 1;
+          const duplicate = p.active && (activeInitialCounts.get(personInitials(p, draft.people).toUpperCase()) ?? 0) > 1;
           return (
             <div key={p.personId} className={`${ROW} flex-wrap md:flex-nowrap ${p.active ? "" : "text-muted-foreground"}`}>
               <PersonChip personId={p.personId} people={draft.people} size="sm" />
@@ -936,7 +936,7 @@ export default function Settings() {
               <span className="flex w-20 items-center gap-1 text-sm uppercase tabular-nums touch:text-base">
                 <EditableInlineText
                   value={p.initials ?? ""}
-                  placeholder={personInitials(p)}
+                  placeholder={personInitials(p, draft.people)}
                   onSave={(v) => setPerson(i, { initials: v.replace(/[^a-zA-ZÀ-ÿ]/g, "").toUpperCase().slice(0, 3) || undefined })}
                 />
                 {duplicate && <Tag colour="red">doublon</Tag>}

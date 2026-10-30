@@ -190,20 +190,31 @@ export function isWeekdayLabel(name: string): boolean {
 
 // Effective assignees of a line or a task: its own list when set, else the event's.
 export function assigneesOf(line: Pick<EventRecipeLine, "assignedTo">, event: Pick<AppEvent, "assignedTo">): string[] {
-  return line.assignedTo?.length ? line.assignedTo : event.assignedTo ?? [];
+  return line.assignedTo?.length ? line.assignedTo : (event.assignedTo ?? []);
 }
 
 export function personName(people: Person[], personId: string): string {
   return people.find((p) => p.personId === personId)?.name ?? personId;
 }
 
-export function personInitials(p: Pick<Person, "name" | "initials">): string {
-  const given = p.initials?.trim();
-  if (given) return given.slice(0, 3);
-  const words = p.name.trim().split(/\s+/).filter(Boolean);
-  return words.length > 1
-    ? `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase()
-    : (words[0] ?? "").slice(0, 2).toUpperCase();
+type InitialPerson = Pick<Person, "name" | "initials"> & { personId?: string };
+export function personInitials(p: InitialPerson, people: InitialPerson[] = []): string {
+  const baseOf = (person: InitialPerson) => {
+    const given = person.initials?.trim();
+    if (given) return given.slice(0, 3).toUpperCase();
+    const words = person.name.trim().split(/\s+/).filter(Boolean);
+    return words.length > 1 ? `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase() : (words[0] ?? "").slice(0, 2).toUpperCase();
+  };
+  const base = baseOf(p);
+  if (people.filter(other => baseOf(other) === base).length < 2) return base;
+  const compact = (person: InitialPerson) => person.name.toUpperCase().replace(/[^A-ZÀ-Ÿ]/g, "");
+  const prefix = compact(p).slice(0, 3);
+  // Prefer readable prefixes for Margaux/Maxime. Avoid a prefix already used by another badge.
+  const matching = people.filter(other => compact(other).slice(0, 3) === prefix || baseOf(other) === prefix);
+  if (matching.length === 1) return prefix;
+  const sorted = [...people].sort((a, b) => (a.personId ?? a.name).localeCompare(b.personId ?? b.name));
+  const index = sorted.findIndex(other => p.personId ? other.personId === p.personId : other === p);
+  return `${base.slice(0, 1)}${(index + 1).toString(36).toUpperCase()}`;
 }
 
 // Lowercase, accents stripped, non-alphanumerics to "-", "-2" and up on collision.
@@ -308,7 +319,9 @@ export function shiftPrepDates(
 ): { recipes: EventRecipeLine[]; tasks: EventTask[] } {
   const delta = daysBetween(event.date.slice(0, 10), newDate.slice(0, 10));
   return {
-    recipes: event.recipes.map((l) => (l.prepDate ? { ...l, prepDate: addDays(l.prepDate, delta) } : l)),
+    recipes: event.recipes.map((l) =>
+      l.prepDate ? { ...l, prepDate: addDays(l.prepDate, delta) } : l,
+    ),
     tasks: tasksOf(event).map((t) => ({ ...t, date: addDays(t.date, delta) })),
   };
 }
@@ -336,6 +349,8 @@ export interface PrepLine {
 }
 
 export interface PrepTask {
+  scheduledStart?: string;
+  scheduledEnd?: string;
   kind: "task";
   eventId: string;
   eventName: string;
@@ -355,7 +370,9 @@ export interface PrepTask {
 export type DayItem = PrepLine | PrepTask;
 
 function clientNameOf(event: Pick<AppEvent, "clientId" | "contactName">, clientById: ClientLookup): string | undefined {
-  return (event.clientId && clientById.get(event.clientId)?.name) || event.contactName || undefined;
+  return (
+    (event.clientId && clientById.get(event.clientId)?.name) || event.contactName || undefined
+  );
 }
 
 function byDateThenName(a: Pick<AppEvent, "date" | "name">, b: Pick<AppEvent, "date" | "name">): number {
@@ -400,6 +417,8 @@ function toPrepTask(event: AppEvent, task: EventTask, clientById: ClientLookup):
   const eventDate = event.date.slice(0, 10);
   return {
     kind: "task",
+    ...(task.scheduledStart ? { scheduledStart: task.scheduledStart } : {}),
+    ...(task.scheduledEnd ? { scheduledEnd: task.scheduledEnd } : {}),
     eventId: event.eventId,
     eventName: event.name,
     clientName: clientNameOf(event, clientById),
@@ -580,7 +599,8 @@ export function weekPlan(events: AppEvent[], weekStart: string, people: Person[]
     }
     movedIn.sort((a, b) => byDateThenName(a.event, b.event));
     // Everything prepared that day, each with the event it inherits assignees from.
-    const items: { item: Pick<EventRecipeLine, "prepStatus" | "assignedTo">; event: AppEvent }[] = [];
+    const items: { item: Pick<EventRecipeLine, "prepStatus" | "assignedTo">; event: AppEvent;
+    }[] = [];
     const ids: string[] = [];
     for (const e of dayEvents) {
       ids.push(...(e.assignedTo ?? []));

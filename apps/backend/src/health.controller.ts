@@ -9,10 +9,12 @@ export class HealthController {
 
   @Get()
   check() {
-    const { clients, ledger } = this.config.tables;
+    const { clients, ledger, stock } = this.config.tables;
     return {
       status: "ok",
-      tables: { clients: Boolean(clients), ledger: Boolean(ledger) },
+      tables: { clients: Boolean(clients), ledger: Boolean(ledger),
+        stock: Boolean(stock),
+      },
       assistant: isAssistantConfigured(this.config),
     };
   }
