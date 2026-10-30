@@ -15,6 +15,7 @@ import {
   isCommissionEntry,
   parseYmd,
   personnelEntryAmount,
+  ledgerVatAtRate,
   sumMoney,
 } from "@packages/types";
 import { ApiError } from "@/lib/api";
@@ -209,7 +210,7 @@ export interface SalesTotals {
 }
 
 function vatOf(entries: LedgerEntry[], rate: VatColumn): number {
-  return sumMoney(entries.filter((e) => e.vatRate === rate).map((e) => e.vatAmount));
+  return sumMoney(entries.map((e) => ledgerVatAtRate(e, rate)));
 }
 
 // Footer figures of the Ventes book: sums, CA, per-type CA with a "Sans type" row, commissions apart.

@@ -7,7 +7,7 @@ import { todayIso } from "@/lib/dates";
 // Files are expanded into one row per invoice after reading a grouped PDF.
 // The queue lives in memory only: a reload clears it and the uploads already in S3 stay orphaned until a nightly cleanup (out of scope).
 
-export type InboxItemState = "queued" | "uploading" | "extracting" | "review" | "ready" | "duplicate" | "locked" | "error" | "added";
+export type InboxItemState = "queued" | "uploading" | "extracting" | "review" | "ready" | "duplicate" | "locked" | "error" | "added" | "excluded";
 
 export interface InboxItem {
   id: string;
@@ -166,7 +166,7 @@ async function processItem(id: string): Promise<void> {
     }
     const expanded: InboxItem[] = [];
     for (const proposal of invoices) {
-      const entry = proposal.entry ?? (await draftEntry(proposal.extracted));
+      const entry = proposal.flags.some(flag => flag.code === "reversed") ? null : proposal.entry ?? (await draftEntry(proposal.extracted));
       expanded.push({
         ...item,
         id: crypto.randomUUID(),
@@ -262,10 +262,11 @@ export function identityGap(entry: Pick<CreateLedgerEntryRequest, "htva" | "vatA
 }
 
 export function deriveState(item: Pick<InboxItem, "entry" | "flags" | "replace">): InboxItemState {
+  if (item.flags.some(flag => flag.code === "reversed" || flag.code === "duplicate_file")) return "excluded";
   if (item.flags.some((f) => f.code === "locked_month")) return "locked";
   if (!item.replace && item.flags.some((f) => f.code === "duplicate")) return "duplicate";
   if (entryProblem(item.entry)) return "review";
-  return item.flags.some((f) => f.code !== "duplicate") ? "review" : "ready";
+  return item.flags.some((f) => f.code !== "duplicate" && !(f.code === "multi_rate" && item.entry?.vatLines?.length)) ? "review" : "ready";
 }
 
 const AMOUNT_FLAGS: InboxFlagCode[] = ["vat_fixed", "missing_amount", "multi_rate", "currency"];
@@ -286,7 +287,7 @@ const CLEARS: Record<InboxField, InboxFlagCode[]> = {
 function signed(entry: CreateLedgerEntryRequest): CreateLedgerEntryRequest {
   const credit = entry.book === "ventes" && entry.kind === "note_de_credit";
   const fix = (n: number) => (n === 0 ? 0 : credit ? -Math.abs(n) : Math.abs(n));
-  return { ...entry, totalTvac: fix(entry.totalTvac), htva: fix(entry.htva), vatAmount: fix(entry.vatAmount) };
+  return { ...entry, totalTvac: fix(entry.totalTvac), htva: fix(entry.htva), vatAmount: fix(entry.vatAmount), ...(entry.vatLines ? { vatLines: entry.vatLines.map(line => ({ ...line, base: fix(line.base), amount: fix(line.amount) })) } : {}) };
 }
 
 const text = (v: InboxFieldValue) => String(v);
@@ -303,6 +304,7 @@ export function applyInboxEdit(entry: CreateLedgerEntryRequest, field: InboxFiel
     htva: entry.htva,
     vatRate: entry.vatRate,
     vatAmount: entry.vatAmount,
+    ...(entry.vatLines ? { vatLines: entry.vatLines } : {}),
   };
   switch (field) {
     case "book": {
@@ -323,11 +325,11 @@ export function applyInboxEdit(entry: CreateLedgerEntryRequest, field: InboxFiel
     case "label":
       return { ...entry, label: text(value) };
     case "htva":
-      return signed({ ...entry, htva: amount(value), vatRate: nearestVatRate(Math.abs(amount(value)), Math.abs(entry.vatAmount)) });
+      return signed({ ...entry, vatLines: undefined, htva: amount(value), vatRate: nearestVatRate(Math.abs(amount(value)), Math.abs(entry.vatAmount)) });
     case "vatAmount":
-      return signed({ ...entry, vatAmount: amount(value), vatRate: nearestVatRate(Math.abs(entry.htva), Math.abs(amount(value))) });
+      return signed({ ...entry, vatLines: undefined, vatAmount: amount(value), vatRate: nearestVatRate(Math.abs(entry.htva), Math.abs(amount(value))) });
     case "totalTvac":
-      return signed({ ...entry, totalTvac: amount(value) });
+      return signed({ ...entry, vatLines: undefined, totalTvac: amount(value) });
     case "paid":
       return entry.book === "ventes" ? { ...entry, paid: Boolean(value) } : entry;
     case "supplier":

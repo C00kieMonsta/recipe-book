@@ -31,6 +31,12 @@ export interface LedgerAttachment {
 
 export type LedgerEntrySource = "saisie" | "import_csv" | "depot";
 
+export interface LedgerVatLine {
+  rate: VatRate;
+  base: number;
+  amount: number;
+}
+
 export interface LedgerEntry {
   entryId: string;
   book: LedgerBook;
@@ -47,6 +53,8 @@ export interface LedgerEntry {
   htva: number;
   vatRate: VatRate;
   vatAmount: number;
+  // Printed VAT breakdown. vatRate remains the legacy display fallback.
+  vatLines?: LedgerVatLine[];
   refEntryId?: string;
   paid: boolean;
   paymentMethod?: PaymentMethod;

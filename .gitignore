@@ -34,3 +34,5 @@ cdk.out
 .DS_Store
 coverage/
 *.tsbuildinfo
+
+*.DS_Store

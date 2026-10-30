@@ -107,6 +107,9 @@ export function mapExtractedInvoice(
   ctx: InboxMappingContext,
 ): { entry: CreateLedgerEntryRequest | null; flags: InboxFlag[] } {
   const flags: InboxFlag[] = [];
+  if (x.documentStatus === "reversed") {
+    return { entry: null, flags: [{ code: "reversed", message: "Facture extournée : à rapprocher de son avoir, exclue de l'import." }] };
+  }
   const book: LedgerBook = isVentes(x, ctx.companyVat) ? "ventes" : "achats";
   const issuerName = cleanText(x.issuerName);
   const supplier = matchSupplier(issuerName, ctx.suppliers);
@@ -165,6 +168,11 @@ export function mapExtractedInvoice(
   }
 
   const common = { date, number, totalTvac, htva, vatRate, vatAmount };
+  const breakdown = x.vatLines.map(line => ({ rate: asPercent(line.rate), base: round2(line.base), amount: round2(line.amount) }));
+  const completeBreakdown = breakdown.length > 1 && breakdown.every(line => VAT_RATES.includes(line.rate as VatRate)) &&
+    new Set(breakdown.map(line => line.rate)).size === breakdown.length &&
+    Math.abs(breakdown.reduce((sum, line) => sum + line.base, 0) - htva) < 0.011 &&
+    Math.abs(breakdown.reduce((sum, line) => sum + line.amount, 0) - vatAmount) < 0.011;
   if (book === "ventes") {
     const kind = x.kindGuess === "autre" ? "facture" : x.kindGuess;
     const signed = kind === "note_de_credit" ? negative : Math.abs;
@@ -177,6 +185,7 @@ export function mapExtractedInvoice(
       htva: signed(htva),
       vatAmount: signed(vatAmount),
       paid: x.paid ?? false,
+      ...(completeBreakdown ? { vatLines: breakdown.map(line => ({ rate: line.rate as VatRate, base: signed(line.base), amount: signed(line.amount) })) } : {}),
     };
     return { entry, flags };
   }
@@ -191,6 +200,7 @@ export function mapExtractedInvoice(
     htva: Math.abs(htva),
     vatAmount: Math.abs(vatAmount),
     supplier: supplier ?? issuerName ?? undefined,
+    ...(completeBreakdown ? { vatLines: breakdown.map(line => ({ rate: line.rate as VatRate, base: Math.abs(line.base), amount: Math.abs(line.amount) })) } : {}),
   };
   return { entry, flags };
 }

@@ -33,6 +33,7 @@ import { Button, Callout, Checkbox, EmptyState, IconButton, ListRow, Property, P
 const DISABLED_TEXT = "La lecture automatique n'est pas configurée (clé OPENAI). Vous pouvez saisir les factures à la main dans le Journal.";
 
 const STATE_TAG: Record<InboxItemState, { label: string; colour: TagColour }> = {
+  excluded: { label: "Écartée", colour: "gray" },
   queued: { label: "En attente", colour: "gray" },
   uploading: { label: "Envoi…", colour: "blue" },
   extracting: { label: "Lecture…", colour: "blue" },
@@ -380,7 +381,7 @@ export default function InvoiceInbox() {
       <Upload className="h-6 w-6 text-icon" aria-hidden="true" />
       <p className="text-base font-medium">Déposez vos factures ici</p>
       <p className="text-sm text-muted-foreground">Plusieurs fichiers ou un PDF regroupant vos factures · 20 Mo par fichier</p>
-      <p className="text-sm text-muted-foreground">Jusqu’à 50 factures et 200 pages par PDF. Une ligne par facture, à vérifier avant l’ajout en lot.</p>
+      <p className="text-sm text-muted-foreground">Jusqu’à 200 pages par PDF. Les exports Odoo volumineux sont lus en entier. Une ligne par facture, à vérifier avant l’ajout en lot.</p>
       <div className="mt-1 flex flex-wrap justify-center gap-2">
         <Button variant="default" size="md" onClick={() => fileRef.current?.click()}>Choisir des fichiers</Button>
         {touch && <Button variant="default" size="md" icon={<Camera />} onClick={() => cameraRef.current?.click()}>Prendre une photo</Button>}

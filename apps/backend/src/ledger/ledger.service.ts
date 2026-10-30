@@ -142,6 +142,7 @@ export class LedgerService {
         htva: row.htva,
         vatRate: row.vatRate,
         vatAmount: row.vatAmount,
+        ...(row.vatLines ? { vatLines: row.vatLines } : {}),
         totalTvac: row.totalTvac,
         paid: row.paid,
         updatedAt: now,

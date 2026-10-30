@@ -29,6 +29,7 @@ import { OpenAiNotConfiguredError, getOpenAiClient, invalidateOpenAiClient, isAs
 import { S3Service } from "../../shared/s3.service";
 import { SettingsService } from "../../settings/settings.service";
 import { LedgerService } from "../ledger.service";
+import { parseOdooInvoicePages, pdfTextPages } from "./odoo-pdf";
 import {
   ExtractUpstreamError,
   HEIC_UNSUPPORTED,
@@ -62,7 +63,7 @@ export type InboxStore = {
   delete(key: string): Promise<void>;
 };
 
-type InboxObject = { key: string; body: Buffer; contentType: string; name: string };
+type InboxObject = { key: string; body: Buffer; contentType: string; name: string; metadata?: Record<string, string> };
 type CachedBatchInvoice = ExtractedInvoicePages & { inboxId: string; name: string };
 type CachedBatch = { version: 1; invoices: CachedBatchInvoice[] };
 
@@ -149,6 +150,9 @@ export class InboxService {
       }
       throw err;
     }
+    if (extracted.documentStatus === "reversed") {
+      await this.store.upload(object.key, object.body, object.contentType, { ...object.metadata, name: encodeName(object.name), documentstatus: "reversed" });
+    }
     const { entry, flags } = mapExtractedInvoice(extracted, await this.mappingContext());
     return { inboxId, entry, flags, extracted };
   }
@@ -182,10 +186,16 @@ export class InboxService {
     if (cached) {
       readings = cached.invoices;
     } else {
-      const client = await this.client();
       let extractedPages: ExtractedInvoicePages[];
+      let textPages: string[] = [];
+      try { textPages = await pdfTextPages(object.body); } catch { /* Scanned and unsupported PDFs use the document reader. */ }
+      let structured: ExtractedInvoicePages[] | null = null;
+      if (textPages.length) {
+        try { structured = parseOdooInvoicePages(textPages); }
+        catch (error) { throw new BadRequestException(error instanceof Error ? error.message : "PDF Odoo incohérent"); }
+      }
       try {
-        extractedPages = await extractInvoiceBatch(client, this.config.get("OPENAI_MODEL") ?? DEFAULT_OPENAI_MODEL, inboxId, {
+        extractedPages = structured ?? await extractInvoiceBatch(await this.client(), this.config.get("OPENAI_MODEL") ?? DEFAULT_OPENAI_MODEL, inboxId, {
           body: object.body, contentType: object.contentType, filename: object.name,
         });
       } catch (err) {
@@ -214,7 +224,7 @@ export class InboxService {
           for (const page of await document.copyPages(pdf, indices)) document.addPage(page);
           const body = Buffer.from(await document.save());
           created.push(reading.inboxId);
-          await this.store.upload(childKey, body, "application/pdf", { name: encodeName(reading.name) });
+          await this.store.upload(childKey, body, "application/pdf", { name: encodeName(reading.name), ...(reading.invoice.documentStatus === "reversed" ? { documentstatus: "reversed" } : {}) });
           child = { body, contentType: "application/pdf" };
         }
         const { entry, flags } = mapExtractedInvoice(reading.invoice, context);
@@ -269,7 +279,7 @@ export class InboxService {
     try { value = JSON.parse(object.body.toString("utf8")); }
     catch { return null; }
     if (!value || typeof value !== "object" || !("version" in value) || value.version !== 1 || !("invoices" in value) || !Array.isArray(value.invoices)) return null;
-    if (value.invoices.length < 1 || value.invoices.length > 50) return null;
+    if (value.invoices.length < 1 || value.invoices.length > 200) return null;
     const invoices: CachedBatchInvoice[] = [];
     for (const item of value.invoices) {
       if (!item || typeof item !== "object") return null;
@@ -362,7 +372,7 @@ export class InboxService {
     try {
       const object = await this.store.get(key);
       const name = decodeName(object.metadata?.name) ?? `facture${extOf(inboxId)}`;
-      return { key, body: object.body, contentType: object.contentType, name };
+      return { key, body: object.body, contentType: object.contentType, name, metadata: object.metadata };
     } catch (err) {
       if (isMissingObject(err)) throw new NotFoundException(UPLOAD_NOT_FOUND);
       throw err;
@@ -372,6 +382,7 @@ export class InboxService {
   // The key stays where the upload put it; only the entry points at it.
   private async attachmentOf(inboxId: string): Promise<LedgerAttachment> {
     const object = await this.getObject(inboxId);
+    if (object.metadata?.documentstatus === "reversed") throw new BadRequestException("Facture extournée : rapprochez-la de son avoir avant toute écriture.");
     return {
       key: object.key,
       name: object.name,

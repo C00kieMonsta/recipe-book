@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import type { AppEvent, AppSettings, LedgerEntry, ReportInputs } from "@packages/types";
-import { incomeStatement, isCaEntry, isCommissionEntry, parseYmd, sumMoney, yearMonths } from "@packages/types";
+import { incomeStatement, isCaEntry, isCommissionEntry, ledgerVatAtRate, parseYmd, sumMoney, yearMonths } from "@packages/types";
 import {
   MP_SOURCE_LABEL,
   SALES_KIND_LABEL,
@@ -55,7 +55,7 @@ function excelDate(ymd?: string): Date | null {
 }
 
 function vatCell(entry: LedgerEntry, rate: 6 | 12 | 21): number | null {
-  return entry.vatRate === rate ? entry.vatAmount : null;
+  return ledgerVatAtRate(entry, rate) || null;
 }
 
 // One workbook line for a CA entry; credit notes keep their negative amounts.
@@ -86,9 +86,9 @@ function totalRow(entries: LedgerEntry[], withKm: boolean): Cell[] {
     "TOTAL",
     sum((e) => e.totalTvac),
     sum((e) => e.htva),
-    sum((e) => (e.vatRate === 6 ? e.vatAmount : null)),
-    sum((e) => (e.vatRate === 12 ? e.vatAmount : null)),
-    sum((e) => (e.vatRate === 21 ? e.vatAmount : null)),
+    sum((e) => ledgerVatAtRate(e, 6)),
+    sum((e) => ledgerVatAtRate(e, 12)),
+    sum((e) => ledgerVatAtRate(e, 21)),
     null,
     null,
     null,

@@ -6,6 +6,12 @@ const paymentMethodSchema = z.enum(["virement", "cash", "bancontact", "payconiq"
 const vatIdentity = (e: { htva: number; totalTvac: number; vatAmount: number }) =>
   Math.abs(e.htva + e.vatAmount - e.totalTvac) < 0.011;
 
+export const ledgerVatLineSchema = z.object({ rate: vatRate, base: money, amount: money }).strict();
+const vatBreakdownIdentity = (e: { htva: number; vatAmount: number; vatLines?: { rate: number; base: number; amount: number }[] }) =>
+  !e.vatLines || (new Set(e.vatLines.map(line => line.rate)).size === e.vatLines.length &&
+    Math.abs(e.vatLines.reduce((sum, line) => sum + line.base, 0) - e.htva) < 0.011 &&
+    Math.abs(e.vatLines.reduce((sum, line) => sum + line.amount, 0) - e.vatAmount) < 0.011);
+
 const base = {
   date: isoDate,
   label: z.string().min(1).trim(),
@@ -17,6 +23,7 @@ const base = {
   htva: money,
   vatRate,
   vatAmount: money,
+  vatLines: z.array(ledgerVatLineSchema).min(1).max(4).optional(),
 };
 
 export const salesEntrySchema = z
@@ -53,6 +60,7 @@ const signRule = (e: { kind: string; totalTvac: number; htva: number; vatAmount:
 export const createLedgerEntrySchema = z
   .discriminatedUnion("book", [salesEntrySchema, purchaseEntrySchema])
   .refine(vatIdentity, "HTVA + TVA doit égaler TVAC")
+  .refine(vatBreakdownIdentity, "La ventilation TVA doit correspondre aux totaux")
   .refine(signRule, "montants négatifs réservés aux notes de crédit");
 export type CreateLedgerEntryRequest = z.infer<typeof createLedgerEntrySchema>;
 
@@ -90,13 +98,15 @@ export const importLedgerRowSchema = z
     htva: money,
     vatRate,
     vatAmount: money,
+    vatLines: z.array(ledgerVatLineSchema).min(1).max(4).optional(),
     totalTvac: money,
     paid: z.boolean().default(false),
     paidAt: isoDate.optional(),
     prestationType: z.string().optional(),
   })
   .strict()
-  .refine(vatIdentity, "HTVA + TVA doit égaler TVAC");
+  .refine(vatIdentity, "HTVA + TVA doit égaler TVAC")
+  .refine(vatBreakdownIdentity, "La ventilation TVA doit correspondre aux totaux");
 export type ImportLedgerRow = z.infer<typeof importLedgerRowSchema>;
 
 export const importLedgerSchema = z.object({ rows: z.array(importLedgerRowSchema).min(1).max(2000) }).strict();
@@ -124,6 +134,7 @@ export const extractedInvoiceSchema = z
     paid: z.boolean().nullable(),
     confidence: z.number().min(0).max(1),
     remarks: z.string().max(300).nullable(),
+    documentStatus: z.enum(["active", "reversed"]).nullable().optional(),
   })
   .strict();
 export type ExtractedInvoice = z.infer<typeof extractedInvoiceSchema>;
@@ -163,7 +174,9 @@ export type InboxFlagCode =
   | "locked_month"
   | "multi_rate"
   | "unknown_supplier"
-  | "currency";
+  | "currency"
+  | "reversed"
+  | "duplicate_file";
 
 export interface InboxFlag {
   code: InboxFlagCode;
