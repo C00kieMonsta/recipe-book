@@ -941,6 +941,7 @@ export default function Settings() {
                 />
                 {duplicate && <Tag colour="red">doublon</Tag>}
               </span>
+              {duplicate && <span className="basis-full -mt-1 text-sm text-muted-foreground md:ml-[calc(9rem+2rem)]">Ajoutez le nom de famille au nom ou changez les initiales.</span>}
               {/* Below md the rates, the pill and the actions wrap on one line under the name. */}
               <span className="flex basis-full items-center gap-2 pb-1 md:contents">
                 <OptNumValue value={p.hourlyRate} min={0} step={0.5} suffix="€/h" placeholder="€/h" ariaLabel="Tarif horaire" className="md:w-24 md:text-right" onChange={(v) => setPerson(i, { hourlyRate: v })} />

@@ -2,13 +2,13 @@ import type { AssistantPageSelection } from "@/lib/assistant-context";
 import { dayMonthShortLabel, parseYmd } from "@/lib/dates";
 
 export const WELCOME_TEXT =
-  "Posez une question, ajoutez une recette, modifiez un événement ou estimez un prix. Les modifications sont proposées, vous les confirmez.";
+  "Posez une question sur vos recettes, achats ou préparations. Les modifications sont proposées, vous les confirmez.";
 
 export const WELCOME_SUGGESTIONS = [
   "Ajouter une recette",
-  "Modifier un événement de la semaine",
-  "Estimer un prix : 50 convives menu X, 1 convive menu Y",
-  "Qu'est-ce qui manque cette semaine ?",
+  "Analyser mes achats enregistrés de 2026 par fournisseur",
+  "Organiser les préparations de cette semaine, avec les cuissons en premier",
+  "Calculer les ingrédients cumulés à préparer cette semaine",
 ];
 
 export interface ChatWelcomeProps {

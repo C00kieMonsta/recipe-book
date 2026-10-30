@@ -20,6 +20,13 @@ const recipePhotoSchema = z.object({
   url: z.string().optional(),
 });
 
+export const recipePreparationSchema = z.object({
+  preparationId: z.string().min(1),
+  name: z.string().trim().min(1).max(100),
+  daysBefore: z.number().int().min(0).max(60).default(0),
+  description: z.string().trim().max(500).optional(),
+});
+
 export const createRecipeRequestSchema = z.object({
   name: z.string().min(1).trim(),
   category: z.string().trim().min(1).max(40).optional(),
@@ -30,6 +37,7 @@ export const createRecipeRequestSchema = z.object({
   defaultCourse: z.string().trim().optional(),
   description: z.string().trim().optional(),
   techniques: z.array(z.string()).default([]),
+  preparations: z.array(recipePreparationSchema).default([]),
   ingredients: z.array(recipeIngredientSchema).default([]),
   photos: z.array(recipePhotoSchema).default([]),
   pricing: recipePricingSchema.default({
@@ -46,6 +54,7 @@ export const updateRecipeRequestSchema = createRecipeRequestSchema.partial().ext
   portions: createRecipeRequestSchema.shape.portions.removeDefault().optional(),
   portionWeight: createRecipeRequestSchema.shape.portionWeight.removeDefault().optional(),
   techniques: createRecipeRequestSchema.shape.techniques.removeDefault().optional(),
+  preparations: createRecipeRequestSchema.shape.preparations.removeDefault().optional(),
   ingredients: createRecipeRequestSchema.shape.ingredients.removeDefault().optional(),
   photos: createRecipeRequestSchema.shape.photos.removeDefault().optional(),
   pricing: createRecipeRequestSchema.shape.pricing.removeDefault().optional(),

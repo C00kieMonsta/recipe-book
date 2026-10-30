@@ -8,6 +8,8 @@ export interface GroceryListItem {
   priceUnit: string;
   checked: boolean;
   haveQty?: number;
+  /** Missing values on older lists remain unclassified until the user chooses a rayon. */
+  storage?: "fresh" | "dry" | "unclassified";
 }
 
 export interface GroceryList {

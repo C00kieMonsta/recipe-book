@@ -31,6 +31,7 @@ import type {
   ImportLedgerRow,
   InboxUpload,
   InboxProposal,
+  InboxBatchProposal,
   InboxConfirmRequest,
   InboxConfirmResult,
   ImportIngredientsOptions,
@@ -352,6 +353,7 @@ export const api = {
     inbox: {
       upload: (file: File) => uploadRequest<InboxUpload>("/admin/ledger/inbox/upload", file),
       extract: (inboxId: string) => request<InboxProposal>("/admin/ledger/inbox/extract", json("POST", { inboxId })),
+      extractBatch: (inboxId: string) => request<InboxBatchProposal>("/admin/ledger/inbox/extract-batch", json("POST", { inboxId })),
       confirm: withInvalidate(["events", "settings"], (items: InboxConfirmRequest["items"]) =>
         request<{ results: InboxConfirmResult[] }>("/admin/ledger/inbox/confirm", json("POST", { items }))),
       remove: (inboxId: string) => request<{ ok: true }>(`/admin/ledger/inbox/${inboxId}`, { method: "DELETE" }),

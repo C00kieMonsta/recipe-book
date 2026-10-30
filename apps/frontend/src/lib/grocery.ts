@@ -4,6 +4,15 @@ import { addDays, datesOfIsoWeek, isoWeekOf, longDayLabel, rangeLabel } from "@p
 export type GroceryRange = { from: string; to: string };
 export type GroceryDraftItem = Omit<GroceryListItem, "checked">;
 
+// Common chilled, produce, meat, fish and dairy terms. This is a starting point only.
+// The list keeps a per-item selector so uncommon products can be corrected and saved.
+export function defaultGroceryStorage(name: string): "fresh" | "dry" | "unclassified" {
+  const value = foldAccents(name);
+  if (/\b(lait|creme|cream|beurre|fromage|chevre|yaourt|yogourt|oeuf|oeufs|viande|boeuf|veau|porc|poulet|volaille|canard|agneau|poisson|saumon|thon frais|crevette|moule|coquille|legume|fruit|salade|tomate|courgette|aubergine|poivron|concombre|carotte|oignon|echalote|ail|pomme de terre|herbe|persil|coriandre|basilic|menthe|champignon|fraise|framboise|pomme|poire|citron|orange|avocat|epinard|chou|poireau|celeri|radis|endive|asperge|fenouil)\b/.test(value)) return "fresh";
+  if (/\b(farine|sucre|sel|poivre|huile|vinaigre|riz|pate|pates|semoule|lentille|pois chiche|haricot sec|conserve|chocolat|cafe|the|amande|noisette|noix|levure|biscuit|chapelure|miel|sirop|vanille|epice|epices|cacao|poudre|bouillon|farine|fecule|mais|semoule)\b/.test(value)) return "dry";
+  return "unclassified";
+}
+
 export interface BuildGroceryOptions {
   from?: string;
   to?: string;
@@ -73,6 +82,7 @@ export function buildGroceryItems(
             supplier: ing.supplier,
             pricePerUnit: ing.price,
             priceUnit: ing.unit,
+            storage: defaultGroceryStorage(ing.name),
           });
         }
       }

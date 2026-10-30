@@ -74,12 +74,46 @@ export function staffRateOf(entry: EventStaffEntry | undefined, person: Person |
   };
 }
 
-function hasWorkOf(entry: Pick<EventStaffEntry, "hours" | "km"> | undefined): boolean {
-  return (entry?.hours ?? 0) > 0 || (entry?.km ?? 0) > 0;
+function hasWorkOf(entry: EventStaffEntry | undefined): boolean {
+  return (entry?.hours ?? 0) > 0 || (entry?.km ?? 0) > 0 || entry?.startTime !== undefined || entry?.endTime !== undefined || entry?.actualAmount !== undefined || entry?.kmAmount !== undefined;
 }
 
 export function staffAmountOf(hours: number, km: number, rate: Pick<StaffRate, "hourly" | "km">): number {
   return round2(hours * rate.hourly + km * rate.km);
+}
+
+// Returns canonical HH:MM, undefined for an empty input, and null for invalid input.
+// The end field accepts 24:00; both fields accept colloquial forms such as "18h" and "18h30".
+export function normalizeStaffTime(value: string, allow24 = false): string | undefined | null {
+  const text = value.trim().toLowerCase();
+  if (!text) return undefined;
+  const colloquial = /^(\d{1,2})h(?:(\d{2}))?$/.exec(text);
+  const standard = /^(\d{1,2}):(\d{2})$/.exec(text);
+  const match = colloquial ?? standard;
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2] ?? 0);
+  if (minute > 59 || hour > 24 || (hour === 24 && (!allow24 || minute !== 0))) return null;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+export function hoursBetween(startTime?: string, endTime?: string): number | undefined {
+  if (!startTime || !endTime) return undefined;
+  const startValue = normalizeStaffTime(startTime);
+  const endValue = normalizeStaffTime(endTime, true);
+  if (!startValue || !endValue) return undefined;
+  const minutes = (value: string) => {
+    const [h, m] = value.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const start = minutes(startValue);
+  const end = minutes(endValue);
+  const elapsed = end >= start ? end - start : end + 24 * 60 - start;
+  return round2(elapsed / 60);
+}
+
+export function staffHoursOf(entry: EventStaffEntry | undefined): number {
+  return hoursBetween(entry?.startTime, entry?.endTime) ?? entry?.hours ?? 0;
 }
 
 // One row per person of staffPeopleOf, rows without hours and km included (amount 0) so the section can list the team.
@@ -89,14 +123,14 @@ export function staffCostOf(e: AppEvent, people: Person[]): StaffCost {
   const rows: StaffCostRow[] = staffPeopleOf(e, people).map((personId) => {
     const entry = staffEntryOf(e, personId);
     const person = people.find((p) => p.personId === personId);
-    const hours = entry?.hours ?? 0;
+    const hours = staffHoursOf(entry);
     const km = entry?.km ?? 0;
-    const rate = staffRateOf(entry, person, hasWorkOf(entry));
+    const rate = staffRateOf(entry, person, hours > 0 && entry?.actualAmount === undefined);
     return {
       personId,
       hours,
       km,
-      amount: staffAmountOf(hours, km, rate),
+      amount: entry?.actualAmount ?? round2(hours * rate.hourly + (entry?.kmAmount ?? km * rate.km)),
       rate,
       cuisine: kitchen.includes(personId),
       service: service.includes(personId),
@@ -113,8 +147,12 @@ export function staffCostOf(e: AppEvent, people: Person[]): StaffCost {
 
 function withoutUndefined(entry: EventStaffEntry): EventStaffEntry {
   const out: EventStaffEntry = { personId: entry.personId };
+  if (entry.startTime !== undefined) out.startTime = entry.startTime;
+  if (entry.endTime !== undefined) out.endTime = entry.endTime;
   if (entry.hours !== undefined) out.hours = entry.hours;
   if (entry.km !== undefined) out.km = entry.km;
+  if (entry.kmAmount !== undefined) out.kmAmount = entry.kmAmount;
+  if (entry.actualAmount !== undefined) out.actualAmount = entry.actualAmount;
   if (entry.hourlyRate !== undefined) out.hourlyRate = entry.hourlyRate;
   if (entry.kmRate !== undefined) out.kmRate = entry.kmRate;
   return out;
@@ -124,7 +162,7 @@ function withoutUndefined(entry: EventStaffEntry): EventStaffEntry {
 export function upsertStaffEntry(
   staff: EventStaffEntry[] | undefined,
   personId: string,
-  patch: Pick<Partial<EventStaffEntry>, "hours" | "km">,
+  patch: Partial<Omit<EventStaffEntry, "personId">>,
 ): EventStaffEntry[] {
   const list = staff ?? [];
   const current = list.find((s) => s.personId === personId);

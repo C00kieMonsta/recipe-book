@@ -179,6 +179,11 @@ export interface InboxProposal {
   extracted: ExtractedInvoice;
 }
 
+export interface InboxBatchProposal {
+  // Each invoice has its own uploaded document and can be confirmed independently.
+  invoices: (InboxProposal & { name: string; size: number; pageStart?: number; pageEnd?: number })[];
+}
+
 export type InboxConfirmResult =
   | { inboxId: string; ok: true; entryId: string }
   | { inboxId: string; ok: false; error: string };

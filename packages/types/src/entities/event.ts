@@ -26,8 +26,15 @@ export interface EventRevenueLine {
 // Hours and km of one person on the event, whatever the role; one entry per person.
 export interface EventStaffEntry {
   personId: string;
+  // Optional clock times, HH:MM. endTime may be 24:00 for midnight.
+  startTime?: string;
+  endTime?: string;
   hours?: number;
   km?: number;
+  // Optional manual km reimbursement, replacing km × kmRate.
+  kmAmount?: number;
+  // Optional final amount override for rounded or otherwise adjusted payment.
+  actualAmount?: number;
   // Copied from the person by completionFields when the event is terminated, so a later rate change leaves the figure.
   hourlyRate?: number;
   kmRate?: number;
@@ -69,6 +76,10 @@ export interface EventTask {
   notes?: string;
   // personIds; absent or [] inherits the event.
   assignedTo?: string[];
+  // Links a generated preparation task back to its recipe line and definition.
+  recipeLineId?: string;
+  recipeId?: string;
+  preparationId?: string;
 }
 
 export type ExtraCostKind = "matiere" | "personnel" | "location" | "transport" | "autre";

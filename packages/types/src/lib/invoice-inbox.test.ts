@@ -96,6 +96,12 @@ describe("mapExtractedInvoice: book", () => {
 });
 
 describe("mapExtractedInvoice: achats", () => {
+  it("allows the same invoice number from another supplier", () => {
+    const existingNumbers = [{ book: "achats" as const, number: "VDS-2026-001", entryId: "barn-1", locked: false, party: "Barn" }];
+    expect(codes(mapExtractedInvoice(read(), ctx({ existingNumbers })).flags)).not.toContain("duplicate");
+    existingNumbers[0].party = "Vds";
+    expect(codes(mapExtractedInvoice(read(), ctx({ existingNumbers })).flags)).toContain("duplicate");
+  });
   it("maps a known supplier to mp, case and accents folded", () => {
     const x = read({ issuerName: "VDS FOOD SA" });
     const { entry, flags } = mapExtractedInvoice(x, ctx());

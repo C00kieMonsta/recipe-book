@@ -533,6 +533,22 @@ export default function RecipeDetail() {
         </div>
       )}
 
+      {(recipe.preparations?.length ?? 0) > 0 && (
+        <Section title="Préparations à planifier" action={<Button variant="subtle" size="sm" onClick={() => navigate(`/recipes/${id}/edit`)}>Modifier</Button>}>
+          <ul className="space-y-2">
+            {recipe.preparations?.map((preparation) => (
+              <li key={preparation.preparationId} className="rounded-lg bg-surface px-3 py-2">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <span className="font-medium">{preparation.name}</span>
+                  <span className="text-sm text-muted-foreground">{preparation.daysBefore === 0 ? "Le jour de l'événement" : `${preparation.daysBefore} jour${preparation.daysBefore > 1 ? "s" : ""} avant`}</span>
+                </div>
+                {preparation.description && <p className="mt-1 text-sm text-muted-foreground">{preparation.description}</p>}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
       <Section
         title="Préparation"
         action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={() => { setAddingStep(true); setTimeout(() => newStepRef.current?.focus(), 50); }}>Étape</Button>}

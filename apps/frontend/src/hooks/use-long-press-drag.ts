@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent } from "react";
 
 export interface DragPoint {
   x: number;
@@ -22,6 +22,7 @@ export interface LongPressDragHandlers {
   onPointerMove: (e: ReactPointerEvent<HTMLElement>) => void;
   onPointerUp: (e: ReactPointerEvent<HTMLElement>) => void;
   onPointerCancel: (e: ReactPointerEvent<HTMLElement>) => void;
+  onTouchStart: (e: ReactTouchEvent<HTMLElement>) => void;
 }
 
 export interface LongPressDrag<T> {
@@ -46,10 +47,6 @@ export function dropDayAt(x: number, y: number): string | null {
 }
 
 // React's root touch listeners are passive, so a native one is needed to stop the scroll.
-function preventTouch(e: TouchEvent) {
-  if (e.cancelable) e.preventDefault();
-}
-
 function preventDefault(e: Event) {
   e.preventDefault();
 }
@@ -82,6 +79,10 @@ interface Gesture<T> {
   lifted: boolean;
   target: string | null;
   raf: number | null;
+  touchMoveListener?: (event: TouchEvent) => void;
+  touchEndListener?: (event: TouchEvent) => void;
+  touchCancelListener?: () => void;
+  nativeTouch?: boolean;
   // The pointer moved since the last frame.
   dirty: boolean;
 }
@@ -102,6 +103,9 @@ export function useLongPressDrag<T>(options: LongPressDragOptions<T>): LongPress
     const g = gesture.current;
     if (!g) return;
     if (g.timer !== null) window.clearTimeout(g.timer);
+    if (g.touchMoveListener) g.el.removeEventListener("touchmove", g.touchMoveListener);
+    if (g.touchEndListener) window.removeEventListener("touchend", g.touchEndListener, true);
+    if (g.touchCancelListener) window.removeEventListener("touchcancel", g.touchCancelListener, true);
     g.el.removeEventListener("contextmenu", preventDefault);
     unprotect(g.el);
     gesture.current = null;
@@ -136,21 +140,25 @@ export function useLongPressDrag<T>(options: LongPressDragOptions<T>): LongPress
     g.raf = window.requestAnimationFrame(tick);
   }, [publish]);
 
-  const finish = useCallback((dropTarget: string | null) => {
+  const finish = useCallback((dropTarget: string | null, notify = true) => {
     const g = gesture.current;
     if (!g) return;
     gesture.current = null;
     if (g.raf !== null) window.cancelAnimationFrame(g.raf);
     const { el } = g;
-    el.removeEventListener("touchmove", preventTouch);
+    if (g.touchMoveListener) el.removeEventListener("touchmove", g.touchMoveListener);
+    if (g.touchEndListener) window.removeEventListener("touchend", g.touchEndListener, true);
+    if (g.touchCancelListener) window.removeEventListener("touchcancel", g.touchCancelListener, true);
     el.removeEventListener("contextmenu", preventDefault);
     el.classList.remove(DRAG_CLASS);
     el.style.touchAction = "";
     unprotect(el);
-    try {
-      el.releasePointerCapture(g.pointerId);
-    } catch {
-      /* already released */
+    if (!g.nativeTouch) {
+      try {
+        el.releasePointerCapture(g.pointerId);
+      } catch {
+        /* already released */
+      }
     }
     // The browser's click lands after pointerup; the listener goes once it has passed.
     window.setTimeout(() => el.removeEventListener("click", swallowClick, true), 400);
@@ -158,7 +166,7 @@ export function useLongPressDrag<T>(options: LongPressDragOptions<T>): LongPress
     setGhost(null);
     setTarget(null);
     setItem(null);
-    opts.current.onEnd(dropTarget, g.item);
+    if (notify) opts.current.onEnd(dropTarget, g.item);
   }, []);
 
   const lift = useCallback(() => {
@@ -167,13 +175,14 @@ export function useLongPressDrag<T>(options: LongPressDragOptions<T>): LongPress
     g.timer = null;
     g.lifted = true;
     const { el } = g;
-    try {
-      el.setPointerCapture(g.pointerId);
-    } catch {
-      /* the pointer is gone */
+    if (!g.nativeTouch) {
+      try {
+        el.setPointerCapture(g.pointerId);
+      } catch {
+        /* the pointer is gone */
+      }
     }
     navigator.vibrate?.(10);
-    el.addEventListener("touchmove", preventTouch, { passive: false });
     el.addEventListener("click", swallowClick, true);
     // Inline copies of the class, for a row re-rendered by a child component between two renders here.
     el.classList.add(DRAG_CLASS);
@@ -189,7 +198,7 @@ export function useLongPressDrag<T>(options: LongPressDragOptions<T>): LongPress
   useEffect(() => () => {
     const g = gesture.current;
     if (!g) return;
-    if (g.lifted) finish(null);
+    if (g.lifted) finish(null, false);
     else cancelHold();
   }, [cancelHold, finish]);
 
@@ -202,7 +211,8 @@ export function useLongPressDrag<T>(options: LongPressDragOptions<T>): LongPress
   const handlers = useCallback((rowItem: T): LongPressDragHandlers => ({
     onPointerDown: (e) => {
       if (!enabled || gesture.current) return;
-      if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+      // Touch uses native TouchEvents so a browser pointercancel cannot discard a lifted row.
+      if (e.pointerType !== "pen") return;
       if (!e.isPrimary) return;
       const el = e.currentTarget;
       const start = { x: e.clientX, y: e.clientY };
@@ -219,11 +229,62 @@ export function useLongPressDrag<T>(options: LongPressDragOptions<T>): LongPress
         target: null,
         raf: null,
         dirty: false,
+        nativeTouch: false,
       };
+    },
+    onTouchStart: (e) => {
+      if (!enabled || gesture.current) return;
+      const touch = e.changedTouches[0];
+      if (!touch) return;
+      const el = e.currentTarget;
+      const start = { x: touch.clientX, y: touch.clientY };
+      el.addEventListener("contextmenu", preventDefault);
+      protect(el);
+      const g: Gesture<T> = {
+        el,
+        pointerId: -1,
+        item: rowItem,
+        start,
+        last: start,
+        timer: null,
+        lifted: false,
+        target: null,
+        raf: null,
+        dirty: false,
+        nativeTouch: true,
+      };
+      gesture.current = g;
+      g.timer = window.setTimeout(lift, delay);
+      g.touchMoveListener = (event) => {
+        const point = event.touches[0];
+        if (gesture.current !== g || !point) return;
+        g.last = { x: point.clientX, y: point.clientY };
+        if (!g.lifted) {
+          if (Math.hypot(g.last.x - g.start.x, g.last.y - g.start.y) > slop) cancelHold();
+          return;
+        }
+        if (event.cancelable) event.preventDefault();
+        g.dirty = true;
+      };
+      g.touchEndListener = (event) => {
+        if (gesture.current !== g) return;
+        if (!g.lifted) { cancelHold(); return; }
+        const point = event.changedTouches[0];
+        const last = point ? { x: point.clientX, y: point.clientY } : g.last;
+        finish(dropDayAt(last.x, last.y));
+      };
+      g.touchCancelListener = () => {
+        if (gesture.current !== g) return;
+        if (g.lifted) finish(null, false);
+        else cancelHold();
+      };
+      el.addEventListener("touchmove", g.touchMoveListener, { passive: false });
+      window.addEventListener("touchend", g.touchEndListener, true);
+      window.addEventListener("touchcancel", g.touchCancelListener, true);
     },
     onPointerMove: (e) => {
       const g = gesture.current;
-      if (!g || e.pointerId !== g.pointerId) return;
+      if (!g || g.nativeTouch || e.pointerId !== g.pointerId) return;
       g.last = { x: e.clientX, y: e.clientY };
       if (!g.lifted) {
         if (Math.hypot(g.last.x - g.start.x, g.last.y - g.start.y) > slop) cancelHold();
@@ -233,7 +294,7 @@ export function useLongPressDrag<T>(options: LongPressDragOptions<T>): LongPress
     },
     onPointerUp: (e) => {
       const g = gesture.current;
-      if (!g || e.pointerId !== g.pointerId) return;
+      if (!g || g.nativeTouch || e.pointerId !== g.pointerId) return;
       if (!g.lifted) {
         cancelHold();
         return;
@@ -242,12 +303,14 @@ export function useLongPressDrag<T>(options: LongPressDragOptions<T>): LongPress
     },
     onPointerCancel: (e) => {
       const g = gesture.current;
-      if (!g || e.pointerId !== g.pointerId) return;
+      if (!g || g.nativeTouch || e.pointerId !== g.pointerId) return;
       if (!g.lifted) {
         cancelHold();
         return;
       }
-      finish(null);
+      // Browsers cancel a touch pointer when a pan gesture starts. Keep tracking the native
+      // touch so the already-lifted recipe can still land on a day cell.
+      if (e.pointerType !== "touch") finish(null, false);
     },
   }), [enabled, delay, slop, lift, cancelHold, finish]);
 

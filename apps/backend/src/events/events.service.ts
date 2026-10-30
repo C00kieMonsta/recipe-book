@@ -1,9 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import type {
   AddEventLineRequest,
   AddEventTaskRequest,
   AppEvent,
+  EventStaffEntry,
   CreateEventRequest,
   EventAttachment,
   EventRecipeLine,
@@ -13,14 +14,23 @@ import type {
   PutEventLinesRequest,
   UpdateEventRequest,
 } from "@packages/types";
-import { ATTACHMENT_TYPES, MAX_ATTACHMENTS, round2, shiftPrepDates, tasksOf } from "@packages/types";
+import { ATTACHMENT_TYPES, MAX_ATTACHMENTS, hoursBetween, round2, recipePreparationTasks, shiftPrepDates, tasksOf } from "@packages/types";
 import { DdbService, UpdateOptions } from "../shared/ddb.service";
 import { S3Service } from "../shared/s3.service";
+import { RecipesService } from "../recipes/recipes.service";
 
 type IncomingLine = Omit<EventRecipeLine, "lineId"> & { lineId?: string };
 type IncomingTask = Omit<EventTask, "taskId"> & { taskId?: string };
 // A line before normalizeLines: a patch may carry prepDate null to clear it.
 type LooseLine = Omit<EventRecipeLine, "prepDate"> & { prepDate?: string | null };
+
+function staffWithDerivedHours(staff: EventStaffEntry[] | undefined): EventStaffEntry[] | undefined {
+  if (!staff) return undefined;
+  return staff.map((entry) => {
+    const hours = hoursBetween(entry.startTime, entry.endTime);
+    return hours === undefined ? entry : { ...entry, hours };
+  });
+}
 
 // The multer fields the service reads; the controller passes the uploaded file as is.
 export type UploadedAttachment = { originalname: string; mimetype: string; size: number; buffer: Buffer };
@@ -81,7 +91,7 @@ const attachmentsOf = (event: AppEvent): EventAttachment[] => event.attachments 
 export class EventsService {
   private get table() { return this.ddb.tables.events; }
 
-  constructor(private ddb: DdbService, private s3: S3Service) {}
+  constructor(private ddb: DdbService, private s3: S3Service, @Optional() private recipesService?: RecipesService) {}
 
   async getAll(): Promise<AppEvent[]> {
     const items = (await this.ddb.scanAll(this.table)) as unknown as AppEvent[];
@@ -102,11 +112,14 @@ export class EventsService {
   async create(data: CreateEventRequest): Promise<AppEvent> {
     const now = new Date().toISOString();
     const { costSnapshot, ...rest } = sanitizeFields(data);
+    const staff = staffWithDerivedHours(data.staff);
+    const recipes = normalizeLines(fillLineIds(data.recipes), data.date);
     const event: AppEvent = {
       eventId: randomUUID(),
       ...withoutNull({ ...rest, ...this.applyPricing(undefined, data) }),
-      recipes: normalizeLines(fillLineIds(data.recipes), data.date),
-      tasks: fillTaskIds(data.tasks),
+      ...(staff ? { staff } : {}),
+      recipes,
+      tasks: await this.withPreparationTasks(recipes, fillTaskIds(data.tasks), data.date),
       ...(costSnapshot && { costSnapshot: { ...costSnapshot, takenAt: now } }),
       nameLower: data.name.toLowerCase(),
       createdAt: now,
@@ -121,6 +134,7 @@ export class EventsService {
     return this.withFreshEvent(eventId, async (stored) => {
       const now = new Date().toISOString();
       const updates: Record<string, unknown> = { ...sanitizeFields(fields), ...this.applyPricing(stored, fields) };
+      if (fields.staff !== undefined) updates.staff = staffWithDerivedHours(fields.staff);
       if (fields.name) updates.nameLower = fields.name.toLowerCase();
       let recipes = fields.recipes ? this.mergeLines(stored.recipes, fields.recipes) : undefined;
       let tasks = fields.tasks ? this.mergeTasks(tasksOf(stored), fields.tasks) : undefined;
@@ -131,6 +145,10 @@ export class EventsService {
         );
         recipes = shifted.recipes;
         tasks = shifted.tasks;
+      }
+      if (recipes) {
+        recipes = normalizeLines(recipes, fields.date ?? stored.date);
+        tasks = await this.withPreparationTasks(recipes, tasks ?? tasksOf(stored), fields.date ?? stored.date);
       }
       if (recipes) updates.recipes = normalizeLines(recipes, fields.date ?? stored.date);
       if (tasks) updates.tasks = tasks;
@@ -149,9 +167,11 @@ export class EventsService {
   }
 
   async addLine(eventId: string, line: AddEventLineRequest): Promise<AppEvent> {
-    return this.withFreshEvent(eventId, (stored) => {
+    return this.withFreshEvent(eventId, async (stored) => {
       const recipes = [...stored.recipes, { ...line, lineId: randomUUID() }];
-      return this.writeFields(stored, { recipes: normalizeLines(recipes, stored.date) });
+      const normalized = normalizeLines(recipes, stored.date);
+      const tasks = await this.withPreparationTasks(normalized, tasksOf(stored), stored.date);
+      return this.writeFields(stored, { recipes: normalized, tasks });
     });
   }
 
@@ -165,7 +185,7 @@ export class EventsService {
   }
 
   async putLines(eventId: string, body: PutEventLinesRequest): Promise<AppEvent> {
-    return this.withFreshEvent(eventId, (stored) => {
+    return this.withFreshEvent(eventId, async (stored) => {
       const byId = new Map(stored.recipes.map((l) => [l.lineId, l]));
       const missing = body.lines.filter((l) => !byId.has(l.lineId)).map((l) => l.lineId);
       if (missing.length > 0 || body.lines.length !== stored.recipes.length) {
@@ -175,20 +195,28 @@ export class EventsService {
         ...(byId.get(l.lineId) as EventRecipeLine),
         ...(l.course !== undefined && { course: l.course }),
       }));
-      return this.writeFields(stored, { recipes: normalizeLines(recipes, stored.date) });
+      const normalized = normalizeLines(recipes, stored.date);
+      const tasks = await this.withPreparationTasks(normalized, tasksOf(stored), stored.date);
+      return this.writeFields(stored, { recipes: normalized, tasks });
     });
   }
 
   async removeLine(eventId: string, lineId: string): Promise<AppEvent> {
     return this.withFreshEvent(eventId, (stored) => {
       if (!stored.recipes.some((l) => l.lineId === lineId)) throw new NotFoundException("Line not found");
-      return this.writeFields(stored, { recipes: stored.recipes.filter((l) => l.lineId !== lineId) });
+      return this.writeFields(stored, {
+        recipes: stored.recipes.filter((l) => l.lineId !== lineId),
+        tasks: tasksOf(stored).filter((task) => task.recipeLineId !== lineId),
+      });
     });
   }
 
   async addTask(eventId: string, task: AddEventTaskRequest): Promise<AppEvent> {
-    return this.withFreshEvent(eventId, (stored) =>
-      this.writeFields(stored, { tasks: [...tasksOf(stored), { ...task, taskId: randomUUID() }] }));
+    return this.withFreshEvent(eventId, async (stored) => {
+      const tasks = tasksOf(stored);
+      if (task.recipeLineId && task.preparationId && tasks.some((current) => current.recipeLineId === task.recipeLineId && current.preparationId === task.preparationId)) return stored;
+      return this.writeFields(stored, { tasks: [...tasks, { ...task, taskId: randomUUID() }] });
+    });
   }
 
   async patchTask(eventId: string, taskId: string, patch: PatchEventTaskRequest): Promise<AppEvent> {
@@ -338,6 +366,26 @@ export class EventsService {
       if (!prev) return { ...t, taskId: randomUUID() };
       return { ...prev, ...definedEntries(t), taskId: prev.taskId };
     });
+  }
+
+  private async withPreparationTasks(lines: EventRecipeLine[], existingTasks: EventTask[], eventDate: string): Promise<EventTask[]> {
+    const lineIds = new Set(lines.map((line) => line.lineId));
+    const tasks = existingTasks.filter((task) => !task.recipeLineId || lineIds.has(task.recipeLineId));
+    const existingByLine = new Map<string, Set<string>>();
+    for (const task of tasks) {
+      if (!task.recipeLineId || !task.preparationId) continue;
+      const ids = existingByLine.get(task.recipeLineId) ?? new Set<string>();
+      ids.add(task.preparationId);
+      existingByLine.set(task.recipeLineId, ids);
+    }
+    const recipes = await this.recipesService?.getPreparationDefinitions(lines.map((line) => line.recipeId)) ?? [];
+    for (const line of lines) {
+      const recipe = recipes.find((candidate) => candidate.recipeId === line.recipeId);
+      if (!recipe?.preparations?.length) continue;
+      const generated = recipePreparationTasks(recipe, line, eventDate, [...(existingByLine.get(line.lineId) ?? [])]);
+      tasks.push(...generated.map((task) => ({ ...task, taskId: randomUUID() })));
+    }
+    return tasks;
   }
 
   // Backfills lineId on events written before the field existed, once per event; tasks default to [] in memory only.

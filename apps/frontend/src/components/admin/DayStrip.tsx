@@ -16,6 +16,8 @@ export interface DayStripProps {
   dropDay?: string | null;
   // Touch drag in progress: every cell tints and the caption shows.
   dragging?: boolean;
+  onDragOverDay?: (date: string) => void;
+  onDropDay?: (date: string) => void;
 }
 
 const LETTERS = ["L", "M", "M", "J", "V", "S", "D"];
@@ -23,7 +25,7 @@ const LETTERS = ["L", "M", "M", "J", "V", "S", "D"];
 const longDay = new Intl.DateTimeFormat("fr-BE", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
 
 // Seven 44px cells, one per day; a tap opens that day, a lifted row drops on it.
-export default function DayStrip({ dates, counts, today, selected, href, state, className = "", dropDay, dragging = false }: DayStripProps) {
+export default function DayStrip({ dates, counts, today, selected, href, state, className = "", dropDay, dragging = false, onDragOverDay, onDropDay }: DayStripProps) {
   return (
     <div role="group" aria-label="Jours de la semaine" className={`relative grid grid-cols-7 ${className}`}>
       {dates.map((date, i) => {
@@ -40,6 +42,8 @@ export default function DayStrip({ dates, counts, today, selected, href, state, 
             aria-current={isSelected ? "page" : isToday ? "date" : undefined}
             data-tour={isSelected ? "day-open" : undefined}
             data-drop-day={date}
+            onDragOver={onDragOverDay ? (e) => { e.preventDefault(); onDragOverDay(date); } : undefined}
+            onDrop={onDropDay ? (e) => { e.preventDefault(); onDropDay(date); } : undefined}
             className={cn(
               "relative flex h-11 flex-col items-center justify-center gap-0.5 rounded hover:bg-hover",
               (isSelected || dragging) && "bg-selected",

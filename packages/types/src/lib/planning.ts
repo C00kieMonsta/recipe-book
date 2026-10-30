@@ -200,7 +200,10 @@ export function personName(people: Person[], personId: string): string {
 export function personInitials(p: Pick<Person, "name" | "initials">): string {
   const given = p.initials?.trim();
   if (given) return given.slice(0, 3);
-  return p.name.trim().slice(0, 2).toUpperCase();
+  const words = p.name.trim().split(/\s+/).filter(Boolean);
+  return words.length > 1
+    ? `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase()
+    : (words[0] ?? "").slice(0, 2).toUpperCase();
 }
 
 // Lowercase, accents stripped, non-alphanumerics to "-", "-2" and up on collision.
@@ -236,6 +239,35 @@ export function prepDateOf(line: Pick<EventRecipeLine, "prepDate">, event: Pick<
   return line.prepDate ?? event.date.slice(0, 10);
 }
 
+export interface RecipePreparationTask {
+  label: string;
+  date: string;
+  notes?: string;
+  recipeLineId: string;
+  recipeId: string;
+  preparationId: string;
+}
+
+/** Converts saved recipe components into event tasks, scheduled relative to the event day. */
+export function recipePreparationTasks(
+  recipe: Pick<Recipe, "recipeId" | "name" | "preparations">,
+  line: Pick<EventRecipeLine, "lineId">,
+  eventDate: string,
+  existingPreparationIds: string[] = [],
+): RecipePreparationTask[] {
+  const existing = new Set(existingPreparationIds);
+  return (recipe.preparations ?? [])
+    .filter((preparation) => !existing.has(preparation.preparationId))
+    .map((preparation) => ({
+      label: `${recipe.name} · ${preparation.name}`,
+      date: addDays(eventDate, -preparation.daysBefore),
+      ...(preparation.description ? { notes: preparation.description } : {}),
+      recipeLineId: line.lineId,
+      recipeId: recipe.recipeId,
+      preparationId: preparation.preparationId,
+    }));
+}
+
 export function isMoved(line: Pick<EventRecipeLine, "prepDate">, event: Pick<AppEvent, "date">): boolean {
   return prepDateOf(line, event) !== event.date.slice(0, 10);
 }
@@ -249,14 +281,24 @@ export function tasksOn(event: Pick<AppEvent, "tasks">, date: string): EventTask
   return tasksOf(event).filter((t) => t.date === date);
 }
 
+/** Recipe lines replaced by linked component tasks stay in the menu, but leave the work plan. */
+export function scheduledRecipeLines(event: Pick<AppEvent, "recipes" | "tasks">): EventRecipeLine[] {
+  const decomposedIds = new Set(
+    tasksOf(event)
+      .filter((task) => task.recipeLineId && task.preparationId)
+      .map((task) => task.recipeLineId as string),
+  );
+  return event.recipes.filter((line) => !decomposedIds.has(line.lineId));
+}
+
 // Lines prepared on the event day.
-export function ownDayLines(event: Pick<AppEvent, "date" | "recipes">): EventRecipeLine[] {
-  return event.recipes.filter((l) => !isMoved(l, event));
+export function ownDayLines(event: Pick<AppEvent, "date" | "recipes" | "tasks">): EventRecipeLine[] {
+  return scheduledRecipeLines(event).filter((l) => !isMoved(l, event));
 }
 
 // Lines with a prepDate different from the event day.
-export function movedOutLines(event: Pick<AppEvent, "date" | "recipes">): EventRecipeLine[] {
-  return event.recipes.filter((l) => isMoved(l, event));
+export function movedOutLines(event: Pick<AppEvent, "date" | "recipes" | "tasks">): EventRecipeLine[] {
+  return scheduledRecipeLines(event).filter((l) => isMoved(l, event));
 }
 
 // Every explicit prepDate and every task date move with the event; lines without prepDate are untouched.
@@ -387,7 +429,7 @@ export function prepLinesForDate(
   const movedIn: { event: AppEvent; lines: EventRecipeLine[] }[] = [];
   let order = 0;
   for (const event of events) {
-    const lines = event.recipes.filter((l) => prepDateOf(l, event) === date);
+    const lines = scheduledRecipeLines(event).filter((l) => prepDateOf(l, event) === date);
     if (lines.length === 0) continue;
     if (event.date.slice(0, 10) !== date) {
       movedIn.push({ event, lines });
@@ -532,7 +574,7 @@ export function weekPlan(events: AppEvent[], weekStart: string, people: Person[]
         dayEvents.push(e);
         continue;
       }
-      const lines = e.recipes.filter((l) => prepDateOf(l, e) === date);
+      const lines = scheduledRecipeLines(e).filter((l) => prepDateOf(l, e) === date);
       const tasks = tasksOn(e, date);
       if (lines.length || tasks.length) movedIn.push({ event: e, lines, tasks });
     }

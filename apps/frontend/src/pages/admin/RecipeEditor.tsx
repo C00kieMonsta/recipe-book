@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type KeyboardEvent } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Save, Plus, X, ImagePlus } from "lucide-react";
-import type { RecipeIngredient, RecipePricing, RecipePhoto, Ingredient } from "@packages/types";
+import type { RecipeIngredient, RecipePricing, RecipePhoto, RecipePreparation, Ingredient } from "@packages/types";
 import { UNITS_QTY, DEFAULT_COURSES, PRICE_TO_QTY_UNIT, DEFAULT_SUPPLIERS, recipeCategoryOf } from "@packages/types";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -23,6 +23,7 @@ interface FormState {
   portionWeight: number;
   description: string;
   techniques: string[];
+  preparations: RecipePreparation[];
   ingredients: RecipeIngredient[];
   photos: RecipePhoto[];
   pricing: RecipePricing;
@@ -46,7 +47,7 @@ export default function RecipeEditor() {
 
   const [form, setForm] = useState<FormState>({
     name: "", category: DEFAULT_COURSES[0], portions: 1, portionWeight: 150, description: "",
-    techniques: [""], ingredients: [], photos: [], pricing: DEFAULT_PRICING,
+    techniques: [""], preparations: [], ingredients: [], photos: [], pricing: DEFAULT_PRICING,
   });
   const ingredientsBody = useRef<HTMLTableSectionElement>(null);
   const stepsList = useRef<HTMLDivElement>(null);
@@ -77,6 +78,7 @@ export default function RecipeEditor() {
             name: recipe.name, category: recipeCategoryOf(recipe), portions: recipe.portions,
             portionWeight: recipe.portionWeight, description: recipe.description || "",
             techniques: recipe.techniques.length ? recipe.techniques : [""],
+            preparations: recipe.preparations ?? [],
             ingredients: recipe.ingredients, photos: recipe.photos || [],
             pricing: recipe.pricing || DEFAULT_PRICING,
           });
@@ -98,6 +100,9 @@ export default function RecipeEditor() {
   };
   const updateTechnique = (i: number, v: string) => { const t = [...form.techniques]; t[i] = v; update("techniques", t); };
   const removeTechnique = (i: number) => update("techniques", form.techniques.filter((_, idx) => idx !== i));
+  const addPreparation = () => update("preparations", [...form.preparations, { preparationId: crypto.randomUUID(), name: "", daysBefore: 0 }]);
+  const updatePreparation = (i: number, patch: Partial<RecipePreparation>) => update("preparations", form.preparations.map((item, index) => index === i ? { ...item, ...patch } : item));
+  const removePreparation = (i: number) => update("preparations", form.preparations.filter((_, index) => index !== i));
 
   const addIngLine = () => {
     focusRow.current = form.ingredients.length;
@@ -168,6 +173,7 @@ export default function RecipeEditor() {
         name: form.name, category: form.category, type: form.category, portions: form.portions,
         portionWeight: form.portionWeight, description: form.description,
         techniques: form.techniques.filter(Boolean),
+        preparations: form.preparations.filter((p) => p.name.trim()).map((p) => ({ ...p, name: p.name.trim() })),
         ingredients: form.ingredients.filter((ri) => ri.ingredientId), photos: form.photos, pricing: form.pricing,
       };
       if (isNew) {
@@ -253,6 +259,25 @@ export default function RecipeEditor() {
             </label>
           )}
         </div>
+      </Section>
+
+      <Section title="Préparations à planifier" action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={addPreparation}>Ajouter</Button>}>
+        <p className="mb-3 text-sm text-muted-foreground">Chaque élément devient une tâche à planifier dans l'événement. Indiquez le nombre de jours avant l'événement.</p>
+        {form.preparations.map((preparation, i) => (
+          <div key={preparation.preparationId} className="mb-3 grid grid-cols-1 items-end gap-2 rounded-lg border border-border p-3 sm:grid-cols-[minmax(0,1fr)_8rem_auto]">
+            <div>
+              <FieldLabel htmlFor={`preparation-name-${i}`}>Préparation</FieldLabel>
+              <input id={`preparation-name-${i}`} className="input-field" value={preparation.name} placeholder="Ex. Mousse de chèvre" onChange={(e) => updatePreparation(i, { name: e.target.value })} />
+              <input className="input-field mt-2" aria-label={`Détails de ${preparation.name || "la préparation"}`} value={preparation.description ?? ""} placeholder="Consigne (facultatif)" onChange={(e) => updatePreparation(i, { description: e.target.value })} />
+            </div>
+            <div>
+              <FieldLabel htmlFor={`preparation-days-${i}`}>Jours avant</FieldLabel>
+              <NumericInput id={`preparation-days-${i}`} className="input-field" value={preparation.daysBefore} min={0} onChange={(v) => updatePreparation(i, { daysBefore: Math.max(0, Math.min(60, Math.round(v))) })} />
+            </div>
+            <IconButton size="md" aria-label={`Retirer ${preparation.name || "la préparation"}`} onClick={() => removePreparation(i)} icon={<X />} />
+          </div>
+        ))}
+        {form.preparations.length === 0 && <Button variant="subtle" size="sm" icon={<Plus />} onClick={addPreparation}>Ajouter la première préparation</Button>}
       </Section>
 
       <Section

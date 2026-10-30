@@ -368,7 +368,7 @@ describe("AssistantService", () => {
     const events = await collect(service, ask("Lis tout"));
 
     expect(client.calls).toHaveLength(TOOL_ROUNDS_MAX + 1);
-    for (const params of client.calls.slice(0, TOOL_ROUNDS_MAX)) expect(params.tools?.length).toBe(17);
+    for (const params of client.calls.slice(0, TOOL_ROUNDS_MAX)) expect(params.tools?.length).toBe(fakeTools().definitions().length);
     const final = client.calls[TOOL_ROUNDS_MAX];
     expect(final.tools).toEqual([]);
     const finalInput = inputOf(final);

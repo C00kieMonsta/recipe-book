@@ -35,6 +35,16 @@ export class RecipesService {
     return Promise.all(recipes.map((r) => this.serve(r)));
   }
 
+  async getPreparationDefinitions(recipeIds: string[]): Promise<Pick<Recipe, "recipeId" | "name" | "preparations">[]> {
+    const uniqueIds = [...new Set(recipeIds)];
+    const items = await Promise.all(uniqueIds.map((recipeId) => this.ddb.get(this.table, { recipeId })));
+    return items.flatMap((item) => {
+      if (!item) return [];
+      const recipe = item as unknown as Recipe;
+      return [{ recipeId: recipe.recipeId, name: recipe.name, preparations: recipe.preparations ?? [] }];
+    });
+  }
+
   async get(recipeId: string): Promise<Recipe | null> {
     const item = await this.ddb.get(this.table, { recipeId });
     if (!item) return null;

@@ -10,7 +10,7 @@ export interface InboxMappingContext {
   companyVat: string | null;
   // settings.suppliers names.
   suppliers: string[];
-  existingNumbers: { book: LedgerBook; number: string; entryId: string; locked: boolean }[];
+  existingNumbers: { book: LedgerBook; number: string; entryId: string; locked: boolean; party?: string }[];
   // ym values.
   lockedMonths: string[];
   today: string;
@@ -39,6 +39,10 @@ function foldAscii(s: string): string {
 
 function normalizeNumber(n: string): string {
   return n.toUpperCase().replace(/\s+/g, "");
+}
+
+export function normalizeInvoiceParty(name: string): string {
+  return foldAscii(name).replace(/[^a-z0-9]/g, "");
 }
 
 function cleanText(s: string | null): string | null {
@@ -104,6 +108,9 @@ export function mapExtractedInvoice(
 ): { entry: CreateLedgerEntryRequest | null; flags: InboxFlag[] } {
   const flags: InboxFlag[] = [];
   const book: LedgerBook = isVentes(x, ctx.companyVat) ? "ventes" : "achats";
+  const issuerName = cleanText(x.issuerName);
+  const supplier = matchSupplier(issuerName, ctx.suppliers);
+  const party = normalizeInvoiceParty(supplier ?? issuerName ?? "");
 
   const number = cleanText(x.number)?.slice(0, 40);
   if (number === undefined) flags.push({ code: "missing_number", message: "Numéro de facture illisible" });
@@ -124,7 +131,8 @@ export function mapExtractedInvoice(
 
   if (number !== undefined) {
     const key = normalizeNumber(number);
-    const existing = ctx.existingNumbers.find((e) => e.book === book && normalizeNumber(e.number) === key);
+    const existing = ctx.existingNumbers.find((e) => e.book === book && normalizeNumber(e.number) === key &&
+      (book === "ventes" || e.party === undefined || normalizeInvoiceParty(e.party) === party));
     if (existing) {
       flags.push({ code: "duplicate", message: `Déjà dans le journal (n° ${existing.number})`, entryId: existing.entryId });
       if (existing.locked) flags.push({ code: "locked_month", message: "Mois verrouillé" });
@@ -173,8 +181,6 @@ export function mapExtractedInvoice(
     return { entry, flags };
   }
 
-  const issuerName = cleanText(x.issuerName);
-  const supplier = matchSupplier(issuerName, ctx.suppliers);
   if (supplier === null) flags.push({ code: "unknown_supplier", message: "Fournisseur inconnu des paramètres" });
   const entry: CreateLedgerEntryRequest = {
     ...common,

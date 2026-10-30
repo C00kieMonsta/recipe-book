@@ -20,6 +20,7 @@ import type {
   Recipe,
   SalesEntryPrefill,
   StaffCostRow,
+  EventStaffEntry,
 } from "@packages/types";
 import {
   DEFAULT_COURSES,
@@ -58,11 +59,14 @@ import {
   tasksOf,
   isMoved,
   prepDateOf,
+  recipePreparationTasks,
   shiftPrepDates,
   foodCostOf,
   foodMargin,
   eventResult,
   staffCostOf,
+  hoursBetween,
+  normalizeStaffTime,
   staffEntryOf,
   upsertStaffEntry,
   removeStaffEntry,
@@ -72,6 +76,7 @@ import {
 } from "@packages/types";
 import { api, ApiError, type EventInput } from "@/lib/api";
 import { composeInAssistant, openAssistant } from "@/lib/assistant-compose";
+import { StaffWriteQueue } from "@/lib/staff-writes";
 import { publishAssistantSelection } from "@/lib/assistant-context";
 import { useToast } from "@/hooks/use-toast";
 import { useAssistantApplied } from "@/hooks/use-assistant-applied";
@@ -247,6 +252,7 @@ export default function EventDetail() {
   const priceRef = useRef<HTMLDivElement>(null);
   const addRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef(new Map<string, HTMLDivElement>());
+  const staffWriteQueue = useRef<StaffWriteQueue | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -264,12 +270,18 @@ export default function EventDetail() {
     ])
       .then(([ev, recs, ings, se, cl]) => {
         if (cancelled) return;
+        staffWriteQueue.current = new StaffWriteQueue(ev.staff ?? []);
         setEvent(ev); setRecipes(recs); setIngredients(ings); setSettings(se); setClients(cl);
       })
       .catch(() => { if (!cancelled) { setLoadError(true); toast({ title: "Erreur de chargement", variant: "destructive" }); } })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [id]);
+
+  useEffect(() => {
+    const queue = staffWriteQueue.current;
+    if (event && queue) queue.reconcile(event.staff ?? []);
+  }, [event?.eventId, event?.staff]);
 
   useAssistantApplied(() => {
     if (!id) return;
@@ -347,8 +359,31 @@ export default function EventDetail() {
   const saveField = async (patch: EventInput, okTitle?: string) => {
     if (!id) return;
     try {
-      const updated = await api.events.update(id, patch);
-      setEvent(updated);
+      const queue = staffWriteQueue.current;
+      let updated: AppEvent;
+      if (patch.staff && queue) {
+        const frozenById = new Map(patch.staff.map((entry) => [entry.personId, entry]));
+        updated = await queue.update(
+          (currentStaff) => currentStaff.map((entry) => {
+            const frozen = frozenById.get(entry.personId);
+            if (!frozen) return entry;
+            return {
+              ...entry,
+              ...(entry.hourlyRate === undefined && frozen.hourlyRate !== undefined ? { hourlyRate: frozen.hourlyRate } : {}),
+              ...(entry.kmRate === undefined && frozen.kmRate !== undefined ? { kmRate: frozen.kmRate } : {}),
+            };
+          }),
+          (staff) => api.events.update(id, { ...patch, staff }),
+          (result) => result.staff,
+        );
+        queue.reconcile(updated.staff ?? []);
+        setEvent((current) => current?.eventId === id ? { ...updated, staff: queue.current } : current);
+      } else {
+        updated = await api.events.update(id, patch);
+        const staff = updated.staff ?? [];
+        const reconciled = queue?.reconcile(staff) ?? true;
+        setEvent(reconciled ? updated : { ...updated, staff: queue?.current ?? staff });
+      }
       if (okTitle) toast({ title: okTitle });
     } catch {
       toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" });
@@ -451,13 +486,55 @@ export default function EventDetail() {
       : staff.amount > 0
         ? `${fmtHours(staff.hours)} · ${fmtEurShort(staff.amount)}`
         : fmtHours(staff.hours);
-  const patchStaff = (personId: string, patch: { hours?: number; km?: number }) => {
+  const patchStaff = (personId: string, patch: Partial<Omit<EventStaffEntry, "personId">>) => {
     setPendingStaff((prev) => prev.filter((pid) => pid !== personId));
-    save({ staff: upsertStaffEntry(event.staff, personId, patch) });
+    const queue = staffWriteQueue.current;
+    if (!id || !queue) return;
+    const pending = queue.update(
+      (staff) => upsertStaffEntry(staff, personId, patch),
+      (staff) => api.events.update(id, { staff }),
+      (updated) => updated.staff,
+    );
+    const optimisticStaff = queue.current;
+    setEvent((current) => current ? { ...current, staff: optimisticStaff } : current);
+    pending.then((updated) => {
+      queue.reconcile(updated.staff ?? []);
+      setEvent((current) => current?.eventId === id ? { ...updated, staff: queue.current } : current);
+    }).catch(async () => {
+      toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" });
+      if (queue.current !== optimisticStaff) return;
+      const fresh = await api.events.get(id).catch(() => null);
+      if (fresh && queue.current === optimisticStaff) {
+        queue.reset(fresh.staff ?? []);
+        setEvent((current) => current?.eventId === id ? fresh : current);
+      }
+    });
   };
   const removeStaff = (personId: string) => {
     setPendingStaff((prev) => prev.filter((pid) => pid !== personId));
-    if (staffEntryOf(event, personId)) save({ staff: removeStaffEntry(event.staff, personId) });
+    if (staffEntryOf({ staff: staffWriteQueue.current?.current ?? event.staff }, personId)) {
+      const queue = staffWriteQueue.current;
+      if (!id || !queue) return;
+      const pending = queue.update(
+        (staff) => removeStaffEntry(staff, personId),
+        (staff) => api.events.update(id, { staff }),
+        (updated) => updated.staff,
+      );
+      const optimisticStaff = queue.current;
+      setEvent((current) => current ? { ...current, staff: optimisticStaff } : current);
+      pending.then((updated) => {
+        queue.reconcile(updated.staff ?? []);
+        setEvent((current) => current?.eventId === id ? { ...updated, staff: queue.current } : current);
+      }).catch(async () => {
+        toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" });
+        if (queue.current !== optimisticStaff) return;
+        const fresh = await api.events.get(id).catch(() => null);
+        if (fresh && queue.current === optimisticStaff) {
+          queue.reset(fresh.staff ?? []);
+          setEvent((current) => current?.eventId === id ? fresh : current);
+        }
+      });
+    }
   };
   // Checking a person lists them; unchecking only drops a pending one, stored hours go through « Retirer les heures ».
   const pickStaff = (next: string[]) => {
@@ -549,25 +626,52 @@ export default function EventDetail() {
     return saveField({ date }, title);
   };
 
-  const addRecipe = (recipeId: string) => {
+  const materializeRecipePreparations = async (targetEvent: AppEvent, line: EventRecipeLine, recipe: Recipe) => {
+    const existingIds = tasksOf(targetEvent).filter((task) => task.recipeLineId === line.lineId).map((task) => task.preparationId).filter((value): value is string => Boolean(value));
+    const missingTasks = recipePreparationTasks(recipe, line, targetEvent.date, existingIds);
+    let latest = targetEvent;
+    for (const task of missingTasks) {
+      latest = await api.events.tasks.add(id, task);
+      setEvent(latest);
+    }
+    setEvent(latest);
+    if (missingTasks.length) toast({ title: `${missingTasks.length} préparation${missingTasks.length > 1 ? "s" : ""} ajoutée${missingTasks.length > 1 ? "s" : "e"} au planning` });
+  };
+
+  const addRecipe = async (recipeId: string) => {
     const recipe = recipeById.get(recipeId);
     if (!recipe) return;
     setAddingRecipe(false);
-    runLines(api.events.lines.add(id, {
+    try {
+      const updated = await api.events.lines.add(id, {
       recipeId,
       portions: Math.max(1, Math.round(event.guestCount)),
       ...(recipe.defaultCourse ? { course: recipe.defaultCourse } : {}),
-    }));
+      });
+      setEvent(updated);
+      const line = updated.recipes.find((candidate) => !event.recipes.some((old) => old.lineId === candidate.lineId));
+      if (line) await materializeRecipePreparations(updated, line, recipe);
+    } catch {
+      toast({ title: "Erreur lors de l'ajout de la recette", variant: "destructive" });
+    }
   };
 
   const addCreatedRecipe = async (recipe: Recipe) => {
     setRecipes((prev) => (prev.some((r) => r.recipeId === recipe.recipeId) ? prev : [...prev, recipe]));
     setAddingRecipe(false);
-    await runLines(api.events.lines.add(id, {
+    try {
+      const updated = await api.events.lines.add(id, {
       recipeId: recipe.recipeId,
       portions: Math.max(1, Math.round(event.guestCount)),
       course: recipe.category,
-    }));
+      });
+      setEvent(updated);
+      const line = updated.recipes.find((candidate) => !event.recipes.some((old) => old.lineId === candidate.lineId));
+      if (line) await materializeRecipePreparations(updated, line, recipe);
+    } catch {
+      toast({ title: "Erreur lors de l'ajout de la recette", variant: "destructive" });
+      return;
+    }
     toast({ title: "Recette créée et ajoutée", action: { label: "Compléter", onClick: () => navigate(`/recipes/${recipe.recipeId}/edit?retour=/events/${id}`) } });
   };
 
@@ -885,6 +989,7 @@ export default function EventDetail() {
     const recipe = recipeById.get(line.recipeId);
     const status: PrepStatus = line.prepStatus ?? "todo";
     const needsIngredients = Boolean(recipe) && isIncompleteRecipe({ ingredients: recipe?.ingredients ?? [] });
+    const hasMissingPreparations = Boolean(recipe?.preparations?.some((preparation) => !tasksOf(event).some((task) => task.recipeLineId === line.lineId && task.preparationId === preparation.preparationId)));
     const isDropBefore = dropTarget?.course === group.course && dropTarget.lineId === line.lineId;
     const isMoveOpen = moveTarget?.kind === "line" && moveTarget.id === line.lineId;
     return (
@@ -956,6 +1061,7 @@ export default function EventDetail() {
                 { label: "Descendre", onClick: () => moveLine(group.course, index, 1), disabled: index === group.lines.length - 1 },
                 { label: "Modifier les portions", onClick: () => focusPortions(line.lineId) },
                 { label: "Assigner", onClick: () => setPickerLineId(line.lineId) },
+                ...(hasMissingPreparations && recipe ? [{ label: "Ajouter les préparations au planning", onClick: () => materializeRecipePreparations(event, line, recipe).catch(() => toast({ title: "Erreur lors de l'ajout des préparations", variant: "destructive" })) }] : []),
                 { label: "Note", onClick: () => setNoteLineId(line.lineId) },
                 { label: "Déplacer au…", onClick: () => setMoveTarget({ kind: "line", id: line.lineId }) },
                 { kind: "separator" },
@@ -1055,35 +1161,65 @@ export default function EventDetail() {
     );
   };
 
-  // One person of the event: role tags, hours, km, then the amount or « tarif à préciser ». The numbers wrap under the name below md.
+  // One person of the event: time range, hours, km and amounts.
   const renderStaffRow = (row: StaffCostRow) => {
     const entry = staffEntryOf(event, row.personId);
     const name = personName(people, row.personId);
     const removable = Boolean(entry) || pendingStaff.includes(row.personId);
-    const hasWork = row.hours > 0 || row.km > 0;
+    const hasWork = row.hours > 0 || row.km > 0 || entry?.actualAmount !== undefined || entry?.kmAmount !== undefined;
+    const updateTime = (key: "startTime" | "endTime", value: string, input: HTMLInputElement) => {
+      const latestEntry = staffWriteQueue.current?.current.find((staffEntry) => staffEntry.personId === row.personId);
+      const normalized = normalizeStaffTime(value, key === "endTime");
+      if (normalized === null) {
+        input.value = latestEntry?.[key] ?? "";
+        toast({ title: "Heure invalide. Utilisez 18:00, 18h ou 18h30.", variant: "destructive" });
+        return;
+      }
+      input.value = normalized ?? "";
+      const startTime = key === "startTime" ? normalized : latestEntry?.startTime;
+      const endTime = key === "endTime" ? normalized : latestEntry?.endTime;
+      const hours = hoursBetween(startTime, endTime);
+      patchStaff(row.personId, { [key]: normalized, ...(hours === undefined ? {} : { hours }) });
+    };
     return (
-      <div key={row.personId} className={`${ROW} flex-wrap gap-2 md:flex-nowrap`}>
+      <div key={row.personId} className={`${ROW} min-w-0 flex-wrap gap-2 md:flex-nowrap`}>
         <span className="flex min-w-[9rem] flex-1 items-center gap-2">
           <PersonChip personId={row.personId} people={people} size="sm" />
           <span className="min-w-0 truncate text-sm touch:text-base">{name}</span>
           {row.cuisine && <Tag colour="gray">cuisine</Tag>}
           {row.service && <Tag colour="gray">sur place</Tag>}
         </span>
-        <span className="ml-auto flex shrink-0 items-center gap-2">
+        <span className="ml-auto flex w-full min-w-0 flex-wrap items-center justify-end gap-2 md:w-auto md:flex-1">
+          <label className="flex items-center gap-1 text-sm text-muted-foreground">De
+            <input key={`${row.personId}-start-${entry?.startTime ?? ""}`} aria-label={`Début ${name}`} type="text" inputMode="numeric" placeholder="18h" defaultValue={entry?.startTime ?? ""} onBlur={(e) => updateTime("startTime", e.currentTarget.value, e.currentTarget)} className="w-[4.5rem] rounded border border-border px-1 py-1 text-foreground" />
+          </label>
+          <label className="flex items-center gap-1 text-sm text-muted-foreground">à
+            <input key={`${row.personId}-end-${entry?.endTime ?? ""}`} aria-label={`Fin ${name}`} type="text" inputMode="numeric" placeholder="24h" defaultValue={entry?.endTime ?? ""} onBlur={(e) => updateTime("endTime", e.currentTarget.value, e.currentTarget)} className="w-[4.5rem] rounded border border-border px-1 py-1 text-foreground" />
+          </label>
           <span className="w-16 text-right text-sm tabular-nums touch:text-base">
-            <EditableInlineNum value={entry?.hours} placeholder="h" suffix=" h" min={0} step={0.5} onSave={(v) => patchStaff(row.personId, { hours: round2(Math.max(0, v)) })} />
+            <EditableInlineNum value={entry?.hours} placeholder="h" suffix=" h" min={0} step={0.5} onSave={(v) => patchStaff(row.personId, { hours: round2(Math.max(0, v)), startTime: undefined, endTime: undefined })} />
           </span>
           <span className="w-16 text-right text-sm tabular-nums touch:text-base">
             <EditableInlineNum value={entry?.km} placeholder="km" suffix=" km" min={0} onSave={(v) => patchStaff(row.personId, { km: round2(Math.max(0, v)) })} />
           </span>
+          <span className="flex w-24 items-center justify-end gap-1 text-right text-sm tabular-nums touch:text-base">
+            <span className="text-sm text-muted-foreground">Km €</span>
+            <EditableInlineNum value={entry?.kmAmount} placeholder="Montant" min={0} onSave={(v) => patchStaff(row.personId, { kmAmount: round2(Math.max(0, v)) })} />
+            {entry?.kmAmount !== undefined && <button type="button" className="text-sm text-primary hover:underline" onClick={() => patchStaff(row.personId, { kmAmount: undefined })}>Calcul</button>}
+          </span>
           <span className="w-24 text-right text-sm tabular-nums touch:text-base">
-            {row.rate.missing ? (
+            {entry?.actualAmount !== undefined ? null : row.rate.missing ? (
               <Link to="/settings#equipe" state={{ from: location.pathname }} title="Ajouter un tarif dans Paramètres › Équipe" className="inline-flex items-center touch:min-h-11">
                 <Tag colour="gray">tarif à préciser</Tag>
               </Link>
             ) : hasWork ? (
               <span className="text-muted-foreground" title={row.rate.frozen ? FROZEN_TITLE : undefined}>{fmtEur(row.amount)}</span>
             ) : null}
+          </span>
+          <span className="flex w-32 items-center justify-end gap-1 text-right text-sm tabular-nums touch:text-base">
+            <span className="text-sm text-muted-foreground">Donné</span>
+            <EditableInlineNum value={entry?.actualAmount} placeholder="Montant" suffix=" €" min={0} onSave={(v) => patchStaff(row.personId, { actualAmount: round2(Math.max(0, v)) })} />
+            {entry?.actualAmount !== undefined && <button type="button" className="text-sm text-primary hover:underline" onClick={() => patchStaff(row.personId, { actualAmount: undefined })}>Calcul</button>}
           </span>
           {isTouch ? (
             <ActionMenu title={name} items={[{ label: "Retirer les heures", onClick: () => removeStaff(row.personId), variant: "danger", disabled: !removable }]} />

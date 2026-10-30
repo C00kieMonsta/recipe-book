@@ -23,6 +23,9 @@ export const eventTaskSchema = z
     prepStatus: z.enum(["todo", "doing", "done"]).optional(),
     notes: z.string().trim().max(500).optional(),
     assignedTo: personIds.optional(),
+    recipeLineId: z.string().min(1).optional(),
+    recipeId: z.string().min(1).optional(),
+    preparationId: z.string().min(1).optional(),
   })
   .strict();
 export type EventTaskRequest = z.infer<typeof eventTaskSchema>;
@@ -64,8 +67,12 @@ export type EventRevenueLineRequest = z.infer<typeof eventRevenueLineSchema>;
 export const eventStaffEntrySchema = z
   .object({
     personId: z.string().min(1).max(40),
+    startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+    endTime: z.string().regex(/^(?:([01]\d|2[0-3]):[0-5]\d|24:00)$/).optional(),
     hours: z.number().nonnegative().max(200).optional(),
     km: z.number().nonnegative().max(5000).optional(),
+    kmAmount: moneyNonnegative.optional(),
+    actualAmount: moneyNonnegative.optional(),
     hourlyRate: moneyNonnegative.optional(),
     kmRate: z.number().nonnegative().max(10).optional(),
   })

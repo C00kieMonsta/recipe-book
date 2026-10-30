@@ -4,9 +4,12 @@ import { buildCostSnapshot } from "./costing";
 import {
   completionFields,
   freezeStaffRates,
+  hoursBetween,
+  normalizeStaffTime,
   kitchenPeopleOf,
   removeStaffEntry,
   staffCostOf,
+  staffHoursOf,
   staffEntryOf,
   staffPeopleOf,
   staffRateOf,
@@ -83,6 +86,33 @@ describe("staffRateOf", () => {
   });
 });
 
+describe("hoursBetween", () => {
+  it("computes same-day, 24:00 and overnight ranges, and rejects incomplete or malformed ranges", () => {
+    expect(hoursBetween("18:00", "24:00")).toBe(6);
+    expect(hoursBetween("18:15", "23:45")).toBe(5.5);
+    expect(hoursBetween("18:00", undefined)).toBeUndefined();
+    expect(hoursBetween("22:00", "02:00")).toBe(4);
+    expect(hoursBetween("18h", "24h")).toBe(6);
+    expect(hoursBetween("18h30", "02h15")).toBe(7.75);
+    expect(hoursBetween("25:00", "26:00")).toBeUndefined();
+    expect(hoursBetween("18:61", "24:00")).toBeUndefined();
+  });
+
+  it("uses the time range as the authoritative hour count", () => {
+    expect(staffHoursOf({ personId: "kristoff", hours: 2, startTime: "18:00", endTime: "24:00" })).toBe(6);
+    expect(staffHoursOf({ personId: "kristoff", hours: 2, startTime: "18:00" })).toBe(2);
+  });
+
+  it("normalizes colloquial hours to canonical HH:MM and distinguishes invalid from empty", () => {
+    expect(normalizeStaffTime("18h")).toBe("18:00");
+    expect(normalizeStaffTime("18h30")).toBe("18:30");
+    expect(normalizeStaffTime("24h", true)).toBe("24:00");
+    expect(normalizeStaffTime("24h")).toBeNull();
+    expect(normalizeStaffTime("")).toBeUndefined();
+    expect(normalizeStaffTime("18:70")).toBeNull();
+  });
+});
+
 describe("staffCostOf", () => {
   it("Kristoff at 18 €/h and 0,30 €/km, 6 h and 12 km gives 111,60", () => {
     const e = event({ assignedTo: ["kristoff"], staff: [{ personId: "kristoff", hours: 6, km: 12 }] });
@@ -127,6 +157,16 @@ describe("staffCostOf", () => {
     expect(cost.rows[0].rate).toEqual({ hourly: 20, km: 0.3, frozen: true, missing: false });
     expect(cost.rows[0].cuisine).toBe(false);
   });
+  it("uses manual km reimbursement or the adjusted final payment when present", () => {
+    const e = event({ staff: [
+      { personId: "kristoff", hours: 6, km: 12, kmAmount: 8 },
+      { personId: "amelie", hours: 2, actualAmount: 55 },
+    ] });
+    const cost = staffCostOf(e, people);
+    expect(cost.rows.map((row) => row.amount)).toEqual([55, 116]);
+    expect(cost.amount).toBe(171);
+    expect(cost.missingRate).toEqual([]);
+  });
   it("sums several people in settings order", () => {
     const e = event({
       assignedTo: ["kristoff"],
@@ -155,6 +195,18 @@ describe("upsertStaffEntry and removeStaffEntry", () => {
     expect(noHours).toEqual([{ personId: "kristoff", km: 12 }]);
     expect(upsertStaffEntry(noHours, "kristoff", { km: 0 })).toEqual([]);
     expect(upsertStaffEntry(undefined, "kristoff", { hours: 0 })).toEqual([]);
+  });
+
+  it("keeps a final payment override when km reimbursement changes and clears it only on explicit reset", () => {
+    const original = [{ personId: "kristoff", hours: 6, km: 10, kmAmount: 8, actualAmount: 120 }];
+    const changedHours = upsertStaffEntry(original, "kristoff", { hours: 7 });
+    expect(changedHours[0]).toMatchObject({ hours: 7, actualAmount: 120 });
+    const changedKmRateAmount = upsertStaffEntry(changedHours, "kristoff", { kmAmount: 10 });
+    expect(changedKmRateAmount[0]).toMatchObject({ kmAmount: 10, actualAmount: 120 });
+    const resetTotal = upsertStaffEntry(changedKmRateAmount, "kristoff", { hours: 6, actualAmount: undefined });
+    expect(resetTotal[0]).toMatchObject({ kmAmount: 10 });
+    expect(resetTotal[0].actualAmount).toBeUndefined();
+    expect(staffCostOf(event({ staff: resetTotal }), people).rows[0].amount).toBe(118);
   });
   it("keeps the position of a patched entry and the frozen rate", () => {
     const staff = [

@@ -56,6 +56,27 @@ function normalize(s: string): string {
 }
 
 describe("payroll", () => {
+  it("includes a manual km reimbursement even before a distance is entered", () => {
+    const e = event({ eventId: "km-only", date: "2026-10-06", staff: [{ personId: "kristoff", kmAmount: 12 }] });
+    const p = payroll([e], people, clientById, FROM, TO);
+    expect(p.groups[0].people[0].events[0]).toMatchObject({ hours: 0, km: 0, amount: 12 });
+  });
+
+  it("uses the entered time range when a caller has not precomputed hours", () => {
+    const e = event({ eventId: "range", date: "2026-10-06", staff: [{ personId: "kristoff", startTime: "18:00", endTime: "24:00" }] });
+    const p = payroll([e], people, clientById, FROM, TO);
+    expect(p.groups[0].hours).toBe(6);
+    expect(p.groups[0].amount).toBeCloseTo(90.72);
+  });
+
+  it("uses manual km amounts and the final adjusted payment in payroll exports", () => {
+    const e = event({ eventId: "e5", date: "2026-10-06", staff: [
+      { personId: "kristoff", hours: 4, km: 10, kmAmount: 8, actualAmount: 75 },
+    ] });
+    const p = payroll([e], people, clientById, FROM, TO);
+    expect(p.groups[0].people[0].events[0].amount).toBe(75);
+    expect(p.groups[0].amount).toBe(75);
+  });
   it("two people with modes nowjobs and cash over two events in October give two groups with the right subtotals", () => {
     const p = payroll([mariage, hoona], people, clientById, FROM, TO);
     expect(p.groups.map((g) => g.mode)).toEqual(["nowjobs", "cash"]);

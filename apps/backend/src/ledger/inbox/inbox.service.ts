@@ -9,11 +9,13 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { randomUUID } from "crypto";
+import { PDFDocument } from "pdf-lib";
 import type {
   AppSettings,
   ExtractedInvoice,
   InboxConfirmRequest,
   InboxConfirmResult,
+  InboxBatchProposal,
   InboxMappingContext,
   InboxProposal,
   InboxUpload,
@@ -21,7 +23,7 @@ import type {
   LedgerBook,
   LedgerEntry,
 } from "@packages/types";
-import { createLedgerEntrySchema, mapExtractedInvoice, todayYmd } from "@packages/types";
+import { createLedgerEntrySchema, extractedInvoiceSchema, mapExtractedInvoice, normalizeInvoiceParty, todayYmd } from "@packages/types";
 import { ConfigService, DEFAULT_OPENAI_MODEL } from "../../config/config.service";
 import { OpenAiNotConfiguredError, getOpenAiClient, invalidateOpenAiClient, isAssistantConfigured } from "../../shared/openai.client";
 import { S3Service } from "../../shared/s3.service";
@@ -33,8 +35,10 @@ import {
   INBOX_TYPES,
   UNSUPPORTED_TYPE,
   extractInvoice,
+  extractInvoiceBatch,
   isHeic,
   type ExtractClient,
+  type ExtractedInvoicePages,
   type ExtractClientFactory,
 } from "./inbox.extract";
 
@@ -59,6 +63,8 @@ export type InboxStore = {
 };
 
 type InboxObject = { key: string; body: Buffer; contentType: string; name: string };
+type CachedBatchInvoice = ExtractedInvoicePages & { inboxId: string; name: string };
+type CachedBatch = { version: 1; invoices: CachedBatchInvoice[] };
 
 // The inboxId carries the extension so the key is rebuilt without listing the bucket.
 const EXTENSIONS = Object.values(INBOX_TYPES).map((ext) => ext.slice(1)).join("|");
@@ -100,6 +106,7 @@ async function sdkClient(config: ConfigService): Promise<ExtractClient> {
 @Injectable()
 export class InboxService {
   private readonly clientFactory: ExtractClientFactory;
+  private readonly batchInFlight = new Map<string, Promise<InboxBatchProposal>>();
 
   constructor(
     private config: ConfigService,
@@ -146,6 +153,90 @@ export class InboxService {
     return { inboxId, entry, flags, extracted };
   }
 
+  async extractBatch(inboxId: string): Promise<InboxBatchProposal> {
+    const inFlight = this.batchInFlight.get(inboxId);
+    if (inFlight) return inFlight;
+    const pending = this.extractBatchOnce(inboxId);
+    this.batchInFlight.set(inboxId, pending);
+    try {
+      return await pending;
+    } finally {
+      if (this.batchInFlight.get(inboxId) === pending) this.batchInFlight.delete(inboxId);
+    }
+  }
+
+  private async extractBatchOnce(inboxId: string): Promise<InboxBatchProposal> {
+    const object = await this.getObject(inboxId);
+    if (object.contentType !== "application/pdf") {
+      const proposal = await this.extract(inboxId);
+      return { invoices: [{ ...proposal, name: object.name, size: object.body.length }] };
+    }
+    let pdf: PDFDocument;
+    try { pdf = await PDFDocument.load(object.body); }
+    catch { throw new BadRequestException("PDF illisible ou protégé par un mot de passe."); }
+    if (pdf.getPageCount() > 200) throw new BadRequestException("Le PDF dépasse 200 pages. Divisez-le en plusieurs fichiers.");
+    const cacheKey = `${object.key}.batch.json`;
+    const cached = await this.readBatchCache(cacheKey, pdf.getPageCount());
+    let readings: CachedBatchInvoice[];
+    const created: string[] = [];
+    if (cached) {
+      readings = cached.invoices;
+    } else {
+      const client = await this.client();
+      let extractedPages: ExtractedInvoicePages[];
+      try {
+        extractedPages = await extractInvoiceBatch(client, this.config.get("OPENAI_MODEL") ?? DEFAULT_OPENAI_MODEL, inboxId, {
+          body: object.body, contentType: object.contentType, filename: object.name,
+        });
+      } catch (err) {
+        if (err instanceof ExtractUpstreamError) {
+          if (err.status === 401) invalidateOpenAiClient();
+          throw new BadGatewayException({ code: "ASSISTANT_UPSTREAM", message: err.message });
+        }
+        throw err;
+      }
+      readings = extractedPages
+        .sort((a, b) => a.pageStart - b.pageStart)
+        .map((reading) => ({ ...reading, inboxId: `${randomUUID()}.pdf`, name: this.batchChildName(object.name, reading.pageStart, reading.pageEnd) }));
+      this.assertBatchRanges(readings, pdf.getPageCount());
+    }
+
+    const context = await this.mappingContext();
+    const invoices: InboxBatchProposal["invoices"] = [];
+    try {
+      for (const reading of readings) {
+        const childKey = inboxKeyOf(reading.inboxId);
+        let child: { body: Buffer; contentType: string; metadata?: Record<string, string> } | undefined;
+        try { child = await this.store.get(childKey); } catch (err) { if (!isMissingObject(err)) throw err; }
+        if (!child) {
+          const document = await PDFDocument.create();
+          const indices = Array.from({ length: reading.pageEnd - reading.pageStart + 1 }, (_, i) => reading.pageStart - 1 + i);
+          for (const page of await document.copyPages(pdf, indices)) document.addPage(page);
+          const body = Buffer.from(await document.save());
+          created.push(reading.inboxId);
+          await this.store.upload(childKey, body, "application/pdf", { name: encodeName(reading.name) });
+          child = { body, contentType: "application/pdf" };
+        }
+        const { entry, flags } = mapExtractedInvoice(reading.invoice, context);
+        invoices.push({ inboxId: reading.inboxId, name: reading.name, size: child.body.length, pageStart: reading.pageStart, pageEnd: reading.pageEnd, extracted: reading.invoice, entry, flags });
+      }
+      if (!cached) {
+        await this.assertObjectPresent(object.key);
+        const cache: CachedBatch = { version: 1, invoices: readings };
+        await this.store.upload(cacheKey, Buffer.from(JSON.stringify(cache)), "application/json");
+        await this.assertObjectPresent(object.key);
+      }
+    } catch (err) {
+      await Promise.allSettled([
+        ...created.map((id) => this.store.delete(inboxKeyOf(id))),
+        ...(!cached ? [this.store.delete(cacheKey)] : []),
+      ]);
+      throw err;
+    }
+    // Each row now owns a separate PDF. Ignoring or replacing one cannot remove another invoice's attachment.
+    return { invoices };
+  }
+
   // Items are handled in order; an entry written earlier in the batch counts as existing for the next ones.
   async confirm(items: InboxConfirmRequest["items"]): Promise<InboxConfirmResult[]> {
     this.assertConfigured();
@@ -158,8 +249,71 @@ export class InboxService {
 
   async remove(inboxId: string): Promise<{ ok: true }> {
     this.assertConfigured();
-    await this.store.delete(inboxKeyOf(inboxId));
+    const key = inboxKeyOf(inboxId);
+    const batchCacheKey = `${key}.batch.json`;
+    try {
+      await this.store.get(batchCacheKey);
+      await this.store.delete(batchCacheKey);
+    } catch (err) {
+      if (!isMissingObject(err)) throw err;
+    }
+    await this.store.delete(key);
     return { ok: true };
+  }
+
+  private async readBatchCache(key: string, pageCount: number): Promise<CachedBatch | null> {
+    let object: { body: Buffer };
+    try { object = await this.store.get(key); }
+    catch (err) { if (isMissingObject(err)) return null; throw err; }
+    let value: unknown;
+    try { value = JSON.parse(object.body.toString("utf8")); }
+    catch { return null; }
+    if (!value || typeof value !== "object" || !("version" in value) || value.version !== 1 || !("invoices" in value) || !Array.isArray(value.invoices)) return null;
+    if (value.invoices.length < 1 || value.invoices.length > 50) return null;
+    const invoices: CachedBatchInvoice[] = [];
+    for (const item of value.invoices) {
+      if (!item || typeof item !== "object") return null;
+      const candidate = item as Record<string, unknown>;
+      if (typeof candidate.inboxId !== "string" || !INBOX_ID.test(candidate.inboxId) || typeof candidate.name !== "string" ||
+          typeof candidate.pageStart !== "number" || !Number.isInteger(candidate.pageStart) ||
+          typeof candidate.pageEnd !== "number" || !Number.isInteger(candidate.pageEnd)) return null;
+      const parsed = extractedInvoiceSchema.safeParse(candidate.invoice);
+      if (!parsed.success) return null;
+      invoices.push({
+        inboxId: candidate.inboxId,
+        name: candidate.name,
+        pageStart: candidate.pageStart,
+        pageEnd: candidate.pageEnd,
+        invoice: parsed.data,
+      });
+    }
+    try { this.assertBatchRanges(invoices, pageCount); }
+    catch { return null; }
+    return { version: 1, invoices };
+  }
+
+  private async assertObjectPresent(key: string): Promise<void> {
+    try { await this.store.get(key); }
+    catch (err) {
+      if (isMissingObject(err)) throw new NotFoundException(UPLOAD_NOT_FOUND);
+      throw err;
+    }
+  }
+
+  private assertBatchRanges(readings: Pick<CachedBatchInvoice, "pageStart" | "pageEnd">[], pageCount: number): void {
+    const sorted = [...readings].sort((a, b) => a.pageStart - b.pageStart);
+    let lastPage = 0;
+    for (const reading of sorted) {
+      if (reading.pageStart <= lastPage || reading.pageEnd < reading.pageStart || reading.pageEnd > pageCount) {
+        throw new BadGatewayException({ code: "ASSISTANT_UPSTREAM", message: "Les pages des factures sont incohérentes. Vérifiez le PDF puis réessayez." });
+      }
+      lastPage = reading.pageEnd;
+    }
+  }
+
+  private batchChildName(filename: string, pageStart: number, pageEnd: number): string {
+    const suffix = pageStart === pageEnd ? `p${pageStart}` : `p${pageStart}-${pageEnd}`;
+    return `${filename.replace(/\.pdf$/i, "").slice(0, 100)} · ${suffix}.pdf`;
   }
 
   private async confirmOne(
@@ -171,7 +325,10 @@ export class InboxService {
     const parsed = createLedgerEntrySchema.safeParse(item.entry);
     if (!parsed.success) return { inboxId, ok: false, error: parsed.error.issues[0]?.message ?? "Écriture invalide" };
     const entry = parsed.data;
-    const existing = entry.number === undefined ? undefined : findDuplicate(entries, entry.book, entry.number);
+    // A retry after a lost response must not create another entry, even without a readable number.
+    const alreadyAdded = entries.find((existing) => existing.attachment?.key === `${INBOX_PREFIX}${inboxId}`);
+    if (alreadyAdded) return { inboxId, ok: true, entryId: alreadyAdded.entryId };
+    const existing = entry.number === undefined ? undefined : findDuplicate(entries, entry.book, entry.number, entry.book === "achats" ? entry.supplier ?? entry.label : undefined);
     if (existing && !item.replace) return { inboxId, ok: false, error: `Déjà dans le journal (n° ${existing.number})` };
     if (existing?.locked || lockedMonths.includes(entry.date.slice(0, 7))) return { inboxId, ok: false, error: LOCKED_MONTH };
     try {
@@ -231,7 +388,7 @@ export class InboxService {
     const existingNumbers: InboxMappingContext["existingNumbers"] = [];
     for (const e of entries) {
       if (!e.number) continue;
-      existingNumbers.push({ book: e.book, number: e.number, entryId: e.entryId, locked: e.locked === true || lockedMonths.includes(e.ym) });
+      existingNumbers.push({ book: e.book, number: e.number, entryId: e.entryId, locked: e.locked === true || lockedMonths.includes(e.ym), party: e.supplier ?? e.label });
     }
     return {
       companyVat: settings.company?.vatNumber ?? null,
@@ -243,7 +400,8 @@ export class InboxService {
   }
 }
 
-function findDuplicate(entries: LedgerEntry[], book: LedgerBook, number: string): LedgerEntry | undefined {
+function findDuplicate(entries: LedgerEntry[], book: LedgerBook, number: string, party?: string): LedgerEntry | undefined {
   const key = numberKey(number);
-  return entries.find((e) => e.book === book && e.number !== undefined && numberKey(e.number) === key);
+  return entries.find((e) => e.book === book && e.number !== undefined && numberKey(e.number) === key &&
+    (book === "ventes" || normalizeInvoiceParty(e.supplier ?? e.label) === normalizeInvoiceParty(party ?? "")));
 }

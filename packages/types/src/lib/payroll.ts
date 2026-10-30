@@ -2,7 +2,7 @@ import type { AppEvent } from "../entities/event";
 import type { PaymentMode, Person } from "../entities/settings";
 import { fmtEur, round2, sumMoney } from "./money";
 import { shortEventName, sortPersonIds, type ClientLookup } from "./planning";
-import { staffAmountOf, staffRateOf } from "./staff";
+import { staffAmountOf, staffHoursOf, staffRateOf } from "./staff";
 
 export type PayrollMode = PaymentMode | "none";
 export const PAYROLL_MODE_ORDER: PayrollMode[] = ["nowjobs", "cash", "facture", "none"];
@@ -69,18 +69,18 @@ export function payroll(
   const linesByPerson = new Map<string, PayrollEventLine[]>();
   for (const event of inRange) {
     for (const entry of event.staff ?? []) {
-      const hours = entry.hours ?? 0;
+      const hours = staffHoursOf(entry);
       const km = entry.km ?? 0;
-      if (hours <= 0 && km <= 0) continue;
+      if (hours <= 0 && km <= 0 && entry.actualAmount === undefined && entry.kmAmount === undefined) continue;
       const person = people.find((p) => p.personId === entry.personId);
-      const rate = staffRateOf(entry, person, true);
+      const rate = staffRateOf(entry, person, hours > 0 && entry.actualAmount === undefined);
       const line: PayrollEventLine = {
         eventId: event.eventId,
         label: shortEventName(event, event.clientId ? clientById.get(event.clientId) : undefined),
         date: event.date.slice(0, 10),
         hours,
         km,
-        amount: staffAmountOf(hours, km, rate),
+        amount: entry.actualAmount ?? round2(hours * rate.hourly + (entry.kmAmount ?? km * rate.km)),
         missingRate: rate.missing,
       };
       const list = linesByPerson.get(entry.personId) ?? [];

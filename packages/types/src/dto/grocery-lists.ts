@@ -11,6 +11,7 @@ const groceryListItemSchema = z.object({
   priceUnit: z.preprocess((v) => (v == null || v === "" ? "€/kg" : v), z.string()),
   checked: z.boolean().default(false),
   haveQty: z.preprocess((v) => (v === null ? undefined : v), z.number().nonnegative().optional()),
+  storage: z.enum(["fresh", "dry", "unclassified"]).optional(),
 });
 
 const groceryListRangeSchema = z.object({ from: isoDate, to: isoDate }).strict();

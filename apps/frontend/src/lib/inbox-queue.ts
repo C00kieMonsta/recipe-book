@@ -4,7 +4,7 @@ import { mapExtractedInvoice, nearestVatRate, round2 } from "@packages/types";
 import { ApiError, api, errorReason } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 
-// The files dropped on a Comptabilité page, in the order they arrived; one file is one row of the Dépôt.
+// Files are expanded into one row per invoice after reading a grouped PDF.
 // The queue lives in memory only: a reload clears it and the uploads already in S3 stay orphaned until a nightly cleanup (out of scope).
 
 export type InboxItemState = "queued" | "uploading" | "extracting" | "review" | "ready" | "duplicate" | "locked" | "error" | "added";
@@ -15,6 +15,8 @@ export interface InboxItem {
   name: string;
   size: number;
   contentType: string;
+  pageStart?: number;
+  pageEnd?: number;
   state: InboxItemState;
   // Set once the upload has answered.
   inboxId?: string;
@@ -157,9 +159,40 @@ async function processItem(id: string): Promise<void> {
       update(id, { inboxId, name: uploaded.name });
     }
     update(id, { state: "extracting", error: undefined });
-    const proposal = await api.ledger.inbox.extract(inboxId);
-    const entry = proposal.entry ?? (await draftEntry(proposal.extracted));
-    update(id, (current) => ({ ...current, entry, flags: proposal.flags, extracted: proposal.extracted, replace: false, state: deriveState({ entry, flags: proposal.flags, replace: false }) }));
+    const { invoices } = await api.ledger.inbox.extractBatch(inboxId);
+    if (!find(id)) {
+      await Promise.allSettled(invoices.map((proposal) => api.ledger.inbox.remove(proposal.inboxId)));
+      return;
+    }
+    const expanded: InboxItem[] = [];
+    for (const proposal of invoices) {
+      const entry = proposal.entry ?? (await draftEntry(proposal.extracted));
+      expanded.push({
+        ...item,
+        id: crypto.randomUUID(),
+        inboxId: proposal.inboxId,
+        name: proposal.name,
+        size: proposal.size,
+        pageStart: proposal.pageStart,
+        pageEnd: proposal.pageEnd,
+        entry,
+        flags: proposal.flags,
+        extracted: proposal.extracted,
+        replace: false,
+        error: undefined,
+        state: deriveState({ entry, flags: proposal.flags, replace: false }),
+      });
+    }
+    // The original row may have been ignored while an unread amount was being drafted.
+    if (!find(id)) {
+      await Promise.allSettled(invoices.map((proposal) => api.ledger.inbox.remove(proposal.inboxId)));
+      return;
+    }
+    emit({ ...state, items: state.items.flatMap((current) => current.id === id ? expanded : [current]) });
+    // Keep the source available for retry until the complete response has reached the queue.
+    if (!invoices.some((proposal) => proposal.inboxId === inboxId)) {
+      void api.ledger.inbox.remove(inboxId).catch(() => undefined);
+    }
   } catch (e) {
     if (isAssistantDisabled(e)) emit({ ...state, disabled: true });
     update(id, { state: "error", error: inboxErrorMessage(e) });
@@ -335,6 +368,13 @@ export async function confirmInboxItems(ids: string[]): Promise<InboxConfirmSumm
   const wanted = new Set(ids);
   const picked = state.items.filter((i) => wanted.has(i.id) && i.inboxId && i.entry && !i.busy && i.state !== "added" && !entryProblem(i.entry));
   if (picked.length === 0) return summary;
+  if (picked.length > 50) {
+    for (let offset = 0; offset < picked.length; offset += 50) {
+      const part = await confirmInboxItems(picked.slice(offset, offset + 50).map((item) => item.id));
+      for (const key of Object.keys(summary) as (keyof InboxConfirmSummary)[]) summary[key] += part[key];
+    }
+    return summary;
+  }
   const pickedIds = new Set(picked.map((i) => i.id));
   emit({ ...state, items: state.items.map((i) => (pickedIds.has(i.id) ? { ...i, busy: true, error: undefined } : i)) });
   const payload = picked.map((i) => ({ inboxId: i.inboxId as string, entry: i.entry as CreateLedgerEntryRequest, replace: i.replace }));

@@ -30,6 +30,7 @@ import {
 } from "@/components/ui";
 import GroceryFromEventsDialog from "@/components/admin/GroceryFromEventsDialog";
 import { fmt, fmtUnitPrice } from "@/lib/recipe-helpers";
+import { defaultGroceryStorage } from "@/lib/grocery";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -125,8 +126,8 @@ export default function GroceryListPage() {
         const found = lists.find((l) => l.listId === id);
         if (found) { setList(found); setTitle(found.title); setItems(found.items); setEditing(true); }
       }
+      initialized.current = true;
       setLoading(false);
-      setTimeout(() => { initialized.current = true; }, 100);
     };
     init();
   }, []);
@@ -145,14 +146,14 @@ export default function GroceryListPage() {
   }, [idParam]);
 
   const visibleItems = useMemo(() => hideChecked ? items.filter((g) => !g.checked) : items, [items, hideChecked]);
+  const storageOf = (g: GroceryListItem): "fresh" | "dry" | "unclassified" => g.storage ?? defaultGroceryStorage(g.name);
   const suppliers = useMemo(() => [...new Set(visibleItems.map((g) => g.supplier))].sort(), [visibleItems]);
   const allSuppliers = useMemo(() => [...new Set(items.map((g) => g.supplier))].sort(), [items]);
-  const grouped = useMemo(() => {
-    const map: Record<string, GroceryListItem[]> = {};
-    suppliers.forEach((s) => { map[s] = []; });
-    visibleItems.forEach((g) => { map[g.supplier]?.push(g); });
-    return map;
-  }, [visibleItems, suppliers]);
+  const groupedByStorage = useMemo(() => ({
+    fresh: visibleItems.filter((g) => storageOf(g) === "fresh"),
+    dry: visibleItems.filter((g) => storageOf(g) === "dry"),
+    unclassified: visibleItems.filter((g) => storageOf(g) === "unclassified"),
+  }), [visibleItems, items]);
   const moveTargets = useMemo(
     () => [...new Set([...settingsSuppliers, ...items.map((g) => g.supplier)])].filter(Boolean).sort(),
     [settingsSuppliers, items],
@@ -206,6 +207,7 @@ export default function GroceryListPage() {
       supplier: ing.supplier || "Autre",
       pricePerUnit: ing.price,
       priceUnit: ing.unit,
+      storage: defaultGroceryStorage(ing.name),
       checked: false,
     }]);
   };
@@ -287,7 +289,8 @@ export default function GroceryListPage() {
   const copyList = () => {
     const lines = items.map((g) => {
       const need = needQty(g);
-      return `${g.checked ? "[✓]" : "[ ]"} ${g.name}\t${fmtQtyText(need, g.unit)}\t${g.supplier}`;
+      const rayon = storageOf(g) === "fresh" ? "Frais" : storageOf(g) === "dry" ? "Sec" : "À classer";
+      return `${g.checked ? "[✓]" : "[ ]"} ${g.name}\t${fmtQtyText(need, g.unit)}\t${rayon}\t${g.supplier}`;
     });
     navigator.clipboard.writeText(lines.join("\n"));
     toast({ title: "Liste copiée dans le presse-papier" });
@@ -302,55 +305,64 @@ export default function GroceryListPage() {
     doc.setFont("helvetica", "normal"); doc.setFontSize(9);
     doc.text(today, m, m + 14);
     let startY = m + 22;
-    allSuppliers.forEach((supplier) => {
-      const supplierItems = items.filter((g) => g.supplier === supplier);
+    (["fresh", "dry", "unclassified"] as const).forEach((storage) => {
+      const categoryItems = items.filter((g) => storageOf(g) === storage);
+      if (!categoryItems.length) return;
       if (startY > 260) { doc.addPage(); startY = m; }
-      doc.setFont("helvetica", "bold"); doc.setFontSize(11);
-      doc.text(supplier, m, startY + 5);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(13);
+      doc.text(storage === "fresh" ? "Produits frais" : storage === "dry" ? "Produits secs" : "À classer", m, startY + 5);
       startY += 8;
-      autoTable(doc, {
-        startY,
-        head: [["", "Ingrédient", "Besoin", "En stock", "À acheter", "Prix/u"]],
-        body: supplierItems.map((g) => [
-          g.checked ? "✓" : "",
-          g.name,
-          fmtQtyText(g.totalQty, g.unit),
-          g.haveQty != null ? fmtQtyText(g.haveQty, g.unit) : "-",
-          fmtQtyText(needQty(g), g.unit),
-          `${fmt(g.pricePerUnit)} ${g.priceUnit}`,
-        ]),
-        margin: { left: m },
-        styles: { fontSize: 7.5, cellPadding: 2 },
-        headStyles: { fillColor: [60, 60, 60] },
-        columnStyles: {
-          0: { cellWidth: 8, halign: "center" },
-          2: { halign: "right" }, 3: { halign: "right" },
-          4: { halign: "right" }, 5: { halign: "right" },
-        },
-        didDrawCell: (data) => {
-          if (data.column.index === 0 && data.row.section === "body") {
-            const sz = 3;
-            doc.setDrawColor(100, 100, 100);
-            doc.rect(data.cell.x + (data.cell.width - sz) / 2, data.cell.y + (data.cell.height - sz) / 2, sz, sz);
-          }
-        },
+      allSuppliers.forEach((supplier) => {
+        const supplierItems = categoryItems.filter((g) => g.supplier === supplier);
+        if (!supplierItems.length) return;
+        if (startY > 260) { doc.addPage(); startY = m; }
+        doc.setFont("helvetica", "bold"); doc.setFontSize(10);
+        doc.text(supplier, m, startY + 5);
+        startY += 8;
+        autoTable(doc, {
+          startY,
+          head: [["", "Ingrédient", "Besoin", "En stock", "À acheter", "Prix/u"]],
+          body: supplierItems.map((g) => [
+            g.checked ? "✓" : "",
+            g.name,
+            fmtQtyText(g.totalQty, g.unit),
+            g.haveQty != null ? fmtQtyText(g.haveQty, g.unit) : "-",
+            fmtQtyText(needQty(g), g.unit),
+            `${fmt(g.pricePerUnit)} ${g.priceUnit}`,
+          ]),
+          margin: { left: m },
+          styles: { fontSize: 7.5, cellPadding: 2 },
+          headStyles: { fillColor: [60, 60, 60] },
+          columnStyles: {
+            0: { cellWidth: 8, halign: "center" },
+            2: { halign: "right" }, 3: { halign: "right" },
+            4: { halign: "right" }, 5: { halign: "right" },
+          },
+          didDrawCell: (data) => {
+            if (data.column.index === 0 && data.row.section === "body") {
+              const sz = 3;
+              doc.setDrawColor(100, 100, 100);
+              doc.rect(data.cell.x + (data.cell.width - sz) / 2, data.cell.y + (data.cell.height - sz) / 2, sz, sz);
+            }
+          },
+        });
+        const lastTable = (doc as unknown as Record<string, unknown>).lastAutoTable as { finalY: number } | undefined;
+        startY = (lastTable?.finalY ?? startY + 34) + 6;
       });
-      const lastTable = (doc as unknown as Record<string, unknown>).lastAutoTable as { finalY: number } | undefined;
-      startY = (lastTable?.finalY ?? startY + 34) + 6;
     });
     doc.save(`${title.replace(/[^a-zA-Z0-9àâéèêëïîôùûüç\s-]/g, "")}.pdf`);
   };
 
   const exportCsv = () => {
     const sep = ";";
-    const header = ["Statut", "Ingrédient", "Besoin", "En stock", "À acheter", "Unité", "Fournisseur", "Prix/u", "Unité prix"].join(sep);
+    const header = ["Statut", "Ingrédient", "Besoin", "En stock", "À acheter", "Unité", "Rayon", "Fournisseur", "Prix/u", "Unité prix"].join(sep);
     const rows = items.map((g) => [
       g.checked ? "✓" : "",
       g.name,
       Number(g.totalQty.toFixed(2)),
       g.haveQty != null ? Number(g.haveQty.toFixed(2)) : "",
       Number(needQty(g).toFixed(2)),
-      g.unit, g.supplier, g.pricePerUnit, g.priceUnit,
+      g.unit, storageOf(g) === "fresh" ? "Frais" : storageOf(g) === "dry" ? "Sec" : "À classer", g.supplier, g.pricePerUnit, g.priceUnit,
     ].join(sep));
     const csv = [header, ...rows].join("\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
@@ -446,9 +458,12 @@ export default function GroceryListPage() {
         <EmptyState message="Aucun ingrédient. Les événements de cette période n'ont pas de recette au menu, ou ajoutez des ingrédients à la main." action={{ label: "+ Ajouter un ingrédient", onClick: () => setAddingIng(true) }} />
       )}
 
-      {suppliers.map((supplier) => (
+      {(["fresh", "dry", "unclassified"] as const).map((storage) => groupedByStorage[storage].length > 0 && (
+        <section key={storage} className="mt-6 rounded border border-border/60 p-3">
+          <h2 className="mb-2 text-lg font-semibold">{storage === "fresh" ? "Produits frais" : storage === "dry" ? "Produits secs" : "À classer"}<span className="ml-2 text-sm font-normal text-muted-foreground">{groupedByStorage[storage].length}</span></h2>
+          {suppliers.filter((supplier) => groupedByStorage[storage].some((g) => g.supplier === supplier)).map((supplier) => (
         <section
-          key={supplier}
+          key={`${storage}:${supplier}`}
           className={`mt-6 rounded transition-colors ${dropSupplier === supplier ? "bg-selected" : ""}`}
           onDragOver={(e) => { e.preventDefault(); setDropSupplier(supplier); }}
           onDragLeave={() => setDropSupplier(null)}
@@ -456,10 +471,10 @@ export default function GroceryListPage() {
         >
           <h3 className="flex h-7 items-center gap-2 text-base font-semibold">
             {supplier && supplier !== "Autre" ? <SupplierTag name={supplier} /> : <span>Sans fournisseur</span>}
-            <span className="text-caption font-normal text-muted-foreground">{grouped[supplier]?.length || 0}</span>
+            <span className="text-caption font-normal text-muted-foreground">{groupedByStorage[storage].filter((g) => g.supplier === supplier).length}</span>
           </h3>
           <div className="mt-1">
-            {(grouped[supplier] || []).map((g) => {
+            {groupedByStorage[storage].filter((g) => g.supplier === supplier).map((g) => {
               const gIdx = getIdx(g);
               const key = itemKey(g);
               const need = needQty(g);
@@ -486,14 +501,19 @@ export default function GroceryListPage() {
                     >
                       {g.name}
                     </button>
-                    <span className={`shrink-0 text-base tabular-nums ${g.checked ? "text-muted-foreground" : need > 0 ? "font-medium" : "text-success"}`}>
+                    <button type="button" onClick={() => toggleRow(key)} title="Modifier la quantité" aria-label={`Modifier la quantité de ${g.name}`} className={`shrink-0 rounded px-1 text-base tabular-nums hover:bg-hover ${g.checked ? "text-muted-foreground" : need > 0 ? "font-medium" : "text-success"}`}>
                       {need > 0 ? fmtQtyText(need, g.unit) : "✓"}
-                    </span>
+                    </button>
                     <ActionMenu
                       className="reveal"
                       title={g.name}
                       items={[
-                        { kind: "check", label: "Stock", checked: open, onClick: () => toggleRow(key) },
+                        { kind: "check", label: "Quantité et stock", checked: open, onClick: () => toggleRow(key) },
+                        { kind: "separator" },
+                        { kind: "section", label: "Rayon" },
+                        { kind: "check", label: "Produits frais", checked: storageOf(g) === "fresh", onClick: () => patchItem(gIdx, { storage: "fresh" }) },
+                        { kind: "check", label: "Produits secs", checked: storageOf(g) === "dry", onClick: () => patchItem(gIdx, { storage: "dry" }) },
+                        { kind: "check", label: "À classer", checked: storageOf(g) === "unclassified", onClick: () => patchItem(gIdx, { storage: "unclassified" }) },
                         { kind: "separator" },
                         { kind: "section", label: "Déplacer vers" },
                         ...moveTargets.map((s) => ({ kind: "check" as const, label: s, checked: s === g.supplier, onClick: () => { if (s !== g.supplier) patchItem(gIdx, { supplier: s }); } })),
@@ -507,13 +527,17 @@ export default function GroceryListPage() {
                     <div className="ml-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded bg-surface px-3 py-2">
                       <label className="flex items-center gap-2 text-sm text-muted-foreground">
                         Besoin
-                        <NumericInput className="input-field input-compact w-20 text-right tabular-nums" value={g.totalQty} onChange={(v) => patchItem(gIdx, { totalQty: v })} />
+                        <NumericInput className="input-field input-compact w-20 text-right tabular-nums" value={g.totalQty} onChange={(v) => patchItem(gIdx, { totalQty: v })} autoFocus />
                         <span>{g.unit}</span>
                       </label>
                       <label className="flex items-center gap-2 text-sm text-muted-foreground">
                         En stock
-                        <NumericInput className="input-field input-compact w-20 text-right tabular-nums" value={g.haveQty ?? 0} onChange={(v) => patchItem(gIdx, { haveQty: v > 0 ? v : undefined })} placeholder="0" autoFocus />
+                        <NumericInput className="input-field input-compact w-20 text-right tabular-nums" value={g.haveQty ?? 0} onChange={(v) => patchItem(gIdx, { haveQty: v > 0 ? v : undefined })} placeholder="0" />
                         <span>{g.unit}</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                        Rayon
+                        <SelectPill value={storageOf(g)} options={[{ value: "fresh", label: "Frais" }, { value: "dry", label: "Sec" }, { value: "unclassified", label: "À classer" }]} onChange={(v) => patchItem(gIdx, { storage: v as "fresh" | "dry" | "unclassified" })} colour="gray" aria-label={`Rayon de ${g.name}`} />
                       </label>
                       <span className="text-sm text-muted-foreground tabular-nums">{fmt(g.pricePerUnit)} {g.priceUnit}</span>
                       <IconButton size="sm" aria-label="Fermer" onClick={() => toggleRow(key)} icon={<X />} className="ml-auto" />
@@ -523,6 +547,8 @@ export default function GroceryListPage() {
               );
             })}
           </div>
+        </section>
+          ))}
         </section>
       ))}
 

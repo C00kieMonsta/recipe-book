@@ -32,6 +32,8 @@ import {
   personInitials,
   personName,
   prepDateOf,
+  recipePreparationTasks,
+  scheduledRecipeLines,
   prepLinesForDate,
   prepTasksForDate,
   pricePerGuestOf,
@@ -185,6 +187,20 @@ describe("prepLinesForDate", () => {
     expect(lines[0]).toMatchObject({ recipeName: "poulet", course: "Autre", clientName: undefined });
   });
 
+  it("omits a recipe card when its linked preparation tasks are in the planning", () => {
+    const decomposed = event({
+      eventId: "decomposed",
+      date: "2026-10-17",
+      recipes: [line("quiche", { lineId: "line-quiche" })],
+      tasks: [
+        { taskId: "prep-dough", label: "Mini quiches · Pâte", date: "2026-10-15", recipeLineId: "line-quiche", recipeId: "quiche", preparationId: "dough" },
+        { taskId: "prep-finish", label: "Mini quiches · Dressage", date: "2026-10-17", recipeLineId: "line-quiche", recipeId: "quiche", preparationId: "finish" },
+      ],
+    });
+    expect(prepLinesForDate([decomposed], recipeById, clientById, DEFAULT_COURSES, "2026-10-17")).toEqual([]);
+    expect(prepTasksForDate([decomposed], clientById, "2026-10-17").map((task) => task.taskId)).toEqual(["prep-finish"]);
+  });
+
   it("sums portions per recipe with one part per event", () => {
     const groups = groupByRecipe(prepLinesForDate(events, recipeById, clientById, DEFAULT_COURSES, "2026-10-13"));
     expect(groups).toEqual([
@@ -267,10 +283,12 @@ describe("person helpers", () => {
     expect(personName(people, "kristoff")).toBe("Kristoff");
     expect(personName(people, "ghost")).toBe("ghost");
   });
-  it("personInitials uses the given initials or the first two letters", () => {
+  it("personInitials uses explicit initials, then first and last initials for full names", () => {
     expect(personInitials(people[0])).toBe("AM");
     expect(personInitials(people[1])).toBe("KR");
     expect(personInitials({ name: "élodie", initials: "  " })).toBe("ÉL");
+    expect(personInitials({ name: "Margaux Dupont" })).toBe("MD");
+    expect(personInitials({ name: "Maxime Martin" })).toBe("MM");
   });
   it("slugifyPersonId strips accents, replaces symbols and suffixes on collision", () => {
     expect(slugifyPersonId("Kristoff", [])).toBe("kristoff");
@@ -409,6 +427,28 @@ describe("prep day helpers", () => {
     const ev = { date: "2026-10-17", recipes: [line("poulet", { lineId: "own" }), line("tarte", { lineId: "moved", prepDate: "2026-10-15" })] };
     expect(ownDayLines(ev).map((l) => l.lineId)).toEqual(["own"]);
     expect(movedOutLines(ev).map((l) => l.lineId)).toEqual(["moved"]);
+  });
+  it("removes a decomposed recipe root from the own-day and moved-out schedule", () => {
+    const ev = event({
+      eventId: "components",
+      date: "2026-10-17",
+      recipes: [line("quiche", { lineId: "root", prepDate: "2026-10-15" })],
+      tasks: [
+        { taskId: "dough", label: "Mini quiches · Pâte", date: "2026-10-15", recipeLineId: "root", recipeId: "quiche", preparationId: "dough" },
+        { taskId: "filling", label: "Mini quiches · Farce", date: "2026-10-15", recipeLineId: "root", recipeId: "quiche", preparationId: "filling" },
+        { taskId: "finish", label: "Mini quiches · Dressage", date: "2026-10-17", recipeLineId: "root", recipeId: "quiche", preparationId: "finish" },
+      ],
+    });
+    expect(scheduledRecipeLines(ev)).toEqual([]);
+    expect(ownDayLines(ev)).toEqual([]);
+    expect(movedOutLines(ev)).toEqual([]);
+
+    const plan = weekPlan([ev], "2026-10-12");
+    expect(plan.days.reduce((total, day) => total + day.linesTotal, 0)).toBe(3);
+    expect(plan.days[3].movedIn[0].lines).toEqual([]);
+    expect(plan.days[3].movedIn[0].tasks.map((task) => task.taskId)).toEqual(["dough", "filling"]);
+    expect(plan.days[5].events[0].recipes).toHaveLength(1);
+    expect(plan.days[5].linesTotal).toBe(1);
   });
 });
 
@@ -756,6 +796,43 @@ describe("isIncompleteRecipe and incompleteCount", () => {
     expect(incompleteCount(lines, lookup)).toBe(2);
     expect(incompleteCount([{ recipeId: "ghost" }], lookup)).toBe(0);
     expect(incompleteCount([], lookup)).toBe(0);
+  });
+});
+
+describe("recipePreparationTasks", () => {
+  it("creates separately dated tasks and skips components already added to an event", () => {
+    const tasks = recipePreparationTasks(
+      {
+        recipeId: "sable-chevre",
+        name: "Sablé au comté · mousse de chèvre",
+        preparations: [
+          { preparationId: "pate", name: "Pâte à sablés", daysBefore: 2 },
+          { preparationId: "mousse", name: "Mousse de chèvre", daysBefore: 2, description: "Garder au frais" },
+          { preparationId: "dressage", name: "Dressage", daysBefore: 0 },
+        ],
+      },
+      { lineId: "line-1" },
+      "2026-10-17",
+      ["pate"],
+    );
+
+    expect(tasks).toEqual([
+      {
+        label: "Sablé au comté · mousse de chèvre · Mousse de chèvre",
+        date: "2026-10-15",
+        notes: "Garder au frais",
+        recipeLineId: "line-1",
+        recipeId: "sable-chevre",
+        preparationId: "mousse",
+      },
+      {
+        label: "Sablé au comté · mousse de chèvre · Dressage",
+        date: "2026-10-17",
+        recipeLineId: "line-1",
+        recipeId: "sable-chevre",
+        preparationId: "dressage",
+      },
+    ]);
   });
 });
 

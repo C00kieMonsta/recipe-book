@@ -20,6 +20,14 @@ export interface RecipePhoto {
   url?: string;
 }
 
+/** A separately schedulable component of a recipe, such as dough or mousse. */
+export interface RecipePreparation {
+  preparationId: string;
+  name: string;
+  daysBefore: number;
+  description?: string;
+}
+
 export interface Recipe {
   recipeId: string;
   name: string;
@@ -34,6 +42,7 @@ export interface Recipe {
   defaultCourse?: string;
   description?: string;
   techniques: string[];
+  preparations?: RecipePreparation[];
   ingredients: RecipeIngredient[];
   photos: RecipePhoto[];
   pricing: RecipePricing;

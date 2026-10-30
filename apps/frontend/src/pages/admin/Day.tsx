@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CalendarDays, CheckCircle2, EyeOff, MoreHorizontal, Pencil, Plus, Printer, Share2, ShoppingCart, Trash2, UserPlus, X } from "lucide-react";
 import type { AppEvent, DayItem, Ingredient, Person, PrepLine, PrepStatus, PrepTask, PrestationTypeSetting, Recipe, ScaledIngredient } from "@packages/types";
@@ -212,6 +212,8 @@ export default function Day() {
   const [confirmTask, setConfirmTask] = useState<PrepTask | null>(null);
   // Key of the row whose « Déplacer au… » Sheet opens after a touch release off every day cell.
   const [moveRequest, setMoveRequest] = useState<string | null>(null);
+  const [mouseDragItem, setMouseDragItem] = useState<DayItem | null>(null);
+  const [mouseDropDay, setMouseDropDay] = useState<string | null>(null);
   // Same key as the week page, so the callouts keep their state between the two views.
   const [checklistOpen, setChecklistOpen] = useLocalStorage<boolean>("recipe-book:checklist-open", true);
   const touch = useTouchScreen();
@@ -220,6 +222,8 @@ export default function Day() {
   // Under md the full right group wraps and overflows, so narrow pointer windows get the touch group.
   const narrow = useMediaQuery("(max-width: 767px)");
   const compact = touch || narrow;
+  const finePointer = useMediaQuery("(any-pointer: fine)");
+  const mouseDragEnabled = !touch || finePointer;
   const groupInBar = useMediaQuery(GROUP_PILL_QUERY);
   const menu = useMenu();
   const touchStart = useRef<{ x: number; y: number } | null>(null);
@@ -456,6 +460,19 @@ export default function Day() {
     } catch (e) {
       writeError(e, item.eventId, "Erreur lors du déplacement");
     }
+  };
+
+  const onMouseDragStart = (item: DayItem) => (e: ReactDragEvent<HTMLLIElement>) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", item.kind === "recipe" ? item.recipeName : item.label);
+    setMouseDragItem(item);
+  };
+  const onMouseDragEnd = () => { setMouseDragItem(null); setMouseDropDay(null); };
+  const onMouseDragOverDay = (date: string) => setMouseDropDay(date);
+  const onMouseDropDay = (date: string) => {
+    if (mouseDragItem) void moveItem(mouseDragItem, date);
+    setMouseDragItem(null);
+    setMouseDropDay(null);
   };
 
   // A held row lifts and drops on a strip or heads cell; a release elsewhere opens its « Déplacer au… » Sheet.
@@ -705,9 +722,12 @@ export default function Day() {
     const key = itemKey(item);
     const rowLift = {
       liftHandlers: guardLift(lift.handlers(item)),
-      lifted: lift.item !== null && itemKey(lift.item) === key,
+      lifted: (lift.item !== null && itemKey(lift.item) === key) || (mouseDragItem !== null && itemKey(mouseDragItem) === key),
       moveOpen: moveRequest === key,
       onMoveClose: clearMoveRequest,
+      draggable: mouseDragEnabled,
+      onNativeDragStart: onMouseDragStart(item),
+      onNativeDragEnd: onMouseDragEnd,
     };
     if (item.kind === "recipe") {
       return (
@@ -885,8 +905,10 @@ export default function Day() {
       selected={safeDate}
       stripHref={dayUrl}
       linkState={location.state}
-      dropDay={lift.target}
-      dragging={lift.dragging}
+      dropDay={lift.target ?? mouseDropDay}
+      dragging={lift.dragging || Boolean(mouseDragItem)}
+      onDragOverDay={mouseDragItem ? onMouseDragOverDay : undefined}
+      onDropDay={mouseDragItem ? onMouseDropDay : undefined}
     />
   );
 
@@ -936,8 +958,10 @@ export default function Day() {
       people={people}
       selectedPerson={personne}
       onPersonFilter={(id) => setParam("personne", personne === id ? null : id)}
-      dropDay={lift.target}
-      dragging={lift.dragging}
+      dropDay={lift.target ?? mouseDropDay}
+      dragging={lift.dragging || Boolean(mouseDragItem)}
+      onDragOverDay={mouseDragItem ? onMouseDragOverDay : undefined}
+      onDropDay={mouseDragItem ? onMouseDropDay : undefined}
     />
   );
 
@@ -1153,6 +1177,9 @@ interface RowLiftProps {
   lifted: boolean;
   moveOpen: boolean;
   onMoveClose: () => void;
+  draggable: boolean;
+  onNativeDragStart: (event: ReactDragEvent<HTMLLIElement>) => void;
+  onNativeDragEnd: () => void;
 }
 
 interface ItemAssignProps {
@@ -1200,18 +1227,18 @@ interface LineRowProps extends RowLiftProps {
 }
 
 // One prep line: the pill on pointer screens, the dot on touch; the whole row links to the fiche.
-function LineRow({ line, people, to, from, second, onStatus, onCycle, onAssign, days, onMove, liftHandlers, lifted, moveOpen, onMoveClose }: LineRowProps) {
+function LineRow({ line, people, to, from, second, onStatus, onCycle, onAssign, days, onMove, liftHandlers, lifted, moveOpen, onMoveClose, draggable, onNativeDragStart, onNativeDragEnd }: LineRowProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const isDone = line.prepStatus === "done";
   const assign: ActionMenuItem[] = onAssign ? [{ label: "Assigner", icon: <UserPlus />, onClick: () => setPickerOpen(true) }] : [];
   return (
-    <li {...liftHandlers} className={`group relative flex min-h-9 touch-pan-y items-center gap-2 rounded px-2 hover:bg-hover touch:min-h-11 ${isDone ? "text-muted-foreground" : ""} ${lifted ? "opacity-40" : ""}`}>
+    <li {...liftHandlers} draggable={draggable || undefined} onDragStart={onNativeDragStart} onDragEnd={onNativeDragEnd} className={`group relative flex min-h-9 touch-pan-y items-center gap-2 rounded px-2 hover:bg-hover touch:min-h-11 ${draggable ? "cursor-grab" : ""} ${isDone ? "text-muted-foreground" : ""} ${lifted ? "opacity-40" : ""}`}>
       <div className={`no-print ${ABOVE} hidden w-[108px] shrink-0 pointer:block`}>
         <StatusControl value={line.prepStatus} onChange={onStatus} />
       </div>
       <StatusDot className={`no-print ${ABOVE} -ml-2 pointer:hidden`} value={line.prepStatus} onCycle={onCycle} />
       <span className="hidden print:inline-block"><Dot status={line.prepStatus} /></span>
-      <Link to={to} state={{ from }} className="flex min-h-9 min-w-0 flex-1 items-center py-1 before:absolute before:inset-0 before:rounded touch:min-h-11">
+      <Link to={to} state={{ from }} draggable={false} className="flex min-h-9 min-w-0 flex-1 items-center py-1 before:absolute before:inset-0 before:rounded touch:min-h-11">
         <span className="min-w-0 flex-1">
           <span className="block text-base">{line.recipeName}</span>
           {second && <span className="block text-sm text-muted-foreground">{second}</span>}
@@ -1242,7 +1269,7 @@ interface TaskRowProps extends RowLiftProps {
 }
 
 // One task: same row as a line without portions; the whole row opens the edit dialog.
-function TaskRow({ task, people, second, onStatus, onCycle, onAssign, onEdit, onDelete, days, onMove, liftHandlers, lifted, moveOpen, onMoveClose }: TaskRowProps) {
+function TaskRow({ task, people, second, onStatus, onCycle, onAssign, onEdit, onDelete, days, onMove, liftHandlers, lifted, moveOpen, onMoveClose, draggable, onNativeDragStart, onNativeDragEnd }: TaskRowProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const isDone = task.prepStatus === "done";
   const after: ActionMenuItem[] = [
@@ -1251,7 +1278,7 @@ function TaskRow({ task, people, second, onStatus, onCycle, onAssign, onEdit, on
     { label: "Supprimer", icon: <Trash2 />, variant: "danger", onClick: onDelete },
   ];
   return (
-    <li {...liftHandlers} className={`group relative flex min-h-9 touch-pan-y items-center gap-2 rounded px-2 hover:bg-hover touch:min-h-11 ${isDone ? "text-muted-foreground" : ""} ${lifted ? "opacity-40" : ""}`}>
+    <li {...liftHandlers} draggable={draggable || undefined} onDragStart={onNativeDragStart} onDragEnd={onNativeDragEnd} className={`group relative flex min-h-9 touch-pan-y items-center gap-2 rounded px-2 hover:bg-hover touch:min-h-11 ${draggable ? "cursor-grab" : ""} ${isDone ? "text-muted-foreground" : ""} ${lifted ? "opacity-40" : ""}`}>
       <div className={`no-print ${ABOVE} hidden w-[108px] shrink-0 pointer:block`}>
         <StatusControl value={task.prepStatus} onChange={onStatus} />
       </div>

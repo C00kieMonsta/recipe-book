@@ -584,7 +584,8 @@ export default function Week() {
     return lines.length || tasks.length ? { event: m.event, lines, tasks } : null;
   };
   const canAssign = !touch && activePeople.length > 0;
-  const canDrag = !touch;
+  const finePointer = useMediaQuery("(any-pointer: fine)");
+  const canDrag = !touch || finePointer;
   const counts = Object.fromEntries(plan.days.map((d) => [d.date, d.events.length]));
   // The tour spotlights the chips of this card only.
   const firstEventId = plan.days.find((d) => d.events.length > 0)?.events[0]?.eventId;
@@ -611,7 +612,7 @@ export default function Week() {
     stacked,
     people,
     canAssign,
-    canDrag: canDrag && !stacked,
+    canDrag,
     days: dates,
     align,
     state,
@@ -790,6 +791,8 @@ export default function Week() {
       linkState={state}
       dropDay={lift.target}
       dragging={lift.dragging}
+      onDragOverDay={canDrag && drag ? setDropDay : undefined}
+      onDropDay={canDrag && drag ? dropOn : undefined}
     />
   );
 
@@ -839,6 +842,8 @@ export default function Week() {
       onPersonFilter={(id) => setParam("personne", selectedPerson === id ? "" : id)}
       dropDay={lift.target}
       dragging={lift.dragging}
+      onDragOverDay={canDrag && drag ? setDropDay : undefined}
+      onDropDay={canDrag && drag ? dropOn : undefined}
     />
   );
 
@@ -865,10 +870,10 @@ export default function Week() {
             const taskEventId = taskEventFor(day.date);
             const dropHere = Boolean(drag) && dropDay === day.date;
             return (
-              <div key={day.date} className={`group min-w-0 ${past ? "opacity-60 hover:opacity-100 focus-within:opacity-100" : ""}`}>
+              <div key={day.date} className={`group min-w-0 min-h-[calc(100vh-14rem)] ${past ? "opacity-60 hover:opacity-100 focus-within:opacity-100" : ""}`}>
                 <div
                   data-drop-day={day.date}
-                  className={cn("space-y-2 rounded-lg px-0.5 pb-2", (dropHere || lift.dragging) && "bg-selected", lift.target === day.date && "ring-2 ring-inset ring-primary")}
+                  className={cn("flex min-h-[calc(100vh-14rem)] flex-col space-y-2 rounded-lg px-0.5 pb-2", (dropHere || lift.dragging) && "bg-selected", lift.target === day.date && "ring-2 ring-inset ring-primary")}
                   onDragOver={canDrag && drag ? (e) => { e.preventDefault(); setDropDay(day.date); } : undefined}
                   onDrop={canDrag && drag ? (e) => { e.preventDefault(); dropOn(day.date); } : undefined}
                 >
@@ -967,7 +972,14 @@ export default function Week() {
             const shared = rowShared(true, "right");
             const taskEventId = taskEventFor(day.date);
             return (
-              <section key={day.date} ref={(el) => { dayRefs.current[day.date] = el; }} className={`scroll-mt-24 md:scroll-mt-[52px] ${past ? "opacity-60 hover:opacity-100 focus-within:opacity-100" : ""}`}>
+              <section
+                key={day.date}
+                ref={(el) => { dayRefs.current[day.date] = el; }}
+                data-drop-day={day.date}
+                className={`min-h-40 scroll-mt-24 md:scroll-mt-[52px] ${past ? "opacity-60 hover:opacity-100 focus-within:opacity-100" : ""}`}
+                onDragOver={canDrag && drag ? (e) => { e.preventDefault(); setDropDay(day.date); } : undefined}
+                onDrop={canDrag && drag ? (e) => { e.preventDefault(); dropOn(day.date); } : undefined}
+              >
                 <div
                   data-drop-day={day.date}
                   className={cn("sticky top-[96px] z-10 -mx-4 flex min-h-11 items-center gap-1 bg-background px-4 md:top-[52px] md:mx-0 md:px-0", lift.dragging && "bg-selected", lift.target === day.date && "ring-2 ring-inset ring-primary")}
@@ -1220,7 +1232,14 @@ function ItemRow({ item, shared, dim }: { item: RowItem; shared: RowShared; dim:
     );
     const bodyClass = cn("flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded px-1 text-sm hover:bg-hover touch:text-base", done && "text-muted-foreground");
     return (
-      <li ref={rowRef} {...liftHandlers} className={cn("relative flex min-h-11 touch-pan-y items-center", (dim || lifted) && "opacity-40")}>
+      <li
+        ref={rowRef}
+        {...liftHandlers}
+        draggable={canDrag || undefined}
+        onDragStart={canDrag ? (e) => { e.dataTransfer.setData("text/plain", label); e.dataTransfer.effectAllowed = "move"; shared.setDrag(dragItem); } : undefined}
+        onDragEnd={canDrag ? () => shared.setDrag(null) : undefined}
+        className={cn("relative flex min-h-11 touch-pan-y items-center", canDrag && "cursor-grab", (dim || lifted || dragging) && "opacity-40")}
+      >
         <StatusDot value={status} onCycle={cycle} />
         {item.kind === "recipe" ? (
           <Link to={item.href} state={state} className={bodyClass}>{body}</Link>

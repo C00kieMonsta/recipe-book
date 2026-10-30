@@ -1,7 +1,8 @@
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
-import type { AppEvent } from "@packages/types";
+import type { AppEvent, Recipe } from "@packages/types";
 import { DdbService, UpdateOptions } from "../shared/ddb.service";
 import type { S3Service } from "../shared/s3.service";
+import type { RecipesService } from "../recipes/recipes.service";
 import { EventsService } from "./events.service";
 
 type Item = Record<string, unknown>;
@@ -127,15 +128,41 @@ const createBody = {
   status: "upcoming" as const,
 };
 
+const prepRecipe = (recipeId = "r1"): Recipe => ({
+  recipeId,
+  name: "Sablé au comté · mousse de chèvre",
+  nameLower: "sable au comte · mousse de chevre",
+  type: "Buffet",
+  category: "Apéritif",
+  portions: 10,
+  portionWeight: 150,
+  techniques: [],
+  preparations: [
+    { preparationId: "pate", name: "Pâte à sablés", daysBefore: 2 },
+    { preparationId: "mousse", name: "Mousse de chèvre", daysBefore: 2, description: "Garder au frais" },
+    { preparationId: "dressage", name: "Dressage", daysBefore: 0 },
+  ],
+  ingredients: [],
+  photos: [],
+  pricing: { surPlace: { coef: 4, tva: 12 }, takeAway: { coef: 3, tva: 6 }, chosenPrice: { surPlace: 0, takeAway: 0 } },
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+});
+
 describe("EventsService", () => {
   let ddb: FakeDdb;
   let s3: FakeS3;
   let service: EventsService;
+  let recipeCatalog: Recipe[];
 
   beforeEach(() => {
     ddb = new FakeDdb();
     s3 = new FakeS3();
-    service = new EventsService(ddb as unknown as DdbService, s3 as unknown as S3Service);
+    recipeCatalog = [];
+    const recipes = {
+      getPreparationDefinitions: async (ids: string[]) => recipeCatalog.filter((recipe) => ids.includes(recipe.recipeId)),
+    };
+    service = new EventsService(ddb as unknown as DdbService, s3 as unknown as S3Service, recipes as unknown as RecipesService);
   });
 
   describe("lazy line ids", () => {
@@ -193,6 +220,18 @@ describe("EventsService", () => {
       expect(event.recipes[0].lineId).not.toBe("");
       expect(event.recipes[1].lineId).toBe("keep-me");
       expect(event.nameLower).toBe("mariage");
+      expect(await ddb.get("events", { eventId: event.eventId })).toEqual(event);
+    });
+
+    it("creates linked preparation tasks for recipe lines, including components scheduled before the event", async () => {
+      recipeCatalog = [prepRecipe("r1")];
+      const event = await service.create(createBody);
+      expect(event.tasks).toHaveLength(3);
+      expect(event.tasks?.map(({ label, date, recipeLineId, recipeId, preparationId }) => ({ label, date, recipeLineId, recipeId, preparationId }))).toEqual([
+        { label: "Sablé au comté · mousse de chèvre · Pâte à sablés", date: "2026-05-30", recipeLineId: event.recipes[0].lineId, recipeId: "r1", preparationId: "pate" },
+        { label: "Sablé au comté · mousse de chèvre · Mousse de chèvre", date: "2026-05-30", recipeLineId: event.recipes[0].lineId, recipeId: "r1", preparationId: "mousse" },
+        { label: "Sablé au comté · mousse de chèvre · Dressage", date: "2026-06-01", recipeLineId: event.recipes[0].lineId, recipeId: "r1", preparationId: "dressage" },
+      ]);
       expect(await ddb.get("events", { eventId: event.eventId })).toEqual(event);
     });
 
@@ -327,6 +366,15 @@ describe("EventsService", () => {
       expect(event.updatedAt).not.toBe("2026-01-01T00:00:00.000Z");
     });
 
+    it("addLine materializes recipe preparations in the same event write", async () => {
+      recipeCatalog = [prepRecipe("r9")];
+      const event = await service.addLine("e1", { recipeId: "r9", portions: 7 });
+      const line = event.recipes.at(-1)!;
+      expect(event.tasks).toHaveLength(3);
+      expect(event.tasks?.every((task) => task.recipeLineId === line.lineId)).toBe(true);
+      expect(event.tasks?.map((task) => task.date)).toEqual(["2026-05-30", "2026-05-30", "2026-06-01"]);
+    });
+
     it("patchLine merges the patch and keeps the rest", async () => {
       const event = await service.patchLine("e1", "b", { prepStatus: "doing", portions: 10 });
       expect(event.recipes[1]).toEqual({ lineId: "b", recipeId: "r2", portions: 10, notes: "spicy", prepStatus: "doing" });
@@ -405,6 +453,15 @@ describe("EventsService", () => {
       expect(event.recipes[0]).toEqual({ lineId: "c", recipeId: "r3", portions: 4, course: "Plat", assignedTo: ["amelie", "kristoff"] });
     });
 
+    it("putLines fills missing linked preparation tasks without duplicating existing ones", async () => {
+      recipeCatalog = [prepRecipe("r1")];
+      const first = await service.putLines("e1", { lines: [{ lineId: "c" }, { lineId: "a" }, { lineId: "b" }] });
+      expect(first.tasks).toHaveLength(3);
+      const next = await service.putLines("e1", { lines: [{ lineId: "a" }, { lineId: "b" }, { lineId: "c" }] });
+      expect(next.tasks).toHaveLength(3);
+      expect(next.tasks?.map((task) => task.taskId)).toEqual(first.tasks?.map((task) => task.taskId));
+    });
+
     it("patchLine 404s on an unknown line", async () => {
       await expect(service.patchLine("e1", "zz", { portions: 1 })).rejects.toBeInstanceOf(NotFoundException);
     });
@@ -437,6 +494,19 @@ describe("EventsService", () => {
       const event = await service.removeLine("e1", "b");
       expect(event.recipes.map((l) => l.lineId)).toEqual(["a", "c"]);
       await expect(service.removeLine("e1", "b")).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("removeLine also removes generated tasks linked to that recipe line", async () => {
+      await ddb.put("events", baseEvent({
+        recipes: [{ lineId: "a", recipeId: "r1", portions: 2 }, { lineId: "b", recipeId: "r2", portions: 1 }],
+        tasks: [
+          { taskId: "prep-a", recipeLineId: "a", recipeId: "r1", preparationId: "pate", label: "Pâte", date: "2026-05-30" },
+          { taskId: "prep-b", recipeLineId: "b", recipeId: "r2", preparationId: "mousse", label: "Mousse", date: "2026-05-30" },
+          { taskId: "manual", label: "Acheter du pain", date: "2026-06-01" },
+        ],
+      }));
+      const event = await service.removeLine("e1", "a");
+      expect(event.tasks?.map((task) => task.taskId)).toEqual(["prep-b", "manual"]);
     });
   });
 
@@ -477,6 +547,16 @@ describe("EventsService", () => {
         names: { "#ua": "updatedAt" },
         values: { ":expected": "2026-01-01T00:00:00.000Z" },
       });
+    });
+
+    it("adding the same linked preparation twice is idempotent and linked tasks remain movable", async () => {
+      const task = { label: "Pâte", date: "2026-05-30", recipeLineId: "a", recipeId: "r1", preparationId: "pate" };
+      const first = await service.addTask("e1", task);
+      const duplicate = await service.addTask("e1", task);
+      expect(duplicate.tasks).toHaveLength(first.tasks?.length ?? 0);
+      expect(duplicate.tasks?.filter((entry) => entry.preparationId === "pate")).toHaveLength(1);
+      const moved = await service.patchTask("e1", duplicate.tasks!.find((entry) => entry.preparationId === "pate")!.taskId, { date: "2026-05-29" });
+      expect(moved.tasks?.find((entry) => entry.preparationId === "pate")).toMatchObject({ date: "2026-05-29", recipeLineId: "a", preparationId: "pate" });
     });
 
     it("patchTask merges the patch and keeps the other fields", async () => {
@@ -622,6 +702,21 @@ describe("EventsService", () => {
       expect(viaCreate.serviceTeam).toEqual(["p1"]);
       expect(viaCreate.staff).toEqual(staff);
       expect(await ddb.get("events", { eventId: viaCreate.eventId })).toMatchObject({ serviceTeam: ["p1"], staff });
+    });
+
+    it("derives staff hours from time ranges on create and update, including overnight shifts", async () => {
+      const created = await service.create({
+        ...createBody,
+        staff: [{ personId: "p1", startTime: "18:00", endTime: "24:00", hours: 2 }],
+      });
+      expect(created.staff?.[0]).toMatchObject({ startTime: "18:00", endTime: "24:00", hours: 6 });
+      expect((await ddb.get("events", { eventId: created.eventId }))?.staff).toEqual(created.staff);
+
+      const updated = await service.update(created.eventId, {
+        staff: [{ personId: "p1", startTime: "18:00", endTime: "02:00", hours: 6 }],
+      });
+      expect(updated.staff?.[0]).toMatchObject({ startTime: "18:00", endTime: "02:00", hours: 8 });
+      expect(ddb.updates.at(-1)?.fields.staff).toEqual(updated.staff);
     });
 
     it("update with invoicedAt sets it, null removes the attribute", async () => {

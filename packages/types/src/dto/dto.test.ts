@@ -285,6 +285,9 @@ describe("event schemas", () => {
     expect(eventStaffEntrySchema.safeParse({ personId: "kristoff", hourlyRate: 18.123 }).success).toBe(false);
     expect(eventStaffEntrySchema.safeParse({ personId: "kristoff", hourlyRate: 18, kmRate: 0.345 }).success).toBe(true);
     expect(eventStaffEntrySchema.safeParse({ personId: "kristoff", kmRate: 11 }).success).toBe(false);
+    expect(eventStaffEntrySchema.safeParse({ personId: "kristoff", startTime: "18:00", endTime: "24:00", kmAmount: 8, actualAmount: 120 }).success).toBe(true);
+    expect(eventStaffEntrySchema.safeParse({ personId: "kristoff", startTime: "24:00" }).success).toBe(false);
+    expect(eventStaffEntrySchema.safeParse({ personId: "kristoff", kmAmount: -1 }).success).toBe(false);
     expect(eventStaffEntrySchema.safeParse({ personId: "", hours: 1 }).success).toBe(false);
     expect(eventStaffEntrySchema.safeParse({ personId: "kristoff", role: "cuisine" }).success).toBe(false);
     expect(eventStaffSchema.safeParse([{ personId: "kristoff", hours: 6 }, { personId: "kristoff", km: 12 }]).success).toBe(false);

@@ -12,7 +12,7 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { z } from "zod";
-import type { InboxConfirmResult, InboxProposal, InboxUpload } from "@packages/types";
+import type { InboxBatchProposal, InboxConfirmResult, InboxProposal, InboxUpload } from "@packages/types";
 import { inboxConfirmSchema } from "@packages/types";
 import { AdminGuard } from "../../auth/admin.guard";
 import { INBOX_TYPES } from "./inbox.extract";
@@ -42,6 +42,14 @@ export class InboxController {
     const parsed = extractBodySchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     return this.inbox.extract(parsed.data.inboxId);
+  }
+
+  @Post("extract-batch")
+  @HttpCode(200)
+  async extractBatch(@Body() body: unknown): Promise<InboxBatchProposal> {
+    const parsed = extractBodySchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    return this.inbox.extractBatch(parsed.data.inboxId);
   }
 
   @Post("confirm")

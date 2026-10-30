@@ -348,7 +348,7 @@ export default function InvoiceInbox() {
       url = URL.createObjectURL(item.file);
       urls.current.set(item.id, url);
     }
-    window.open(url, "_blank");
+    window.open(item.pageStart ? `${url}#page=${item.pageStart}` : url, "_blank");
   };
 
   const confirm = async (ids: string[]) => {
@@ -379,7 +379,8 @@ export default function InvoiceInbox() {
     >
       <Upload className="h-6 w-6 text-icon" aria-hidden="true" />
       <p className="text-base font-medium">Déposez vos factures ici</p>
-      <p className="text-sm text-muted-foreground">PDF ou photo · 20 Mo par fichier</p>
+      <p className="text-sm text-muted-foreground">Plusieurs fichiers ou un PDF regroupant vos factures · 20 Mo par fichier</p>
+      <p className="text-sm text-muted-foreground">Jusqu’à 50 factures et 200 pages par PDF. Une ligne par facture, à vérifier avant l’ajout en lot.</p>
       <div className="mt-1 flex flex-wrap justify-center gap-2">
         <Button variant="default" size="md" onClick={() => fileRef.current?.click()}>Choisir des fichiers</Button>
         {touch && <Button variant="default" size="md" icon={<Camera />} onClick={() => cameraRef.current?.click()}>Prendre une photo</Button>}

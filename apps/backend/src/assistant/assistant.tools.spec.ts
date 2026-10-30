@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { NotFoundException } from "@nestjs/common";
-import type { AppEvent, AppSettings, Ingredient, OfferDocument, ProposedAction, Recipe } from "@packages/types";
+import type { AppEvent, AppSettings, Ingredient, LedgerEntry, OfferDocument, ProposedAction, Recipe } from "@packages/types";
 import {
   DEFAULT_COURSES,
   DEFAULT_DOC_CONDITIONS,
@@ -14,6 +14,7 @@ import {
 import type { ClientsService } from "../clients/clients.service";
 import type { EventsService } from "../events/events.service";
 import type { IngredientsService } from "../ingredients/ingredients.service";
+import type { LedgerService } from "../ledger/ledger.service";
 import type { OfferDocumentsService } from "../offer-documents/offer-documents.service";
 import type { OffersService } from "../offers/offers.service";
 import type { RecipesService } from "../recipes/recipes.service";
@@ -120,7 +121,7 @@ type Fakes = {
   eventsAddLine: jest.Mock;
 };
 
-function build(documents: OfferDocument[] = [], event: AppEvent = EVENT, appSettings: AppSettings = SETTINGS): Fakes {
+function build(documents: OfferDocument[] = [], event: AppEvent = EVENT, appSettings: AppSettings = SETTINGS, purchases: LedgerEntry[] = []): Fakes {
   const recipesCreate = jest.fn(async (data: Record<string, unknown>) => ({ ...data, recipeId: "r-new" }));
   const ingredientsCreate = jest.fn(async (data: Record<string, unknown>) => ({
     ...data,
@@ -151,7 +152,7 @@ function build(documents: OfferDocument[] = [], event: AppEvent = EVENT, appSett
   const offers = { getAll: async () => [] } as unknown as OffersService;
   const offerDocuments = { getAll: async () => documents } as unknown as OfferDocumentsService;
   return {
-    tools: new AssistantTools(recipes, ingredients, events, clients, settings, offers, offerDocuments),
+    tools: new AssistantTools(recipes, ingredients, events, clients, settings, offers, offerDocuments, { list: async (year: string) => purchases.filter((entry) => entry.ym.startsWith(year)) } as LedgerService),
     recipesCreate,
     ingredientsCreate,
     eventsUpdate,
@@ -171,6 +172,7 @@ const createRecipe = (id: string, ingredients: { name: string; qty: number; unit
     portions: 10,
     portionWeight: 80,
     techniques: ["Mixer."],
+    preparations: [],
     photos: [],
     pricing: { surPlace: { coef: 4, tva: 12 }, takeAway: { coef: 3, tva: 6 }, chosenPrice: { surPlace: 0, takeAway: 0 } },
     ingredients: ingredients.map((i) => ({ ...i, lossPct: 0 })),
@@ -327,6 +329,60 @@ describe("AssistantTools proposals", () => {
   });
 });
 
+describe("AssistantTools purchase and production reads", () => {
+  const purchase = (index: number, extra: Partial<LedgerEntry> = {}): LedgerEntry => ({
+    entryId: `purchase-${index}`, book: "achats", kind: "mp", date: "2026-10-05", ym: "2026-10", label: "Légumes",
+    supplier: "Marché", number: String(index), htva: 10.1, vatRate: 21, vatAmount: 2.12, totalTvac: 12.22,
+    paid: false, createdAt: NOW, updatedAt: NOW, ...extra,
+  });
+
+  it("returns totals for every purchase in the year while paging invoice details", async () => {
+    const purchases = Array.from({ length: 25 }, (_, index) => purchase(index));
+    purchases.push(purchase(26, { book: "ventes", kind: "facture", htva: 1000 }));
+    purchases.push(purchase(27, { date: "2025-10-01", ym: "2025-10", htva: 1000 }));
+    const { tools } = build([], EVENT, SETTINGS, purchases);
+    const result = JSON.parse((await tools.run("get_purchases", { year: 2026 }, createTurnState())).content).data;
+    expect(result).toMatchObject({ count: 25, htva: 252.5, totalTvac: 305.5, nextOffset: 20 });
+    expect(result.entries).toHaveLength(20);
+    expect(result.bySupplier).toEqual([{ supplier: "Marché", count: 25, htva: 252.5, totalTvac: 305.5 }]);
+    const page2 = JSON.parse((await tools.run("get_purchases", { year: 2026, offset: 20 }, createTurnState())).content).data;
+    expect(page2.entries).toHaveLength(5);
+    expect(page2.nextOffset).toBeNull();
+    expect(page2.htva).toBe(252.5);
+  });
+
+  it("filters suppliers with accents and never implies a complete annual inventory", async () => {
+    const { tools } = build([], EVENT, SETTINGS, [purchase(1), purchase(2, { supplier: "Vds" })]);
+    const result = JSON.parse((await tools.run("get_purchases", { year: 2026, supplier: "marche" }, createTurnState())).content).data;
+    expect(result.count).toBe(1);
+    expect(result.note).toContain("stock réel");
+    const invalid = JSON.parse((await tools.run("get_purchases", { year: 2026.5 }, createTurnState())).content).data;
+    expect(invalid.error).toBeDefined();
+  });
+
+  it("rejects invalid production dates and exposes structured actual preparation data", async () => {
+    const { tools } = build();
+    const invalid = JSON.parse((await tools.run("get_production_plan", { from: "2026-02-30", to: "2026-03-01" }, createTurnState())).content).data;
+    expect(invalid.error).toBeDefined();
+    const invalidWeek = JSON.parse((await tools.run("get_production_plan", { week: "2026-W99" }, createTurnState())).content).data;
+    expect(invalidWeek.error).toBeDefined();
+    const plan = JSON.parse((await tools.run("get_production_plan", { week: "2026-W42" }, createTurnState())).content).data;
+    expect(plan.work).toHaveLength(1);
+    expect(plan.work[0]).toMatchObject({ eventId: "e1", lineId: "l1", recipeId: "r2", date: "2026-10-17" });
+  });
+
+  it("pages large production plans without losing the calculated totals", async () => {
+    const event = { ...EVENT, recipes: Array.from({ length: 25 }, (_, index) => ({ lineId: `line-${index}`, recipeId: "r2", portions: 4 })) };
+    const { tools } = build([], event);
+    const first = JSON.parse((await tools.run("get_production_plan", { week: "2026-W42" }, createTurnState())).content).data;
+    expect(first).toMatchObject({ workCount: 25, nextWorkOffset: 10, ingredientCount: 0 });
+    expect(first.work).toHaveLength(10);
+    const last = JSON.parse((await tools.run("get_production_plan", { week: "2026-W42", workOffset: 20 }, createTurnState())).content).data;
+    expect(last.work).toHaveLength(5);
+    expect(last.nextWorkOffset).toBeNull();
+  });
+});
+
 describe("AssistantTools get_event", () => {
   const TEAM_SETTINGS: AppSettings = {
     ...SETTINGS,
@@ -383,8 +439,8 @@ describe("AssistantTools get_event", () => {
   it("lists the staff hours and km per person by name", async () => {
     const data = await readEvent();
     expect(data.staff).toEqual([
-      { person: "Kristoff", hours: 4, km: 12 },
-      { person: "Léa", hours: 6, km: 0 },
+      { personId: "p1", person: "Kristoff", hours: 4, km: 12 },
+      { personId: "p2", person: "Léa", hours: 6, km: 0 },
     ]);
     expect((await readEvent(EVENT)).staff).toEqual([]);
   });

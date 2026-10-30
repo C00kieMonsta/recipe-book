@@ -29,10 +29,12 @@ export interface DayHeadsProps {
   dropDay?: string | null;
   // Touch drag in progress: every cell tints and the caption shows.
   dragging?: boolean;
+  onDragOverDay?: (date: string) => void;
+  onDropDay?: (date: string) => void;
 }
 
 // The seven column heads of the week, one row shared by the week and the day page on cols.
-export default function DayHeads({ dates, plan, started, today, selected, href, closeHref, state, newEventHref, people, selectedPerson, onPersonFilter, dropDay, dragging = false }: DayHeadsProps) {
+export default function DayHeads({ dates, plan, started, today, selected, href, closeHref, state, newEventHref, people, selectedPerson, onPersonFilter, dropDay, dragging = false, onDragOverDay, onDropDay }: DayHeadsProps) {
   return (
     <div
       role="group"
@@ -51,6 +53,8 @@ export default function DayHeads({ dates, plan, started, today, selected, href, 
             key={date}
             data-tour={isSelected ? "day-open" : undefined}
             data-drop-day={date}
+            onDragOver={onDragOverDay ? (e) => { e.preventDefault(); onDragOverDay(date); } : undefined}
+            onDrop={onDropDay ? (e) => { e.preventDefault(); onDropDay(date); } : undefined}
             className={cn(
               "group min-w-0 rounded",
               past && "opacity-60",
